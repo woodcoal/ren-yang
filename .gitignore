@@ -90,7 +90,15 @@ out
 
 # Nuxt.js build / generate output
 .nuxt
+.output
 dist
+
+# Application runtime data
+data/
+
+# Nuxt generated declarations
+auto-imports.d.ts
+components.d.ts
 
 # Gatsby files
 .cache/
@@ -188,4 +196,3 @@ Icon
 Network Trash Folder
 Temporary Items
 .apdisk
-
