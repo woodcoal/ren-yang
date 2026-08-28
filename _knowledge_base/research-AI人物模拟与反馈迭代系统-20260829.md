@@ -3,7 +3,7 @@
 调研日期：2026-08-29
 调研目标：确定一个可验证、可持续迭代的 AI 模拟人物系统的产品边界、技术路径与 MVP 架构。
 
-2026-08-29 补充范围：模拟对象明确为小说等虚构人物；图与文按给定要求分别生成并混排；MVP 需包含人物、参数、运行历史和版本管理面板；补充评估本机 OpenViking 的复用范围及 .NET 技术栈适配性。
+2026-08-29 补充范围：模拟对象明确为小说等虚构人物；图与文按给定要求分别生成并混排；最终支持 HTML、Markdown、Txt；MVP 需包含人物、参数、运行历史和版本管理面板；补充评估本机 OpenViking 的复用范围及 Nuxt、.NET 技术栈适配性。
 
 ## 关键问题
 
@@ -14,7 +14,7 @@
 5. MVP 应保留哪些能力，哪些复杂训练或多智能体能力应推迟？
 6. 管理面板如何管理人物、参数、图文块、版本和运行历史？
 7. 本机 OpenViking 应承担哪些职责，哪些数据必须留在业务数据库？
-8. .NET 是否适合作为主后端，还是应改用 TypeScript 或 Python？
+8. Nuxt 全栈是否足以承担管理面板与业务接口，什么情况下才需要独立 .NET 或 Python 后端？
 
 ## 发现
 
@@ -114,7 +114,7 @@
 
 - 本机 `~/.openviking/ovcli.conf` 指向内网服务 `http://10.10.10.1:20000`，使用 API Key；`/api/v1/system/status` 返回 HTTP 200、状态 `ok`，且服务已经初始化。
 - 当前机器没有独立 `ov` CLI 或本地 OpenViking 进程；Codex/OpenCode 通过插件内的 stdio→HTTP MCP 代理和 REST 接口访问内网服务。
-- 服务公开 OpenAPI 3.1 文档：113 条路径、136 个操作，并包含检索、会话和快照接口。这意味着 .NET 可直接使用 `HttpClient`，也可从 `openapi.json` 生成客户端，不需要 Python 中间层。
+- 服务公开 OpenAPI 3.1 文档：113 条路径、136 个操作，并包含检索、会话和快照接口。这意味着 TypeScript 可直接使用官方 SDK，.NET 也可使用 `HttpClient` 或从 `openapi.json` 生成客户端，均不需要 Python 中间层。
 - OpenViking MCP 在本次会话中被环境拒绝，但自动注入和 REST 状态接口正常；项目运行时应使用 REST，而不是把 Codex 插件的 MCP 代理当业务依赖。
 
 来源：本机部署与只读状态接口，核验日期 2026-08-29。
@@ -144,13 +144,22 @@
 - 文本模型、图像模型和 OpenViking 均可通过 HTTP 调用；流式输出、取消、超时、重试、后台执行和结构化日志在 .NET 中没有能力缺口。
 - .NET 的主要代价是 OpenViking 没有官方 SDK，以及部分前沿 AI 框架先提供 Python/TypeScript 版本。前者用小型强类型 HTTP 适配器解决；后者对当前“调用模型接口 + 业务编排”的范围不构成阻塞。
 - 不建议一次生成完整的 136 操作 OpenViking 客户端并暴露给业务层。MVP 只实现资源写入/读取、`find`、会话消息、提交和任务查询等实际使用接口，以隔离上游变化。
-- 结论：后端使用 .NET 10 合适；管理前端仍建议使用 TypeScript 技术栈。只有未来必须在进程内运行 Python 模型、训练管线或 Python 独占的图像算法时，才增加独立 Python 工作进程。
+- 结论：.NET 10 能胜任本项目，但“能胜任”不等于 MVP 必须拆出独立后端。只有复杂领域规则、企业级权限、后台任务治理或团队能力明确偏向 .NET 时，它才比 Nuxt 全栈更有优势。
+
+### 检索 10：Nuxt 全栈与 Nitro 的适用边界
+
+- Nuxt 4 通过 Nitro 提供文件式服务端路由、中间件、流式响应、SSE/WebSocket、运行时配置和 Node.js 部署能力，足以实现本项目的管理面板与业务 API；不存在“Nuxt 只能做前端”的能力缺口。
+- OpenViking 提供官方 TypeScript SDK。使用 Nuxt 后，服务端可直接接入该 SDK，前后端共享类型和校验模式，MVP 的代码量与部署单元都少于“.NET 后端 + TypeScript 前端”。
+- 文本和图片生成属于可持续数十秒到数分钟、需要重试和恢复的任务，不能绑定普通 HTTP 请求生命周期。API 只创建持久化任务并返回 `runId`；独立 Node Worker 从 PostgreSQL 领取任务、写入进度和结果。
+- Nitro Tasks 与 Database 当前仍是实验能力，不应作为核心业务任务的唯一可靠性基础。MVP 继续使用 PostgreSQL 作为事实源，并通过成熟的 PostgreSQL 驱动或 ORM 访问；任务状态不能只保存在进程内存、Nitro KV 或 Serverless 平台的临时状态中。
+- 部署应采用长期运行的 Node.js 服务：一个 Nuxt/Nitro Web 进程和一个同仓库 Worker 进程。二者可先部署在同一主机或 Compose 中，但不能把耗时生成 Worker 部署为短生命周期的 Serverless/Edge 函数。
+- 结论：Nuxt 4 全栈是当前 MVP 首选；.NET 10 是业务复杂度或组织约束上升后的备选，Python 仅用于未来确有需要的模型训练、本地推理或 Python 独占算法。
 
 ### 阶段摘要（第 3 轮）
 
 1. Mem0 不再进入技术方案；本机 OpenViking承担人物资料、样例和已确认反馈的语义存储与检索。
 2. PostgreSQL 仍是人物版本、参数、任务、图文块、反馈和历史记录的唯一业务事实源，OpenViking 是内部检索适配器。
-3. 推荐技术组合为“.NET 10 模块化单体后端 + TypeScript 管理前端 + PostgreSQL + OpenViking + 对象存储”，不增加 Python 中间层。
+3. 推荐技术组合调整为“Nuxt 4 全栈应用 + 独立 Node Worker + PostgreSQL + OpenViking + 对象存储”，不增加 .NET 或 Python 中间层。
 
 ## 来源列表
 
@@ -164,6 +173,9 @@
 | Hugging Face TRL v1.0.0 | https://github.com/huggingface/trl | 2026-08-29 访问 | 高 |
 | OpenViking 官方仓库 | https://github.com/volcengine/OpenViking | 2026-08-28 提交，2026-08-29 访问 | 高 |
 | 本机 OpenViking 状态与 OpenAPI | http://10.10.10.1:20000 | 2026-08-29 核验 | 高 |
+| Nuxt 4 服务端与部署文档 | https://nuxt.com/docs/4.x/guide/directory-structure/server | 持续更新，2026-08-29 访问 | 高 |
+| Nitro Tasks 文档 | https://nitro.build/docs/tasks | 持续更新，2026-08-29 访问 | 高 |
+| Nitro Database 文档 | https://nitro.build/docs/database | 持续更新，2026-08-29 访问 | 高 |
 
 ## 调研结论
 
@@ -171,7 +183,7 @@
 
 该项目应定义为“虚构人物模拟、图文创作与管理系统”，而不是聊天机器人或自动改 Prompt 工具。它接收虚构人物版本与任务要求，返回可解释的兴趣判断，或按给定块结构分别生成文字与图片并组装；反馈先成为不可变事件，再转化为候选人物版本，通过回归评测后发布。
 
-MVP 允许管理多个独立人物，每次运行只选择一个人物版本。首期只支持一种最终载体（建议 HTML），但载体内部允许按任务动态定义文字块、图片块和顺序。多人物互动、多智能体协商和人物专属模型训练暂不进入 MVP。
+MVP 允许管理多个独立人物，每次运行只选择一个人物版本。最终载体支持 HTML、Markdown、Txt，但三者共享同一套有序图文块和生成流程，只在导出阶段使用不同渲染器。多人物互动、多智能体协商和人物专属模型训练暂不进入 MVP。
 
 ### 核心闭环
 
@@ -235,7 +247,15 @@ ArtifactDocument
 └── ImageBlock
 ```
 
-任务先生成 `DocumentSpec`，每个块包含类型、角色、要求、依赖和验收规则；文字块与图片块分别生成，最后由渲染器按顺序组装。失败或反馈只重生成目标块，保留其他已确认块。MVP 支持一种最终载体，但块数量和顺序可以由每次任务要求决定。
+`DocumentSpec` 是“文档规格”，即正式生成前的结构化图文计划，不是最终文档。它把用户的自然语言要求转换为有序块列表；每个块包含类型、用途、内容要求、格式要求、依赖和验收规则。例如“标题文字块→导语文字块→主图块→正文文字块”。它可以由用户逐块指定，也可以由系统先生成后交给用户编辑确认。
+
+文字块与图片块按照 `DocumentSpec` 分别生成，再形成统一的 `ArtifactDocument`。失败或反馈只重生成目标块，保留其他已确认块。导出阶段使用三个渲染适配器，不维护三套生成逻辑：
+
+| 载体 | 图文表达方式 | 导出约定 |
+|---|---|---|
+| HTML | 使用语义标签与 `<img>` 完整混排 | 单个 HTML 或 HTML 加资源目录 |
+| Markdown | 使用 Markdown 图片链接按块顺序混排 | `.md` 加独立图片文件 |
+| Txt | 纯文本无法嵌入图片，使用可读的图片引用或占位行 | `.txt` 加独立图片文件 |
 
 ### 管理面板
 
@@ -314,34 +334,37 @@ ArtifactDocument
 - `ParameterProfile`：分层参数及版本；
 - `FeedbackEvent`：原始反馈，不可覆盖；
 - `GenerationRun`：人物、模板、参数快照、模型、提示、证据、状态和成本；
+- `DocumentSpec`：生成前的有序图文块计划与验收规则；
 - `ArtifactDocument`：一次运行的有序图文文档；
 - `ArtifactBlock`：文字块或图片块的规格与当前选中结果；
 - `BlockAttempt`：单块每次生成的输入、输出、错误与成本；
 - `RevisionProposal`：候选差异、理由、证据与风险等级；
 - `EvalCase` / `EvalRun`：固定测试及版本对比结果；
 
-MVP 使用一个 ASP.NET Core 10 模块化单体、PostgreSQL、本机 OpenViking 和兼容 S3 的对象存储即可；OpenViking 已承担语义检索，不再引入 `pgvector`。耗时生成先用数据库任务表和后台执行器，出现明确吞吐瓶颈后再引入队列。
+MVP 使用一个 Nuxt 4 全栈应用、一个同仓库独立 Node Worker、PostgreSQL、本机 OpenViking 和兼容 S3 的对象存储即可；OpenViking 已承担语义检索，不再引入 `pgvector`。耗时生成先用数据库任务表和 Worker，出现明确吞吐瓶颈后再引入专用队列。
 
 ### 技术栈结论
 
 | 方案 | 优点 | 主要代价 | 结论 |
 |---|---|---|---|
-| .NET 后端 + TypeScript 前端 | 业务状态、后台任务、历史查询可靠；管理前端生态成熟 | OpenViking 需自建小型 HTTP 适配器 | 推荐 |
-| 全 TypeScript | 可直接使用官方 OpenViking SDK，前后端同语言 | 复杂业务状态和长任务仍需自行严谨设计 | 可选 |
+| Nuxt 4 全栈 + Node Worker | 管理端与 API 同仓库；共享类型；直接使用 OpenViking TypeScript SDK；部署单元少 | 必须把长任务状态持久化，并独立运行 Worker | MVP 首选 |
+| .NET 后端 + Nuxt 前端 | 复杂业务状态、企业权限和后台任务治理成熟 | 两套语言与部署；OpenViking 需自建小型 HTTP 适配器 | 复杂度上升后备选 |
 | Python 后端 | AI 与本地模型生态最完整，官方 OpenViking SDK 成熟 | 管理系统、强类型领域状态和长期维护不占优势 | 仅在本地模型成为核心时选择 |
 | .NET + Blazor | 单一语言，内部管理页面开发直接 | 富文本、拖放混排和前端组件选择相对受限 | 面板简单时可选 |
 
-后端选 .NET 10 是合适的，不需要为了 OpenViking SDK 改用 Python。管理面板若需要富文本、拖放图文块和复杂预览，优先选择 Vue/Nuxt 或 React；若面板只做表单、表格和固定预览，可选择 Blazor。Python 只在后续训练、离线评测或本地图像算法确有需要时作为独立工作进程加入。
+直接使用 Nuxt 是更小且完整的 MVP 方案。此前推荐 .NET 是基于长期业务系统可靠性的保守选择，不是因为 Nuxt 缺少服务端接口。当前业务规模没有足够理由承担双技术栈成本；先使用 Nuxt 4 + Nitro API，并把耗时生成放入独立 Node Worker。Python 只在后续训练、离线评测或本地图像算法确有需要时作为独立工作进程加入。
 
 ```text
-TypeScript 管理前端
-        │
-        v
-ASP.NET Core 10 模块化单体
-   ├── PostgreSQL：业务事实、版本、任务、反馈、历史
+Nuxt 4 全栈应用
+   ├── 管理面板：人物、参数、创作、反馈、历史
+   ├── Nitro API：校验请求、创建任务、查询状态、审批发布
+   └── PostgreSQL：业务事实、版本、任务、反馈、历史
+              │
+              v
+独立 Node Worker
    ├── OpenViking：人物资料、样例、已确认记忆的检索
    ├── 文本/图片模型：生成适配器
-   └── 对象存储：原始文件、图片、导出产物
+   └── 对象存储：原始文件、图片、HTML/Markdown/Txt 与图片产物
 ```
 
 ### 黑盒接口建议
@@ -376,7 +399,7 @@ ASP.NET Core 10 模块化单体
 1. 定义人物、版本、资料、参数和运行状态机；验证：生效版本、参数来源和运行快照可追溯。
 2. 建立管理面板骨架与人物资料同步；验证：可管理多个人物并确认 OpenViking 同步状态。
 3. 完成兴趣判断垂直链；验证：固定样本输出结构化分数、置信度和证据。
-4. 完成 `DocumentSpec`、文字块、图片块和 HTML 组装；验证：单块可重试且不覆盖历史。
+4. 完成 `DocumentSpec`、文字块、图片块和 HTML/Markdown/Txt 渲染；验证：单块可重试且不覆盖历史，三个载体由同一文档生成。
 5. 完成反馈到候选差异；验证：反馈不会直接修改生效人物。
 6. 完成固定回归集和发布门禁；验证：V1/V2 可重复对比，失败版本不可发布。
 7. 积累 A/B 偏好对；验证：数据包含 prompt、chosen、rejected、人物版本和反馈原因，再决定是否微调。
@@ -389,7 +412,7 @@ ASP.NET Core 10 模块化单体
 - 不把全部对话永久塞进上下文；
 - 不用单一向量相似度判断兴趣；
 - 不允许无证据的人格推断覆盖已确认事实；
-- 不在 MVP 同时支持 HTML、Word、PDF、长图等多种最终载体；
+- 不在 MVP 支持 Word、PDF、长图等额外最终载体；
 - 不修改 OpenViking Studio 承载本项目业务面板；
 - 不生成并依赖完整 OpenViking 客户端。
 
@@ -409,7 +432,8 @@ ASP.NET Core 10 模块化单体
 3. PersonaGym 将人物评测拆成五种行为维度，并专门测试未定义属性捏造；单一“相似度”无法证明人物一致性。（来源：PersonaGym）
 4. DPO 需要 chosen/rejected 偏好对；零散自然语言反馈不能直接等同于可训练数据。（来源：Hugging Face TRL）
 5. OpenViking 已覆盖资源解析、语义检索、会话记忆抽取和变更差异，但不承担人物业务版本与运行历史。（来源：OpenViking 官方仓库与本机接口）
-6. OpenViking 没有官方 .NET SDK，但提供完整 OpenAPI 3.1 与 HTTP 接口，因此不影响 ASP.NET Core 作为主后端。（来源：OpenViking 官方仓库与本机 OpenAPI）
+6. OpenViking 提供官方 TypeScript SDK，同时提供完整 OpenAPI 3.1 与 HTTP 接口；Nuxt 与 .NET 都能接入，但 Nuxt 的集成成本更低。（来源：OpenViking 官方仓库与本机 OpenAPI）
+7. Nuxt 4 通过 Nitro 提供服务端路由、流式响应和长期运行的 Node.js 部署能力；本项目仍需把耗时生成拆到持久化任务与独立 Worker，不能依赖普通 HTTP 请求或短生命周期 Serverless 实例。（来源：Nuxt、Nitro 官方文档）
 
 ### 来源可信度说明
 
@@ -417,14 +441,11 @@ ASP.NET Core 10 模块化单体
 
 ### 待确认问题
 
-- 首个最终载体是 HTML、Markdown、Word、PDF 还是长图？建议先选 HTML。
-- 图文块由用户逐块明确指定，还是由系统先根据自然语言要求生成可编辑的 `DocumentSpec`？
+- 文档规格采用“用户逐块指定”“系统自动生成”还是“系统生成后用户可编辑确认（推荐）”？
 - 初始人物资料来自完整原著、人物小传、对白摘录、已有同人样例，还是这些资料的组合？
-- 人物版本采用全人工发布、全自动发布，还是推荐的混合发布？
 - 图像模型使用云端接口还是本地部署？这些选择会改变隐私、成本和部署方案。
-- 管理前端选择 TypeScript（Vue/Nuxt 或 React）还是 Blazor？
 
 ### 写作建议
 
-- 若继续形成产品需求文档，应先锁定首个最终载体、块规格生成方式和反馈发布策略，再写用户故事与验收用例。
+- 若继续形成产品需求文档，应先锁定文档规格生成方式、初始人物资料范围和图像模型部署方式，再写用户故事与验收用例。
 - 技术设计文档应以人物状态机、参数覆盖规则、图文块模型和运行历史为主，不从模型框架选型开始。
