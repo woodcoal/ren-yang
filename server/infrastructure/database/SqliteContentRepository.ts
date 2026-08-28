@@ -1,0 +1,550 @@
+import type { Database as BetterSqliteDatabase } from 'better-sqlite3'
+import { personaSnapshotSchema, worldSnapshotSchema } from '../../../shared/schemas/content'
+import type {
+  PersonaRecord,
+  PersonaVersionRecord,
+  SourceChunkRecord,
+  SourceMaterialRecord,
+  WorldRecord,
+  WorldVersionRecord,
+} from '../../domain/content/ContentModels'
+import type {
+  ContentRepository,
+  CreatePersonaRecord,
+  CreateSourceRecord,
+  CreateWorldRecord,
+  SourceLinkRecord,
+} from '../../ports/ContentRepository'
+
+/** 使用 SQLite 短事务实现人物、世界、版本、资料和 FTS5 数据访问。 */
+export class SqliteContentRepository implements ContentRepository {
+  /**
+   * 创建内容仓储。
+   * @param client 已启用外键和迁移的 SQLite 客户端。
+   */
+  constructor(private readonly client: BetterSqliteDatabase) {}
+
+  /** @returns 按更新时间倒序的人物记录。 */
+  async listPersonas(): Promise<PersonaRecord[]> {
+    return this.client.prepare('SELECT * FROM personas ORDER BY updated_at DESC, id').all().map(toPersona)
+  }
+
+  /** @param id 人物 UUID。 @returns 找到的人物或 null。 */
+  async findPersona(id: string): Promise<PersonaRecord | null> {
+    const row = this.client.prepare('SELECT * FROM personas WHERE id = ?').get(id)
+    return row ? toPersona(row) : null
+  }
+
+  /**
+   * 原子创建人物、初始候选版本和资料关联。
+   * @param record 已验证的创建命令。
+   * @returns 无返回值。
+   */
+  async createPersona(record: CreatePersonaRecord): Promise<void> {
+    this.client.transaction(() => {
+      this.client.prepare(`
+        INSERT INTO personas (id, world_id, name, origin, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(record.id, record.worldId, record.name, record.origin, record.timestamp, record.timestamp)
+      this.client.prepare(`
+        INSERT INTO persona_versions (
+          id, persona_id, parent_version_id, status, snapshot_json, change_summary, created_at
+        ) VALUES (?, ?, NULL, 'candidate', ?, ?, ?)
+      `).run(record.versionId, record.id, JSON.stringify(record.snapshot), record.changeSummary, record.timestamp)
+      const link = this.client.prepare(`
+        INSERT INTO persona_sources (persona_id, source_id, priority) VALUES (?, ?, 100)
+      `)
+      for (const sourceId of record.sourceIds) {
+        link.run(record.id, sourceId)
+      }
+    })()
+  }
+
+  /** @param id 人物 UUID。 @param name 新名称。 @param worldId 新世界 UUID 或 null。 @param timestamp 更新时间。 @returns 是否更新。 */
+  async updatePersona(id: string, name: string, worldId: string | null, timestamp: number): Promise<boolean> {
+    return this.client.prepare(`
+      UPDATE personas SET name = ?, world_id = ?, updated_at = ? WHERE id = ?
+    `).run(name, worldId, timestamp, id).changes === 1
+  }
+
+  /** @param personaId 人物 UUID。 @returns 新版本在前的版本记录。 */
+  async listPersonaVersions(personaId: string): Promise<PersonaVersionRecord[]> {
+    return this.client.prepare(`
+      SELECT * FROM persona_versions WHERE persona_id = ? ORDER BY created_at DESC, id DESC
+    `).all(personaId).map(toPersonaVersion)
+  }
+
+  /** @param id 版本 UUID。 @returns 找到的版本或 null。 */
+  async findPersonaVersion(id: string): Promise<PersonaVersionRecord | null> {
+    const row = this.client.prepare('SELECT * FROM persona_versions WHERE id = ?').get(id)
+    return row ? toPersonaVersion(row) : null
+  }
+
+  /** @param version 完整候选版本。 @returns 无返回值。 */
+  async createPersonaVersion(version: PersonaVersionRecord): Promise<void> {
+    this.client.prepare(`
+      INSERT INTO persona_versions (
+        id, persona_id, parent_version_id, status, snapshot_json, change_summary, published_at, created_at
+      ) VALUES (?, ?, ?, 'candidate', ?, ?, NULL, ?)
+    `).run(
+      version.id,
+      version.personaId,
+      version.parentVersionId,
+      JSON.stringify(version.snapshot),
+      version.changeSummary,
+      version.createdAt,
+    )
+  }
+
+  /** @param personaId 人物 UUID。 @param versionId 候选版本 UUID。 @param timestamp 发布时间。 @returns 仅当候选发布成功时为 true。 */
+  async publishPersonaVersion(personaId: string, versionId: string, timestamp: number): Promise<boolean> {
+    return this.client.transaction(() => {
+      const published = this.client.prepare(`
+        UPDATE persona_versions
+        SET status = 'published', published_at = ?
+        WHERE id = ? AND persona_id = ? AND status = 'candidate'
+      `).run(timestamp, versionId, personaId)
+      if (published.changes !== 1) {
+        return false
+      }
+      this.client.prepare(`
+        UPDATE personas SET active_version_id = ?, updated_at = ? WHERE id = ?
+      `).run(versionId, timestamp, personaId)
+      return true
+    })()
+  }
+
+  /** @param personaId 人物 UUID。 @param versionId 历史已发布版本 UUID。 @param timestamp 更新时间。 @returns 目标有效时为 true。 */
+  async rollbackPersona(personaId: string, versionId: string, timestamp: number): Promise<boolean> {
+    const result = this.client.prepare(`
+      UPDATE personas
+      SET active_version_id = ?, updated_at = ?
+      WHERE id = ? AND EXISTS (
+        SELECT 1 FROM persona_versions
+        WHERE id = ? AND persona_id = personas.id AND status = 'published'
+      )
+    `).run(versionId, timestamp, personaId, versionId)
+    return result.changes === 1
+  }
+
+  /** @param personaId 人物 UUID。 @returns 关联资料。 */
+  async listPersonaSources(personaId: string): Promise<SourceMaterialRecord[]> {
+    return this.client.prepare(`
+      SELECT source_materials.* FROM source_materials
+      INNER JOIN persona_sources ON persona_sources.source_id = source_materials.id
+      WHERE persona_sources.persona_id = ?
+      ORDER BY persona_sources.priority, source_materials.name
+    `).all(personaId).map(toSource)
+  }
+
+  /** @param personaId 人物 UUID。 @returns 删除的人物行数。 */
+  async deletePersona(personaId: string): Promise<number> {
+    return this.client.prepare('DELETE FROM personas WHERE id = ?').run(personaId).changes
+  }
+
+  /** @returns 按更新时间倒序的世界记录。 */
+  async listWorlds(): Promise<WorldRecord[]> {
+    return this.client.prepare('SELECT * FROM worlds ORDER BY updated_at DESC, id').all().map(toWorld)
+  }
+
+  /** @param id 世界 UUID。 @returns 找到的世界或 null。 */
+  async findWorld(id: string): Promise<WorldRecord | null> {
+    const row = this.client.prepare('SELECT * FROM worlds WHERE id = ?').get(id)
+    return row ? toWorld(row) : null
+  }
+
+  /**
+   * 原子创建世界和初始候选版本。
+   * @param record 已验证的创建命令。
+   * @returns 无返回值。
+   */
+  async createWorld(record: CreateWorldRecord): Promise<void> {
+    this.client.transaction(() => {
+      this.client.prepare(`
+        INSERT INTO worlds (id, name, summary, created_at, updated_at) VALUES (?, ?, ?, ?, ?)
+      `).run(record.id, record.name, record.summary, record.timestamp, record.timestamp)
+      this.client.prepare(`
+        INSERT INTO world_versions (
+          id, world_id, parent_version_id, status, snapshot_json, change_summary, created_at
+        ) VALUES (?, ?, NULL, 'candidate', ?, ?, ?)
+      `).run(record.versionId, record.id, JSON.stringify(record.snapshot), record.changeSummary, record.timestamp)
+    })()
+  }
+
+  /** @param id 世界 UUID。 @param name 新名称。 @param summary 新摘要。 @param timestamp 更新时间。 @returns 是否更新。 */
+  async updateWorld(id: string, name: string, summary: string, timestamp: number): Promise<boolean> {
+    return this.client.prepare(`
+      UPDATE worlds SET name = ?, summary = ?, updated_at = ? WHERE id = ?
+    `).run(name, summary, timestamp, id).changes === 1
+  }
+
+  /** @param worldId 世界 UUID。 @returns 新版本在前的版本记录。 */
+  async listWorldVersions(worldId: string): Promise<WorldVersionRecord[]> {
+    return this.client.prepare(`
+      SELECT * FROM world_versions WHERE world_id = ? ORDER BY created_at DESC, id DESC
+    `).all(worldId).map(toWorldVersion)
+  }
+
+  /** @param id 版本 UUID。 @returns 找到的世界版本或 null。 */
+  async findWorldVersion(id: string): Promise<WorldVersionRecord | null> {
+    const row = this.client.prepare('SELECT * FROM world_versions WHERE id = ?').get(id)
+    return row ? toWorldVersion(row) : null
+  }
+
+  /** @param version 完整候选版本。 @returns 无返回值。 */
+  async createWorldVersion(version: WorldVersionRecord): Promise<void> {
+    this.client.prepare(`
+      INSERT INTO world_versions (
+        id, world_id, parent_version_id, status, snapshot_json, change_summary, published_at, created_at
+      ) VALUES (?, ?, ?, 'candidate', ?, ?, NULL, ?)
+    `).run(
+      version.id,
+      version.worldId,
+      version.parentVersionId,
+      JSON.stringify(version.snapshot),
+      version.changeSummary,
+      version.createdAt,
+    )
+  }
+
+  /** @param worldId 世界 UUID。 @param versionId 候选版本 UUID。 @param timestamp 发布时间。 @returns 仅当候选发布成功时为 true。 */
+  async publishWorldVersion(worldId: string, versionId: string, timestamp: number): Promise<boolean> {
+    return this.client.transaction(() => {
+      const published = this.client.prepare(`
+        UPDATE world_versions
+        SET status = 'published', published_at = ?
+        WHERE id = ? AND world_id = ? AND status = 'candidate'
+      `).run(timestamp, versionId, worldId)
+      if (published.changes !== 1) {
+        return false
+      }
+      this.client.prepare(`
+        UPDATE worlds SET active_version_id = ?, updated_at = ? WHERE id = ?
+      `).run(versionId, timestamp, worldId)
+      return true
+    })()
+  }
+
+  /** @param worldId 世界 UUID。 @param versionId 已发布版本 UUID。 @param timestamp 更新时间。 @returns 目标有效时为 true。 */
+  async rollbackWorld(worldId: string, versionId: string, timestamp: number): Promise<boolean> {
+    const result = this.client.prepare(`
+      UPDATE worlds
+      SET active_version_id = ?, updated_at = ?
+      WHERE id = ? AND EXISTS (
+        SELECT 1 FROM world_versions
+        WHERE id = ? AND world_id = worlds.id AND status = 'published'
+      )
+    `).run(versionId, timestamp, worldId, versionId)
+    return result.changes === 1
+  }
+
+  /** @param worldId 世界 UUID。 @returns 直接关联该世界的人物。 */
+  async listWorldPersonas(worldId: string): Promise<PersonaRecord[]> {
+    return this.client.prepare(`
+      SELECT * FROM personas WHERE world_id = ? ORDER BY name, id
+    `).all(worldId).map(toPersona)
+  }
+
+  /** @param worldId 世界 UUID。 @returns 直接关联该世界的资料。 */
+  async listWorldSources(worldId: string): Promise<SourceMaterialRecord[]> {
+    return this.client.prepare(`
+      SELECT source_materials.* FROM source_materials
+      INNER JOIN world_sources ON world_sources.source_id = source_materials.id
+      WHERE world_sources.world_id = ?
+      ORDER BY world_sources.priority, source_materials.name
+    `).all(worldId).map(toSource)
+  }
+
+  /** @param worldId 世界 UUID。 @returns 删除的世界行数；人物外键仍会阻止错误级联。 */
+  async deleteWorld(worldId: string): Promise<number> {
+    return this.client.prepare('DELETE FROM worlds WHERE id = ?').run(worldId).changes
+  }
+
+  /** @returns 按更新时间倒序的资料记录。 */
+  async listSources(): Promise<SourceMaterialRecord[]> {
+    return this.client.prepare('SELECT * FROM source_materials ORDER BY updated_at DESC, id').all().map(toSource)
+  }
+
+  /** @param id 资料 UUID。 @returns 找到的资料或 null。 */
+  async findSource(id: string): Promise<SourceMaterialRecord | null> {
+    const row = this.client.prepare('SELECT * FROM source_materials WHERE id = ?').get(id)
+    return row ? toSource(row) : null
+  }
+
+  /**
+   * 原子写入资料和全部切片；迁移中的触发器同步 FTS5。
+   * @param record 已验证并处理的资料命令。
+   * @returns 无返回值。
+   */
+  async createSource(record: CreateSourceRecord): Promise<void> {
+    this.client.transaction(() => {
+      this.client.prepare(`
+        INSERT INTO source_materials (
+          id, name, role, input_type, content_hash, content_text, original_file_path, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        record.id,
+        record.name,
+        record.role,
+        record.inputType,
+        record.contentHash,
+        record.contentText,
+        record.originalFilePath,
+        record.timestamp,
+        record.timestamp,
+      )
+      insertChunks(this.client, record.chunks)
+    })()
+  }
+
+  /**
+   * 原子替换资料可变正文和切片，同时保留资料标识与创建时间。
+   * @param record 替换命令。
+   * @returns 资料存在并更新时为 true。
+   */
+  async replaceSource(record: CreateSourceRecord): Promise<boolean> {
+    return this.client.transaction(() => {
+      const updated = this.client.prepare(`
+        UPDATE source_materials
+        SET name = ?, role = ?, input_type = ?, content_hash = ?, content_text = ?,
+            original_file_path = ?, updated_at = ?
+        WHERE id = ?
+      `).run(
+        record.name,
+        record.role,
+        record.inputType,
+        record.contentHash,
+        record.contentText,
+        record.originalFilePath,
+        record.timestamp,
+        record.id,
+      )
+      if (updated.changes !== 1) {
+        return false
+      }
+      this.client.prepare('DELETE FROM source_chunks WHERE source_id = ?').run(record.id)
+      insertChunks(this.client, record.chunks)
+      return true
+    })()
+  }
+
+  /** @param sourceId 资料 UUID。 @returns 按序号排序的切片。 */
+  async listSourceChunks(sourceId: string): Promise<SourceChunkRecord[]> {
+    return this.client.prepare(`
+      SELECT * FROM source_chunks WHERE source_id = ? ORDER BY ordinal
+    `).all(sourceId).map(toChunk)
+  }
+
+  /** @param sourceId 资料 UUID。 @returns 人物和世界关联的统一视图。 */
+  async listSourceLinks(sourceId: string): Promise<SourceLinkRecord[]> {
+    const rows = this.client.prepare(`
+      SELECT 'persona' AS target_type, personas.id AS target_id, personas.name AS target_name,
+             persona_sources.priority AS priority
+      FROM persona_sources
+      INNER JOIN personas ON personas.id = persona_sources.persona_id
+      WHERE persona_sources.source_id = ?
+      UNION ALL
+      SELECT 'world' AS target_type, worlds.id AS target_id, worlds.name AS target_name,
+             world_sources.priority AS priority
+      FROM world_sources
+      INNER JOIN worlds ON worlds.id = world_sources.world_id
+      WHERE world_sources.source_id = ?
+      ORDER BY priority, target_name
+    `).all(sourceId, sourceId)
+    return rows.map((row) => {
+      const value = asRow(row)
+      const targetType = value.target_type as 'persona' | 'world'
+      const targetId = String(value.target_id)
+      return {
+        id: `${targetType}:${targetId}`,
+        targetType,
+        targetId,
+        targetName: String(value.target_name),
+        priority: Number(value.priority),
+      }
+    })
+  }
+
+  /**
+   * 新建关联；重复关联只更新优先级。
+   * @param sourceId 资料 UUID。
+   * @param targetType 人物或世界。
+   * @param targetId 目标 UUID。
+   * @param priority 非负整数优先级。
+   * @returns 无返回值。
+   */
+  async linkSource(sourceId: string, targetType: 'persona' | 'world', targetId: string, priority: number): Promise<void> {
+    const targetColumn = targetType === 'persona' ? 'persona_id' : 'world_id'
+    const table = targetType === 'persona' ? 'persona_sources' : 'world_sources'
+    this.client.prepare(`
+      INSERT INTO ${table} (${targetColumn}, source_id, priority) VALUES (?, ?, ?)
+      ON CONFLICT (${targetColumn}, source_id) DO UPDATE SET priority = excluded.priority
+    `).run(targetId, sourceId, priority)
+  }
+
+  /**
+   * 解析并删除受控复合关联标识。
+   * @param sourceId 资料 UUID。
+   * @param linkId `persona:UUID` 或 `world:UUID`。
+   * @returns 删除的关联行数。
+   */
+  async unlinkSource(sourceId: string, linkId: string): Promise<number> {
+    const separator = linkId.indexOf(':')
+    const targetType = linkId.slice(0, separator)
+    const targetId = linkId.slice(separator + 1)
+    if (separator < 1 || (targetType !== 'persona' && targetType !== 'world')) {
+      return 0
+    }
+    const targetColumn = targetType === 'persona' ? 'persona_id' : 'world_id'
+    const table = targetType === 'persona' ? 'persona_sources' : 'world_sources'
+    return this.client.prepare(`
+      DELETE FROM ${table} WHERE source_id = ? AND ${targetColumn} = ?
+    `).run(sourceId, targetId).changes
+  }
+
+  /** @param sourceId 资料 UUID。 @returns 删除的资料行数；外键会阻止删除仍有关联的资料。 */
+  async deleteSource(sourceId: string): Promise<number> {
+    return this.client.prepare('DELETE FROM source_materials WHERE id = ?').run(sourceId).changes
+  }
+
+  /**
+   * 使用安全短语形式执行 FTS5 查询，返回独立正文和哈希供后续复制为证据快照。
+   * @param query 用户检索词。
+   * @param limit 最大结果数。
+   * @returns 相关性排序的切片。
+   */
+  async searchSourceChunks(query: string, limit: number): Promise<SourceChunkRecord[]> {
+    if ([...query].length < 3) {
+      return this.client.prepare(`
+        SELECT * FROM source_chunks
+        WHERE heading LIKE ? ESCAPE '\\' OR content LIKE ? ESCAPE '\\'
+        ORDER BY source_id, ordinal
+        LIMIT ?
+      `).all(toLikePattern(query), toLikePattern(query), limit).map(toChunk)
+    }
+    const phrase = query.replaceAll('"', '""')
+    return this.client.prepare(`
+      SELECT source_chunks.* FROM source_chunks_fts
+      INNER JOIN source_chunks ON source_chunks.rowid = source_chunks_fts.rowid
+      WHERE source_chunks_fts MATCH ?
+      ORDER BY bm25(source_chunks_fts), source_chunks.source_id, source_chunks.ordinal
+      LIMIT ?
+    `).all(`"${phrase}"`, limit).map(toChunk)
+  }
+}
+
+/**
+ * 转义 SQLite LIKE 通配符，保证短检索词按字面匹配。
+ * @param value 用户检索词。
+ * @returns 带首尾通配符的安全参数值。
+ */
+function toLikePattern(value: string): string {
+  return `%${value.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_')}%`
+}
+
+/**
+ * 在当前事务中批量写入资料切片。
+ * @param client SQLite 客户端。
+ * @param chunks 顺序稳定的切片。
+ * @returns 无返回值。
+ */
+function insertChunks(client: BetterSqliteDatabase, chunks: SourceChunkRecord[]): void {
+  const insert = client.prepare(`
+    INSERT INTO source_chunks (id, source_id, ordinal, heading, content, content_hash)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `)
+  for (const chunk of chunks) {
+    insert.run(chunk.id, chunk.sourceId, chunk.ordinal, chunk.heading, chunk.content, chunk.contentHash)
+  }
+}
+
+/** @param value 未知 SQLite 行。 @returns 可按列名读取的行。 */
+function asRow(value: unknown): Record<string, unknown> {
+  return value as Record<string, unknown>
+}
+
+/** @param value SQLite 人物行。 @returns 领域人物记录。 */
+function toPersona(value: unknown): PersonaRecord {
+  const row = asRow(value)
+  return {
+    id: String(row.id),
+    worldId: row.world_id === null ? null : String(row.world_id),
+    name: String(row.name),
+    origin: row.origin as PersonaRecord['origin'],
+    activeVersionId: row.active_version_id === null ? null : String(row.active_version_id),
+    createdAt: Number(row.created_at),
+    updatedAt: Number(row.updated_at),
+  }
+}
+
+/** @param value SQLite 人物版本行。 @returns 已校验快照的领域版本。 */
+function toPersonaVersion(value: unknown): PersonaVersionRecord {
+  const row = asRow(value)
+  return {
+    id: String(row.id),
+    personaId: String(row.persona_id),
+    parentVersionId: row.parent_version_id === null ? null : String(row.parent_version_id),
+    status: row.status as PersonaVersionRecord['status'],
+    snapshot: personaSnapshotSchema.parse(JSON.parse(String(row.snapshot_json))),
+    changeSummary: String(row.change_summary),
+    publishedAt: row.published_at === null ? null : Number(row.published_at),
+    createdAt: Number(row.created_at),
+  }
+}
+
+/** @param value SQLite 世界行。 @returns 领域世界记录。 */
+function toWorld(value: unknown): WorldRecord {
+  const row = asRow(value)
+  return {
+    id: String(row.id),
+    name: String(row.name),
+    summary: String(row.summary),
+    activeVersionId: row.active_version_id === null ? null : String(row.active_version_id),
+    createdAt: Number(row.created_at),
+    updatedAt: Number(row.updated_at),
+  }
+}
+
+/** @param value SQLite 世界版本行。 @returns 已校验快照的领域版本。 */
+function toWorldVersion(value: unknown): WorldVersionRecord {
+  const row = asRow(value)
+  return {
+    id: String(row.id),
+    worldId: String(row.world_id),
+    parentVersionId: row.parent_version_id === null ? null : String(row.parent_version_id),
+    status: row.status as WorldVersionRecord['status'],
+    snapshot: worldSnapshotSchema.parse(JSON.parse(String(row.snapshot_json))),
+    changeSummary: String(row.change_summary),
+    publishedAt: row.published_at === null ? null : Number(row.published_at),
+    createdAt: Number(row.created_at),
+  }
+}
+
+/** @param value SQLite 资料行。 @returns 领域资料记录。 */
+function toSource(value: unknown): SourceMaterialRecord {
+  const row = asRow(value)
+  return {
+    id: String(row.id),
+    name: String(row.name),
+    role: row.role as SourceMaterialRecord['role'],
+    inputType: row.input_type as SourceMaterialRecord['inputType'],
+    contentHash: String(row.content_hash),
+    contentText: String(row.content_text),
+    originalFilePath: row.original_file_path === null ? null : String(row.original_file_path),
+    createdAt: Number(row.created_at),
+    updatedAt: Number(row.updated_at),
+  }
+}
+
+/** @param value SQLite 切片行。 @returns 领域切片记录。 */
+function toChunk(value: unknown): SourceChunkRecord {
+  const row = asRow(value)
+  return {
+    id: String(row.id),
+    sourceId: String(row.source_id),
+    ordinal: Number(row.ordinal),
+    heading: row.heading === null ? null : String(row.heading),
+    content: String(row.content),
+    contentHash: String(row.content_hash),
+  }
+}

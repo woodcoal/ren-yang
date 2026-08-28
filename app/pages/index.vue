@@ -1,79 +1,42 @@
 <script setup lang="ts">
-import { computed, shallowRef } from 'vue'
+import { computed } from 'vue'
 import type { ApiResponse } from '#shared/types/api'
+import type { PersonaSummary, SourceSummary, WorldSummary } from '#shared/types/content'
 import type { SystemHealthResult } from '#shared/types/system'
 import SystemStatusPanel from '../components/system/SystemStatusPanel.vue'
-import { getApiErrorMessage } from '../utils/apiError'
 
-const logoutLoading = shallowRef(false)
-const logoutError = shallowRef<string | null>(null)
-
-const { data, error, refresh } = await useFetch<ApiResponse<SystemHealthResult>>('/api/v1/system/health')
-const health = computed(() => data.value?.data ?? null)
-
-/**
- * 清除会话并返回登录页。
- * @returns 请求和导航完成时结束。
- */
-async function logout(): Promise<void> {
-  logoutLoading.value = true
-  logoutError.value = null
-  try {
-    await $fetch('/api/v1/auth/logout', { method: 'POST' })
-    await navigateTo('/login')
-  }
-  catch (requestError: unknown) {
-    logoutError.value = getApiErrorMessage(requestError, '退出失败，请重试')
-  }
-  finally {
-    logoutLoading.value = false
-  }
-}
+const [{ data: healthData, error, refresh }, { data: personaData }, { data: worldData }, { data: sourceData }] = await Promise.all([
+  useFetch<ApiResponse<SystemHealthResult>>('/api/v1/system/health'),
+  useFetch<ApiResponse<PersonaSummary[]>>('/api/v1/personas'),
+  useFetch<ApiResponse<WorldSummary[]>>('/api/v1/worlds'),
+  useFetch<ApiResponse<SourceSummary[]>>('/api/v1/sources'),
+])
+const health = computed(() => healthData.value?.data ?? null)
+const counts = computed(() => ({
+  personas: personaData.value?.data.length ?? 0,
+  worlds: worldData.value?.data.length ?? 0,
+  sources: sourceData.value?.data.length ?? 0,
+}))
 </script>
 
 <template>
-  <main class="min-h-screen bg-default">
-    <header class="border-b border-default">
-      <UContainer class="flex h-16 items-center justify-between gap-4">
-        <div>
-          <h1 class="font-semibold text-highlighted">
-            人样
-          </h1>
-          <p class="text-xs text-muted">
-            创作工作台
-          </p>
-        </div>
-        <div class="flex items-center gap-2">
-          <UColorModeButton aria-label="切换颜色模式" />
-          <UButton
-            color="neutral"
-            variant="ghost"
-            :loading="logoutLoading"
-            @click="logout"
-          >
-            退出
-          </UButton>
-        </div>
-      </UContainer>
-    </header>
+  <div>
+    <ContentPageHeader
+      title="仪表盘"
+      description="本地人物事实源、版本和资料索引概览。"
+    />
 
-    <UContainer class="py-8">
-      <div class="mb-6">
-        <h2 class="text-2xl font-semibold text-highlighted">
-          工程基线
-        </h2>
-        <p class="mt-1 text-sm text-muted">
-          阶段一仅提供登录、SQLite 和内部 Worker；人物业务将在下一阶段实现。
-        </p>
-      </div>
-
-      <UAlert
-        v-if="logoutError"
-        class="mb-6"
-        color="error"
-        title="退出失败"
-        :description="logoutError"
-      />
+    <div class="mb-7 grid gap-4 sm:grid-cols-3">
+      <UCard v-for="item in [
+        { label: '人物', value: counts.personas, to: '/personas' },
+        { label: '世界设定', value: counts.worlds, to: '/worlds' },
+        { label: '资料', value: counts.sources, to: '/sources' },
+      ]" :key="item.label">
+        <p class="text-sm text-muted">{{ item.label }}</p>
+        <p class="mt-2 text-3xl font-semibold text-highlighted">{{ item.value }}</p>
+        <UButton :to="item.to" color="neutral" variant="link" class="mt-2 px-0">进入管理</UButton>
+      </UCard>
+    </div>
 
       <SystemStatusPanel
         v-if="health"
@@ -87,6 +50,5 @@ async function logout(): Promise<void> {
         :description="error ? '健康检查请求失败' : '健康检查没有返回数据'"
         :actions="[{ label: '重试', onClick: () => refresh() }]"
       />
-    </UContainer>
-  </main>
+  </div>
 </template>

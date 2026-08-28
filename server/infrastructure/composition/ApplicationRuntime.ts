@@ -1,6 +1,7 @@
 import type { H3Event } from 'h3'
 import { AuthenticationApplicationService } from '../../application/authentication/AuthenticationApplicationService'
 import { AdministratorMaintenanceApplicationService } from '../../application/authentication/AdministratorMaintenanceApplicationService'
+import { ContentApplicationService } from '../../application/content/ContentApplicationService'
 import type { RequestApplicationServices } from '../../application/RequestApplicationServices'
 import { SystemApplicationService } from '../../application/system/SystemApplicationService'
 import { WorkerApplicationService } from '../../application/tasks/WorkerApplicationService'
@@ -8,10 +9,14 @@ import { InternalWorker } from '../../worker/InternalWorker'
 import { H3RequestSecurity } from '../authentication/H3RequestSecurity'
 import { NuxtAuthenticationSession } from '../authentication/NuxtAuthenticationSession'
 import { ScryptPasswordHasher } from '../authentication/ScryptPasswordHasher'
+import { LocalSourceFileStorage } from '../content/LocalSourceFileStorage'
+import { NodeSourceContentProcessor } from '../content/NodeSourceContentProcessor'
 import { DrizzleAdministratorRepository } from '../database/DrizzleAdministratorRepository'
+import { SqliteContentRepository } from '../database/SqliteContentRepository'
 import { SqliteDatabase } from '../database/SqliteDatabase'
 import { SqliteTaskJobRepository } from '../database/SqliteTaskJobRepository'
 import { SystemClock } from '../system/SystemClock'
+import { SystemIdentifierGenerator } from '../system/SystemIdentifierGenerator'
 import { UnsupportedTaskHandler } from '../tasks/UnsupportedTaskHandler'
 
 /** 应用运行时组合配置。 */
@@ -36,6 +41,8 @@ export class ApplicationRuntime {
   private readonly passwordHasher = new ScryptPasswordHasher()
   /** 系统时钟适配器。 */
   private readonly clock = new SystemClock()
+  /** 请求间可安全共享的内容应用服务。 */
+  private readonly contentService: ContentApplicationService
   /** 进程内 Worker。 */
   private readonly worker: InternalWorker
   /** 请求间可安全共享的系统应用服务。 */
@@ -51,6 +58,14 @@ export class ApplicationRuntime {
       migrationsDirectory: options.migrationsDirectory,
     })
     this.administratorRepository = new DrizzleAdministratorRepository(this.sqlite.db)
+    const identifiers = new SystemIdentifierGenerator()
+    this.contentService = new ContentApplicationService({
+      repository: new SqliteContentRepository(this.sqlite.getClient()),
+      identifiers,
+      clock: this.clock,
+      sourceProcessor: new NodeSourceContentProcessor(identifiers),
+      sourceFiles: new LocalSourceFileStorage(options.dataDirectory),
+    })
 
     const workerService = new WorkerApplicationService({
       taskJobRepository: new SqliteTaskJobRepository(this.sqlite.getClient()),
@@ -88,6 +103,7 @@ export class ApplicationRuntime {
         requestSecurity: new H3RequestSecurity(event),
         clock: this.clock,
       }),
+      content: this.contentService,
       system: this.systemService,
     }
   }
