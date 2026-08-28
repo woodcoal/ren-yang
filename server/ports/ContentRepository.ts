@@ -88,6 +88,22 @@ export interface CreateSourceRecord {
   timestamp: number
 }
 
+/** 删除人物时会一并删除的运行历史数量。 */
+export interface PersonaRunHistoryStatistics {
+  /** 运行数量。 */
+  runs: number
+  /** 持久任务数量。 */
+  tasks: number
+  /** 证据快照数量。 */
+  evidenceSnapshots: number
+  /** 文档规格修订数量。 */
+  documentSpecs: number
+  /** 产物块数量。 */
+  artifactBlocks: number
+  /** 块尝试数量。 */
+  blockAttempts: number
+}
+
 /** 阶段二人物、世界与资料的持久化端口。 */
 export interface ContentRepository {
   /** @returns 按更新时间倒序的人物。 */
@@ -110,6 +126,8 @@ export interface ContentRepository {
   rollbackPersona(personaId: string, versionId: string, timestamp: number): Promise<boolean>
   /** @param personaId 人物标识。 @returns 关联资料。 */
   listPersonaSources(personaId: string): Promise<SourceMaterialRecord[]>
+  /** @param personaId 人物标识。 @returns 将随人物删除的运行历史统计。 */
+  getPersonaRunHistoryStatistics(personaId: string): Promise<PersonaRunHistoryStatistics>
   /** @param personaId 人物标识。 @returns 永久删除的人物行数。 */
   deletePersona(personaId: string): Promise<number>
 

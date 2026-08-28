@@ -292,7 +292,7 @@ function formatTime(timestamp: number): string {
             <template #header><h2 class="font-semibold text-error">永久删除</h2></template>
             <UButton v-if="!deletionImpact" color="error" variant="soft" :loading="actionLoading" @click="inspectDeletion">查看删除影响</UButton>
             <div v-else class="space-y-3 text-sm">
-              <p>将删除 {{ deletionImpact.versionCount }} 个版本，并解除 {{ deletionImpact.relatedSources.length }} 项资料关系。共享资料和世界不会删除。</p>
+              <p>将删除 {{ deletionImpact.versionCount }} 个版本、{{ deletionImpact.runHistory.runs }} 次运行、{{ deletionImpact.runHistory.tasks }} 个任务、{{ deletionImpact.runHistory.evidenceSnapshots }} 个证据快照、{{ deletionImpact.runHistory.documentSpecs }} 个规格修订、{{ deletionImpact.runHistory.artifactBlocks }} 个产物块及 {{ deletionImpact.runHistory.blockAttempts }} 次块尝试，并解除 {{ deletionImpact.relatedSources.length }} 项资料关系。共享资料和世界不会删除。</p>
               <label class="flex items-start gap-2"><input v-model="deletionConfirmed" type="checkbox" class="mt-1"><span>我确认永久删除此人物，恢复只能依赖事先备份。</span></label>
               <UButton color="error" :disabled="!deletionConfirmed" :loading="actionLoading" @click="deletePersona">永久删除人物</UButton>
             </div>

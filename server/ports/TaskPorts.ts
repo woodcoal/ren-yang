@@ -26,13 +26,27 @@ export interface TaskJobRepository {
   markSucceeded(jobId: string, timestamp: number): Promise<void>
 
   /**
-   * 标记任务执行失败。
+   * 标记任务本次执行失败；可重试且尚有次数时重新排队。
    * @param jobId 任务标识。
    * @param error 已脱敏的失败原因。
    * @param timestamp 失败时间。
-   * @returns 无返回值。
+   * @param retryable 本次错误是否允许自动重试。
+   * @returns 是否已重新排队等待重试。
    */
-  markFailed(jobId: string, error: string, timestamp: number): Promise<void>
+  markFailed(jobId: string, error: string, timestamp: number, retryable: boolean): Promise<boolean>
+}
+
+/** 任务处理器用于向 Worker 传递安全错误和重试语义。 */
+export class TaskExecutionError extends Error {
+  /**
+   * 创建任务执行异常。
+   * @param message 可持久化的已脱敏错误。
+   * @param retryable 是否允许任务级自动重试。
+   */
+  constructor(message: string, public readonly retryable: boolean) {
+    super(message)
+    this.name = 'TaskExecutionError'
+  }
 }
 
 /** 任务业务处理端口。 */

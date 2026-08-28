@@ -1,5 +1,6 @@
 import type { Clock } from '../../ports/Clock'
 import type { TaskHandler, TaskJobRepository } from '../../ports/TaskPorts'
+import { TaskExecutionError } from '../../ports/TaskPorts'
 
 /** Worker 应用服务的依赖。 */
 export interface WorkerApplicationServiceDependencies {
@@ -59,7 +60,8 @@ export class WorkerApplicationService {
     }
     catch (error: unknown) {
       const safeError = error instanceof Error ? error.message : '未知任务错误'
-      await this.dependencies.taskJobRepository.markFailed(job.id, safeError, this.dependencies.clock.now())
+      const retryable = error instanceof TaskExecutionError ? error.retryable : true
+      await this.dependencies.taskJobRepository.markFailed(job.id, safeError, this.dependencies.clock.now(), retryable)
       return { handled: true, jobId: job.id, succeeded: false }
     }
   }

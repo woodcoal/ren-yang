@@ -12,6 +12,11 @@ export default defineNuxtConfig({
   },
   runtimeConfig: {
     dataDirectory: './data',
+    textModel: {
+      endpoint: '',
+      apiKey: '',
+      model: '',
+    },
     session: {
       password: process.env.NUXT_SESSION_PASSWORD || '',
       maxAge: 60 * 60 * 24 * 7,

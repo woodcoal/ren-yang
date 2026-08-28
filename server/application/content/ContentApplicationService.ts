@@ -220,9 +220,10 @@ export class ContentApplicationService {
    */
   async getPersonaDeletionImpact(personaId: string): Promise<DeletionImpact> {
     await this.requirePersona(personaId)
-    const [versions, sources] = await Promise.all([
+    const [versions, sources, runHistory] = await Promise.all([
       this.dependencies.repository.listPersonaVersions(personaId),
       this.dependencies.repository.listPersonaSources(personaId),
+      this.dependencies.repository.getPersonaRunHistoryStatistics(personaId),
     ])
     return {
       resourceType: 'persona',
@@ -233,6 +234,7 @@ export class ContentApplicationService {
       relatedWorlds: [],
       relatedSources: sources.map(source => ({ id: source.id, name: source.name })),
       versionCount: versions.length,
+      runHistory,
       files: [],
     }
   }
@@ -403,6 +405,7 @@ export class ContentApplicationService {
       relatedWorlds: [],
       relatedSources: sources.map(source => ({ id: source.id, name: source.name })),
       versionCount: versions.length,
+      runHistory: { runs: 0, tasks: 0, evidenceSnapshots: 0, documentSpecs: 0, artifactBlocks: 0, blockAttempts: 0 },
       files: [],
     }
   }
@@ -582,6 +585,7 @@ export class ContentApplicationService {
         .map(link => ({ id: link.targetId, name: link.targetName })),
       relatedSources: [],
       versionCount: 0,
+      runHistory: { runs: 0, tasks: 0, evidenceSnapshots: 0, documentSpecs: 0, artifactBlocks: 0, blockAttempts: 0 },
       files: source.originalFilePath ? [source.originalFilePath] : [],
     }
   }

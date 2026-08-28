@@ -108,4 +108,24 @@ describe('SqliteDatabase', () => {
       { id: 'retry-job', status: 'queued' },
     ])
   })
+
+  it('执行失败时只在可重试且尚有次数时重新排队', async () => {
+    const current = createDatabase()
+    const client = current.getClient()
+    client.prepare(`
+      INSERT INTO task_jobs (id, type, status, attempt_count, max_attempts, created_at, updated_at)
+      VALUES ('job-retry', 'test', 'queued', 0, 2, 500, 500)
+    `).run()
+    const repository = new SqliteTaskJobRepository(client)
+
+    await repository.claimNext(1_000, 100)
+    await expect(repository.markFailed('job-retry', '临时失败', 1_001, true)).resolves.toBe(true)
+    expect(client.prepare(`SELECT status, attempt_count FROM task_jobs WHERE id = 'job-retry'`).get())
+      .toEqual({ status: 'queued', attempt_count: 1 })
+
+    await repository.claimNext(2_000, 100)
+    await expect(repository.markFailed('job-retry', '再次失败', 2_001, true)).resolves.toBe(false)
+    expect(client.prepare(`SELECT status, attempt_count FROM task_jobs WHERE id = 'job-retry'`).get())
+      .toEqual({ status: 'failed', attempt_count: 2 })
+  })
 })

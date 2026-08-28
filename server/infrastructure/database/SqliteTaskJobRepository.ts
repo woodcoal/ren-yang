@@ -27,19 +27,54 @@ export class SqliteTaskJobRepository implements TaskJobRepository {
    * @returns 处理的过期任务数量。
    */
   async recoverExpired(timestamp: number): Promise<number> {
-    const result = this.client.prepare(`
-      UPDATE task_jobs
-      SET status = CASE WHEN attempt_count < max_attempts THEN 'queued' ELSE 'failed' END,
-          lease_until = NULL,
-          heartbeat_at = NULL,
-          last_error = CASE
-            WHEN attempt_count < max_attempts THEN '进程退出导致租约过期，任务已重新排队'
-            ELSE '进程退出导致租约过期，且任务已达到最大尝试次数'
-          END,
-          updated_at = ?
-      WHERE status = 'running' AND lease_until IS NOT NULL AND lease_until <= ?
-    `).run(timestamp, timestamp)
-    return result.changes
+    return this.client.transaction(() => {
+      const canceled = this.client.prepare(`
+        SELECT DISTINCT run_id FROM task_jobs
+        WHERE status = 'cancel_requested' AND lease_until IS NOT NULL AND lease_until <= ? AND run_id IS NOT NULL
+      `).all(timestamp) as Array<{ run_id: string }>
+      for (const item of canceled) {
+        this.client.prepare(`
+          UPDATE generation_runs SET status = 'canceled', completed_at = ?, updated_at = ?
+          WHERE id = ? AND status IN ('planning', 'queued', 'running')
+        `).run(timestamp, timestamp, item.run_id)
+      }
+      const canceledJobs = this.client.prepare(`
+        UPDATE task_jobs SET status = 'canceled', lease_until = NULL, heartbeat_at = NULL,
+          last_error = '进程退出时任务已请求取消', updated_at = ?
+        WHERE status = 'cancel_requested' AND lease_until IS NOT NULL AND lease_until <= ?
+      `).run(timestamp, timestamp)
+      const expired = this.client.prepare(`
+        SELECT run_id, type, attempt_count, max_attempts FROM task_jobs
+        WHERE status = 'running' AND lease_until IS NOT NULL AND lease_until <= ? AND run_id IS NOT NULL
+      `).all(timestamp) as Array<{ run_id: string, type: string, attempt_count: number, max_attempts: number }>
+      for (const item of expired) {
+        if (item.attempt_count < item.max_attempts) {
+          this.client.prepare(`
+            UPDATE generation_runs SET status = ?, updated_at = ? WHERE id = ? AND status = 'running'
+          `).run(item.type === 'plan_document' ? 'planning' : 'queued', timestamp, item.run_id)
+        }
+        else {
+          this.client.prepare(`
+            UPDATE generation_runs SET status = 'failed', error_code = 'TASK_LEASE_EXHAUSTED',
+              error_message = '任务执行中断且已达到最大尝试次数', completed_at = ?, updated_at = ?
+            WHERE id = ? AND status = 'running'
+          `).run(timestamp, timestamp, item.run_id)
+        }
+      }
+      const recoveredJobs = this.client.prepare(`
+        UPDATE task_jobs
+        SET status = CASE WHEN attempt_count < max_attempts THEN 'queued' ELSE 'failed' END,
+            lease_until = NULL,
+            heartbeat_at = NULL,
+            last_error = CASE
+              WHEN attempt_count < max_attempts THEN '进程退出导致租约过期，任务已重新排队'
+              ELSE '进程退出导致租约过期，且任务已达到最大尝试次数'
+            END,
+            updated_at = ?
+        WHERE status = 'running' AND lease_until IS NOT NULL AND lease_until <= ?
+      `).run(timestamp, timestamp)
+      return canceledJobs.changes + recoveredJobs.changes
+    }).immediate()
   }
 
   /**
@@ -106,17 +141,26 @@ export class SqliteTaskJobRepository implements TaskJobRepository {
   }
 
   /**
-   * 标记运行中任务失败并保存已脱敏原因。
+   * 保存本次失败；可重试且次数未耗尽时重新排队，否则终止。
    * @param jobId 任务标识。
    * @param error 已脱敏错误。
    * @param timestamp 失败时间。
-   * @returns 无返回值。
+   * @param retryable 本次错误是否允许自动重试。
+   * @returns 是否已重新排队。
    */
-  async markFailed(jobId: string, error: string, timestamp: number): Promise<void> {
-    this.client.prepare(`
-      UPDATE task_jobs
-      SET status = 'failed', lease_until = NULL, heartbeat_at = NULL, last_error = ?, updated_at = ?
-      WHERE id = ? AND status = 'running'
-    `).run(error.slice(0, 1000), timestamp, jobId)
+  async markFailed(jobId: string, error: string, timestamp: number, retryable: boolean): Promise<boolean> {
+    return this.client.transaction(() => {
+      const job = this.client.prepare(`
+        SELECT attempt_count, max_attempts FROM task_jobs WHERE id = ? AND status = 'running'
+      `).get(jobId) as { attempt_count: number, max_attempts: number } | undefined
+      if (!job) return false
+      const willRetry = retryable && job.attempt_count < job.max_attempts
+      this.client.prepare(`
+        UPDATE task_jobs
+        SET status = ?, lease_until = NULL, heartbeat_at = NULL, last_error = ?, updated_at = ?
+        WHERE id = ? AND status = 'running'
+      `).run(willRetry ? 'queued' : 'failed', error.slice(0, 1000), timestamp, jobId)
+      return willRetry
+    }).immediate()
   }
 }

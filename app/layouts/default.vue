@@ -5,9 +5,13 @@ import { getApiErrorMessage } from '../utils/apiError'
 /** 工作台主导航。 */
 const navigation = [
   { label: '仪表盘', to: '/', icon: 'i-lucide-layout-dashboard' },
+  { label: '创作', to: '/workbench', icon: 'i-lucide-sparkles' },
+  { label: '运行历史', to: '/history', icon: 'i-lucide-history' },
   { label: '人物', to: '/personas', icon: 'i-lucide-users' },
   { label: '世界设定', to: '/worlds', icon: 'i-lucide-globe-2' },
   { label: '资料', to: '/sources', icon: 'i-lucide-library' },
+  { label: '格式模板', to: '/templates', icon: 'i-lucide-layout-template' },
+  { label: '参数方案', to: '/parameter-profiles', icon: 'i-lucide-sliders-horizontal' },
 ]
 
 const logoutLoading = shallowRef(false)

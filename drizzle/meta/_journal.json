@@ -15,6 +15,13 @@
       "when": 1787953301049,
       "tag": "0001_jazzy_rage",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1787954984977,
+      "tag": "0002_premium_nocturne",
+      "breakpoints": true
     }
   ]
 }

@@ -232,6 +232,21 @@ export interface DeletionImpact {
   relatedSources: Array<{ id: string, name: string }>
   /** 将被级联删除的版本数。 */
   versionCount: number
+  /** 人物删除时将被级联删除的运行历史统计。 */
+  runHistory: {
+    /** 运行数量。 */
+    runs: number
+    /** 持久任务数量。 */
+    tasks: number
+    /** 证据快照数量。 */
+    evidenceSnapshots: number
+    /** 文档规格修订数量。 */
+    documentSpecs: number
+    /** 产物块数量。 */
+    artifactBlocks: number
+    /** 块尝试数量。 */
+    blockAttempts: number
+  }
   /** 将被删除的本地文件相对路径。 */
   files: string[]
 }

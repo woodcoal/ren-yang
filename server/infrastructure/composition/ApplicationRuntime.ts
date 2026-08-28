@@ -2,6 +2,7 @@ import type { H3Event } from 'h3'
 import { AuthenticationApplicationService } from '../../application/authentication/AuthenticationApplicationService'
 import { AdministratorMaintenanceApplicationService } from '../../application/authentication/AdministratorMaintenanceApplicationService'
 import { ContentApplicationService } from '../../application/content/ContentApplicationService'
+import { GenerationApplicationService } from '../../application/generation/GenerationApplicationService'
 import type { RequestApplicationServices } from '../../application/RequestApplicationServices'
 import { SystemApplicationService } from '../../application/system/SystemApplicationService'
 import { WorkerApplicationService } from '../../application/tasks/WorkerApplicationService'
@@ -11,13 +12,15 @@ import { NuxtAuthenticationSession } from '../authentication/NuxtAuthenticationS
 import { ScryptPasswordHasher } from '../authentication/ScryptPasswordHasher'
 import { LocalSourceFileStorage } from '../content/LocalSourceFileStorage'
 import { NodeSourceContentProcessor } from '../content/NodeSourceContentProcessor'
+import { SqliteContextProvider } from '../context/SqliteContextProvider'
 import { DrizzleAdministratorRepository } from '../database/DrizzleAdministratorRepository'
 import { SqliteContentRepository } from '../database/SqliteContentRepository'
+import { SqliteRunRepository } from '../database/SqliteRunRepository'
 import { SqliteDatabase } from '../database/SqliteDatabase'
 import { SqliteTaskJobRepository } from '../database/SqliteTaskJobRepository'
 import { SystemClock } from '../system/SystemClock'
 import { SystemIdentifierGenerator } from '../system/SystemIdentifierGenerator'
-import { UnsupportedTaskHandler } from '../tasks/UnsupportedTaskHandler'
+import { OpenAiCompatibleTextModel } from '../models/OpenAiCompatibleTextModel'
 
 /** 应用运行时组合配置。 */
 export interface ApplicationRuntimeOptions {
@@ -29,6 +32,15 @@ export interface ApplicationRuntimeOptions {
   workerPollIntervalMs?: number
   /** Worker 单任务租约长度。 */
   workerLeaseDurationMs?: number
+  /** OpenAI-compatible 文本模型配置。 */
+  textModel?: {
+    /** Chat Completions 完整接口 URL。 */
+    endpoint: string
+    /** 仓库外访问凭据。 */
+    apiKey: string
+    /** 供应商模型名称。 */
+    model: string
+  }
 }
 
 /** 唯一组合根，负责连接基础设施适配器与应用服务。 */
@@ -43,6 +55,8 @@ export class ApplicationRuntime {
   private readonly clock = new SystemClock()
   /** 请求间可安全共享的内容应用服务。 */
   private readonly contentService: ContentApplicationService
+  /** 请求与 Worker 共用的生成应用服务。 */
+  private readonly generationService: GenerationApplicationService
   /** 进程内 Worker。 */
   private readonly worker: InternalWorker
   /** 请求间可安全共享的系统应用服务。 */
@@ -59,17 +73,28 @@ export class ApplicationRuntime {
     })
     this.administratorRepository = new DrizzleAdministratorRepository(this.sqlite.db)
     const identifiers = new SystemIdentifierGenerator()
+    const contentRepository = new SqliteContentRepository(this.sqlite.getClient())
+    const sourceProcessor = new NodeSourceContentProcessor(identifiers)
     this.contentService = new ContentApplicationService({
-      repository: new SqliteContentRepository(this.sqlite.getClient()),
+      repository: contentRepository,
       identifiers,
       clock: this.clock,
-      sourceProcessor: new NodeSourceContentProcessor(identifiers),
+      sourceProcessor,
       sourceFiles: new LocalSourceFileStorage(options.dataDirectory),
+    })
+    this.generationService = new GenerationApplicationService({
+      runs: new SqliteRunRepository(this.sqlite.getClient()),
+      content: contentRepository,
+      context: new SqliteContextProvider(this.sqlite.getClient()),
+      model: new OpenAiCompatibleTextModel(options.textModel ?? { endpoint: '', apiKey: '', model: '' }),
+      identifiers,
+      clock: this.clock,
+      sourceProcessor,
     })
 
     const workerService = new WorkerApplicationService({
       taskJobRepository: new SqliteTaskJobRepository(this.sqlite.getClient()),
-      taskHandler: new UnsupportedTaskHandler(),
+      taskHandler: this.generationService,
       clock: this.clock,
       leaseDurationMs: options.workerLeaseDurationMs ?? 60_000,
     })
@@ -104,6 +129,7 @@ export class ApplicationRuntime {
         clock: this.clock,
       }),
       content: this.contentService,
+      generation: this.generationService,
       system: this.systemService,
     }
   }

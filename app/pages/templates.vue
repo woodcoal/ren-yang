@@ -1,0 +1,71 @@
+<script setup lang="ts">
+import { computed, reactive, shallowRef } from 'vue'
+import type { FormSubmitEvent } from '@nuxt/ui'
+import { createFormatTemplateSchema, type CreateFormatTemplateInput } from '#shared/schemas/generation'
+import type { ApiResponse } from '#shared/types/api'
+import type { FormatTemplateView } from '#shared/types/generation'
+import { getApiErrorMessage } from '../utils/apiError'
+
+const { data, error, refresh } = await useFetch<ApiResponse<FormatTemplateView[]>>('/api/v1/format-templates')
+const templates = computed(() => data.value?.data ?? [])
+const loading = shallowRef(false)
+const actionError = shallowRef<string | null>(null)
+const form = reactive<CreateFormatTemplateInput>({
+  name: '',
+  spec: { guidance: '', minimumBlocks: 1, maximumBlocks: 8 },
+})
+
+/** @param event Nuxt UI 已通过共享 Schema 校验的提交事件。 @returns 创建模板新版本并刷新列表。 */
+async function createTemplate(event: FormSubmitEvent<CreateFormatTemplateInput>): Promise<void> {
+  loading.value = true
+  actionError.value = null
+  try {
+    await $fetch('/api/v1/format-templates', { method: 'POST', body: event.data })
+    form.name = ''
+    form.spec.guidance = ''
+    await refresh()
+  }
+  catch (requestError: unknown) {
+    actionError.value = getApiErrorMessage(requestError, '格式模板创建失败')
+  }
+  finally {
+    loading.value = false
+  }
+}
+
+/** @param timestamp UTC Unix 毫秒。 @returns 本地日期时间。 */
+function formatTime(timestamp: number): string { return new Date(timestamp).toLocaleString('zh-CN') }
+</script>
+
+<template>
+  <div>
+    <ContentPageHeader title="格式模板" description="模板只定义文档结构，不包含人物个性、模型密钥或具体资料。" />
+    <div class="grid gap-6 xl:grid-cols-[26rem_minmax(0,1fr)]">
+      <UCard>
+        <template #header><h2 class="font-semibold text-highlighted">创建模板版本</h2></template>
+        <UAlert v-if="actionError" class="mb-4" color="error" title="创建失败" :description="actionError" />
+        <UForm :schema="createFormatTemplateSchema" :state="form" class="space-y-4" @submit="createTemplate">
+          <UFormField name="name" label="模板名称" required><UInput v-model="form.name" class="w-full" /></UFormField>
+          <UFormField name="spec.guidance" label="结构与格式指导" required><UTextarea v-model="form.spec.guidance" :rows="7" class="w-full" /></UFormField>
+          <div class="grid grid-cols-2 gap-4">
+            <UFormField name="spec.minimumBlocks" label="最少块数" required><UInput v-model.number="form.spec.minimumBlocks" type="number" min="1" max="20" class="w-full" /></UFormField>
+            <UFormField name="spec.maximumBlocks" label="最多块数" required><UInput v-model.number="form.spec.maximumBlocks" type="number" min="1" max="20" class="w-full" /></UFormField>
+          </div>
+          <UButton type="submit" :loading="loading">创建不可变版本</UButton>
+        </UForm>
+      </UCard>
+
+      <div>
+        <UAlert v-if="error" color="error" title="模板加载失败" :actions="[{ label: '重试', onClick: () => refresh() }]" />
+        <div v-else-if="templates.length" class="space-y-3">
+          <UCard v-for="template in templates" :key="template.id">
+            <template #header><div class="flex justify-between gap-3"><h2 class="font-medium text-highlighted">{{ template.name }} v{{ template.version }}</h2><UBadge color="neutral" variant="subtle">{{ template.isActive ? '启用' : '停用' }}</UBadge></div></template>
+            <pre class="content-pre">{{ template.spec.guidance }}</pre>
+            <p class="mt-3 text-xs text-muted">{{ template.spec.minimumBlocks }}–{{ template.spec.maximumBlocks }} 个块 · {{ formatTime(template.createdAt) }}</p>
+          </UCard>
+        </div>
+        <UCard v-else><p class="py-8 text-center text-sm text-muted">尚无格式模板，创作运行会使用默认纯文本结构。</p></UCard>
+      </div>
+    </div>
+  </div>
+</template>

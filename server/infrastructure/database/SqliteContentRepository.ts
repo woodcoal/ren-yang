@@ -13,6 +13,7 @@ import type {
   CreatePersonaRecord,
   CreateSourceRecord,
   CreateWorldRecord,
+  PersonaRunHistoryStatistics,
   SourceLinkRecord,
 } from '../../ports/ContentRepository'
 
@@ -137,9 +138,55 @@ export class SqliteContentRepository implements ContentRepository {
     `).all(personaId).map(toSource)
   }
 
-  /** @param personaId 人物 UUID。 @returns 删除的人物行数。 */
+  /** @param personaId 人物 UUID。 @returns 将随人物删除的运行、任务、快照和产物统计。 */
+  async getPersonaRunHistoryStatistics(personaId: string): Promise<PersonaRunHistoryStatistics> {
+    const value = this.client.prepare(`
+      WITH persona_runs AS (
+        SELECT generation_runs.id FROM generation_runs
+        INNER JOIN persona_versions ON persona_versions.id = generation_runs.persona_version_id
+        WHERE persona_versions.persona_id = ?
+      ), persona_documents AS (
+        SELECT artifact_documents.id FROM artifact_documents
+        INNER JOIN persona_runs ON persona_runs.id = artifact_documents.run_id
+      ), persona_blocks AS (
+        SELECT artifact_blocks.id FROM artifact_blocks
+        INNER JOIN persona_documents ON persona_documents.id = artifact_blocks.document_id
+      )
+      SELECT
+        (SELECT COUNT(*) FROM persona_runs) AS runs,
+        (SELECT COUNT(*) FROM task_jobs INNER JOIN persona_runs ON persona_runs.id = task_jobs.run_id) AS tasks,
+        (SELECT COUNT(*) FROM evidence_snapshots INNER JOIN persona_runs ON persona_runs.id = evidence_snapshots.run_id) AS evidence_snapshots,
+        (SELECT COUNT(*) FROM document_specs INNER JOIN persona_runs ON persona_runs.id = document_specs.run_id) AS document_specs,
+        (SELECT COUNT(*) FROM persona_blocks) AS artifact_blocks,
+        (SELECT COUNT(*) FROM block_attempts INNER JOIN persona_blocks ON persona_blocks.id = block_attempts.block_id) AS block_attempts
+    `).get(personaId) as Record<string, number>
+    return {
+      runs: Number(value.runs),
+      tasks: Number(value.tasks),
+      evidenceSnapshots: Number(value.evidence_snapshots),
+      documentSpecs: Number(value.document_specs),
+      artifactBlocks: Number(value.artifact_blocks),
+      blockAttempts: Number(value.block_attempts),
+    }
+  }
+
+  /** @param personaId 人物 UUID。 @returns 删除的人物行数；运行和私有产物先在同一事务中删除。 */
   async deletePersona(personaId: string): Promise<number> {
-    return this.client.prepare('DELETE FROM personas WHERE id = ?').run(personaId).changes
+    return this.client.transaction(() => {
+      this.client.prepare(`
+        DELETE FROM artifact_documents WHERE run_id IN (
+          SELECT generation_runs.id FROM generation_runs
+          INNER JOIN persona_versions ON persona_versions.id = generation_runs.persona_version_id
+          WHERE persona_versions.persona_id = ?
+        )
+      `).run(personaId)
+      this.client.prepare(`
+        DELETE FROM generation_runs WHERE persona_version_id IN (
+          SELECT id FROM persona_versions WHERE persona_id = ?
+        )
+      `).run(personaId)
+      return this.client.prepare('DELETE FROM personas WHERE id = ?').run(personaId).changes
+    }).immediate()
   }
 
   /** @returns 按更新时间倒序的世界记录。 */

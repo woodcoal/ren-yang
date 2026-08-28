@@ -14,6 +14,11 @@ async function initializeApplicationRuntime(nitroApp: NitroApp): Promise<void> {
   const runtime = new ApplicationRuntime({
     dataDirectory: config.dataDirectory,
     migrationsDirectory: './drizzle',
+    textModel: {
+      endpoint: config.textModel.endpoint,
+      apiKey: config.textModel.apiKey,
+      model: config.textModel.model,
+    },
   })
   await runtime.start()
 

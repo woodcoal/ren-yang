@@ -3,6 +3,7 @@ import { WorkerApplicationService } from '../../server/application/tasks/WorkerA
 import type { TaskJob } from '../../server/domain/tasks/TaskJob'
 import type { Clock } from '../../server/ports/Clock'
 import type { TaskHandler, TaskJobRepository } from '../../server/ports/TaskPorts'
+import { TaskExecutionError } from '../../server/ports/TaskPorts'
 
 /** 测试使用的固定时钟。 */
 const clock: Clock = {
@@ -29,6 +30,8 @@ class ObservableTaskRepository implements TaskJobRepository {
   public succeeded = 0
   /** 失败标记次数。 */
   public failed = 0
+  /** 最近一次失败是否允许重试。 */
+  public lastRetryable: boolean | null = null
 
   /** @returns 固定恢复数量。 */
   async recoverExpired(): Promise<number> {
@@ -47,9 +50,11 @@ class ObservableTaskRepository implements TaskJobRepository {
     this.succeeded += 1
   }
 
-  /** @returns 无返回值。 */
-  async markFailed(): Promise<void> {
+  /** @param _jobId 任务标识。 @param _error 安全错误。 @param _timestamp 时间。 @param retryable 是否允许重试。 @returns 固定未重新排队。 */
+  async markFailed(_jobId: string, _error: string, _timestamp: number, retryable: boolean): Promise<boolean> {
     this.failed += 1
+    this.lastRetryable = retryable
+    return false
   }
 }
 
@@ -95,6 +100,18 @@ describe('WorkerApplicationService', () => {
     await expect(service.executeNext()).resolves.toEqual({ handled: true, jobId: 'job-1', succeeded: false })
     expect(repository.succeeded).toBe(0)
     expect(repository.failed).toBe(1)
+    expect(repository.lastRetryable).toBe(true)
+  })
+
+  it('将处理器声明的不可重试错误传给任务仓储', async () => {
+    const repository = new ObservableTaskRepository()
+    const service = createService(repository, {
+      /** @throws TaskExecutionError 模拟不可重试业务错误。 */
+      execute: async () => { throw new TaskExecutionError('输入不可恢复', false) },
+    })
+
+    await service.executeNext()
+    expect(repository.lastRetryable).toBe(false)
   })
 
   it('无任务时不调用任何完成写入', async () => {
