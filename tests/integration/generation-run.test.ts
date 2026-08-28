@@ -1,11 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
+import { unzipSync } from 'fflate'
 import { ContentApplicationService } from '../../server/application/content/ContentApplicationService'
 import { GenerationApplicationService } from '../../server/application/generation/GenerationApplicationService'
 import { WorkerApplicationService } from '../../server/application/tasks/WorkerApplicationService'
 import { LocalSourceFileStorage } from '../../server/infrastructure/content/LocalSourceFileStorage'
+import { LocalImageAssetStorage } from '../../server/infrastructure/content/LocalImageAssetStorage'
 import { NodeSourceContentProcessor } from '../../server/infrastructure/content/NodeSourceContentProcessor'
 import { SqliteContextProvider } from '../../server/infrastructure/context/SqliteContextProvider'
 import { SqliteContentRepository } from '../../server/infrastructure/database/SqliteContentRepository'
@@ -14,9 +16,12 @@ import { SqliteRunRepository } from '../../server/infrastructure/database/Sqlite
 import { SqliteTaskJobRepository } from '../../server/infrastructure/database/SqliteTaskJobRepository'
 import { SystemIdentifierGenerator } from '../../server/infrastructure/system/SystemIdentifierGenerator'
 import type { Clock } from '../../server/ports/Clock'
+import type { ImageModelPort, ImageModelRequest, ImageModelResponse } from '../../server/ports/ImageModelPort'
+import { ImageModelError } from '../../server/ports/ImageModelPort'
 import type { TextModelPort, TextModelRequest, TextModelResponse } from '../../server/ports/TextModelPort'
 import { TextModelError } from '../../server/ports/TextModelPort'
 import type { PersonaSnapshot } from '../../shared/types/content'
+import type { DocumentSpec } from '../../shared/schemas/generation'
 
 /** 测试固定时钟。 */
 class TestClock implements Clock {
@@ -91,6 +96,35 @@ class DisabledTextModel extends FixedTextModel {
   override getConfiguredModel(): null { return null }
 }
 
+/** 返回固定 PNG 或稳定失败的免费测试图片模型。 */
+class FixedImageModel implements ImageModelPort {
+  /** 图片调用次数。 */
+  public calls = 0
+  /** 是否让后续调用稳定失败。 */
+  public shouldFail = false
+  /** 最近一次视觉请求。 */
+  public lastRequest: ImageModelRequest | null = null
+
+  /** @returns 固定非敏感图片模型快照。 */
+  getConfiguredModel() {
+    return { provider: 'openai_compatible_images' as const, model: 'fixed-image-model', endpointOrigin: 'https://image.test' }
+  }
+
+  /** @param request 图片请求。 @returns 固定 PNG；失败开关开启时抛出不可重试错误。 */
+  async generate(request: ImageModelRequest): Promise<ImageModelResponse> {
+    this.calls += 1
+    this.lastRequest = request
+    if (this.shouldFail) throw new ImageModelError('IMAGE_OUTPUT_INVALID', '测试图片无效', false)
+    return { bytes: new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 1]), declaredMediaType: 'image/png' }
+  }
+}
+
+/** 明确关闭图片能力的测试模型。 */
+class DisabledImageModel extends FixedImageModel {
+  /** @returns 始终返回 null。 */
+  override getConfiguredModel(): null { return null }
+}
+
 /** @param structuredOutput 固定结构。 @returns 统一模型响应。 */
 function response(structuredOutput: unknown): TextModelResponse {
   return { structuredOutput, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 } }
@@ -119,6 +153,8 @@ let contentService: ContentApplicationService
 let generation: GenerationApplicationService
 let worker: WorkerApplicationService
 let model: FixedTextModel
+let imageModel: FixedImageModel
+let imageAssets: LocalImageAssetStorage
 let personaId: string
 let sourceId: string
 let testClock: TestClock
@@ -130,9 +166,10 @@ beforeEach(async () => {
   testClock = new TestClock()
   const contentRepository = new SqliteContentRepository(database.getClient())
   const processor = new NodeSourceContentProcessor(identifiers)
+  imageAssets = new LocalImageAssetStorage(directory)
   contentService = new ContentApplicationService({
     repository: contentRepository, identifiers, clock: testClock, sourceProcessor: processor,
-    sourceFiles: new LocalSourceFileStorage(directory),
+    sourceFiles: new LocalSourceFileStorage(directory), imageAssets,
   })
   const source = await contentService.createPastedSource({
     name: '学院原著事实', role: 'canon_fact', content: '魔法学院课程包含古代文献研究与档案整理。',
@@ -145,9 +182,11 @@ beforeEach(async () => {
   await contentService.publishPersonaVersion(persona.versions[0]!.id)
   personaId = persona.persona.id
   model = new FixedTextModel()
+  imageModel = new FixedImageModel()
   generation = new GenerationApplicationService({
     runs: new SqliteRunRepository(database.getClient()), content: contentRepository,
-    context: new SqliteContextProvider(database.getClient()), model, identifiers, clock: testClock, sourceProcessor: processor,
+    context: new SqliteContextProvider(database.getClient()), model, imageModel, imageAssets,
+    identifiers, clock: testClock, sourceProcessor: processor,
   })
   worker = new WorkerApplicationService({
     taskJobRepository: new SqliteTaskJobRepository(database.getClient()), taskHandler: generation,
@@ -176,7 +215,7 @@ describe('阶段三纯文本运行', () => {
       status: 'succeeded',
       result: { decision: 'interested', probability: 0.88, confidence: 0.82 },
       scene: { location: '图书馆' },
-      promptVersion: 'text-v1',
+      promptVersion: 'artifact-v2',
       contextProvider: 'sqlite_fts5',
     })
     expect(details.evidence.map(item => item.role)).toEqual(['user_setting', 'canon_fact'])
@@ -253,6 +292,8 @@ describe('阶段三纯文本运行', () => {
       content: new SqliteContentRepository(database.getClient()),
       context: new SqliteContextProvider(database.getClient()),
       model: new DisabledTextModel(),
+      imageModel: new DisabledImageModel(),
+      imageAssets,
       identifiers: new SystemIdentifierGenerator(),
       clock: new TestClock(),
       sourceProcessor: new NodeSourceContentProcessor(new SystemIdentifierGenerator()),
@@ -338,5 +379,166 @@ describe('阶段三纯文本运行', () => {
     await expect(generation.getRun(created.runId)).rejects.toMatchObject({ code: 'RESOURCE_NOT_FOUND' })
     await expect(generation.getRun(generated.runId)).rejects.toMatchObject({ code: 'RESOURCE_NOT_FOUND' })
     await expect(contentService.getSource(sourceId)).resolves.toMatchObject({ source: { id: sourceId } })
+  })
+})
+
+/** @param dependency 图片是否依赖标题。 @returns 阶段四固定图文规格。 */
+function mixedDocumentSpec(dependency = true): DocumentSpec {
+  return {
+    title: '学院观察',
+    summary: '图文介绍学院。',
+    purpose: '介绍课程',
+    constraints: ['不虚构资料事实'],
+    requestedFormats: ['html', 'markdown', 'txt'],
+    blocks: [
+      { key: 'title', type: 'text', role: 'heading', instruction: '写标题', acceptanceCriteria: ['简短'], dependsOn: [] },
+      {
+        key: 'hero', type: 'image', role: 'hero_image', instruction: '生成学院主图', acceptanceCriteria: ['清晰'], dependsOn: dependency ? ['title'] : [],
+        visualBrief: {
+          theme: '魔法学院', subject: '古代文献图书馆', composition: '横向居中构图', colorPalette: '深蓝与暖金',
+          texture: '纸张与木材', aspectRatio: '16:9', altText: '魔法学院古代文献图书馆', negativePrompt: '文字、水印',
+        },
+      },
+      { key: 'body', type: 'text', role: 'paragraph', instruction: '写正文', acceptanceCriteria: ['符合人物风格'], dependsOn: ['title'] },
+    ],
+  }
+}
+
+/** @param spec 待确认图文规格。 @returns 完成规划、修订、确认和执行后的运行标识。 */
+async function executeMixedRun(spec: DocumentSpec = mixedDocumentSpec()): Promise<string> {
+  const created = await generation.createGenerationRun({ personaId, requirement: '图文介绍学院课程', includeImages: true })
+  await worker.executeNext()
+  await generation.reviseDocumentSpec(created.runId, spec)
+  await generation.confirmDocumentSpec(created.runId)
+  await worker.executeNext()
+  return created.runId
+}
+
+describe('阶段四图文块与导出', () => {
+  it('图片模型未配置时拒绝图片运行但不影响纯文本运行', async () => {
+    const identifiers = new SystemIdentifierGenerator()
+    const disabled = new GenerationApplicationService({
+      runs: new SqliteRunRepository(database.getClient()),
+      content: new SqliteContentRepository(database.getClient()),
+      context: new SqliteContextProvider(database.getClient()),
+      model,
+      imageModel: new DisabledImageModel(),
+      imageAssets,
+      identifiers,
+      clock: testClock,
+      sourceProcessor: new NodeSourceContentProcessor(identifiers),
+    })
+
+    await expect(disabled.createGenerationRun({ personaId, requirement: '生成图文', includeImages: true }))
+      .rejects.toMatchObject({ code: 'CAPABILITY_DISABLED' })
+    await expect(disabled.createGenerationRun({ personaId, requirement: '仅生成文字', includeImages: false }))
+      .resolves.toMatchObject({ status: 'planning' })
+    expect(database.getClient().prepare('SELECT COUNT(*) AS count FROM generation_runs').get()).toEqual({ count: 1 })
+  })
+
+  it('生成固定 PNG 并从同一组选中尝试渲染及导出三种格式', async () => {
+    const runId = await executeMixedRun()
+    const details = await generation.getRun(runId)
+    const imageBlock = details.blocks.find(block => block.type === 'image')!
+    const asset = imageBlock.attempts[0]!.asset!
+
+    expect(details.run).toMatchObject({ status: 'succeeded', input: { includeImages: true }, imageModel: { model: 'fixed-image-model' } })
+    expect(imageModel.calls).toBe(1)
+    expect(imageModel.lastRequest).toMatchObject({ aspectRatio: '16:9' })
+    expect(imageModel.lastRequest?.prompt).toContain('古代文献图书馆')
+    expect(existsSync(resolve(directory, 'artifacts', runId, asset.relativePath))).toBe(true)
+    await expect(generation.getImageAsset(runId, asset.id)).resolves.toMatchObject({ mediaType: 'image/png' })
+
+    const rendered = await generation.renderRun(runId, ['html', 'markdown', 'txt'])
+    expect(rendered.assets).toEqual([expect.objectContaining({ id: asset.id, relativePath: asset.relativePath })])
+    expect(rendered.documents.html).toContain('学院观察')
+    expect(rendered.documents.markdown).toContain('学院观察')
+    expect(rendered.documents.txt).toContain('学院观察')
+    for (const format of ['html', 'markdown', 'txt'] as const) {
+      const exported = await generation.exportRun(runId, format)
+      expect(exported).toMatchObject({ fileName: expect.stringMatching(/\.zip$/), mediaType: 'application/zip' })
+      const names = Object.keys(unzipSync(exported.bytes))
+      expect(names).toContain(`document.${format === 'markdown' ? 'md' : format}`)
+      expect(names).toContain(asset.relativePath)
+      expect(names).toContain('manifest.json')
+    }
+  })
+
+  it('图片失败时保留成功文字并标记部分成功，整文重试跳过锁定成功块', async () => {
+    imageModel.shouldFail = true
+    const runId = await executeMixedRun()
+    const partial = await generation.getRun(runId)
+    const imageBlock = partial.blocks.find(block => block.type === 'image')!
+    const lockedText = partial.blocks.find(block => block.specKey === 'title')!
+    const textCalls = model.calls.get('text_block')
+
+    expect(partial.run.status).toBe('partial')
+    expect(imageBlock.attempts).toEqual([expect.objectContaining({ status: 'failed', errorCode: 'IMAGE_OUTPUT_INVALID' })])
+    expect(partial.blocks.filter(block => block.type === 'text').every(block => block.status === 'succeeded')).toBe(true)
+    await generation.setBlockLock(runId, lockedText.id, true)
+
+    imageModel.shouldFail = false
+    await generation.retryRun(runId)
+    await worker.executeNext()
+    const recovered = await generation.getRun(runId)
+    expect(recovered.run.status).toBe('succeeded')
+    expect(recovered.blocks.find(block => block.id === lockedText.id)).toMatchObject({ isLocked: true, selectedAttemptId: lockedText.selectedAttemptId })
+    expect(model.calls.get('text_block')).toBe(textCalls)
+    expect(recovered.blocks.find(block => block.id === imageBlock.id)?.attempts).toHaveLength(2)
+  })
+
+  it('单块重试追加尝试，允许选择历史成功尝试且锁定后禁止重试', async () => {
+    const runId = await executeMixedRun()
+    const initial = await generation.getRun(runId)
+    const imageBlock = initial.blocks.find(block => block.type === 'image')!
+    const firstAttempt = imageBlock.attempts[0]!
+
+    await generation.retryBlock(runId, imageBlock.id)
+    await expect(generation.selectBlockAttempt(runId, imageBlock.id, firstAttempt.id))
+      .rejects.toMatchObject({ code: 'BLOCK_ATTEMPT_NOT_SELECTABLE' })
+    await worker.executeNext()
+    const retried = await generation.getRun(runId)
+    const updatedImage = retried.blocks.find(block => block.id === imageBlock.id)!
+    expect(updatedImage.attempts).toHaveLength(2)
+    expect(updatedImage.selectedAttemptId).not.toBe(firstAttempt.id)
+
+    const selected = await generation.selectBlockAttempt(runId, imageBlock.id, firstAttempt.id)
+    expect(selected.blocks.find(block => block.id === imageBlock.id)?.selectedAttemptId).toBe(firstAttempt.id)
+    const locked = await generation.setBlockLock(runId, imageBlock.id, true)
+    expect(locked.blocks.find(block => block.id === imageBlock.id)).toMatchObject({ isLocked: true, lockedAt: expect.any(Number) })
+    await expect(generation.retryBlock(runId, imageBlock.id)).rejects.toMatchObject({ code: 'BLOCK_LOCKED' })
+    await expect(generation.setBlockLock(runId, imageBlock.id, false)).resolves.toMatchObject({
+      blocks: expect.arrayContaining([expect.objectContaining({ id: imageBlock.id, isLocked: false, lockedAt: null })]),
+    })
+  })
+
+  it('依赖图片失败时记录依赖错误且不调用后续文字模型', async () => {
+    imageModel.shouldFail = true
+    const spec = mixedDocumentSpec(false)
+    spec.blocks = [
+      spec.blocks[1]!,
+      { ...spec.blocks[2]!, dependsOn: ['hero'] },
+    ]
+    const runId = await executeMixedRun(spec)
+    const details = await generation.getRun(runId)
+
+    expect(details.run.status).toBe('failed')
+    expect(imageModel.calls).toBe(1)
+    expect(model.calls.get('text_block')).toBeUndefined()
+    expect(details.blocks.find(block => block.specKey === 'body')?.attempts).toEqual([
+      expect.objectContaining({ status: 'failed', errorCode: 'DEPENDENCY_FAILED' }),
+    ])
+  })
+
+  it('人物删除同步清理该人物运行的本地图片目录', async () => {
+    const runId = await executeMixedRun()
+    const details = await generation.getRun(runId)
+    const relativePath = details.blocks.find(block => block.type === 'image')!.attempts[0]!.asset!.relativePath
+    const absolutePath = resolve(directory, 'artifacts', runId, relativePath)
+    expect(existsSync(absolutePath)).toBe(true)
+
+    await contentService.deletePersona(personaId)
+    expect(existsSync(absolutePath)).toBe(false)
+    await expect(generation.getRun(runId)).rejects.toMatchObject({ code: 'RESOURCE_NOT_FOUND' })
   })
 })

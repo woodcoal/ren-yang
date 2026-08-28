@@ -43,6 +43,7 @@ function formatTime(timestamp: number): string {
     <div class="grid gap-3 text-sm sm:grid-cols-2">
       <p><span class="text-muted">人物：</span>{{ run.personaName }}</p>
       <p><span class="text-muted">模型：</span>{{ run.model.model }}</p>
+      <p v-if="run.imageModel"><span class="text-muted">图片模型：</span>{{ run.imageModel.model }}</p>
       <p><span class="text-muted">上下文：</span>{{ run.contextProvider }}</p>
       <p><span class="text-muted">创建：</span>{{ formatTime(run.createdAt) }}</p>
     </div>

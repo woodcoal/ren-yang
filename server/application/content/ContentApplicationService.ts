@@ -35,6 +35,7 @@ import { SourceContentError } from '../../domain/content/SourceContentError'
 import type { Clock } from '../../ports/Clock'
 import type { ContentRepository } from '../../ports/ContentRepository'
 import type { IdentifierGenerator } from '../../ports/IdentifierGenerator'
+import type { ImageAssetStorage } from '../../ports/ImageAssetStorage'
 import type { DecodedSourceFile, SourceContentProcessor, SourceFileStorage } from '../../ports/SourceContentPorts'
 import { ApplicationError } from '../errors/ApplicationError'
 
@@ -64,6 +65,8 @@ export interface ContentApplicationServiceDependencies {
   sourceProcessor: SourceContentProcessor
   /** 原始资料文件存储端口。 */
   sourceFiles: SourceFileStorage
+  /** 可选阶段四运行资产清理端口。 */
+  imageAssets?: Pick<ImageAssetStorage, 'deleteRunAssets'>
 }
 
 /** 编排人物、世界、不可变版本、资料及证据检索用例。 */
@@ -220,10 +223,11 @@ export class ContentApplicationService {
    */
   async getPersonaDeletionImpact(personaId: string): Promise<DeletionImpact> {
     await this.requirePersona(personaId)
-    const [versions, sources, runHistory] = await Promise.all([
+    const [versions, sources, runHistory, runIds] = await Promise.all([
       this.dependencies.repository.listPersonaVersions(personaId),
       this.dependencies.repository.listPersonaSources(personaId),
       this.dependencies.repository.getPersonaRunHistoryStatistics(personaId),
+      this.dependencies.repository.listPersonaRunIds(personaId),
     ])
     return {
       resourceType: 'persona',
@@ -235,7 +239,7 @@ export class ContentApplicationService {
       relatedSources: sources.map(source => ({ id: source.id, name: source.name })),
       versionCount: versions.length,
       runHistory,
-      files: [],
+      files: runIds.map(runId => `artifacts/${runId}`),
     }
   }
 
@@ -246,7 +250,9 @@ export class ContentApplicationService {
    */
   async deletePersona(personaId: string): Promise<void> {
     await this.requirePersona(personaId)
+    const runIds = await this.dependencies.repository.listPersonaRunIds(personaId)
     await this.dependencies.repository.deletePersona(personaId)
+    if (this.dependencies.imageAssets) await this.dependencies.imageAssets.deleteRunAssets(runIds)
   }
 
   /**

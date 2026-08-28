@@ -2,13 +2,13 @@
 import { computed, reactive, shallowRef } from 'vue'
 import type { ApiResponse } from '#shared/types/api'
 import type { PersonaSummary } from '#shared/types/content'
-import type { CreatedRun, FormatTemplateView, ParameterProfileView, TextModelCapability } from '#shared/types/generation'
+import type { CreatedRun, FormatTemplateView, ImageModelCapability, ParameterProfileView, TextModelCapability } from '#shared/types/generation'
 import { getApiErrorMessage } from '../utils/apiError'
 
-/** 系统能力接口中阶段三需要的字段。 */
+/** 系统能力接口中创作工作台需要的字段。 */
 interface CapabilityResponse {
   textModel: TextModelCapability
-  imageModel: { configured: boolean }
+  imageModel: ImageModelCapability
   openViking: { configured: boolean, enabled: boolean }
   contextProvider: 'sqlite_fts5' | 'openviking'
 }
@@ -23,7 +23,9 @@ const [{ data: personaData }, { data: profileData }, { data: templateData }, { d
 const personas = computed(() => (personaData.value?.data ?? []).filter(persona => persona.activeVersionId))
 const profiles = computed(() => profileData.value?.data ?? [])
 const templates = computed(() => templateData.value?.data ?? [])
-const capability = computed(() => capabilityData.value?.data.textModel ?? null)
+const capabilities = computed(() => capabilityData.value?.data ?? null)
+const textCapability = computed(() => capabilities.value?.textModel ?? null)
+const imageCapability = computed(() => capabilities.value?.imageModel ?? null)
 const loading = shallowRef(false)
 const errorMessage = shallowRef<string | null>(null)
 const form = reactive({
@@ -32,6 +34,7 @@ const form = reactive({
   content: '',
   parameterProfileId: null as string | null,
   formatTemplateId: null as string | null,
+  includeImages: false,
   scene: { ageStage: '', location: '', currentGoal: '', emotion: '', event: '' },
 })
 
@@ -51,7 +54,10 @@ async function submitRun(): Promise<void> {
     }
     const response = form.task === 'interest'
       ? await $fetch<ApiResponse<CreatedRun>>('/api/v1/interest-runs', { method: 'POST', body: { ...common, content: form.content } })
-      : await $fetch<ApiResponse<CreatedRun>>('/api/v1/generation-runs', { method: 'POST', body: { ...common, requirement: form.content, formatTemplateId: form.formatTemplateId } })
+      : await $fetch<ApiResponse<CreatedRun>>('/api/v1/generation-runs', {
+          method: 'POST',
+          body: { ...common, requirement: form.content, formatTemplateId: form.formatTemplateId, includeImages: form.includeImages },
+        })
     await navigateTo(`/runs/${response.data.runId}`)
   }
   catch (error: unknown) {
@@ -69,7 +75,7 @@ async function submitRun(): Promise<void> {
       <UButton to="/history" color="neutral" variant="ghost">运行历史</UButton>
     </ContentPageHeader>
 
-    <UAlert v-if="!capability?.configured" class="mb-5" color="warning" title="文本模型未配置" description="请通过环境变量配置 OpenAI-compatible 接口后重启服务；密钥不会进入数据库。" />
+    <UAlert v-if="!textCapability?.configured" class="mb-5" color="warning" title="文本模型未配置" description="请通过环境变量配置 OpenAI-compatible 接口后重启服务；密钥不会进入数据库。" />
     <UAlert v-if="errorMessage" class="mb-5" color="error" title="无法创建运行" :description="errorMessage" />
 
     <form class="space-y-6" @submit.prevent="submitRun">
@@ -77,7 +83,7 @@ async function submitRun(): Promise<void> {
         <template #header><h2 class="font-semibold text-highlighted">任务</h2></template>
         <div class="grid gap-4 md:grid-cols-2">
           <UFormField label="任务类型" required>
-            <select v-model="form.task" class="native-control"><option value="interest">判断人物兴趣</option><option value="generation">结构化纯文本创作</option></select>
+            <select v-model="form.task" class="native-control"><option value="interest">判断人物兴趣</option><option value="generation">结构化图文创作</option></select>
           </UFormField>
           <UFormField label="已发布人物" required>
             <select v-model="form.personaId" class="native-control">
@@ -88,7 +94,13 @@ async function submitRun(): Promise<void> {
             <select v-model="form.parameterProfileId" class="native-control"><option :value="null">系统默认</option><option v-for="profile in profiles" :key="profile.id" :value="profile.id">{{ profile.name }} v{{ profile.version }}</option></select>
           </UFormField>
           <UFormField v-if="form.task === 'generation'" label="格式模板">
-            <select v-model="form.formatTemplateId" class="native-control"><option :value="null">默认纯文本结构</option><option v-for="template in templates" :key="template.id" :value="template.id">{{ template.name }} v{{ template.version }}</option></select>
+            <select v-model="form.formatTemplateId" class="native-control"><option :value="null">默认文档结构</option><option v-for="template in templates" :key="template.id" :value="template.id">{{ template.name }} v{{ template.version }}</option></select>
+          </UFormField>
+          <UFormField v-if="form.task === 'generation'" label="图片能力">
+            <label class="flex items-start gap-3 rounded-md border border-default p-3 text-sm">
+              <input v-model="form.includeImages" type="checkbox" class="mt-1" :disabled="!imageCapability?.configured">
+              <span><strong class="block text-highlighted">允许规划图片块</strong><span class="text-muted">{{ imageCapability?.configured ? '图片用于辅助表达，不承诺人物外观一致。' : '图片模型未配置，当前只能生成纯文本。' }}</span></span>
+            </label>
           </UFormField>
           <UFormField :label="form.task === 'interest' ? '待判断内容' : '创作要求'" required class="md:col-span-2">
             <UTextarea v-model="form.content" :rows="7" class="w-full" :placeholder="form.task === 'interest' ? '输入希望人物判断是否感兴趣的内容' : '说明主题、受众、篇幅和希望的表达形式'" />
@@ -107,7 +119,7 @@ async function submitRun(): Promise<void> {
         </div>
       </UCard>
 
-      <UButton type="submit" size="lg" :disabled="!capability?.configured || personas.length === 0" :loading="loading">
+      <UButton type="submit" size="lg" :disabled="!textCapability?.configured || personas.length === 0" :loading="loading">
         {{ form.task === 'interest' ? '开始兴趣判断' : '生成文档规格' }}
       </UButton>
     </form>

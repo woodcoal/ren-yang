@@ -248,6 +248,7 @@ export const generationRuns = sqliteTable(
     sceneJson: text('scene_json'),
     parameterSnapshotJson: text('parameter_snapshot_json').notNull(),
     modelSnapshotJson: text('model_snapshot_json').notNull(),
+    imageModelSnapshotJson: text('image_model_snapshot_json'),
     promptVersion: text('prompt_version').notNull(),
     contextProvider: text('context_provider').notNull(),
     resultJson: text('result_json'),
@@ -339,6 +340,8 @@ export const artifactBlocks = sqliteTable(
     status: text('status').notNull().default('pending'),
     selectedAttemptId: text('selected_attempt_id'),
     isLocked: integer('is_locked').notNull().default(0),
+    selectedAt: integer('selected_at'),
+    lockedAt: integer('locked_at'),
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull(),
   },
@@ -346,9 +349,9 @@ export const artifactBlocks = sqliteTable(
     uniqueIndex('artifact_blocks_document_ordinal_unique').on(table.documentId, table.ordinal),
     uniqueIndex('artifact_blocks_document_spec_key_unique').on(table.documentId, table.specKey),
     check('artifact_blocks_ordinal_check', sql`${table.ordinal} >= 0`),
-    check('artifact_blocks_type_check', sql`${table.type} = 'text'`),
-    check('artifact_blocks_role_check', sql`${table.role} IN ('heading', 'paragraph', 'list', 'quote')`),
-    check('artifact_blocks_status_check', sql`${table.status} IN ('pending', 'running', 'succeeded', 'failed')`),
+    check('artifact_blocks_type_check', sql`${table.type} IN ('text', 'image')`),
+    check('artifact_blocks_role_check', sql`${table.role} IN ('heading', 'paragraph', 'list', 'quote', 'hero_image', 'illustration')`),
+    check('artifact_blocks_status_check', sql`${table.status} IN ('pending', 'running', 'succeeded', 'failed', 'canceled')`),
     check('artifact_blocks_locked_check', sql`${table.isLocked} IN (0, 1)`),
   ],
 )
@@ -376,6 +379,30 @@ export const blockAttempts = sqliteTable(
   ],
 )
 
+/** 成功图片尝试下载并校验后的本地资产。 */
+export const imageAssets = sqliteTable(
+  'image_assets',
+  {
+    id: text('id').primaryKey(),
+    attemptId: text('attempt_id').notNull().references(() => blockAttempts.id, { onDelete: 'cascade' }),
+    relativePath: text('relative_path').notNull(),
+    mediaType: text('media_type').notNull(),
+    sizeBytes: integer('size_bytes').notNull(),
+    contentHash: text('content_hash').notNull(),
+    altText: text('alt_text').notNull(),
+    createdAt: integer('created_at').notNull(),
+  },
+  table => [
+    uniqueIndex('image_assets_attempt_unique').on(table.attemptId),
+    uniqueIndex('image_assets_relative_path_unique').on(table.relativePath),
+    check('image_assets_path_check', sql`${table.relativePath} GLOB 'assets/*' AND instr(${table.relativePath}, '..') = 0`),
+    check('image_assets_media_type_check', sql`${table.mediaType} IN ('image/png', 'image/jpeg', 'image/webp')`),
+    check('image_assets_size_check', sql`${table.sizeBytes} > 0 AND ${table.sizeBytes} <= 10485760`),
+    check('image_assets_hash_check', sql`length(${table.contentHash}) = 64`),
+    check('image_assets_alt_text_check', sql`length(trim(${table.altText})) > 0`),
+  ],
+)
+
 /** 数据库 Schema 的统一导出，供 Drizzle 查询和迁移使用。 */
 export const databaseSchema = {
   administrators,
@@ -396,4 +423,5 @@ export const databaseSchema = {
   artifactDocuments,
   artifactBlocks,
   blockAttempts,
+  imageAssets,
 }

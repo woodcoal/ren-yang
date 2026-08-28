@@ -128,6 +128,8 @@ export interface ContentRepository {
   listPersonaSources(personaId: string): Promise<SourceMaterialRecord[]>
   /** @param personaId 人物标识。 @returns 将随人物删除的运行历史统计。 */
   getPersonaRunHistoryStatistics(personaId: string): Promise<PersonaRunHistoryStatistics>
+  /** @param personaId 人物标识。 @returns 将随人物删除的运行 UUID。 */
+  listPersonaRunIds(personaId: string): Promise<string[]>
   /** @param personaId 人物标识。 @returns 永久删除的人物行数。 */
   deletePersona(personaId: string): Promise<number>
 

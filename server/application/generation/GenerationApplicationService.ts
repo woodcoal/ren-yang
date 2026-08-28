@@ -4,6 +4,7 @@ import {
   documentSpecSchema,
   interestAssessmentSchema,
   textBlockOutputSchema,
+  type ArtifactFormat,
   type CreateFormatTemplateInput,
   type CreateGenerationRunInput,
   type CreateInterestRunInput,
@@ -16,15 +17,20 @@ import type {
   FormatTemplateView,
   ParameterProfileView,
   RunDetails,
+  RenderedArtifactView,
   RunSummary,
 } from '../../../shared/types/generation'
 import type { PersonaRecord, PersonaVersionRecord } from '../../domain/content/ContentModels'
-import type { GenerationRunRecord, TextModelUsage } from '../../domain/generation/GenerationModels'
+import { ImageAssetError } from '../../domain/generation/ImageAssetError'
+import type { ArtifactBlockRecord, GenerationRunRecord, TextModelUsage } from '../../domain/generation/GenerationModels'
 import type { TaskJob } from '../../domain/tasks/TaskJob'
 import type { Clock } from '../../ports/Clock'
 import type { ContentRepository } from '../../ports/ContentRepository'
 import type { ContextProvider } from '../../ports/ContextProvider'
 import type { IdentifierGenerator } from '../../ports/IdentifierGenerator'
+import type { ImageAssetStorage } from '../../ports/ImageAssetStorage'
+import type { ImageModelPort } from '../../ports/ImageModelPort'
+import { ImageModelError } from '../../ports/ImageModelPort'
 import type { RunListFilter, RunRepository } from '../../ports/RunRepository'
 import type { SourceContentProcessor } from '../../ports/SourceContentPorts'
 import type { TaskHandler } from '../../ports/TaskPorts'
@@ -34,11 +40,14 @@ import { TextModelError } from '../../ports/TextModelPort'
 import { ApplicationError } from '../errors/ApplicationError'
 import {
   buildDocumentPlanPrompt,
+  buildImagePrompt,
   buildInterestPrompt,
   buildTextBlockPrompt,
   GENERATION_PROMPT_VERSION,
   type PromptContext,
 } from './PromptBuilder'
+import { renderArtifact, type SelectedArtifactBlock } from './ArtifactRenderer'
+import { packageArtifact, type ExportedArtifact } from './ArtifactPackager'
 
 /** 未选择参数方案时使用并保存到运行快照的默认参数。 */
 export const DEFAULT_TEXT_PARAMETERS: TextModelParameters = {
@@ -49,9 +58,9 @@ export const DEFAULT_TEXT_PARAMETERS: TextModelParameters = {
   maxTextBlocks: 12,
 }
 
-/** 未选择格式模板时使用的最小纯文字模板。 */
+/** 未选择格式模板时使用的最小文档结构指导。 */
 const DEFAULT_FORMAT_TEMPLATE = {
-  guidance: '按用户要求组织清晰的纯文字内容；标题、正文和列表按需要使用。',
+  guidance: '按用户要求组织清晰的内容；标题、正文、列表以及已启用的辅助图片按需要使用。',
   minimumBlocks: 1,
   maximumBlocks: 8,
 }
@@ -62,6 +71,8 @@ export interface GenerationApplicationServiceDependencies {
   content: ContentRepository
   context: ContextProvider
   model: TextModelPort
+  imageModel: ImageModelPort
+  imageAssets: ImageAssetStorage
   identifiers: IdentifierGenerator
   clock: Clock
   sourceProcessor: SourceContentProcessor
@@ -82,9 +93,12 @@ export class GenerationApplicationService implements TaskHandler {
 
   /** @returns 当前阶段全部非敏感外部能力和实际上下文提供器。 */
   getCapabilities() {
+    const imageModel = this.dependencies.imageModel.getConfiguredModel()
     return {
       textModel: this.getTextModelCapability(),
-      imageModel: { configured: false },
+      imageModel: imageModel
+        ? { configured: true, ...imageModel }
+        : { configured: false, provider: 'openai_compatible_images' as const, model: null, endpointOrigin: null },
       openViking: { configured: false, enabled: false },
       contextProvider: 'sqlite_fts5' as const,
     }
@@ -113,7 +127,8 @@ export class GenerationApplicationService implements TaskHandler {
 
   /** @param input 文档规划输入。 @returns 处于规划状态的运行与任务标识。 */
   async createGenerationRun(input: CreateGenerationRunInput): Promise<CreatedRun> {
-    return await this.createRun('artifact_generation', input.personaId, { requirement: input.requirement }, input.scene ?? null, input.parameterProfileId ?? null, input.formatTemplateId ?? null)
+    const includeImages = input.includeImages ?? false
+    return await this.createRun('artifact_generation', input.personaId, { requirement: input.requirement, includeImages }, input.scene ?? null, input.parameterProfileId ?? null, input.formatTemplateId ?? null)
   }
 
   /** @param filter 已校验运行过滤条件。 @returns 运行摘要列表。 */
@@ -125,21 +140,26 @@ export class GenerationApplicationService implements TaskHandler {
   /** @param runId 运行 UUID。 @returns 运行、证据、规格、块、尝试和任务。 */
   async getRun(runId: string): Promise<RunDetails> {
     const run = await this.requireRun(runId)
-    const [evidence, documentSpecs, blocks, tasks] = await Promise.all([
+    const [evidence, documentSpecs, blocks, tasks, imageAssets] = await Promise.all([
       this.dependencies.runs.listEvidence(runId),
       this.dependencies.runs.listDocumentSpecs(runId),
       this.dependencies.runs.listBlocks(runId),
       this.dependencies.runs.listRunTasks(runId),
+      this.dependencies.runs.listImageAssets(runId),
     ])
+    const assetsByAttempt = new Map(imageAssets.map(asset => [asset.attemptId, asset]))
     return {
       run: await this.toRunSummary(run),
       evidence: evidence.map(({ runId: _, createdAt: __, ...item }) => item),
       documentSpecs: documentSpecs.map(({ runId: _, ...item }) => item),
       blocks: await Promise.all(blocks.map(async block => ({
-        id: block.id, specKey: block.specKey, ordinal: block.ordinal, role: block.role,
+        id: block.id, specKey: block.specKey, ordinal: block.ordinal, type: block.type, role: block.role,
         instruction: block.spec.instruction, acceptanceCriteria: block.spec.acceptanceCriteria,
-        status: block.status, selectedAttemptId: block.selectedAttemptId, isLocked: block.isLocked,
-        attempts: (await this.dependencies.runs.listBlockAttempts(block.id)).map(({ blockId: _, inputSnapshot: __, usage: ___, ...attempt }) => attempt),
+        status: block.status, selectedAttemptId: block.selectedAttemptId, isLocked: block.isLocked, selectedAt: block.selectedAt, lockedAt: block.lockedAt,
+        attempts: (await this.dependencies.runs.listBlockAttempts(block.id)).map(({ blockId: _, inputSnapshot: __, usage: ___, ...attempt }) => {
+          const asset = assetsByAttempt.get(attempt.id)
+          return { ...attempt, asset: asset ? { id: asset.id, relativePath: asset.relativePath, mediaType: asset.mediaType, sizeBytes: asset.sizeBytes, contentHash: asset.contentHash, altText: asset.altText } : null }
+        }),
       }))),
       tasks,
     }
@@ -193,10 +213,87 @@ export class GenerationApplicationService implements TaskHandler {
       throw new ApplicationError('RUN_NOT_RETRYABLE', '只有失败或部分成功的运行可以重试', 409)
     }
     this.requireMatchingModel(run)
+    this.requireMatchingImageModel(run)
     const taskId = this.dependencies.identifiers.create()
     const retried = await this.dependencies.runs.retryRun(runId, taskId, this.dependencies.clock.now())
     if (!retried) throw new ApplicationError('VERSION_CONFLICT', '运行状态已经变化，请刷新后重试', 409)
     return { runId, taskId, status: retried.status }
+  }
+
+  /** @param runId 运行 UUID。 @param blockId 目标块 UUID。 @returns 新单块任务。 */
+  async retryBlock(runId: string, blockId: string): Promise<CreatedRun> {
+    const run = await this.requireRun(runId)
+    if (!['succeeded', 'partial', 'failed'].includes(run.status)) throw new ApplicationError('RUN_NOT_RETRYABLE', '运行尚未结束，不能单独重试块', 409)
+    this.requireMatchingModel(run)
+    const block = (await this.dependencies.runs.listBlocks(runId)).find(item => item.id === blockId)
+    if (!block) throw new ApplicationError('RESOURCE_NOT_FOUND', '产物块不存在', 404)
+    if (block.type === 'image') this.requireMatchingImageModel(run)
+    const taskId = this.dependencies.identifiers.create()
+    if (!await this.dependencies.runs.enqueueBlockRetry(runId, blockId, taskId, this.dependencies.clock.now())) {
+      throw new ApplicationError(block.isLocked ? 'BLOCK_LOCKED' : 'VERSION_CONFLICT', block.isLocked ? '锁定块不能重试' : '块或运行状态已经变化', 409)
+    }
+    return { runId, taskId, status: 'queued' }
+  }
+
+  /** @param runId 运行 UUID。 @param blockId 块 UUID。 @param attemptId 成功尝试 UUID。 @returns 更新后的运行详情。 */
+  async selectBlockAttempt(runId: string, blockId: string, attemptId: string): Promise<RunDetails> {
+    await this.requireRun(runId)
+    if (!await this.dependencies.runs.selectBlockAttempt(runId, blockId, attemptId, this.dependencies.clock.now())) {
+      throw new ApplicationError('BLOCK_ATTEMPT_NOT_SELECTABLE', '尝试不存在、未成功或不属于该块', 409)
+    }
+    return await this.getRun(runId)
+  }
+
+  /** @param runId 运行 UUID。 @param blockId 块 UUID。 @param locked 新锁定值。 @returns 更新后的运行详情。 */
+  async setBlockLock(runId: string, blockId: string, locked: boolean): Promise<RunDetails> {
+    await this.requireRun(runId)
+    if (!await this.dependencies.runs.setBlockLock(runId, blockId, locked, this.dependencies.clock.now())) {
+      throw new ApplicationError('BLOCK_NOT_LOCKABLE', '只有已选择成功尝试的块可以锁定或解除锁定', 409)
+    }
+    return await this.getRun(runId)
+  }
+
+  /** @param runId 运行 UUID。 @param formats 目标格式。 @returns 同一组选中块的安全预览。 */
+  async renderRun(runId: string, formats: ArtifactFormat[]): Promise<RenderedArtifactView> {
+    const selected = await this.loadSelectedArtifact(runId)
+    assertFormatsRequested(selected.spec, formats)
+    return {
+      runId,
+      documents: renderArtifact(selected.spec, selected.blocks, formats),
+      assets: selected.blocks.flatMap(item => item.asset
+        ? [{ id: item.asset.id, relativePath: item.asset.relativePath, mediaType: item.asset.mediaType, sizeBytes: item.asset.sizeBytes, contentHash: item.asset.contentHash, altText: item.asset.altText }]
+        : []),
+    }
+  }
+
+  /** @param runId 运行 UUID。 @param format 唯一导出格式。 @returns 单文件或含图片资源的 ZIP。 */
+  async exportRun(runId: string, format: ArtifactFormat): Promise<ExportedArtifact> {
+    const run = await this.requireRun(runId)
+    if (!['succeeded', 'partial', 'failed'].includes(run.status)) throw new ApplicationError('RUN_NOT_EXPORTABLE', '运行尚未结束，不能导出', 409)
+    const selected = await this.loadSelectedArtifact(runId)
+    assertFormatsRequested(selected.spec, [format])
+    const document = renderArtifact(selected.spec, selected.blocks, [format])[format]
+    if (!document) throw new Error('渲染器没有返回目标格式')
+    const imageAssets = selected.blocks.flatMap(item => item.asset ? [item.asset] : [])
+    const images = await Promise.all(imageAssets.map(async asset => ({
+      asset,
+      bytes: await this.dependencies.imageAssets.readImage(runId, asset.relativePath),
+    })))
+    return packageArtifact(run, selected.spec.title, format, document, images, this.dependencies.clock.now())
+  }
+
+  /** @param runId 运行 UUID。 @param assetId 图片资产 UUID。 @returns 已授权运行内的图片字节与类型。 */
+  async getImageAsset(runId: string, assetId: string): Promise<{ bytes: Uint8Array, mediaType: string }> {
+    await this.requireRun(runId)
+    const asset = await this.dependencies.runs.findImageAsset(runId, assetId)
+    if (!asset) throw new ApplicationError('RESOURCE_NOT_FOUND', '图片资产不存在', 404)
+    try {
+      return { bytes: await this.dependencies.imageAssets.readImage(runId, asset.relativePath), mediaType: asset.mediaType }
+    }
+    catch (error: unknown) {
+      if (error instanceof ImageAssetError) throw new ApplicationError(error.code, error.message, error.code === 'ASSET_NOT_FOUND' ? 404 : 400)
+      throw error
+    }
   }
 
   /** @param job Worker 已领取任务。 @returns 业务执行结束时完成。 */
@@ -206,6 +303,7 @@ export class GenerationApplicationService implements TaskHandler {
       if (job.type === 'assess_interest') await this.executeInterest(runId)
       else if (job.type === 'plan_document') await this.executeDocumentPlan(runId)
       else if (job.type === 'execute_document') await this.executeDocument(runId)
+      else if (job.type === 'execute_block') await this.executeSingleBlock(runId, readBlockId(job.payloadJson))
       else throw new Error(`未注册任务类型：${job.type}`)
     }
     catch (error: unknown) {
@@ -226,6 +324,12 @@ export class GenerationApplicationService implements TaskHandler {
   private async createRun(kind: GenerationRunRecord['kind'], personaId: string, input: GenerationRunRecord['input'], scene: GenerationRunRecord['scene'], profileId: string | null, templateId: string | null): Promise<CreatedRun> {
     const model = this.dependencies.model.getConfiguredModel()
     if (!model) throw new ApplicationError('CAPABILITY_DISABLED', '文本模型尚未配置', 422)
+    const imageModel = 'includeImages' in input && input.includeImages
+      ? this.dependencies.imageModel.getConfiguredModel()
+      : null
+    if ('includeImages' in input && input.includeImages && !imageModel) {
+      throw new ApplicationError('CAPABILITY_DISABLED', '图片模型尚未配置，不能创建包含图片的运行', 422)
+    }
     const persona = await this.requirePersona(personaId)
     if (!persona.activeVersionId) throw new ApplicationError('PERSONA_VERSION_NOT_ACTIVE', '人物尚无已发布当前版本', 409)
     const version = await this.requirePublishedPersonaVersion(persona.activeVersionId, persona.id)
@@ -261,7 +365,7 @@ export class GenerationApplicationService implements TaskHandler {
     await this.dependencies.runs.createRun({
       runId, taskId, taskType: kind === 'interest_assessment' ? 'assess_interest' : 'plan_document', kind,
       personaVersionId: version.id, formatTemplateId: templateId, parameterProfileId: profileId,
-      status: kind === 'interest_assessment' ? 'queued' : 'planning', input, scene, parameters, model,
+      status: kind === 'interest_assessment' ? 'queued' : 'planning', input, scene, parameters, model, imageModel,
       promptVersion: GENERATION_PROMPT_VERSION,
       evidence: [
         ...userSettings,
@@ -297,17 +401,19 @@ export class GenerationApplicationService implements TaskHandler {
     const context = await this.loadPromptContext(run)
     const template = run.formatTemplateId ? await this.requireFormatTemplate(run.formatTemplateId) : { spec: DEFAULT_FORMAT_TEMPLATE }
     const maximum = Math.min(template.spec.maximumBlocks, run.parameterSnapshot.maxTextBlocks)
-    const prompt = buildDocumentPlanPrompt(context, 'requirement' in run.input ? run.input.requirement : '', template.spec.guidance, template.spec.minimumBlocks, maximum)
+    const allowImages = 'includeImages' in run.input && run.input.includeImages
+    const prompt = buildDocumentPlanPrompt(context, 'requirement' in run.input ? run.input.requirement : '', template.spec.guidance, template.spec.minimumBlocks, maximum, allowImages)
     const { output, usage } = await this.generateValidated(prompt, run.parameterSnapshot, 'document_spec', value => {
       const parsed = documentSpecSchema.parse(value)
       if (parsed.blocks.length < template.spec.minimumBlocks || parsed.blocks.length > maximum) throw new Error('模型规划的块数量超出模板或运行限制')
+      if (!allowImages && parsed.blocks.some(block => block.type === 'image')) throw new Error('当前运行未启用图片，模型不得规划图片块')
       return parsed
     })
     if (await this.finishCancellationIfRequested(runId)) return
     if (!await this.dependencies.runs.savePlannedDocumentSpec(runId, this.dependencies.identifiers.create(), output, usage, this.dependencies.clock.now())) throw new Error('文档规划运行状态已经变化')
   }
 
-  /** @param runId 已确认文档运行 UUID。 @returns 所有文字块串行执行结束时完成。 */
+  /** @param runId 已确认文档运行 UUID。 @returns 所有图文块串行执行结束时完成。 */
   private async executeDocument(runId: string): Promise<void> {
     const run = await this.requireRun(runId)
     this.requireMatchingModel(run)
@@ -315,6 +421,7 @@ export class GenerationApplicationService implements TaskHandler {
     const context = await this.loadPromptContext(run)
     const spec = (await this.dependencies.runs.listDocumentSpecs(runId)).find(item => item.status === 'confirmed')
     if (!spec) throw new ApplicationError('DOCUMENT_SPEC_NOT_CONFIRMED', '文档规格尚未确认', 409)
+    if (spec.spec.blocks.some(block => block.type === 'image')) this.requireMatchingImageModel(run)
     await this.dependencies.runs.recoverInterruptedDocumentBlocks(runId, this.dependencies.clock.now())
     const blocks = await this.dependencies.runs.listBlocks(runId)
     const previousOutputs: Array<{ key: string, text: string }> = []
@@ -324,31 +431,114 @@ export class GenerationApplicationService implements TaskHandler {
         return
       }
       if (block.status === 'succeeded' && block.selectedAttemptId) {
-        const selected = (await this.dependencies.runs.listBlockAttempts(block.id))
-          .find(attempt => attempt.id === block.selectedAttemptId)
-        if (selected?.outputText) previousOutputs.push({ key: block.specKey, text: selected.outputText })
+        await this.appendSelectedText(block, previousOutputs)
         continue
       }
-      const prompt = buildTextBlockPrompt(context, spec.spec, block.spec, previousOutputs)
-      let succeeded = false
-      for (let attemptIndex = 0; attemptIndex < 2 && !succeeded; attemptIndex += 1) {
-        const attemptId = this.dependencies.identifiers.create()
-        const attempt = await this.dependencies.runs.startBlockAttempt(block.id, attemptId, { promptVersion: run.promptVersion, block: block.spec, previousOutputs }, this.dependencies.clock.now())
-        if (!attempt) break
-        try {
-          const response = await this.dependencies.model.generateStructured({ ...prompt, parameters: run.parameterSnapshot, responseSchemaName: 'text_block' })
-          const output = textBlockOutputSchema.parse(response.structuredOutput)
-          await this.dependencies.runs.completeBlockAttempt(block.id, attemptId, output.text, response.usage, this.dependencies.clock.now())
-          previousOutputs.push({ key: block.specKey, text: output.text })
-          succeeded = true
-        }
-        catch (error: unknown) {
-          const normalized = normalizeExecutionError(error)
-          await this.dependencies.runs.failBlockAttempt(block.id, attemptId, normalized.code, normalized.message, this.dependencies.clock.now())
-        }
+      if (!dependenciesSucceeded(block, blocks)) {
+        await this.recordDependencyFailure(block, previousOutputs)
+        block.status = 'failed'
+        continue
       }
+      const output = await this.executeArtifactBlock(run, context, spec.spec, block, previousOutputs)
+      block.status = output.succeeded ? 'succeeded' : 'failed'
+      if (output.text) previousOutputs.push({ key: block.specKey, text: output.text })
     }
     await this.dependencies.runs.finishDocumentRun(runId, this.dependencies.clock.now())
+  }
+
+  /** @param runId 运行 UUID。 @param blockId 目标块 UUID。 @returns 单块任务完成时结束。 */
+  private async executeSingleBlock(runId: string, blockId: string): Promise<void> {
+    const run = await this.requireRun(runId)
+    this.requireMatchingModel(run)
+    await this.requireRunStarted(run, ['queued', 'running'])
+    const context = await this.loadPromptContext(run)
+    const spec = (await this.dependencies.runs.listDocumentSpecs(runId)).find(item => item.status === 'confirmed')
+    if (!spec) throw new ApplicationError('DOCUMENT_SPEC_NOT_CONFIRMED', '文档规格尚未确认', 409)
+    await this.dependencies.runs.recoverInterruptedDocumentBlocks(runId, this.dependencies.clock.now())
+    const blocks = await this.dependencies.runs.listBlocks(runId)
+    const target = blocks.find(block => block.id === blockId)
+    if (!target) throw new ApplicationError('RESOURCE_NOT_FOUND', '产物块不存在', 404)
+    if (target.isLocked) throw new ApplicationError('BLOCK_LOCKED', '锁定块不能重试', 409)
+    if (target.type === 'image') this.requireMatchingImageModel(run)
+    const previousOutputs: Array<{ key: string, text: string }> = []
+    for (const block of blocks.slice(0, target.ordinal)) {
+      if (block.status === 'succeeded') await this.appendSelectedText(block, previousOutputs)
+    }
+    if (!dependenciesSucceeded(target, blocks)) await this.recordDependencyFailure(target, previousOutputs)
+    else await this.executeArtifactBlock(run, context, spec.spec, target, previousOutputs)
+    await this.dependencies.runs.finishDocumentRun(runId, this.dependencies.clock.now())
+  }
+
+  /**
+   * 执行单个文字或图片块的最多两次追加尝试。
+   * @param run 固定运行快照。
+   * @param context 固定提示上下文。
+   * @param documentSpec 已确认规格。
+   * @param block 目标持久块。
+   * @param previousOutputs 前序成功文字块。
+   * @returns 是否成功及可供后续块使用的文字。
+   */
+  private async executeArtifactBlock(
+    run: GenerationRunRecord,
+    context: PromptContext,
+    documentSpec: DocumentSpec,
+    block: ArtifactBlockRecord,
+    previousOutputs: Array<{ key: string, text: string }>,
+  ): Promise<{ succeeded: boolean, text: string | null }> {
+    for (let attemptIndex = 0; attemptIndex < 2; attemptIndex += 1) {
+      const attemptId = this.dependencies.identifiers.create()
+      const inputSnapshot = block.spec.type === 'image'
+        ? { promptVersion: run.promptVersion, block: block.spec, visualBrief: block.spec.visualBrief, previousOutputs }
+        : { promptVersion: run.promptVersion, block: block.spec, previousOutputs }
+      const attempt = await this.dependencies.runs.startBlockAttempt(block.id, attemptId, inputSnapshot, this.dependencies.clock.now())
+      if (!attempt) break
+      try {
+        if (block.spec.type === 'image') {
+          const brief = block.spec.visualBrief
+          const response = await this.dependencies.imageModel.generate({
+            prompt: buildImagePrompt(context, brief, previousOutputs),
+            aspectRatio: brief.aspectRatio,
+            timeoutMs: run.parameterSnapshot.timeoutMs,
+          })
+          const assetId = this.dependencies.identifiers.create()
+          const stored = await this.dependencies.imageAssets.saveImage(run.id, assetId, response.bytes, response.declaredMediaType)
+          try {
+            await this.dependencies.runs.completeImageBlockAttempt(block.id, attemptId, { id: assetId, ...stored, altText: brief.altText }, this.dependencies.clock.now())
+          }
+          catch (error: unknown) {
+            // 数据库事务失败时删除刚写入的文件，避免产生无法从业务事实定位的孤儿资产。
+            await this.dependencies.imageAssets.deleteImage(run.id, stored.relativePath)
+            throw error
+          }
+          return { succeeded: true, text: null }
+        }
+        const prompt = buildTextBlockPrompt(context, documentSpec, block.spec, previousOutputs)
+        const response = await this.dependencies.model.generateStructured({ ...prompt, parameters: run.parameterSnapshot, responseSchemaName: 'text_block' })
+        const output = textBlockOutputSchema.parse(response.structuredOutput)
+        await this.dependencies.runs.completeBlockAttempt(block.id, attemptId, output.text, response.usage, this.dependencies.clock.now())
+        return { succeeded: true, text: output.text }
+      }
+      catch (error: unknown) {
+        const normalized = normalizeExecutionError(error)
+        await this.dependencies.runs.failBlockAttempt(block.id, attemptId, normalized.code, normalized.message, this.dependencies.clock.now())
+        if (!normalized.retryable) break
+      }
+    }
+    return { succeeded: false, text: null }
+  }
+
+  /** @param block 已成功块。 @param outputs 可变前序文字集合。 @returns 选中文字存在时追加。 */
+  private async appendSelectedText(block: ArtifactBlockRecord, outputs: Array<{ key: string, text: string }>): Promise<void> {
+    if (block.type !== 'text' || !block.selectedAttemptId) return
+    const selected = (await this.dependencies.runs.listBlockAttempts(block.id)).find(attempt => attempt.id === block.selectedAttemptId)
+    if (selected?.outputText) outputs.push({ key: block.specKey, text: selected.outputText })
+  }
+
+  /** @param block 依赖未完成块。 @param previousOutputs 前序文字。 @returns 保存一次稳定失败尝试。 */
+  private async recordDependencyFailure(block: ArtifactBlockRecord, previousOutputs: Array<{ key: string, text: string }>): Promise<void> {
+    const attemptId = this.dependencies.identifiers.create()
+    const attempt = await this.dependencies.runs.startBlockAttempt(block.id, attemptId, { promptVersion: 'dependency-check', block: block.spec, previousOutputs }, this.dependencies.clock.now())
+    if (attempt) await this.dependencies.runs.failBlockAttempt(block.id, attemptId, 'DEPENDENCY_FAILED', '前置依赖块未成功，当前块未调用模型', this.dependencies.clock.now())
   }
 
   /** @param prompt 已分层提示。 @param parameters 固定参数。 @param schemaName 结构名称。 @param parse 结构校验器。 @returns 最多两次尝试后的结果。 */
@@ -411,6 +601,18 @@ export class GenerationApplicationService implements TaskHandler {
     }
   }
 
+  /** @param run 固定运行。 @returns 图片模型未使用或仍与快照一致时无返回值。 */
+  private requireMatchingImageModel(run: GenerationRunRecord): void {
+    if (!run.imageModelSnapshot) return
+    const configured = this.dependencies.imageModel.getConfiguredModel()
+    if (!configured
+      || configured.provider !== run.imageModelSnapshot.provider
+      || configured.model !== run.imageModelSnapshot.model
+      || configured.endpointOrigin !== run.imageModelSnapshot.endpointOrigin) {
+      throw new ApplicationError('RUN_IMAGE_MODEL_MISMATCH', '当前图片模型配置与运行快照不一致，不能继续该运行', 409)
+    }
+  }
+
   /** @param runId 运行 UUID。 @returns 存在取消请求时完成取消并返回 true。 */
   private async finishCancellationIfRequested(runId: string): Promise<boolean> {
     if (!await this.dependencies.runs.isCancellationRequested(runId)) return false
@@ -441,14 +643,45 @@ export class GenerationApplicationService implements TaskHandler {
   /** @param spec 文档规格。 @param run 固定运行参数。 @returns 无返回值。 */
   private validateDocumentLimits(spec: DocumentSpec, run: GenerationRunRecord): void {
     documentSpecSchema.parse(spec)
-    if (spec.blocks.length > run.parameterSnapshot.maxTextBlocks) throw new ApplicationError('TASK_LIMIT_EXCEEDED', '文档文字块数量超过运行上限', 422)
+    if (spec.blocks.length > run.parameterSnapshot.maxTextBlocks) throw new ApplicationError('TASK_LIMIT_EXCEEDED', '文档块数量超过运行上限', 422)
+    if (spec.blocks.some(block => block.type === 'image')) {
+      if (!('includeImages' in run.input) || !run.input.includeImages || !run.imageModelSnapshot) {
+        throw new ApplicationError('CAPABILITY_DISABLED', '当前运行没有启用图片能力，不能加入图片块', 422)
+      }
+      this.requireMatchingImageModel(run)
+    }
+  }
+
+  /** @param runId 运行 UUID。 @returns 已确认规格及同一组选中成功块。 */
+  private async loadSelectedArtifact(runId: string): Promise<{ spec: DocumentSpec, blocks: SelectedArtifactBlock[] }> {
+    await this.requireRun(runId)
+    const spec = (await this.dependencies.runs.listDocumentSpecs(runId)).find(item => item.status === 'confirmed')
+    if (!spec) throw new ApplicationError('DOCUMENT_SPEC_NOT_CONFIRMED', '文档规格尚未确认', 409)
+    const [blocks, assets] = await Promise.all([
+      this.dependencies.runs.listBlocks(runId),
+      this.dependencies.runs.listImageAssets(runId),
+    ])
+    const assetsByAttempt = new Map(assets.map(asset => [asset.attemptId, asset]))
+    const selected: SelectedArtifactBlock[] = []
+    for (const block of blocks) {
+      if (!block.selectedAttemptId) continue
+      const attempt = (await this.dependencies.runs.listBlockAttempts(block.id))
+        .find(item => item.id === block.selectedAttemptId && item.status === 'succeeded')
+      if (!attempt) continue
+      const asset = assetsByAttempt.get(attempt.id) ?? null
+      if (block.type === 'text' && !attempt.outputText) continue
+      if (block.type === 'image' && !asset) continue
+      selected.push({ block, outputText: attempt.outputText, asset })
+    }
+    if (selected.length === 0) throw new ApplicationError('ARTIFACT_EMPTY', '当前没有可渲染的成功块', 409)
+    return { spec: spec.spec, blocks: selected }
   }
 
   /** @param run 运行记录。 @returns 带人物身份的公开摘要。 */
   private async toRunSummary(run: GenerationRunRecord): Promise<RunSummary> {
     const identity = await this.dependencies.runs.findRunPersona(run.id)
     if (!identity) throw new Error('运行人物关系损坏')
-    return { id: run.id, kind: run.kind, personaVersionId: run.personaVersionId, ...identity, status: run.status, input: run.input, scene: run.scene, parameters: run.parameterSnapshot, model: run.modelSnapshot, promptVersion: run.promptVersion, contextProvider: run.contextProvider, result: run.result, errorCode: run.errorCode, errorMessage: run.errorMessage, createdAt: run.createdAt, updatedAt: run.updatedAt, completedAt: run.completedAt }
+    return { id: run.id, kind: run.kind, personaVersionId: run.personaVersionId, ...identity, status: run.status, input: run.input, scene: run.scene, parameters: run.parameterSnapshot, model: run.modelSnapshot, imageModel: run.imageModelSnapshot, promptVersion: run.promptVersion, contextProvider: run.contextProvider, result: run.result, errorCode: run.errorCode, errorMessage: run.errorMessage, createdAt: run.createdAt, updatedAt: run.updatedAt, completedAt: run.completedAt }
   }
 }
 
@@ -459,9 +692,30 @@ function readRunId(payloadJson: string): string {
   return value.runId
 }
 
+/** @param payloadJson 任务载荷 JSON。 @returns 单块任务 UUID。 */
+function readBlockId(payloadJson: string): string {
+  const value = JSON.parse(payloadJson) as Record<string, unknown>
+  if (typeof value.blockId !== 'string') throw new Error('任务载荷缺少块标识')
+  return value.blockId
+}
+
+/** @param block 目标块。 @param blocks 同文档块快照。 @returns 全部显式依赖是否成功。 */
+function dependenciesSucceeded(block: ArtifactBlockRecord, blocks: ArtifactBlockRecord[]): boolean {
+  return block.spec.dependsOn.every(key => blocks.find(candidate => candidate.specKey === key)?.status === 'succeeded')
+}
+
+/** @param spec 已确认规格。 @param formats 请求格式。 @returns 全部格式已在规格中请求时无返回值。 */
+function assertFormatsRequested(spec: DocumentSpec, formats: ArtifactFormat[]): void {
+  if (formats.length === 0 || new Set(formats).size !== formats.length || formats.some(format => !spec.requestedFormats.includes(format))) {
+    throw new ApplicationError('FORMAT_NOT_REQUESTED', '目标格式不在已确认文档规格中', 422)
+  }
+}
+
 /** @param error 未知执行异常。 @returns 稳定错误码和脱敏消息。 */
 function normalizeExecutionError(error: unknown): { code: string, message: string, retryable: boolean } {
   if (error instanceof TextModelError) return { code: error.code, message: error.message, retryable: error.retryable }
+  if (error instanceof ImageModelError) return { code: error.code, message: error.message, retryable: error.retryable }
+  if (error instanceof ImageAssetError) return { code: error.code, message: error.message, retryable: error.code === 'IMAGE_OUTPUT_INVALID' }
   if (error instanceof ApplicationError) return { code: error.code, message: error.message, retryable: false }
   if (error instanceof ZodError) return { code: 'MODEL_OUTPUT_INVALID', message: '模型结构化输出未通过校验', retryable: true }
   return { code: 'RUN_EXECUTION_FAILED', message: error instanceof Error ? error.message.slice(0, 500) : '运行执行失败', retryable: true }

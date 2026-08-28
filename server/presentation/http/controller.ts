@@ -1,5 +1,5 @@
 import type { H3Event } from 'h3'
-import { setResponseStatus } from 'h3'
+import { setResponseHeader, setResponseStatus } from 'h3'
 import { ZodError } from 'zod'
 import type { ApiErrorResponse, ApiResponse } from '../../../shared/types/api'
 import { ApplicationError } from '../../application/errors/ApplicationError'
@@ -16,6 +16,39 @@ export async function executeController<TData>(
 ): Promise<ApiResponse<TData> | ApiErrorResponse> {
   try {
     return { data: await action() }
+  }
+  catch (error: unknown) {
+    return writeErrorResponse(event, error)
+  }
+}
+
+/** 应用服务返回给二进制控制器的安全文件。 */
+export interface BinaryControllerResult {
+  /** 响应字节。 */
+  bytes: Uint8Array
+  /** 已验证媒体类型。 */
+  mediaType: string
+  /** 存在时作为附件下载的安全文件名。 */
+  fileName?: string
+}
+
+/**
+ * 执行只调用应用服务的二进制控制器并复用统一错误映射。
+ * @param event 当前 H3 请求事件。
+ * @param action 返回已验证字节、类型和可选文件名的应用动作。
+ * @returns 文件字节或稳定错误响应。
+ */
+export async function executeBinaryController(
+  event: H3Event,
+  action: () => Promise<BinaryControllerResult>,
+): Promise<Uint8Array | ApiErrorResponse> {
+  try {
+    const result = await action()
+    setResponseHeader(event, 'content-type', result.mediaType)
+    setResponseHeader(event, 'content-length', result.bytes.byteLength)
+    setResponseHeader(event, 'x-content-type-options', 'nosniff')
+    if (result.fileName) setResponseHeader(event, 'content-disposition', `attachment; filename*=UTF-8''${encodeURIComponent(result.fileName)}`)
+    return result.bytes
   }
   catch (error: unknown) {
     return writeErrorResponse(event, error)

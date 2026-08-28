@@ -18,6 +18,16 @@ export interface TextModelSnapshot {
   endpointOrigin: string
 }
 
+/** 运行绑定的非敏感图片模型快照。 */
+export interface ImageModelSnapshot {
+  /** 适配器协议标识。 */
+  provider: 'openai_compatible_images'
+  /** 实际使用的模型名称。 */
+  model: string
+  /** 不包含查询和凭据的服务来源。 */
+  endpointOrigin: string
+}
+
 /** 一次兴趣或生成运行的完整事实记录。 */
 export interface GenerationRunRecord {
   id: string
@@ -26,10 +36,11 @@ export interface GenerationRunRecord {
   formatTemplateId: string | null
   parameterProfileId: string | null
   status: RunStatus
-  input: { content: string } | { requirement: string }
+  input: { content: string } | { requirement: string, includeImages: boolean }
   scene: SceneContext | null
   parameterSnapshot: TextModelParameters
   modelSnapshot: TextModelSnapshot
+  imageModelSnapshot: ImageModelSnapshot | null
   promptVersion: string
   contextProvider: 'sqlite_fts5' | 'openviking'
   result: InterestAssessment | null
@@ -94,18 +105,20 @@ export interface FormatTemplateRecord {
   createdAt: number
 }
 
-/** 文档中的持久化文字块。 */
+/** 文档中的持久化文字或图片块。 */
 export interface ArtifactBlockRecord {
   id: string
   documentId: string
   specKey: string
   ordinal: number
-  type: 'text'
-  role: 'heading' | 'paragraph' | 'list' | 'quote'
+  type: 'text' | 'image'
+  role: 'heading' | 'paragraph' | 'list' | 'quote' | 'hero_image' | 'illustration'
   spec: DocumentSpec['blocks'][number]
-  status: 'pending' | 'running' | 'succeeded' | 'failed'
+  status: 'pending' | 'running' | 'succeeded' | 'failed' | 'canceled'
   selectedAttemptId: string | null
   isLocked: boolean
+  selectedAt: number | null
+  lockedAt: number | null
   createdAt: number
   updatedAt: number
 }
@@ -123,4 +136,24 @@ export interface BlockAttemptRecord {
   errorMessage: string | null
   createdAt: number
   completedAt: number | null
+}
+
+/** 成功图片尝试关联的本地资产事实。 */
+export interface ImageAssetRecord {
+  /** 资产 UUID。 */
+  id: string
+  /** 所属块尝试 UUID。 */
+  attemptId: string
+  /** 相对于运行资产目录的安全路径。 */
+  relativePath: string
+  /** 经过魔数校验的媒体类型。 */
+  mediaType: 'image/png' | 'image/jpeg' | 'image/webp'
+  /** 文件字节数。 */
+  sizeBytes: number
+  /** 文件 SHA-256。 */
+  contentHash: string
+  /** 可访问性替代文本。 */
+  altText: string
+  /** 创建时间。 */
+  createdAt: number
 }

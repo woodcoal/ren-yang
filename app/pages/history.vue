@@ -63,7 +63,7 @@ function formatTime(timestamp: number): string {
     <UCard class="mb-6">
       <form class="grid gap-3 md:grid-cols-4" @submit.prevent="applyFilters">
         <select v-model="filters.personaId" class="native-control" aria-label="按人物筛选"><option value="">全部人物</option><option v-for="persona in personas" :key="persona.id" :value="persona.id">{{ persona.name }}</option></select>
-        <select v-model="filters.kind" class="native-control" aria-label="按类型筛选"><option value="">全部类型</option><option value="interest_assessment">兴趣判断</option><option value="artifact_generation">文本创作</option></select>
+        <select v-model="filters.kind" class="native-control" aria-label="按类型筛选"><option value="">全部类型</option><option value="interest_assessment">兴趣判断</option><option value="artifact_generation">图文创作</option></select>
         <select v-model="filters.status" class="native-control" aria-label="按状态筛选"><option value="">全部状态</option><option v-for="(label, status) in statusLabels" :key="status" :value="status">{{ label }}</option></select>
         <UButton type="submit" color="neutral" variant="soft">应用筛选</UButton>
       </form>
@@ -74,7 +74,7 @@ function formatTime(timestamp: number): string {
       <NuxtLink v-for="run in runs" :key="run.id" :to="`/runs/${run.id}`" class="block rounded-md border border-default p-4 transition hover:bg-elevated">
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 class="font-medium text-highlighted">{{ run.personaName }} · {{ run.kind === 'interest_assessment' ? '兴趣判断' : '文本创作' }}</h2>
+            <h2 class="font-medium text-highlighted">{{ run.personaName }} · {{ run.kind === 'interest_assessment' ? '兴趣判断' : '图文创作' }}</h2>
             <p class="mt-1 text-sm text-muted">{{ inputPreview(run) }}</p>
           </div>
           <UBadge :color="run.status === 'failed' ? 'error' : run.status === 'succeeded' ? 'success' : 'neutral'" variant="subtle">{{ statusLabels[run.status] }}</UBadge>

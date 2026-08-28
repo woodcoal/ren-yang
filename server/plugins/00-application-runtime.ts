@@ -19,6 +19,11 @@ async function initializeApplicationRuntime(nitroApp: NitroApp): Promise<void> {
       apiKey: config.textModel.apiKey,
       model: config.textModel.model,
     },
+    imageModel: {
+      endpoint: config.imageModel.endpoint,
+      apiKey: config.imageModel.apiKey,
+      model: config.imageModel.model,
+    },
   })
   await runtime.start()
 

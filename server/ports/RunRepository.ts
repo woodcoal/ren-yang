@@ -6,6 +6,8 @@ import type {
   EvidenceSnapshotRecord,
   FormatTemplateRecord,
   GenerationRunRecord,
+  ImageAssetRecord,
+  ImageModelSnapshot,
   ParameterProfileRecord,
   RunKind,
   RunStatus,
@@ -39,6 +41,7 @@ export interface CreateRunCommand {
   scene: GenerationRunRecord['scene']
   parameters: TextModelParameters
   model: TextModelSnapshot
+  imageModel: ImageModelSnapshot | null
   promptVersion: string
   evidence: NewEvidenceSnapshot[]
   timestamp: number
@@ -71,7 +74,7 @@ export interface RunTaskRecord {
   updatedAt: number
 }
 
-/** 阶段三运行、规格和文字块事实源端口。 */
+/** 阶段四运行、规格、图文块和资产事实源端口。 */
 export interface RunRepository {
   /** @returns 全部参数方案版本。 */
   listParameterProfiles(): Promise<ParameterProfileRecord[]>
@@ -104,6 +107,10 @@ export interface RunRepository {
   listBlockAttempts(blockId: string): Promise<BlockAttemptRecord[]>
   /** @param runId 运行 UUID。 @returns 任务历史。 */
   listRunTasks(runId: string): Promise<RunTaskRecord[]>
+  /** @param runId 运行 UUID。 @returns 所属成功图片资产。 */
+  listImageAssets(runId: string): Promise<ImageAssetRecord[]>
+  /** @param runId 运行 UUID。 @param assetId 资产 UUID。 @returns 所属资产或 null。 */
+  findImageAsset(runId: string, assetId: string): Promise<ImageAssetRecord | null>
 
   /** @param runId 运行 UUID。 @param expected 允许的起始状态。 @param timestamp 更新时间。 @returns 是否开始。 */
   markRunRunning(runId: string, expected: RunStatus[], timestamp: number): Promise<boolean>
@@ -134,8 +141,16 @@ export interface RunRepository {
   startBlockAttempt(blockId: string, attemptId: string, inputSnapshot: Record<string, unknown>, timestamp: number): Promise<BlockAttemptRecord | null>
   /** @param blockId 块 UUID。 @param attemptId 尝试 UUID。 @param outputText 纯文本结果。 @param usage 模型用量。 @param timestamp 完成时间。 @returns 无返回值。 */
   completeBlockAttempt(blockId: string, attemptId: string, outputText: string, usage: TextModelUsage, timestamp: number): Promise<void>
+  /** @param blockId 块 UUID。 @param attemptId 尝试 UUID。 @param asset 完整图片资产事实。 @param timestamp 完成时间。 @returns 无返回值。 */
+  completeImageBlockAttempt(blockId: string, attemptId: string, asset: Omit<ImageAssetRecord, 'attemptId' | 'createdAt'>, timestamp: number): Promise<void>
   /** @param blockId 块 UUID。 @param attemptId 尝试 UUID。 @param code 稳定错误码。 @param message 脱敏原因。 @param timestamp 完成时间。 @returns 无返回值。 */
   failBlockAttempt(blockId: string, attemptId: string, code: string, message: string, timestamp: number): Promise<void>
+  /** @param runId 运行 UUID。 @param blockId 块 UUID。 @param taskId 新任务 UUID。 @param timestamp 创建时间。 @returns 是否创建单块任务。 */
+  enqueueBlockRetry(runId: string, blockId: string, taskId: string, timestamp: number): Promise<boolean>
+  /** @param runId 运行 UUID。 @param blockId 块 UUID。 @param attemptId 成功尝试 UUID。 @param timestamp 选择时间。 @returns 是否选择成功。 */
+  selectBlockAttempt(runId: string, blockId: string, attemptId: string, timestamp: number): Promise<boolean>
+  /** @param runId 运行 UUID。 @param blockId 块 UUID。 @param locked 新锁定值。 @param timestamp 操作时间。 @returns 是否更新成功。 */
+  setBlockLock(runId: string, blockId: string, locked: boolean, timestamp: number): Promise<boolean>
   /** @param runId 运行 UUID。 @param timestamp 完成时间。 @returns 最终运行状态。 */
   finishDocumentRun(runId: string, timestamp: number): Promise<'succeeded' | 'partial' | 'failed'>
 }

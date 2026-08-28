@@ -11,6 +11,7 @@ import { H3RequestSecurity } from '../authentication/H3RequestSecurity'
 import { NuxtAuthenticationSession } from '../authentication/NuxtAuthenticationSession'
 import { ScryptPasswordHasher } from '../authentication/ScryptPasswordHasher'
 import { LocalSourceFileStorage } from '../content/LocalSourceFileStorage'
+import { LocalImageAssetStorage } from '../content/LocalImageAssetStorage'
 import { NodeSourceContentProcessor } from '../content/NodeSourceContentProcessor'
 import { SqliteContextProvider } from '../context/SqliteContextProvider'
 import { DrizzleAdministratorRepository } from '../database/DrizzleAdministratorRepository'
@@ -21,6 +22,7 @@ import { SqliteTaskJobRepository } from '../database/SqliteTaskJobRepository'
 import { SystemClock } from '../system/SystemClock'
 import { SystemIdentifierGenerator } from '../system/SystemIdentifierGenerator'
 import { OpenAiCompatibleTextModel } from '../models/OpenAiCompatibleTextModel'
+import { OpenAiCompatibleImageModel } from '../models/OpenAiCompatibleImageModel'
 
 /** 应用运行时组合配置。 */
 export interface ApplicationRuntimeOptions {
@@ -35,6 +37,15 @@ export interface ApplicationRuntimeOptions {
   /** OpenAI-compatible 文本模型配置。 */
   textModel?: {
     /** Chat Completions 完整接口 URL。 */
+    endpoint: string
+    /** 仓库外访问凭据。 */
+    apiKey: string
+    /** 供应商模型名称。 */
+    model: string
+  }
+  /** OpenAI-compatible 图片模型配置。 */
+  imageModel?: {
+    /** Images Generations 完整接口 URL。 */
     endpoint: string
     /** 仓库外访问凭据。 */
     apiKey: string
@@ -75,18 +86,22 @@ export class ApplicationRuntime {
     const identifiers = new SystemIdentifierGenerator()
     const contentRepository = new SqliteContentRepository(this.sqlite.getClient())
     const sourceProcessor = new NodeSourceContentProcessor(identifiers)
+    const imageAssets = new LocalImageAssetStorage(options.dataDirectory)
     this.contentService = new ContentApplicationService({
       repository: contentRepository,
       identifiers,
       clock: this.clock,
       sourceProcessor,
       sourceFiles: new LocalSourceFileStorage(options.dataDirectory),
+      imageAssets,
     })
     this.generationService = new GenerationApplicationService({
       runs: new SqliteRunRepository(this.sqlite.getClient()),
       content: contentRepository,
       context: new SqliteContextProvider(this.sqlite.getClient()),
       model: new OpenAiCompatibleTextModel(options.textModel ?? { endpoint: '', apiKey: '', model: '' }),
+      imageModel: new OpenAiCompatibleImageModel(options.imageModel ?? { endpoint: '', apiKey: '', model: '' }),
+      imageAssets,
       identifiers,
       clock: this.clock,
       sourceProcessor,

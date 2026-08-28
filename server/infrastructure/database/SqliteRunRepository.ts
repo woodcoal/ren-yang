@@ -13,6 +13,7 @@ import type {
   EvidenceSnapshotRecord,
   FormatTemplateRecord,
   GenerationRunRecord,
+  ImageAssetRecord,
   ParameterProfileRecord,
   TextModelSnapshot,
   TextModelUsage,
@@ -25,7 +26,7 @@ import type {
   RunTaskRecord,
 } from '../../ports/RunRepository'
 
-/** 使用 SQLite 短事务实现阶段三全部运行事实。 */
+/** 使用 SQLite 短事务实现阶段四全部运行和图文资产事实。 */
 export class SqliteRunRepository implements RunRepository {
   /**
    * 创建运行仓储。
@@ -103,9 +104,9 @@ export class SqliteRunRepository implements RunRepository {
       this.client.prepare(`
         INSERT INTO generation_runs (
           id, kind, persona_version_id, format_template_id, parameter_profile_id, status,
-          input_json, scene_json, parameter_snapshot_json, model_snapshot_json,
+          input_json, scene_json, parameter_snapshot_json, model_snapshot_json, image_model_snapshot_json,
           prompt_version, context_provider, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'sqlite_fts5', ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'sqlite_fts5', ?, ?)
       `).run(
         command.runId,
         command.kind,
@@ -117,6 +118,7 @@ export class SqliteRunRepository implements RunRepository {
         command.scene ? JSON.stringify(command.scene) : null,
         JSON.stringify(command.parameters),
         JSON.stringify(command.model),
+        command.imageModel ? JSON.stringify(command.imageModel) : null,
         command.promptVersion,
         command.timestamp,
         command.timestamp,
@@ -212,6 +214,29 @@ export class SqliteRunRepository implements RunRepository {
     return this.client.prepare('SELECT * FROM task_jobs WHERE run_id = ? ORDER BY created_at DESC, id DESC').all(runId).map(toRunTask)
   }
 
+  /** @param runId 运行 UUID。 @returns 按块顺序排列的成功图片资产。 */
+  async listImageAssets(runId: string): Promise<ImageAssetRecord[]> {
+    return this.client.prepare(`
+      SELECT image_assets.* FROM image_assets
+      INNER JOIN block_attempts ON block_attempts.id = image_assets.attempt_id
+      INNER JOIN artifact_blocks ON artifact_blocks.id = block_attempts.block_id
+      INNER JOIN artifact_documents ON artifact_documents.id = artifact_blocks.document_id
+      WHERE artifact_documents.run_id = ? ORDER BY artifact_blocks.ordinal, image_assets.created_at
+    `).all(runId).map(toImageAsset)
+  }
+
+  /** @param runId 运行 UUID。 @param assetId 资产 UUID。 @returns 确属该运行的资产或 null。 */
+  async findImageAsset(runId: string, assetId: string): Promise<ImageAssetRecord | null> {
+    const value = this.client.prepare(`
+      SELECT image_assets.* FROM image_assets
+      INNER JOIN block_attempts ON block_attempts.id = image_assets.attempt_id
+      INNER JOIN artifact_blocks ON artifact_blocks.id = block_attempts.block_id
+      INNER JOIN artifact_documents ON artifact_documents.id = artifact_blocks.document_id
+      WHERE artifact_documents.run_id = ? AND image_assets.id = ?
+    `).get(runId, assetId)
+    return value ? toImageAsset(value) : null
+  }
+
   /** @param runId 运行 UUID。 @param expected 合法起始状态。 @param timestamp 更新时间。 @returns 状态被切换时为 true。 */
   async markRunRunning(runId: string, expected: GenerationRunRecord['status'][], timestamp: number): Promise<boolean> {
     if (expected.length === 0) return false
@@ -299,10 +324,10 @@ export class SqliteRunRepository implements RunRepository {
       const insertBlock = this.client.prepare(`
         INSERT INTO artifact_blocks (
           id, document_id, spec_key, ordinal, type, role, spec_json, status, is_locked, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, 'text', ?, ?, 'pending', 0, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?)
       `)
       spec.blocks.forEach((block, index) => {
-        insertBlock.run(blockIds[index], documentId, block.key, index, block.role, JSON.stringify(block), timestamp, timestamp)
+        insertBlock.run(blockIds[index], documentId, block.key, index, block.type, block.role, JSON.stringify(block), timestamp, timestamp)
       })
       this.client.prepare(`
         INSERT INTO task_jobs (id, run_id, type, payload_json, status, attempt_count, max_attempts, created_at, updated_at)
@@ -363,7 +388,7 @@ export class SqliteRunRepository implements RunRepository {
           UPDATE artifact_blocks SET status = 'pending', updated_at = ?
           WHERE status = 'failed' AND document_id IN (
             SELECT id FROM artifact_documents WHERE run_id = ?
-          )
+          ) AND is_locked = 0
         `).run(timestamp, runId)
       }
       const changed = this.client.prepare(`
@@ -412,6 +437,21 @@ export class SqliteRunRepository implements RunRepository {
   /** @param runId 运行 UUID。 @param timestamp 完成时间。 @returns 无返回值。 */
   async markRunCanceled(runId: string, timestamp: number): Promise<void> {
     this.client.transaction(() => {
+      this.client.prepare(`
+        UPDATE block_attempts SET status = 'failed', error_code = 'RUN_CANCELED',
+          error_message = '运行已取消', completed_at = ?
+        WHERE status = 'running' AND block_id IN (
+          SELECT artifact_blocks.id FROM artifact_blocks
+          INNER JOIN artifact_documents ON artifact_documents.id = artifact_blocks.document_id
+          WHERE artifact_documents.run_id = ?
+        )
+      `).run(timestamp, runId)
+      this.client.prepare(`
+        UPDATE artifact_blocks SET status = 'canceled', updated_at = ?
+        WHERE status IN ('pending', 'running') AND document_id IN (
+          SELECT id FROM artifact_documents WHERE run_id = ?
+        )
+      `).run(timestamp, runId)
       this.client.prepare(`UPDATE generation_runs SET status = 'canceled', completed_at = ?, updated_at = ? WHERE id = ?`).run(timestamp, timestamp, runId)
       this.client.prepare(`UPDATE task_jobs SET status = 'canceled', lease_until = NULL, updated_at = ? WHERE run_id = ? AND status = 'cancel_requested'`).run(timestamp, runId)
     }).immediate()
@@ -464,8 +504,37 @@ export class SqliteRunRepository implements RunRepository {
   /** @param blockId 块 UUID。 @param attemptId 尝试 UUID。 @param outputText 纯文本结果。 @param usage 模型用量。 @param timestamp 完成时间。 @returns 无返回值。 */
   async completeBlockAttempt(blockId: string, attemptId: string, outputText: string, usage: TextModelUsage, timestamp: number): Promise<void> {
     this.client.transaction(() => {
-      this.client.prepare(`UPDATE block_attempts SET status = 'succeeded', output_text = ?, usage_json = ?, completed_at = ? WHERE id = ? AND block_id = ? AND status = 'running'`).run(outputText, JSON.stringify(usage), timestamp, attemptId, blockId)
-      this.client.prepare(`UPDATE artifact_blocks SET status = 'succeeded', selected_attempt_id = ?, updated_at = ? WHERE id = ?`).run(attemptId, timestamp, blockId)
+      const attempt = this.client.prepare(`UPDATE block_attempts SET status = 'succeeded', output_text = ?, usage_json = ?, completed_at = ? WHERE id = ? AND block_id = ? AND status = 'running'`).run(outputText, JSON.stringify(usage), timestamp, attemptId, blockId)
+      if (attempt.changes !== 1) throw new Error('文字块尝试状态已经变化')
+      const block = this.client.prepare(`UPDATE artifact_blocks SET status = 'succeeded', selected_attempt_id = ?, selected_at = ?, updated_at = ? WHERE id = ? AND status = 'running'`).run(attemptId, timestamp, timestamp, blockId)
+      if (block.changes !== 1) throw new Error('文字块状态已经变化')
+    }).immediate()
+  }
+
+  /** @param blockId 图片块 UUID。 @param attemptId 尝试 UUID。 @param asset 本地资产事实。 @param timestamp 完成时间。 @returns 无返回值。 */
+  async completeImageBlockAttempt(blockId: string, attemptId: string, asset: Omit<ImageAssetRecord, 'attemptId' | 'createdAt'>, timestamp: number): Promise<void> {
+    this.client.transaction(() => {
+      const running = this.client.prepare(`
+        SELECT 1 FROM block_attempts
+        INNER JOIN artifact_blocks ON artifact_blocks.id = block_attempts.block_id
+        WHERE block_attempts.id = ? AND block_attempts.block_id = ?
+          AND block_attempts.status = 'running' AND artifact_blocks.status = 'running'
+      `).get(attemptId, blockId)
+      if (!running) throw new Error('图片块或尝试状态已经变化')
+      this.client.prepare(`
+        INSERT INTO image_assets (id, attempt_id, relative_path, media_type, size_bytes, content_hash, alt_text, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(asset.id, attemptId, asset.relativePath, asset.mediaType, asset.sizeBytes, asset.contentHash, asset.altText, timestamp)
+      const attempt = this.client.prepare(`
+        UPDATE block_attempts SET status = 'succeeded', completed_at = ?
+        WHERE id = ? AND block_id = ? AND status = 'running'
+      `).run(timestamp, attemptId, blockId)
+      if (attempt.changes !== 1) throw new Error('图片块尝试状态已经变化')
+      const block = this.client.prepare(`
+        UPDATE artifact_blocks SET status = 'succeeded', selected_attempt_id = ?, selected_at = ?, updated_at = ?
+        WHERE id = ? AND status = 'running'
+      `).run(attemptId, timestamp, timestamp, blockId)
+      if (block.changes !== 1) throw new Error('图片块状态已经变化')
     }).immediate()
   }
 
@@ -473,8 +542,63 @@ export class SqliteRunRepository implements RunRepository {
   async failBlockAttempt(blockId: string, attemptId: string, code: string, message: string, timestamp: number): Promise<void> {
     this.client.transaction(() => {
       this.client.prepare(`UPDATE block_attempts SET status = 'failed', error_code = ?, error_message = ?, completed_at = ? WHERE id = ? AND block_id = ? AND status = 'running'`).run(code, message.slice(0, 1000), timestamp, attemptId, blockId)
-      this.client.prepare(`UPDATE artifact_blocks SET status = 'failed', updated_at = ? WHERE id = ?`).run(timestamp, blockId)
+      this.client.prepare(`
+        UPDATE artifact_blocks SET status = CASE WHEN selected_attempt_id IS NOT NULL THEN 'succeeded' ELSE 'failed' END,
+          updated_at = ? WHERE id = ?
+      `).run(timestamp, blockId)
     }).immediate()
+  }
+
+  /** @param runId 运行 UUID。 @param blockId 块 UUID。 @param taskId 新任务 UUID。 @param timestamp 创建时间。 @returns 是否入队。 */
+  async enqueueBlockRetry(runId: string, blockId: string, taskId: string, timestamp: number): Promise<boolean> {
+    return this.client.transaction(() => {
+      const block = this.client.prepare(`
+        SELECT artifact_blocks.id FROM artifact_blocks
+        INNER JOIN artifact_documents ON artifact_documents.id = artifact_blocks.document_id
+        WHERE artifact_documents.run_id = ? AND artifact_blocks.id = ?
+          AND artifact_blocks.status IN ('succeeded', 'failed') AND artifact_blocks.is_locked = 0
+      `).get(runId, blockId)
+      if (!block) return false
+      const changed = this.client.prepare(`
+        UPDATE generation_runs SET status = 'queued', completed_at = NULL, error_code = NULL, error_message = NULL, updated_at = ?
+        WHERE id = ? AND status IN ('succeeded', 'partial', 'failed')
+      `).run(timestamp, runId)
+      if (changed.changes !== 1) return false
+      this.client.prepare(`UPDATE artifact_blocks SET status = 'pending', updated_at = ? WHERE id = ?`).run(timestamp, blockId)
+      this.client.prepare(`
+        INSERT INTO task_jobs (id, run_id, type, payload_json, status, attempt_count, max_attempts, created_at, updated_at)
+        VALUES (?, ?, 'execute_block', ?, 'queued', 0, 2, ?, ?)
+      `).run(taskId, runId, JSON.stringify({ runId, blockId }), timestamp, timestamp)
+      return true
+    }).immediate()
+  }
+
+  /** @param runId 运行 UUID。 @param blockId 块 UUID。 @param attemptId 成功尝试 UUID。 @param timestamp 选择时间。 @returns 是否更新。 */
+  async selectBlockAttempt(runId: string, blockId: string, attemptId: string, timestamp: number): Promise<boolean> {
+    return this.client.prepare(`
+      UPDATE artifact_blocks SET selected_attempt_id = ?, selected_at = ?, status = 'succeeded', updated_at = ?
+      WHERE id = ? AND status = 'succeeded' AND document_id IN (
+        SELECT artifact_documents.id FROM artifact_documents
+        INNER JOIN generation_runs ON generation_runs.id = artifact_documents.run_id
+        WHERE artifact_documents.run_id = ? AND generation_runs.status IN ('succeeded', 'partial', 'failed')
+      )
+        AND EXISTS (
+          SELECT 1 FROM block_attempts WHERE id = ? AND block_id = artifact_blocks.id AND status = 'succeeded'
+        )
+    `).run(attemptId, timestamp, timestamp, blockId, runId, attemptId).changes === 1
+  }
+
+  /** @param runId 运行 UUID。 @param blockId 块 UUID。 @param locked 新锁定值。 @param timestamp 操作时间。 @returns 是否更新。 */
+  async setBlockLock(runId: string, blockId: string, locked: boolean, timestamp: number): Promise<boolean> {
+    return this.client.prepare(`
+      UPDATE artifact_blocks SET is_locked = ?, locked_at = ?, updated_at = ?
+      WHERE id = ? AND document_id IN (
+        SELECT artifact_documents.id FROM artifact_documents
+        INNER JOIN generation_runs ON generation_runs.id = artifact_documents.run_id
+        WHERE artifact_documents.run_id = ? AND generation_runs.status IN ('succeeded', 'partial', 'failed')
+      )
+        AND selected_attempt_id IS NOT NULL AND status = 'succeeded'
+    `).run(locked ? 1 : 0, locked ? timestamp : null, timestamp, blockId, runId).changes === 1
   }
 
   /** @param runId 运行 UUID。 @param timestamp 完成时间。 @returns 根据块结果计算的最终状态。 */
@@ -521,6 +645,7 @@ function toRun(value: unknown): GenerationRunRecord {
     scene: data.scene_json === null ? null : sceneContextSchema.parse(JSON.parse(String(data.scene_json))),
     parameterSnapshot: textModelParametersSchema.parse(JSON.parse(String(data.parameter_snapshot_json))),
     modelSnapshot: JSON.parse(String(data.model_snapshot_json)) as TextModelSnapshot,
+    imageModelSnapshot: data.image_model_snapshot_json === null ? null : JSON.parse(String(data.image_model_snapshot_json)),
     promptVersion: String(data.prompt_version), contextProvider: data.context_provider as GenerationRunRecord['contextProvider'],
     result: data.result_json === null ? null : interestAssessmentSchema.parse(JSON.parse(String(data.result_json))),
     usage: data.usage_json === null ? null : JSON.parse(String(data.usage_json)) as TextModelUsage,
@@ -544,7 +669,7 @@ function toDocumentSpec(value: unknown): DocumentSpecRecord {
 /** @param value SQLite 产物块行。 @returns 已校验文字块。 */
 function toBlock(value: unknown): ArtifactBlockRecord {
   const data = row(value)
-  return { id: String(data.id), documentId: String(data.document_id), specKey: String(data.spec_key), ordinal: Number(data.ordinal), type: 'text', role: data.role as ArtifactBlockRecord['role'], spec: documentSpecSchema.shape.blocks.element.parse(JSON.parse(String(data.spec_json))), status: data.status as ArtifactBlockRecord['status'], selectedAttemptId: nullableString(data.selected_attempt_id), isLocked: Number(data.is_locked) === 1, createdAt: Number(data.created_at), updatedAt: Number(data.updated_at) }
+  return { id: String(data.id), documentId: String(data.document_id), specKey: String(data.spec_key), ordinal: Number(data.ordinal), type: data.type as ArtifactBlockRecord['type'], role: data.role as ArtifactBlockRecord['role'], spec: documentSpecSchema.shape.blocks.element.parse(JSON.parse(String(data.spec_json))), status: data.status as ArtifactBlockRecord['status'], selectedAttemptId: nullableString(data.selected_attempt_id), isLocked: Number(data.is_locked) === 1, selectedAt: nullableNumber(data.selected_at), lockedAt: nullableNumber(data.locked_at), createdAt: Number(data.created_at), updatedAt: Number(data.updated_at) }
 }
 
 /** @param value SQLite 块尝试行。 @returns 块尝试记录。 */
@@ -557,6 +682,16 @@ function toAttempt(value: unknown): BlockAttemptRecord {
 function toRunTask(value: unknown): RunTaskRecord {
   const data = row(value)
   return { id: String(data.id), runId: String(data.run_id), type: String(data.type), status: String(data.status), attemptCount: Number(data.attempt_count), maxAttempts: Number(data.max_attempts), lastError: nullableString(data.last_error), createdAt: Number(data.created_at), updatedAt: Number(data.updated_at) }
+}
+
+/** @param value SQLite 图片资产行。 @returns 图片资产事实。 */
+function toImageAsset(value: unknown): ImageAssetRecord {
+  const data = row(value)
+  return {
+    id: String(data.id), attemptId: String(data.attempt_id), relativePath: String(data.relative_path),
+    mediaType: data.media_type as ImageAssetRecord['mediaType'], sizeBytes: Number(data.size_bytes),
+    contentHash: String(data.content_hash), altText: String(data.alt_text), createdAt: Number(data.created_at),
+  }
 }
 
 /** @param value 未知可空字段。 @returns 字符串或 null。 */

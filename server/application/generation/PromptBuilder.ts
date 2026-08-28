@@ -1,9 +1,9 @@
-import type { DocumentSpec, SceneContext } from '../../../shared/schemas/generation'
+import type { DocumentSpec, ImageVisualBrief, SceneContext } from '../../../shared/schemas/generation'
 import type { EvidenceSnapshotRecord } from '../../domain/generation/GenerationModels'
 import type { PersonaSnapshot, WorldSnapshot } from '../../domain/content/ContentModels'
 
-/** 阶段三提示版本；任何提示语义变化都必须更新该值。 */
-export const GENERATION_PROMPT_VERSION = 'text-v1'
+/** 阶段四图文提示版本；任何提示语义变化都必须更新该值。 */
+export const GENERATION_PROMPT_VERSION = 'artifact-v2'
 
 /** 统一的最高优先级模型规则。 */
 const BASE_SYSTEM_RULES = `你是人物模拟与内容规划引擎。必须遵守以下规则：
@@ -39,8 +39,9 @@ export function buildInterestPrompt(context: PromptContext, content: string): { 
  * @param context 固定人物、世界、场景和证据快照。
  * @param requirement 用户创作要求。
  * @param guidance 可选格式模板指导。
- * @param minimumBlocks 最少文字块数。
- * @param maximumBlocks 最大文字块数。
+ * @param minimumBlocks 最少文档块数。
+ * @param maximumBlocks 最大文档块数。
+ * @param allowImages 本次运行是否允许图片块。
  * @returns 分层系统提示和用户提示。
  */
 export function buildDocumentPlanPrompt(
@@ -49,11 +50,31 @@ export function buildDocumentPlanPrompt(
   guidance: string,
   minimumBlocks: number,
   maximumBlocks: number,
+  allowImages: boolean,
 ): { systemPrompt: string, userPrompt: string } {
+  const imageRule = allowImages
+    ? '允许 type=image，图片 role 只能是 hero_image 或 illustration，并必须输出包含 theme、subject、composition、colorPalette、texture、aspectRatio、altText、negativePrompt 的 visualBrief。'
+    : '只允许 type=text，禁止规划图片块。'
   return {
-    systemPrompt: `${BASE_SYSTEM_RULES}\n规划一份纯文字文档规格。输出 title、summary、blocks。每个块包含 key、role、instruction、acceptanceCriteria、dependsOn；role 只能是 heading、paragraph、list、quote；块只能依赖排在前面的块。块数必须在 ${minimumBlocks} 到 ${maximumBlocks} 之间。`,
+    systemPrompt: `${BASE_SYSTEM_RULES}\n规划一份统一文档规格。输出 title、summary、purpose、constraints、requestedFormats、blocks。每个块包含 key、type、role、instruction、acceptanceCriteria、dependsOn；文字 role 只能是 heading、paragraph、list、quote。${imageRule} 块只能依赖排在前面的块。块数必须在 ${minimumBlocks} 到 ${maximumBlocks} 之间。`,
     userPrompt: `${serializePromptContext(context, '创作要求', requirement)}\n\n<格式模板>${JSON.stringify({ guidance })}</格式模板>`,
   }
+}
+
+/**
+ * 构造图片模型使用的显式视觉提示。
+ * @param context 固定人物、世界、场景和证据快照。
+ * @param brief 已确认视觉简报。
+ * @param previousOutputs 前置成功文字块。
+ * @returns 不包含系统密钥或隐藏提示的图片生成文本。
+ */
+export function buildImagePrompt(context: PromptContext, brief: ImageVisualBrief, previousOutputs: Array<{ key: string, text: string }>): string {
+  return `根据以下 JSON 视觉简报生成一张辅助内容表达的图片。不要在图片中生成水印、签名、界面或多余文字。
+<人物视觉设定>${JSON.stringify({ appearance: context.persona.appearance, visualStyle: context.persona.visualStyle })}</人物视觉设定>
+<仅本次场景>${JSON.stringify(context.scene)}</仅本次场景>
+<视觉简报>${JSON.stringify(brief)}</视觉简报>
+<前置文字>${JSON.stringify(previousOutputs)}</前置文字>
+<负面约束>${JSON.stringify(brief.negativePrompt)}</负面约束>`
 }
 
 /**

@@ -24,7 +24,7 @@ export const createParameterProfileSchema = z.object({
   values: textModelParametersSchema,
 })
 
-/** 纯文字格式模板规格。 */
+/** 文档格式模板规格。 */
 export const formatTemplateSpecSchema = z.object({
   guidance: z.string().trim().min(1, '格式指导不能为空').max(10_000),
   minimumBlocks: z.number().int().min(1).max(20),
@@ -56,6 +56,7 @@ export const createGenerationRunSchema = z.object({
   scene: sceneContextSchema.optional(),
   parameterProfileId: z.string().uuid('参数方案标识无效').nullable().optional(),
   formatTemplateId: z.string().uuid('格式模板标识无效').nullable().optional(),
+  includeImages: z.boolean().default(false),
 })
 
 /** 兴趣判断分项因素。 */
@@ -77,21 +78,57 @@ export const interestAssessmentSchema = z.object({
   reasoningSummary: z.string().trim().min(1).max(4_000),
 })
 
+/** 图片模型使用且会写入尝试快照的完整视觉简报。 */
+export const imageVisualBriefSchema = z.object({
+  theme: z.string().trim().min(1, '图片主题不能为空').max(2_000),
+  subject: z.string().trim().min(1, '图片主体不能为空').max(2_000),
+  composition: z.string().trim().min(1, '构图要求不能为空').max(2_000),
+  colorPalette: z.string().trim().min(1, '色彩要求不能为空').max(1_000),
+  texture: z.string().trim().min(1, '质感要求不能为空').max(1_000),
+  aspectRatio: z.enum(['1:1', '4:3', '3:4', '16:9', '9:16']),
+  altText: z.string().trim().min(1, '替代文本不能为空').max(500),
+  negativePrompt: z.string().trim().max(2_000).default(''),
+})
+
 /** 文档规格中的纯文字块。 */
-export const documentSpecBlockSchema = z.object({
+export const textDocumentSpecBlockSchema = z.object({
   key: z.string().regex(/^[a-z][a-z0-9_-]{0,31}$/, '块键必须是小写字母开头的安全标识'),
+  type: z.literal('text').default('text'),
   role: z.enum(['heading', 'paragraph', 'list', 'quote']),
   instruction: z.string().trim().min(1).max(5_000),
   acceptanceCriteria: z.array(z.string().trim().min(1).max(1_000)).min(1).max(10),
   dependsOn: z.array(z.string()).max(20),
 })
 
+/** 文档规格中的图片块。 */
+export const imageDocumentSpecBlockSchema = z.object({
+  key: z.string().regex(/^[a-z][a-z0-9_-]{0,31}$/, '块键必须是小写字母开头的安全标识'),
+  type: z.literal('image'),
+  role: z.enum(['hero_image', 'illustration']),
+  instruction: z.string().trim().min(1).max(5_000),
+  acceptanceCriteria: z.array(z.string().trim().min(1).max(1_000)).min(1).max(10),
+  dependsOn: z.array(z.string()).max(20),
+  visualBrief: imageVisualBriefSchema,
+})
+
+/** 兼容阶段三无 type 文字块的统一块规格。 */
+export const documentSpecBlockSchema = z.union([imageDocumentSpecBlockSchema, textDocumentSpecBlockSchema])
+
+/** 用户可以从同一产物选择的导出格式。 */
+export const artifactFormatSchema = z.enum(['html', 'markdown', 'txt'])
+
 /** AI 规划及用户编辑共用的文档规格。 */
 export const documentSpecSchema = z.object({
   title: z.string().trim().min(1, '文档标题不能为空').max(500),
   summary: z.string().trim().min(1, '文档摘要不能为空').max(2_000),
+  purpose: z.string().trim().max(2_000).default(''),
+  constraints: z.array(z.string().trim().min(1).max(1_000)).max(20).default([]),
+  requestedFormats: z.array(artifactFormatSchema).min(1).max(3).default(['html', 'markdown', 'txt']),
   blocks: z.array(documentSpecBlockSchema).min(1).max(20),
 }).superRefine((value, context) => {
+  if (new Set(value.requestedFormats).size !== value.requestedFormats.length) {
+    context.addIssue({ code: 'custom', path: ['requestedFormats'], message: '导出格式不能重复' })
+  }
   const keys = new Set<string>()
   value.blocks.forEach((block, index) => {
     if (keys.has(block.key)) {
@@ -120,6 +157,25 @@ export const textBlockOutputSchema = z.object({
 /** 修改待确认文档规格。 */
 export const updateDocumentSpecSchema = documentSpecSchema
 
+/** 选择块的一次成功尝试。 */
+export const selectBlockAttemptSchema = z.object({
+  attemptId: z.string().uuid('尝试标识无效'),
+})
+
+/** 设置块锁定状态。 */
+export const setBlockLockSchema = z.object({
+  locked: z.boolean(),
+})
+
+/** 请求即时渲染一种或多种格式。 */
+export const renderArtifactSchema = z.object({
+  formats: z.array(artifactFormatSchema).min(1).max(3),
+}).superRefine((value, context) => {
+  if (new Set(value.formats).size !== value.formats.length) {
+    context.addIssue({ code: 'custom', path: ['formats'], message: '渲染格式不能重复' })
+  }
+})
+
 /** 运行列表查询。 */
 export const listRunsQuerySchema = z.object({
   personaId: z.string().uuid().optional(),
@@ -133,6 +189,8 @@ export type TextModelParameters = z.infer<typeof textModelParametersSchema>
 export type CreateParameterProfileInput = z.infer<typeof createParameterProfileSchema>
 export type CreateFormatTemplateInput = z.infer<typeof createFormatTemplateSchema>
 export type CreateInterestRunInput = z.infer<typeof createInterestRunSchema>
-export type CreateGenerationRunInput = z.infer<typeof createGenerationRunSchema>
+export type CreateGenerationRunInput = z.input<typeof createGenerationRunSchema>
 export type InterestAssessment = z.infer<typeof interestAssessmentSchema>
 export type DocumentSpec = z.infer<typeof documentSpecSchema>
+export type ImageVisualBrief = z.infer<typeof imageVisualBriefSchema>
+export type ArtifactFormat = z.infer<typeof artifactFormatSchema>

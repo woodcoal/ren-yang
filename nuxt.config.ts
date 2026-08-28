@@ -17,6 +17,11 @@ export default defineNuxtConfig({
       apiKey: '',
       model: '',
     },
+    imageModel: {
+      endpoint: '',
+      apiKey: '',
+      model: '',
+    },
     session: {
       password: process.env.NUXT_SESSION_PASSWORD || '',
       maxAge: 60 * 60 * 24 * 7,

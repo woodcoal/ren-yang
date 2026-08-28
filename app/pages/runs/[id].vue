@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, shallowRef, watch } from 'vue'
-import type { DocumentSpec } from '#shared/schemas/generation'
+import type { ArtifactFormat, DocumentSpec } from '#shared/schemas/generation'
 import type { ApiResponse } from '#shared/types/api'
-import type { RunDetails } from '#shared/types/generation'
+import type { RenderedArtifactView, RunDetails } from '#shared/types/generation'
 import { getApiErrorMessage } from '../../utils/apiError'
 
 const route = useRoute()
@@ -11,10 +11,14 @@ const { data, error, refresh } = await useFetch<ApiResponse<RunDetails>>(`/api/v
 const details = computed(() => data.value?.data ?? null)
 const active = computed(() => details.value ? ['planning', 'queued', 'running'].includes(details.value.run.status) : false)
 const draftSpec = computed(() => details.value?.documentSpecs.find(spec => spec.status === 'draft') ?? null)
+const confirmedSpec = computed(() => details.value?.documentSpecs.find(spec => spec.status === 'confirmed') ?? null)
+const artifactFormats = computed<ArtifactFormat[]>(() => confirmedSpec.value?.spec.requestedFormats ?? [])
+const canRenderArtifact = computed(() => details.value?.blocks.some(block => block.selectedAttemptId) ?? false)
 const actionLoading = shallowRef(false)
 const actionError = shallowRef<string | null>(null)
 const actionMessage = shallowRef<string | null>(null)
 const pollingTimer = shallowRef<ReturnType<typeof setInterval> | null>(null)
+const artifactPreview = shallowRef<RenderedArtifactView | null>(null)
 
 /** @returns 启动每两秒一次的活动运行轮询；已有计时器时不重复创建。 */
 function startPolling(): void {
@@ -46,7 +50,7 @@ async function confirmSpec(spec: DocumentSpec): Promise<void> {
   await executeAction(async () => {
     await $fetch(`/api/v1/runs/${runId}/document-spec`, { method: 'PUT', body: spec })
     await $fetch(`/api/v1/runs/${runId}/document-spec/confirm`, { method: 'POST' })
-    actionMessage.value = '规格已确认，文字块已进入执行队列'
+    actionMessage.value = '规格已确认，图文块已进入执行队列'
   })
 }
 
@@ -66,6 +70,50 @@ async function retryRun(): Promise<void> {
   })
 }
 
+/** @param blockId 目标块 UUID。 @returns 创建单块任务并刷新尝试历史。 */
+async function retryBlock(blockId: string): Promise<void> {
+  await executeAction(async () => {
+    await $fetch(`/api/v1/runs/${runId}/blocks/${blockId}/attempts`, { method: 'POST' })
+    actionMessage.value = '已创建单块重试任务'
+  })
+}
+
+/** @param blockId 目标块 UUID。 @param attemptId 历史成功尝试 UUID。 @returns 切换当前选择并刷新详情。 */
+async function selectBlockAttempt(blockId: string, attemptId: string): Promise<void> {
+  await executeAction(async () => {
+    await $fetch(`/api/v1/runs/${runId}/blocks/${blockId}/select`, { method: 'POST', body: { attemptId } })
+    actionMessage.value = '已切换当前选中尝试'
+  })
+}
+
+/** @param blockId 目标块 UUID。 @param locked 新锁定状态。 @returns 更新锁定状态并刷新详情。 */
+async function setBlockLock(blockId: string, locked: boolean): Promise<void> {
+  await executeAction(async () => {
+    await $fetch(`/api/v1/runs/${runId}/blocks/${blockId}/lock`, { method: 'POST', body: { locked } })
+    actionMessage.value = locked ? '已锁定当前结果' : '已解除块锁定'
+  })
+}
+
+/** @returns 从服务端按同一组选中尝试生成全部允许格式的安全预览。 */
+async function renderArtifact(): Promise<void> {
+  if (actionLoading.value || artifactFormats.value.length === 0) return
+  actionLoading.value = true
+  actionError.value = null
+  actionMessage.value = null
+  try {
+    const response = await $fetch<ApiResponse<RenderedArtifactView>>(`/api/v1/runs/${runId}/render`, {
+      method: 'POST', body: { formats: artifactFormats.value },
+    })
+    artifactPreview.value = response.data
+  }
+  catch (requestError: unknown) {
+    actionError.value = getApiErrorMessage(requestError, '产物预览失败')
+  }
+  finally {
+    actionLoading.value = false
+  }
+}
+
 /** @param action 单次写操作。 @returns 统一处理提交锁、错误和详情刷新。 */
 async function executeAction(action: () => Promise<void>): Promise<void> {
   if (actionLoading.value) return
@@ -74,6 +122,7 @@ async function executeAction(action: () => Promise<void>): Promise<void> {
   actionMessage.value = null
   try {
     await action()
+    artifactPreview.value = null
     await refresh()
   }
   catch (requestError: unknown) {
@@ -92,7 +141,7 @@ function formatTime(timestamp: number | null): string {
 
 <template>
   <div>
-    <ContentPageHeader title="运行详情" description="查看固定输入、证据快照、规格修订、文字块尝试和任务状态。">
+    <ContentPageHeader title="运行详情" description="查看固定输入、证据快照、规格修订、图文块尝试和任务状态。">
       <UButton to="/history" color="neutral" variant="ghost">返回历史</UButton>
     </ContentPageHeader>
 
@@ -124,26 +173,41 @@ function formatTime(timestamp: number | null): string {
           </UCard>
 
           <UCard v-if="draftSpec && details.run.status === 'awaiting_confirmation'">
-            <template #header><div><h2 class="font-semibold text-highlighted">确认文档规格</h2><p class="mt-1 text-sm text-muted">当前为修订 v{{ draftSpec.revision }}，确认前不会生成文字块。</p></div></template>
-            <GenerationDocumentSpecEditor :spec="draftSpec.spec" :loading="actionLoading" @save="saveSpec" @confirm="confirmSpec" />
+            <template #header><div><h2 class="font-semibold text-highlighted">确认文档规格</h2><p class="mt-1 text-sm text-muted">当前为修订 v{{ draftSpec.revision }}，确认前不会生成图文块。</p></div></template>
+            <GenerationDocumentSpecEditor
+              :spec="draftSpec.spec"
+              :allow-images="'includeImages' in details.run.input && details.run.input.includeImages"
+              :loading="actionLoading"
+              @save="saveSpec"
+              @confirm="confirmSpec"
+            />
           </UCard>
 
           <UCard v-if="details.blocks.length">
-            <template #header><h2 class="font-semibold text-highlighted">产物文字块</h2></template>
+            <template #header><h2 class="font-semibold text-highlighted">产物图文块</h2></template>
             <div class="space-y-4">
-              <div v-for="block in details.blocks" :key="block.id" class="rounded-md border border-default p-4">
-                <div class="flex flex-wrap justify-between gap-2"><h3 class="font-medium text-highlighted">{{ block.ordinal + 1 }}. {{ block.specKey }}</h3><UBadge color="neutral" variant="subtle">{{ block.status }}</UBadge></div>
-                <p class="mt-2 text-sm text-muted">{{ block.instruction }}</p>
-                <div v-if="block.attempts.length" class="mt-3 space-y-2">
-                  <details v-for="attempt in block.attempts" :key="attempt.id" :open="attempt.id === block.selectedAttemptId" class="rounded-md bg-elevated p-3">
-                    <summary class="cursor-pointer text-xs">尝试 {{ attempt.attemptNo }} · {{ attempt.status }} · {{ formatTime(attempt.completedAt) }}</summary>
-                    <pre v-if="attempt.outputText" class="content-pre mt-2">{{ attempt.outputText }}</pre>
-                    <p v-if="attempt.errorMessage" class="mt-2 text-sm text-error">{{ attempt.errorCode }}：{{ attempt.errorMessage }}</p>
-                  </details>
-                </div>
-              </div>
+              <GenerationArtifactBlockCard
+                v-for="block in details.blocks"
+                :key="block.id"
+                :run-id="runId"
+                :block="block"
+                :loading="actionLoading"
+                :actions-disabled="active"
+                @retry="retryBlock(block.id)"
+                @select="selectBlockAttempt(block.id, $event)"
+                @lock="setBlockLock(block.id, $event)"
+              />
             </div>
           </UCard>
+
+          <GenerationArtifactPreview
+            v-if="confirmedSpec && canRenderArtifact"
+            :run-id="runId"
+            :formats="artifactFormats"
+            :preview="artifactPreview"
+            :loading="actionLoading"
+            @render="renderArtifact"
+          />
 
           <UCard>
             <template #header><h2 class="font-semibold text-highlighted">证据快照</h2></template>
@@ -158,6 +222,7 @@ function formatTime(timestamp: number | null): string {
             <dl class="space-y-3 text-sm">
               <div><dt class="text-muted">人物版本</dt><dd class="break-all">{{ details.run.personaVersionId }}</dd></div>
               <div><dt class="text-muted">提示版本</dt><dd>{{ details.run.promptVersion }}</dd></div>
+              <div v-if="details.run.imageModel"><dt class="text-muted">图片模型</dt><dd>{{ details.run.imageModel.model }}</dd></div>
               <div><dt class="text-muted">参数</dt><dd><pre class="content-pre">{{ JSON.stringify(details.run.parameters, null, 2) }}</pre></dd></div>
               <div><dt class="text-muted">完成时间</dt><dd>{{ formatTime(details.run.completedAt) }}</dd></div>
             </dl>

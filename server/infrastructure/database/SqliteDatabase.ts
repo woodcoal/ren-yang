@@ -37,11 +37,21 @@ export class SqliteDatabase implements DatabaseHealthReader {
     createRuntimeDirectories(dataDirectory)
 
     this.client = new Database(this.databasePath)
-    this.client.pragma('foreign_keys = ON')
     this.client.pragma('journal_mode = WAL')
     this.client.pragma('busy_timeout = 5000')
     this.db = drizzle(this.client, { schema: databaseSchema })
-    migrate(this.db, { migrationsFolder: resolveFromProcess(options.migrationsDirectory) })
+    this.client.pragma('foreign_keys = OFF')
+    try {
+      migrate(this.db, { migrationsFolder: resolveFromProcess(options.migrationsDirectory) })
+    }
+    finally {
+      this.client.pragma('foreign_keys = ON')
+    }
+    const violations = this.client.pragma('foreign_key_check') as unknown[]
+    if (violations.length > 0) {
+      this.client.close()
+      throw new Error('数据库迁移后外键完整性检查失败')
+    }
   }
 
   /** 原生 SQLite 客户端，仅供数据库适配器内部使用。 */

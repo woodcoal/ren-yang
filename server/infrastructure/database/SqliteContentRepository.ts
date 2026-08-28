@@ -170,6 +170,15 @@ export class SqliteContentRepository implements ContentRepository {
     }
   }
 
+  /** @param personaId 人物 UUID。 @returns 所属运行 UUID 列表。 */
+  async listPersonaRunIds(personaId: string): Promise<string[]> {
+    return (this.client.prepare(`
+      SELECT generation_runs.id FROM generation_runs
+      INNER JOIN persona_versions ON persona_versions.id = generation_runs.persona_version_id
+      WHERE persona_versions.persona_id = ? ORDER BY generation_runs.created_at, generation_runs.id
+    `).all(personaId) as Array<{ id: string }>).map(item => item.id)
+  }
+
   /** @param personaId 人物 UUID。 @returns 删除的人物行数；运行和私有产物先在同一事务中删除。 */
   async deletePersona(personaId: string): Promise<number> {
     return this.client.transaction(() => {
