@@ -17,7 +17,9 @@ describe('HTTP 来源安全', () => {
 
   it('首次设置只接受直接连接和代理转发地址都属于回环的请求', () => {
     expect(new H3RequestSecurity(createEvent('127.0.0.1', {})).isLoopbackRequest()).toBe(true)
+    expect(new H3RequestSecurity(createEvent(undefined, { 'x-forwarded-for': '127.0.0.1' })).isLoopbackRequest()).toBe(true)
     expect(new H3RequestSecurity(createEvent('127.0.0.1', { 'x-forwarded-for': '203.0.113.8' })).isLoopbackRequest()).toBe(false)
+    expect(new H3RequestSecurity(createEvent(undefined, { 'x-forwarded-for': '127.0.0.1, 203.0.113.8' })).isLoopbackRequest()).toBe(false)
     expect(new H3RequestSecurity(createEvent('203.0.113.8', { 'x-forwarded-for': '127.0.0.1' })).isLoopbackRequest()).toBe(false)
   })
 })
@@ -28,7 +30,7 @@ describe('HTTP 来源安全', () => {
  * @param headers 转发来源请求头。
  * @returns 只包含来源字段的 H3 事件。
  */
-function createEvent(remoteAddress: string, headers: Record<string, string>): H3Event {
+function createEvent(remoteAddress: string | undefined, headers: Record<string, string>): H3Event {
   return {
     node: { req: { socket: { remoteAddress }, headers } },
   } as unknown as H3Event
