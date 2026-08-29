@@ -66,8 +66,8 @@ export interface CreateWorldRecord {
   timestamp: number
 }
 
-/** 创建资料和切片的持久化命令。 */
-export interface CreateSourceRecord {
+/** 创建或替换资料正文与切片的共用持久化字段。 */
+export interface SourceWriteRecord {
   /** 资料标识。 */
   id: string
   /** 展示名称。 */
@@ -87,6 +87,25 @@ export interface CreateSourceRecord {
   /** 创建时间。 */
   timestamp: number
 }
+
+/** 资料创建时需要原子写入的初始关联。 */
+export interface SourceCreationLinkRecord {
+  /** 关联目标类型。 */
+  targetType: 'persona' | 'world'
+  /** 关联目标标识。 */
+  targetId: string
+  /** 数值越小优先级越高。 */
+  priority: number
+}
+
+/** 创建资料、切片和初始关联的持久化命令。 */
+export interface CreateSourceRecord extends SourceWriteRecord {
+  /** 与资料在同一事务内建立的初始关联。 */
+  links: SourceCreationLinkRecord[]
+}
+
+/** 替换资料正文与切片的持久化命令，不改动现有关系。 */
+export interface ReplaceSourceRecord extends SourceWriteRecord {}
 
 /** 删除人物时会一并删除的运行历史数量。 */
 export interface PersonaRunHistoryStatistics {
@@ -165,7 +184,7 @@ export interface ContentRepository {
   /** @param record 完整资料创建命令。 @returns 无返回值。 */
   createSource(record: CreateSourceRecord): Promise<void>
   /** @param record 完整资料替换命令。 @returns 是否更新成功。 */
-  replaceSource(record: CreateSourceRecord): Promise<boolean>
+  replaceSource(record: ReplaceSourceRecord): Promise<boolean>
   /** @param sourceId 资料标识。 @returns 顺序稳定的切片。 */
   listSourceChunks(sourceId: string): Promise<SourceChunkRecord[]>
   /** @param sourceId 资料标识。 @returns 人物和世界关联。 */

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { FormSubmitEvent } from '@nuxt/ui'
 import { computed, reactive, shallowRef } from 'vue'
-import type { CreateSourceInput, SaveSoulDraftInput, UpdateWorldInput } from '#shared/schemas/content'
+import type { CreateSourceWithTargetsInput, SaveSoulDraftInput, UpdateWorldInput } from '#shared/schemas/content'
 import { updateWorldSchema } from '#shared/schemas/content'
 import type { ApiResponse } from '#shared/types/api'
 import type { DeletionImpact, SoulWorkspaceView, SourceDetails, SourceSummary, WorldDetails } from '#shared/types/content'
@@ -197,37 +197,53 @@ async function unlinkSource(sourceId: string): Promise<void> {
  * @param input 已校验资料输入。
  * @returns 创建和关联完成时结束。
  */
-async function createPastedSource(input: CreateSourceInput): Promise<void> {
-  await createAndLinkSource(async () => await $fetch<ApiResponse<SourceDetails>>('/api/v1/sources', { method: 'POST', body: input }))
-}
-
-/**
- * 上传文件资料并立即关联当前世界。
- * @param input 文件资料输入。
- * @returns 上传和关联完成时结束。
- */
-async function importSourceFile(input: SourceFileSubmission): Promise<void> {
-  const body = new FormData()
-  body.set('name', input.name)
-  body.set('role', input.role)
-  body.set('file', input.file)
-  await createAndLinkSource(async () => await $fetch<ApiResponse<SourceDetails>>('/api/v1/sources/files', { method: 'POST', body }))
-}
-
-/**
- * 执行资料创建并关联当前世界。
- * @param createSource 返回资料详情的创建请求。
- * @returns 创建、关联和刷新完成时结束。
- */
-async function createAndLinkSource(createSource: () => Promise<ApiResponse<SourceDetails>>): Promise<void> {
+async function createPastedSource(input: CreateSourceWithTargetsInput): Promise<void> {
   await runAction('新资料已创建并加入这个世界', async () => {
-    const response = await createSource()
-    await $fetch(`/api/v1/sources/${response.data.source.id}/links`, {
+    await $fetch<ApiResponse<SourceDetails>>('/api/v1/sources', {
       method: 'POST',
-      body: { targetType: 'world', targetId: worldId, priority: 100 },
+      body: { ...input, targets: [{ targetType: 'world', targetId: worldId }] },
     })
     await Promise.all([refresh(), refreshSources()])
   })
+}
+
+/**
+ * 逐个上传文件资料并在同一资料事务中关联当前世界。
+ * @param input 共用用途和带独立名称的文件列表。
+ * @returns 全部文件处理和页面刷新完成时结束。
+ */
+async function importSourceFile(input: SourceFileSubmission): Promise<void> {
+  actionLoading.value = true
+  actionError.value = null
+  actionMessage.value = null
+  let succeeded = 0
+  const failures: string[] = []
+  try {
+    for (const item of input.files) {
+      const body = new FormData()
+      body.set('name', item.name)
+      body.set('role', input.role)
+      body.set('targets', JSON.stringify([{ targetType: 'world', targetId: worldId }]))
+      body.set('file', item.file)
+      try {
+        await $fetch<ApiResponse<SourceDetails>>('/api/v1/sources/files', { method: 'POST', body })
+        succeeded += 1
+      }
+      catch (requestError: unknown) {
+        failures.push(`${item.file.name}：${getApiErrorMessage(requestError, '导入失败')}`)
+      }
+    }
+    if (succeeded > 0) await Promise.all([refresh(), refreshSources()])
+    if (failures.length > 0) {
+      actionError.value = `成功 ${succeeded} 个，失败 ${failures.length} 个。${failures.join('；')}`
+    }
+    else {
+      actionMessage.value = `${succeeded} 个新资料已创建并加入这个世界`
+    }
+  }
+  finally {
+    actionLoading.value = false
+  }
 }
 
 /**

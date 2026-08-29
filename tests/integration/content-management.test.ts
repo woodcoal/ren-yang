@@ -370,6 +370,74 @@ describe('人物、世界与资料管理闭环', () => {
     await expect(service.deleteSource(source.source.id)).resolves.toBeUndefined()
   })
 
+  it('创建粘贴或文件资料时原子建立多个人物和世界关联', async () => {
+    const world = await service.createWorld({
+      name: '浮岛纪元', summary: '', snapshot: createWorldSnapshot('群岛依靠风帆船往来。'), changeSummary: '建立世界',
+    })
+    const persona = await service.createPersona({
+      name: '档案员', origin: 'original', worldId: world.world.id, sourceIds: [],
+      snapshot: BASE_PERSONA_SNAPSHOT, changeSummary: '建立人物',
+    })
+    const targets = [
+      { targetType: 'persona' as const, targetId: persona.persona.id },
+      { targetType: 'world' as const, targetId: world.world.id },
+    ]
+
+    const pasted = await service.createPastedSource({
+      name: '港口事实', role: 'canon_fact', content: '北港只允许风帆船靠岸。', targets,
+    })
+    expect(pasted.links).toEqual([
+      expect.objectContaining({ targetType: 'persona', targetId: persona.persona.id, priority: 100 }),
+      expect.objectContaining({ targetType: 'world', targetId: world.world.id, priority: 100 }),
+    ])
+
+    const imported = await service.importSourceFile({
+      name: '表达样例', role: 'style_sample', fileName: 'style.txt', mediaType: 'text/plain',
+      bytes: new TextEncoder().encode('表达简洁，避免感叹句。'), targets,
+    })
+    expect(imported.links).toEqual([
+      expect.objectContaining({ targetType: 'persona', targetId: persona.persona.id, priority: 100 }),
+      expect.objectContaining({ targetType: 'world', targetId: world.world.id, priority: 100 }),
+    ])
+  })
+
+  it('无效初始关联不会留下资料、切片或原始文件', async () => {
+    const invalidTargets = [{ targetType: 'world' as const, targetId: '00000000-0000-4000-8000-999999999999' }]
+    await expect(service.createPastedSource({
+      name: '无效文本', role: 'reference', content: '不应保存。', targets: invalidTargets,
+    })).rejects.toMatchObject<ApplicationError>({ code: 'RESOURCE_NOT_FOUND', statusCode: 404 })
+    await expect(service.importSourceFile({
+      name: '无效文件', role: 'reference', fileName: 'invalid.txt', mediaType: 'text/plain',
+      bytes: new TextEncoder().encode('不应保存。'), targets: invalidTargets,
+    })).rejects.toMatchObject<ApplicationError>({ code: 'RESOURCE_NOT_FOUND', statusCode: 404 })
+
+    await expect(service.listSources()).resolves.toEqual([])
+    expect(database.getClient().prepare('SELECT COUNT(*) AS count FROM source_chunks').get()).toEqual({ count: 0 })
+  })
+
+  it('仓储写入初始关系失败时回滚同事务中的资料和切片', async () => {
+    const repository = new SqliteContentRepository(database.getClient())
+    const sourceId = '00000000-0000-4000-8000-000000000300'
+    await expect(repository.createSource({
+      id: sourceId,
+      name: '事务回滚资料',
+      role: 'reference',
+      inputType: 'paste',
+      contentHash: 'a'.repeat(64),
+      contentText: '关系写入失败时不应保留。',
+      originalFilePath: null,
+      chunks: [{
+        id: '00000000-0000-4000-8000-000000000301', sourceId, ordinal: 0,
+        heading: null, content: '关系写入失败时不应保留。', contentHash: 'b'.repeat(64),
+      }],
+      links: [{ targetType: 'world', targetId: '00000000-0000-4000-8000-999999999999', priority: 100 }],
+      timestamp: 1_000,
+    })).rejects.toThrow()
+
+    expect(database.getClient().prepare('SELECT COUNT(*) AS count FROM source_materials').get()).toEqual({ count: 0 })
+    expect(database.getClient().prepare('SELECT COUNT(*) AS count FROM source_chunks').get()).toEqual({ count: 0 })
+  })
+
   it('拒绝二进制、非 UTF-8、错误扩展名和超限文件', async () => {
     const invalidFiles = [
       { fileName: 'payload.exe', bytes: new Uint8Array([65]) },

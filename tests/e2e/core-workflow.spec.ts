@@ -76,11 +76,22 @@ test('首次设置、人物发布、文档确认及三格式导出形成可复�
   // 先创建可复用资料，再从世界详情直接关联，覆盖新的世界资料管理入口。
   await page.getByRole('link', { name: '资料库', exact: true }).click()
   await page.getByRole('button', { name: '导入资料', exact: true }).click()
-  const pasteForm = page.locator('form').filter({ has: page.getByRole('button', { name: '导入粘贴文本', exact: true }) })
+  const pasteForm = page.locator('form').filter({ has: page.getByRole('button', { name: '导入文本', exact: true }) })
   await pasteForm.getByLabel('资料名称').fill('浮岛背景资料')
   await pasteForm.getByLabel('正文').fill('浮岛城市依靠风帆船往来。')
-  await pasteForm.getByRole('button', { name: '导入粘贴文本', exact: true }).click()
+  await pasteForm.getByRole('button', { name: '导入文本', exact: true }).click()
   await expect(page.getByText('浮岛背景资料', { exact: true })).toBeVisible()
+
+  // 多文件按单项处理：合法文件保留，非法文件失败但不回滚成功项。
+  await page.getByRole('button', { name: '导入资料', exact: true }).click()
+  const fileForm = page.locator('form').filter({ has: page.locator('input[type="file"]') })
+  await fileForm.locator('input[type="file"]').setInputFiles([
+    { name: '港口规则.md', mimeType: 'text/markdown', buffer: Buffer.from('# 港口\n\n北港只允许风帆船靠岸。') },
+    { name: '错误格式.exe', mimeType: 'application/octet-stream', buffer: Buffer.from('不能导入') },
+  ])
+  await fileForm.getByRole('button', { name: '导入 2 个文件', exact: true }).click()
+  await expect(page.getByText(/成功 1 个，失败 1 个/)).toBeVisible()
+  await expect(page.getByText('港口规则', { exact: true })).toBeVisible()
 
   await page.getByRole('link', { name: '世界设定', exact: true }).click()
   await page.getByRole('button', { name: '创建世界', exact: true }).click()
@@ -92,7 +103,7 @@ test('首次设置、人物发布、文档确认及三格式导出形成可复�
   await page.getByRole('button', { name: '创建世界并保存灵魂草稿', exact: true }).click()
   await page.getByRole('button', { name: '世界资料', exact: true }).click()
   await expect(page.getByRole('heading', { name: '这个世界的参考资料', exact: true })).toBeVisible()
-  await page.getByRole('button', { name: '加入', exact: true }).click()
+  await page.getByText('浮岛背景资料', { exact: true }).locator('..').locator('..').getByRole('button', { name: '加入', exact: true }).click()
   await expect(page.getByText('资料已加入这个世界', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: '灵魂', exact: true }).click()
   await page.getByRole('button', { name: '确认并发布', exact: true }).click()

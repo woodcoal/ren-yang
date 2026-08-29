@@ -1,13 +1,23 @@
 <script setup lang="ts">
 import { computed, shallowRef } from 'vue'
-import type { CreateSourceInput } from '#shared/schemas/content'
+import type { CreateSourceWithTargetsInput } from '#shared/schemas/content'
 import type { ApiResponse } from '#shared/types/api'
-import type { SourceChunkView, SourceDetails, SourceSummary } from '#shared/types/content'
+import type { PersonaSummary, SourceChunkView, SourceDetails, SourceSummary, WorldSummary } from '#shared/types/content'
 import type { SourceFileSubmission } from '../../components/content/SourceImportForm.vue'
 import { getApiErrorMessage } from '../../utils/apiError'
 
-const { data, error, refresh } = await useFetch<ApiResponse<SourceSummary[]>>('/api/v1/sources')
+const [
+  { data, error, refresh },
+  { data: personaData, error: personaError },
+  { data: worldData, error: worldError },
+] = await Promise.all([
+  useFetch<ApiResponse<SourceSummary[]>>('/api/v1/sources'),
+  useFetch<ApiResponse<PersonaSummary[]>>('/api/v1/personas'),
+  useFetch<ApiResponse<WorldSummary[]>>('/api/v1/worlds'),
+])
 const sources = computed(() => data.value?.data ?? [])
+const personas = computed(() => personaData.value?.data ?? [])
+const worlds = computed(() => worldData.value?.data ?? [])
 const chunkCount = computed(() => sources.value.reduce((total, source) => total + source.chunkCount, 0))
 const linkedSourceCount = computed(() => sources.value.filter(source => source.linkCount > 0).length)
 const fileSourceCount = computed(() => sources.value.filter(source => source.inputType !== 'paste').length)
@@ -24,22 +34,48 @@ const roleLabels: Record<SourceSummary['role'], string> = {
   style_sample: '写作风格参考',
 }
 
-/** @param input 已校验粘贴文本。 @returns 创建与刷新结束时完成。 */
-async function createPastedSource(input: CreateSourceInput): Promise<void> {
+/** @param input 已校验粘贴文本与初始关联。 @returns 创建与刷新结束时完成。 */
+async function createPastedSource(input: CreateSourceWithTargetsInput): Promise<void> {
   await runImport(async () => {
     await $fetch<ApiResponse<SourceDetails>>('/api/v1/sources', { method: 'POST', body: input })
   })
 }
 
-/** @param input 文件元数据和浏览器 File。 @returns 上传与刷新结束时完成。 */
-async function importFile(input: SourceFileSubmission): Promise<void> {
-  await runImport(async () => {
-    const body = new FormData()
-    body.set('name', input.name)
-    body.set('role', input.role)
-    body.set('file', input.file)
-    await $fetch<ApiResponse<SourceDetails>>('/api/v1/sources/files', { method: 'POST', body })
-  })
+/**
+ * 逐个导入所选文件，保留成功项并汇总每个失败文件。
+ * @param input 共用用途、关联对象和带独立名称的文件列表。
+ * @returns 全部文件处理和资料列表刷新结束时完成。
+ */
+async function importFiles(input: SourceFileSubmission): Promise<void> {
+  loading.value = true
+  errorMessage.value = null
+  let succeeded = 0
+  const failures: string[] = []
+  try {
+    for (const item of input.files) {
+      const body = new FormData()
+      body.set('name', item.name)
+      body.set('role', input.role)
+      body.set('targets', JSON.stringify(input.targets))
+      body.set('file', item.file)
+      try {
+        await $fetch<ApiResponse<SourceDetails>>('/api/v1/sources/files', { method: 'POST', body })
+        succeeded += 1
+      }
+      catch (requestError: unknown) {
+        failures.push(`${item.file.name}：${getApiErrorMessage(requestError, '导入失败')}`)
+      }
+    }
+    if (succeeded > 0) await refresh()
+    if (failures.length === 0) {
+      showImport.value = false
+      return
+    }
+    errorMessage.value = `成功 ${succeeded} 个，失败 ${failures.length} 个。${failures.join('；')}`
+  }
+  finally {
+    loading.value = false
+  }
 }
 
 /** @returns FTS5 查询完成时结束。 */
@@ -90,7 +126,18 @@ async function runImport(action: () => Promise<void>): Promise<void> {
       <div class="status-cell"><span class="status-kicker">已建立关系</span><strong class="status-value">{{ linkedSourceCount }}</strong></div>
       <div class="status-cell"><span class="status-kicker">文件导入</span><strong class="status-value">{{ fileSourceCount }}</strong></div>
     </div>
-    <ContentSourceImportForm v-if="showImport" class="mt-6 mb-7" :loading="loading" :error-message="errorMessage" @paste="createPastedSource" @file="importFile" />
+    <UAlert v-if="showImport && (personaError || worldError)" class="mt-6" color="warning" title="部分关联对象加载失败" description="仍可不选择人物或世界，直接把资料保存到资料库。" />
+    <ContentSourceImportForm
+      v-if="showImport"
+      class="mt-6 mb-7"
+      :loading="loading"
+      :error-message="errorMessage"
+      :personas="personas"
+      :worlds="worlds"
+      show-target-picker
+      @paste="createPastedSource"
+      @file="importFiles"
+    />
 
     <section class="content-section" aria-labelledby="source-search-heading">
       <div class="section-heading"><div class="section-heading-copy"><p class="eyebrow">资料检索</p><h2 id="source-search-heading">查找资料中的事实与段落</h2><p>输入一句话或关键词，返回本地事实库中最相关的可追溯段落。</p></div></div>

@@ -2,6 +2,7 @@ import type {
   CreatePersonaInput,
   CreateSourceInput,
   CreateSourceLinkInput,
+  SourceCreationTarget,
   CreateWorldInput,
   UpdatePersonaInput,
   UpdateSourceInput,
@@ -31,7 +32,7 @@ import type { SoulRepository } from '../../ports/SoulRepository'
 import { SourceContentError } from '../../domain/content/SourceContentError'
 import { normalizeSoulSnapshot } from '../../domain/content/SoulRules'
 import type { Clock } from '../../ports/Clock'
-import type { ContentRepository } from '../../ports/ContentRepository'
+import type { ContentRepository, SourceCreationLinkRecord } from '../../ports/ContentRepository'
 import type { ContextSyncTaskQueue } from '../../ports/ContextSyncTaskQueue'
 import type { IdentifierGenerator } from '../../ports/IdentifierGenerator'
 import type { ImageAssetStorage } from '../../ports/ImageAssetStorage'
@@ -51,6 +52,14 @@ export interface ImportSourceFileInput {
   mediaType?: string
   /** 文件原始字节。 */
   bytes: Uint8Array
+  /** 创建资料时同时建立的可选人物和世界关联。 */
+  targets?: SourceCreationTarget[]
+}
+
+/** 应用服务接受的粘贴资料创建命令，兼容未指定关联的内部调用。 */
+export type CreatePastedSourceInput = CreateSourceInput & {
+  /** 创建资料时同时建立的可选人物和世界关联。 */
+  targets?: SourceCreationTarget[]
 }
 
 /** 内容应用服务的全部外部依赖。 */
@@ -388,10 +397,11 @@ export class ContentApplicationService {
    * @param input 已校验资料输入。
    * @returns 新资料详情。
    */
-  async createPastedSource(input: CreateSourceInput): Promise<SourceDetails> {
+  async createPastedSource(input: CreatePastedSourceInput): Promise<SourceDetails> {
     const sourceId = this.dependencies.identifiers.create()
     const content = this.normalizeSource(input.content)
     const timestamp = this.dependencies.clock.now()
+    const links = await this.validateSourceCreationTargets(input.targets ?? [])
     await this.dependencies.repository.createSource({
       id: sourceId,
       name: input.name,
@@ -401,6 +411,7 @@ export class ContentApplicationService {
       contentText: content,
       originalFilePath: null,
       chunks: this.dependencies.sourceProcessor.chunk(sourceId, content),
+      links,
       timestamp,
     })
     await this.enqueueSourceSynchronization(sourceId)
@@ -415,6 +426,7 @@ export class ContentApplicationService {
   async importSourceFile(input: ImportSourceFileInput): Promise<SourceDetails> {
     const sourceId = this.dependencies.identifiers.create()
     const decoded = this.decodeSourceFile(input)
+    const links = await this.validateSourceCreationTargets(input.targets ?? [])
     let relativePath: string
     try {
       relativePath = await this.dependencies.sourceFiles.save(sourceId, decoded.extension, input.bytes)
@@ -433,6 +445,7 @@ export class ContentApplicationService {
         contentText: decoded.content,
         originalFilePath: relativePath,
         chunks: this.dependencies.sourceProcessor.chunk(sourceId, decoded.content),
+        links,
         timestamp: this.dependencies.clock.now(),
       })
     }
@@ -491,6 +504,20 @@ export class ContentApplicationService {
   /** @param sourceIds 需要重新展开投影的资料 UUID。 @returns 全部持久任务创建完成时结束。 */
   private async enqueueSourceSynchronizations(sourceIds: string[]): Promise<void> {
     for (const sourceId of new Set(sourceIds)) await this.enqueueSourceSynchronization(sourceId)
+  }
+
+  /**
+   * 去重并验证资料创建目标，防止无效外键导致资料或文件形成半成品。
+   * @param targets 用户选择的人物和世界目标。
+   * @returns 可直接交给仓储原子写入、优先级固定为 100 的关联。
+   */
+  private async validateSourceCreationTargets(targets: SourceCreationTarget[]): Promise<SourceCreationLinkRecord[]> {
+    const uniqueTargets = [...new Map(targets.map(target => [`${target.targetType}:${target.targetId}`, target])).values()]
+    await Promise.all(uniqueTargets.map(async (target) => {
+      if (target.targetType === 'persona') await this.requirePersona(target.targetId)
+      else await this.requireWorld(target.targetId)
+    }))
+    return uniqueTargets.map(target => ({ ...target, priority: 100 }))
   }
 
   /**

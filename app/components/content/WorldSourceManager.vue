@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, shallowRef } from 'vue'
-import type { CreateSourceInput } from '#shared/schemas/content'
+import type { CreateSourceWithTargetsInput } from '#shared/schemas/content'
 import type { SourceSummary } from '#shared/types/content'
 import type { SourceFileSubmission } from './SourceImportForm.vue'
 
@@ -23,7 +23,7 @@ const emit = defineEmits<{
   /** 请求解除资料与当前世界的关系，但不删除资料。 */
   unlink: [sourceId: string]
   /** 请求创建粘贴文本资料并自动加入当前世界。 */
-  paste: [input: CreateSourceInput]
+  paste: [input: CreateSourceWithTargetsInput]
   /** 请求上传文件资料并自动加入当前世界。 */
   file: [input: SourceFileSubmission]
 }>()

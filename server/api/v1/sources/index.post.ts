@@ -1,6 +1,6 @@
 import type { H3Event } from 'h3'
 import { readBody, setResponseStatus } from 'h3'
-import { createSourceSchema } from '#shared/schemas/content'
+import { createSourceWithTargetsSchema } from '#shared/schemas/content'
 import { executeController } from '../../../presentation/http/controller'
 
 /**
@@ -10,7 +10,7 @@ import { executeController } from '../../../presentation/http/controller'
  */
 async function handleCreateSource(event: H3Event) {
   return await executeController(event, async () => {
-    const input = createSourceSchema.parse(await readBody(event))
+    const input = createSourceWithTargetsSchema.parse(await readBody(event))
     const created = await event.context.applicationServices.content.createPastedSource(input)
     setResponseStatus(event, 201)
     return created

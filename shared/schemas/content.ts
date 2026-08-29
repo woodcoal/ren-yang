@@ -114,10 +114,22 @@ export const createSourceSchema = z.object({
   content: z.string().min(1, '资料正文不能为空').max(2_000_000, '资料正文不能超过 2000000 字'),
 })
 
+/** 创建资料时可同时建立的人物或世界关联。 */
+export const sourceCreationTargetSchema = z.object({
+  targetType: z.enum(['persona', 'world'], { error: '关联目标类型无效' }),
+  targetId: z.string().uuid('关联目标标识无效'),
+})
+
+/** 创建粘贴文本资料并建立初始关联的输入。 */
+export const createSourceWithTargetsSchema = createSourceSchema.extend({
+  targets: z.array(sourceCreationTargetSchema).default([]),
+})
+
 /** 文件资料 multipart 元数据校验。 */
 export const importSourceFileMetadataSchema = z.object({
   name: z.string().trim().min(1, '资料名称不能为空').max(200, '资料名称不能超过 200 字'),
   role: sourceRoleSchema,
+  targets: z.array(sourceCreationTargetSchema).default([]),
 })
 
 /** 修改资料元数据与正文的输入。 */
@@ -162,5 +174,7 @@ export type CreateWorldVersionInput = z.infer<typeof createWorldVersionSchema>
 export type SaveSoulDraftInput = z.infer<typeof saveSoulDraftSchema>
 export type CreateSoulDraftFromVersionInput = z.infer<typeof createSoulDraftFromVersionSchema>
 export type CreateSourceInput = z.infer<typeof createSourceSchema>
+export type SourceCreationTarget = z.infer<typeof sourceCreationTargetSchema>
+export type CreateSourceWithTargetsInput = z.infer<typeof createSourceWithTargetsSchema>
 export type UpdateSourceInput = z.infer<typeof updateSourceSchema>
 export type CreateSourceLinkInput = z.infer<typeof createSourceLinkSchema>

@@ -17,6 +17,7 @@ import type {
   CreateSourceRecord,
   CreateWorldRecord,
   PersonaRunHistoryStatistics,
+  ReplaceSourceRecord,
   SourceLinkRecord,
   WorldVersionDeletionReferences,
 } from '../../ports/ContentRepository'
@@ -469,7 +470,7 @@ export class SqliteContentRepository implements ContentRepository, SoulRepositor
   }
 
   /**
-   * 原子写入资料和全部切片；迁移中的触发器同步 FTS5。
+   * 原子写入资料、全部切片和初始关联；迁移中的触发器同步 FTS5。
    * @param record 已验证并处理的资料命令。
    * @returns 无返回值。
    */
@@ -491,7 +492,14 @@ export class SqliteContentRepository implements ContentRepository, SoulRepositor
         record.timestamp,
       )
       insertChunks(this.client, record.chunks)
-    })()
+      for (const link of record.links) {
+        const targetColumn = link.targetType === 'persona' ? 'persona_id' : 'world_id'
+        const table = link.targetType === 'persona' ? 'persona_sources' : 'world_sources'
+        this.client.prepare(`
+          INSERT INTO ${table} (${targetColumn}, source_id, priority) VALUES (?, ?, ?)
+        `).run(link.targetId, record.id, link.priority)
+      }
+    }).immediate()
   }
 
   /**
@@ -499,7 +507,7 @@ export class SqliteContentRepository implements ContentRepository, SoulRepositor
    * @param record 替换命令。
    * @returns 资料存在并更新时为 true。
    */
-  async replaceSource(record: CreateSourceRecord): Promise<boolean> {
+  async replaceSource(record: ReplaceSourceRecord): Promise<boolean> {
     return this.client.transaction(() => {
       const updated = this.client.prepare(`
         UPDATE source_materials

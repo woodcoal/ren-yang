@@ -163,12 +163,75 @@ describe('阶段二内容表单', () => {
       props: { loading: false, errorMessage: null },
     })
     const forms = wrapper.findAll('form')
-    const textInputs = wrapper.findAll('input[type="text"]')
-    await textInputs[1]!.setValue('人物资料')
     await forms[1]!.trigger('submit')
     await flushPromises()
 
     expect(wrapper.emitted('file')).toBeUndefined()
-    expect(wrapper.text()).toContain('必须选择一个 TXT 或 Markdown 文件')
+    expect(wrapper.text()).toContain('必须至少选择一个 TXT 或 Markdown 文件')
+  })
+
+  it('多文件共用用途和关联对象，并允许逐个修改默认资料名称', async () => {
+    const personaId = '00000000-0000-4000-8000-000000000011'
+    const worldId = '00000000-0000-4000-8000-000000000012'
+    const wrapper = await mountSuspended(SourceImportForm, {
+      props: {
+        loading: false,
+        errorMessage: null,
+        showTargetPicker: true,
+        personas: [{
+          id: personaId, worldId: null, worldName: null, name: '档案员', origin: 'original', activeVersionId: null,
+          currentSummary: null, versionCount: 0, sourceCount: 0, createdAt: 1_000, updatedAt: 1_000,
+        }],
+        worlds: [{
+          id: worldId, name: '浮岛纪元', summary: '', activeVersionId: null, currentContent: null,
+          versionCount: 0, personaCount: 0, sourceCount: 0, createdAt: 1_000, updatedAt: 1_000,
+        }],
+      },
+    })
+    const files = [
+      new File(['第一份'], '事实.md', { type: 'text/markdown', lastModified: 1 }),
+      new File(['第二份'], '风格.txt', { type: 'text/plain', lastModified: 2 }),
+    ]
+    const fileInput = wrapper.get('input[type="file"]')
+    Object.defineProperty(fileInput.element, 'files', { configurable: true, value: files })
+    await fileInput.trigger('change')
+    await flushPromises()
+
+    const fileNameInputs = wrapper.get('[aria-label="待导入文件"]').findAll('input[type="text"]')
+    expect(fileNameInputs.map(input => (input.element as HTMLInputElement).value)).toEqual(['事实', '风格'])
+    await fileNameInputs[1]!.setValue('人物表达样例')
+    const targetSelects = wrapper.findAll('select[multiple]')
+    await targetSelects[2]!.setValue([personaId])
+    await targetSelects[3]!.setValue([worldId])
+    await wrapper.findAll('form')[1]!.trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.emitted('file')).toEqual([[
+      {
+        role: 'reference',
+        targets: [
+          { targetType: 'persona', targetId: personaId },
+          { targetType: 'world', targetId: worldId },
+        ],
+        files: [
+          { file: files[0], name: '事实' },
+          { file: files[1], name: '人物表达样例' },
+        ],
+      },
+    ]])
+  })
+
+  it('粘贴文本不选择对象时仍可只保存到资料库', async () => {
+    const wrapper = await mountSuspended(SourceImportForm, {
+      props: { loading: false, errorMessage: null, showTargetPicker: true, personas: [], worlds: [] },
+    })
+    await wrapper.findAll('input[type="text"]')[0]!.setValue('独立资料')
+    await wrapper.get('textarea').setValue('这份资料暂时不属于任何人物或世界。')
+    await wrapper.findAll('form')[0]!.trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.emitted('paste')).toEqual([[
+      expect.objectContaining({ name: '独立资料', targets: [] }),
+    ]])
   })
 })
