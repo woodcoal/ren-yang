@@ -261,7 +261,7 @@ describe('阶段三纯文本运行', () => {
       status: 'succeeded',
       result: { decision: 'interested', probability: 0.88, confidence: 0.82 },
       scene: { location: '图书馆' },
-      promptVersion: 'artifact-v2',
+      promptVersion: 'artifact-v4',
       contextProvider: 'sqlite_fts5',
     })
     expect(details.evidence.map(item => item.role)).toEqual(['user_setting', 'canon_fact'])

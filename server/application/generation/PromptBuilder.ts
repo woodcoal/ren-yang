@@ -12,8 +12,8 @@ export interface PersonaDraftReference {
   content: string
 }
 
-/** 阶段四图文提示版本；任何提示语义变化都必须更新该值。 */
-export const GENERATION_PROMPT_VERSION = 'artifact-v2'
+/** 阶段七真实模型验收提示版本；任何提示语义变化都必须更新该值。 */
+export const GENERATION_PROMPT_VERSION = 'artifact-v4'
 
 /** 统一的最高优先级模型规则。 */
 const BASE_SYSTEM_RULES = `你是人物模拟与内容规划引擎。必须遵守以下规则：
@@ -68,7 +68,11 @@ export interface PromptContext {
  */
 export function buildInterestPrompt(context: PromptContext, content: string): { systemPrompt: string, userPrompt: string } {
   return {
-    systemPrompt: `${BASE_SYSTEM_RULES}\n输出字段必须包含 probability、confidence、decision、factors、supportingEvidenceIds、opposingEvidenceIds、unknowns、reasoningSummary。decision 只能是 interested、not_interested、insufficient_information。引用证据只能使用证据区给出的 id。`,
+    systemPrompt: `${BASE_SYSTEM_RULES}
+输出字段必须包含 probability、confidence、decision、factors、supportingEvidenceIds、opposingEvidenceIds、unknowns、reasoningSummary。
+probability 和 confidence 必须是 0 到 1 的数字；decision 只能是 interested、not_interested、insufficient_information。
+factors 必须是对象数组，每项完整包含 dimension、score、explanation；dimension 只能是 topic、value、utility、novelty、format，score 必须是 -1 到 1 的数字，explanation 必须是非空字符串。
+supportingEvidenceIds 和 opposingEvidenceIds 必须是字符串数组，只能填写证据区给出的 id；没有可引用证据时输出空数组。unknowns 必须是非空字符串数组。`,
     userPrompt: serializePromptContext(context, '待判断内容', content),
   }
 }
@@ -92,10 +96,13 @@ export function buildDocumentPlanPrompt(
   allowImages: boolean,
 ): { systemPrompt: string, userPrompt: string } {
   const imageRule = allowImages
-    ? '允许 type=image，图片 role 只能是 hero_image 或 illustration，并必须输出包含 theme、subject、composition、colorPalette、texture、aspectRatio、altText、negativePrompt 的 visualBrief。'
+    ? '允许 type=image，图片 role 只能是 hero_image 或 illustration，并必须输出 visualBrief 对象；其中 theme、subject、composition、colorPalette、texture、altText、negativePrompt 都是字符串，aspectRatio 只能是 1:1、4:3、3:4、16:9、9:16。'
     : '只允许 type=text，禁止规划图片块。'
   return {
-    systemPrompt: `${BASE_SYSTEM_RULES}\n规划一份统一文档规格。输出 title、summary、purpose、constraints、requestedFormats、blocks。每个块包含 key、type、role、instruction、acceptanceCriteria、dependsOn；文字 role 只能是 heading、paragraph、list、quote。${imageRule} 块只能依赖排在前面的块。块数必须在 ${minimumBlocks} 到 ${maximumBlocks} 之间。`,
+    systemPrompt: `${BASE_SYSTEM_RULES}
+规划一份统一文档规格。title、summary、purpose 必须是字符串；constraints 必须是字符串数组；requestedFormats 必须是只含 html、markdown、txt 枚举值的字符串数组，例如 ["html","markdown","txt"]，禁止输出格式说明对象。
+blocks 必须是对象数组，每个块完整包含 key、type、role、instruction、acceptanceCriteria、dependsOn。key 必须以小写字母开头且只含小写字母、数字、下划线或短横线；instruction 必须是字符串；acceptanceCriteria 和 dependsOn 必须是字符串数组。
+文字块 type 必须是 text，role 只能是 heading、paragraph、list、quote。${imageRule} 块只能依赖排在其前面的块 key。块数必须在 ${minimumBlocks} 到 ${maximumBlocks} 之间。`,
     userPrompt: `${serializePromptContext(context, '创作要求', requirement)}\n\n<格式模板>${JSON.stringify({ guidance })}</格式模板>`,
   }
 }

@@ -45,7 +45,8 @@ export default defineNuxtConfig({
       timeoutMs: 60_000,
     },
     session: {
-      password: process.env.NUXT_SESSION_PASSWORD || '',
+      // 会话密钥仅在服务启动时由 NUXT_SESSION_PASSWORD 覆盖，禁止在构建期读取并固化。
+      password: '',
       maxAge: 60 * 60 * 24 * 7,
       cookie: {
         // 开发环境允许通过 HTTP 进行远程联调；生产环境始终要求 HTTPS 回传会话 Cookie。
