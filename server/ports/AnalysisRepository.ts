@@ -69,8 +69,8 @@ export interface AnalysisRepository {
   createBatch(record: CreateAnalysisBatchRecord): Promise<void>
   /** @param analysisType 分析类型。 @param subjectId 对象 UUID。 @returns 最新批次或 null。 */
   findLatestBatch(analysisType: AnalysisType, subjectId: string): Promise<AnalysisBatchView | null>
-  /** @param analysisType 分析类型。 @param subjectId 对象 UUID。 @returns 已进入成功分析批次的原始输入 UUID。 */
-  listAnalyzedInputIds(analysisType: AnalysisType, subjectId: string): Promise<string[]>
+  /** @param analysisType 分析类型。 @param subjectId 对象 UUID。 @returns 已成功分析的“类型、标识、内容哈希”稳定键。 */
+  listAnalyzedInputKeys(analysisType: AnalysisType, subjectId: string): Promise<string[]>
   /** @param batchId 批次 UUID。 @returns 完整批次或 null。 */
   findBatch(batchId: string): Promise<AnalysisBatchView | null>
   /** @param batchId 批次 UUID。 @param timestamp 开始时间。 @returns 固定运行数据或 null。 */

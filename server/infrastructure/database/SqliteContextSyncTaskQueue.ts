@@ -14,9 +14,15 @@ export class SqliteContextSyncTaskQueue implements ContextSyncTaskQueue {
    * @param sourceId 资料 UUID。
    * @param taskId 新任务 UUID。
    * @param timestamp 创建时间，UTC Unix 毫秒。
+   * @param entityType 普通资料或人物反馈资料。
    * @returns 无返回值。
    */
-  async enqueueSourceSynchronization(sourceId: string, taskId: string, timestamp: number): Promise<void> {
+  async enqueueSourceSynchronization(
+    sourceId: string,
+    taskId: string,
+    timestamp: number,
+    entityType: 'source_material' | 'persona_feedback_source' = 'source_material',
+  ): Promise<void> {
     this.client.prepare(`
       INSERT INTO task_jobs (
         id, run_id, type, payload_json, status, attempt_count, max_attempts, created_at, updated_at
@@ -24,9 +30,10 @@ export class SqliteContextSyncTaskQueue implements ContextSyncTaskQueue {
       WHERE NOT EXISTS (
         SELECT 1 FROM task_jobs
         WHERE type = 'sync_context_source' AND status = 'queued'
+          AND COALESCE(json_extract(payload_json, '$.entityType'), 'source_material') = ?
           AND json_extract(payload_json, '$.sourceId') = ?
       )
-    `).run(taskId, JSON.stringify({ sourceId }), timestamp, timestamp, sourceId)
+    `).run(taskId, JSON.stringify({ entityType, sourceId }), timestamp, timestamp, entityType, sourceId)
   }
 
   /** @param sourceType 生成运行或反馈。 @param sourceId 本地 UUID。 @param taskId 新任务 UUID。 @param timestamp 创建时间。 @returns 无返回值；同来源已有待处理任务时保持幂等。 */

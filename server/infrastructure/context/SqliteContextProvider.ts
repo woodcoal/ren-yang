@@ -51,21 +51,25 @@ export class SqliteContextProvider implements ContextProvider {
       LIMIT ?
     `).all(request.personaId, request.worldId ?? '', ftsQuery, request.limit).map(toEvidenceCandidate)
     const learningRows = this.client.prepare(`
-      SELECT persona_learning_fts.entity_type, persona_learning_fts.entity_id,
-        persona_learning_fts.content,
-        CASE persona_learning_fts.entity_type
-          WHEN 'memory' THEN persona_memories.content_hash
-          ELSE persona_growth_records.content_hash
+      SELECT learning_fts.entity_type, learning_fts.entity_id, learning_fts.content,
+        CASE learning_fts.entity_type
+          WHEN 'memory' THEN memory_revisions.content_hash
+          ELSE growth_revisions.content_hash
         END AS content_hash
-      FROM persona_learning_fts
-      LEFT JOIN persona_memories ON persona_learning_fts.entity_type = 'memory'
-        AND persona_memories.id = persona_learning_fts.entity_id
-      LEFT JOIN persona_growth_records ON persona_learning_fts.entity_type = 'growth'
-        AND persona_growth_records.id = persona_learning_fts.entity_id
-      WHERE persona_learning_fts MATCH ? AND persona_learning_fts.persona_id = ?
-      ORDER BY bm25(persona_learning_fts), persona_learning_fts.entity_id
+      FROM learning_fts
+      LEFT JOIN memory_records ON learning_fts.entity_type = 'memory'
+        AND memory_records.id = learning_fts.entity_id
+      LEFT JOIN memory_revisions ON memory_revisions.id = memory_records.current_revision_id
+      LEFT JOIN growth_records ON learning_fts.entity_type IN ('persona_growth', 'world_growth')
+        AND growth_records.id = learning_fts.entity_id
+      LEFT JOIN growth_revisions ON growth_revisions.id = growth_records.current_revision_id
+      WHERE learning_fts MATCH ? AND (
+        (learning_fts.entity_type IN ('memory', 'persona_growth') AND learning_fts.subject_id = ?)
+        OR (learning_fts.entity_type = 'world_growth' AND learning_fts.subject_id = ?)
+      )
+      ORDER BY bm25(learning_fts), learning_fts.entity_id
       LIMIT ?
-    `).all(ftsQuery, request.personaId, request.limit).map(toLearningCandidate)
+    `).all(ftsQuery, request.personaId, request.worldId ?? '', request.limit).map(toLearningCandidate)
     return {
       provider: 'sqlite_fts5' as const,
       candidates: [...learningRows, ...sourceRows].slice(0, request.limit),
@@ -119,8 +123,8 @@ function toLearningCandidate(value: unknown): EvidenceCandidate {
   return {
     sourceId: null,
     chunkId: null,
-    role: row.entity_type as 'growth' | 'memory',
-    heading: row.entity_type === 'growth' ? '有效成长' : '有效记忆',
+    role: row.entity_type === 'memory' ? 'memory' : 'growth',
+    heading: row.entity_type === 'memory' ? '有效记忆' : '有效成长',
     content: String(row.content),
     contentHash: String(row.content_hash),
     priority: 0,

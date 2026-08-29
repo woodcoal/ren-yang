@@ -76,17 +76,17 @@ export class SqliteAnalysisRepository implements AnalysisRepository {
     return row ? await this.findBatch(row.id) : null
   }
 
-  /** @param analysisType 分析类型。 @param subjectId 对象 UUID。 @returns 已进入成功分析批次的原始输入 UUID。 */
-  async listAnalyzedInputIds(analysisType: AnalysisType, subjectId: string): Promise<string[]> {
+  /** @param analysisType 分析类型。 @param subjectId 对象 UUID。 @returns 已成功分析的“类型、标识、内容哈希”稳定键。 */
+  async listAnalyzedInputKeys(analysisType: AnalysisType, subjectId: string): Promise<string[]> {
     const column = analysisType === 'world_growth' ? 'world_id' : 'persona_id'
     return (this.client.prepare(`
-      SELECT DISTINCT analysis_batch_inputs.input_id
+      SELECT DISTINCT analysis_batch_inputs.input_type || ':' || analysis_batch_inputs.input_id || ':' || analysis_batch_inputs.content_hash AS input_key
       FROM analysis_batch_inputs
       INNER JOIN analysis_batches ON analysis_batches.id = analysis_batch_inputs.batch_id
       WHERE analysis_batches.analysis_type = ? AND analysis_batches.${column} = ?
         AND analysis_batches.status IN ('awaiting_review', 'completed')
-      ORDER BY analysis_batch_inputs.input_id
-    `).all(analysisType, subjectId) as Array<{ input_id: string }>).map(item => item.input_id)
+      ORDER BY input_key
+    `).all(analysisType, subjectId) as Array<{ input_key: string }>).map(item => item.input_key)
   }
 
   /** @param batchId 批次 UUID。 @returns 完整批次或 null。 */
@@ -282,18 +282,21 @@ export class SqliteAnalysisRepository implements AnalysisRepository {
       const personaId = subjectType === 'persona' ? String(batch.persona_id) : null
       this.client.prepare(`
         INSERT INTO growth_records (id, subject_type, world_id, persona_id, current_revision_id, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, 'active', ?, ?)
+        VALUES (?, ?, ?, ?, ?, 'candidate', ?, ?)
       `).run(id, subjectType, worldId, personaId, revisionId, timestamp, timestamp)
       this.insertGrowthRevision(id, revisionId, 1, proposed, String(batch.id), timestamp)
     }
     else {
       this.client.prepare(`
         INSERT INTO memory_records (id, persona_id, current_revision_id, memory_type, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, 'active', ?, ?)
+        VALUES (?, ?, ?, ?, 'candidate', ?, ?)
       `).run(id, String(batch.persona_id), revisionId, proposed.memoryType ?? 'experience', timestamp, timestamp)
       this.insertMemoryRevision(id, revisionId, 1, proposed, String(batch.id), proposal, timestamp)
     }
     this.insertProposalEvidence(targetType, revisionId, proposal)
+    // 先保存不可变修订和证据，再激活逻辑记录，确保 FTS 触发器能读取完整当前修订。
+    const table = targetType === 'growth' ? 'growth_records' : 'memory_records'
+    this.client.prepare(`UPDATE ${table} SET status = 'active', updated_at = ? WHERE id = ?`).run(timestamp, id)
     return id
   }
 

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import type { Database as BetterSqliteDatabase } from 'better-sqlite3'
 import type { ContextSyncRecordView } from '../../../shared/types/context'
 import type {
@@ -10,6 +11,7 @@ import type {
   DerivedMemoryDocument,
   PendingContextSessionSource,
 } from '../../ports/ContextIndexRepository'
+import { insertAuditEvent } from './AuditSql'
 
 /** 使用 SQLite 保存 OpenViking 可重建同步状态和检索范围。 */
 export class SqliteContextIndexRepository implements ContextIndexRepository {
@@ -26,6 +28,7 @@ export class SqliteContextIndexRepository implements ContextIndexRepository {
     `).all().map((value) => {
       const data = row(value)
       return {
+        entityType: 'source_material',
         id: String(data.id),
         name: String(data.name),
         role: data.role as ContextSourceDocument['role'],
@@ -43,6 +46,7 @@ export class SqliteContextIndexRepository implements ContextIndexRepository {
     if (!value) return null
     const data = row(value)
     return {
+      entityType: 'source_material',
       id: String(data.id),
       name: String(data.name),
       role: data.role as ContextSourceDocument['role'],
@@ -51,15 +55,18 @@ export class SqliteContextIndexRepository implements ContextIndexRepository {
     }
   }
 
-  /** @param sourceId 可选资料 UUID。 @returns 由当前世界和人物关联展开的全部独立投影。 */
-  async listSourceProjections(sourceId?: string): Promise<ContextSourceProjection[]> {
+  /** @param entityType 可选实体类型。 @param sourceId 可选实体 UUID。 @returns 当前写入投影与待删除人物反馈投影。 */
+  async listSourceProjections(entityType?: 'source_material' | 'persona_feedback_source', sourceId?: string): Promise<ContextSourceProjection[]> {
+    const projections: ContextSourceProjection[] = []
     const filter = sourceId ? 'WHERE source_materials.id = ?' : ''
     const parameters = sourceId ? [sourceId] : []
-    return this.client.prepare(`
+    if (!entityType || entityType === 'source_material') projections.push(...this.client.prepare(`
       SELECT source_materials.id, source_materials.name, source_materials.role,
         source_materials.content_hash, source_materials.content_text,
         'world' AS scope_type, worlds.id AS scope_id,
-        'world-' || worlds.id AS user_id, NULL AS peer_id, world_sources.priority
+        'world-' || worlds.id AS user_id, NULL AS peer_id, world_sources.priority,
+        'source_material' AS entity_type, 'upsert' AS operation,
+        'viking://~/resources/ren-yang/world-source/' || source_materials.id || '.md' AS remote_uri
       FROM world_sources
       INNER JOIN worlds ON worlds.id = world_sources.world_id
       INNER JOIN source_materials ON source_materials.id = world_sources.source_id
@@ -69,13 +76,34 @@ export class SqliteContextIndexRepository implements ContextIndexRepository {
         source_materials.content_hash, source_materials.content_text,
         'persona' AS scope_type, personas.id AS scope_id,
         CASE WHEN personas.world_id IS NULL THEN 'standalone-' || personas.id ELSE 'world-' || personas.world_id END AS user_id,
-        'persona-' || personas.id AS peer_id, persona_sources.priority
+        'persona-' || personas.id AS peer_id, persona_sources.priority,
+        'source_material' AS entity_type, 'upsert' AS operation,
+        'viking://~/peers/persona-' || personas.id || '/resources/ren-yang/persona-source/' || source_materials.id || '.md' AS remote_uri
       FROM persona_sources
       INNER JOIN personas ON personas.id = persona_sources.persona_id
       INNER JOIN source_materials ON source_materials.id = persona_sources.source_id
       ${filter}
       ORDER BY 6, 7, 1
-    `).all(...parameters, ...parameters).map(toProjection)
+    `).all(...parameters, ...parameters).map(toProjection))
+    if (!entityType || entityType === 'persona_feedback_source') {
+      const feedbackFilter = sourceId ? 'AND persona_feedback_sources.id = ?' : ''
+      projections.push(...this.client.prepare(`
+        SELECT persona_feedback_sources.id, persona_feedback_sources.title AS name,
+          'feedback' AS role, persona_feedback_sources.content_hash,
+          persona_feedback_sources.content AS content_text,
+          'persona' AS scope_type, personas.id AS scope_id,
+          CASE WHEN personas.world_id IS NULL THEN 'standalone-' || personas.id ELSE 'world-' || personas.world_id END AS user_id,
+          'persona-' || personas.id AS peer_id, 0 AS priority,
+          'persona_feedback_source' AS entity_type,
+          CASE persona_feedback_sources.deletion_state WHEN 'active' THEN 'upsert' ELSE 'delete' END AS operation,
+          'viking://~/peers/persona-' || personas.id || '/resources/ren-yang/feedback-source/' || persona_feedback_sources.id || '.md' AS remote_uri
+        FROM persona_feedback_sources
+        INNER JOIN personas ON personas.id = persona_feedback_sources.persona_id
+        WHERE persona_feedback_sources.deletion_state IN ('active', 'pending_remote_delete') ${feedbackFilter}
+        ORDER BY personas.id, persona_feedback_sources.id
+      `).all(...(sourceId ? [sourceId] : [])).map(toProjection))
+    }
+    return projections.sort((left, right) => `${left.scopeType}:${left.scopeId}:${left.source.entityType}:${left.source.id}`.localeCompare(`${right.scopeType}:${right.scopeId}:${right.source.entityType}:${right.source.id}`))
   }
 
   /** @param personaId 人物 UUID。 @param worldId 可选世界 UUID。 @returns 去重后的关联资料范围。 */
@@ -121,6 +149,8 @@ export class SqliteContextIndexRepository implements ContextIndexRepository {
       LEFT JOIN world_sources ON context_sync_records.scope_type = 'world'
         AND world_sources.world_id = ? AND world_sources.source_id = context_sync_records.source_id
       WHERE context_sync_records.provider = 'openviking'
+        AND context_sync_records.entity_type = 'source_material'
+        AND context_sync_records.operation = 'upsert'
         AND context_sync_records.status = 'synchronized'
         AND context_sync_records.user_id = ?
         AND context_sync_records.remote_uri IS NOT NULL
@@ -137,29 +167,29 @@ export class SqliteContextIndexRepository implements ContextIndexRepository {
         remoteUri: String(data.remote_uri),
       }
     })
-    const memoryTargets = this.client.prepare(`
-      SELECT remote_uri FROM persona_memories
-      WHERE persona_id = ? AND status = 'active' AND remote_uri IS NOT NULL
-      ORDER BY updated_at DESC, id
-    `).all(personaId).map((value) => ({
-      sourceId: null,
-      role: 'memory' as const,
-      priority: 0,
-      remoteUri: String(row(value).remote_uri),
-    }))
-    return { userId, peerId, targets: [...memoryTargets, ...sourceTargets] }
+    return { userId, peerId, targets: sourceTargets }
   }
 
   /** @param personaId 人物 UUID。 @returns 没有远端 URI但必须参与提示的有效成长和记忆。 */
   async listActiveLocalLearning(personaId: string): Promise<ActiveLocalLearning[]> {
     return this.client.prepare(`
-      SELECT 'memory' AS role, content, content_hash FROM persona_memories
-      WHERE persona_id = ? AND status = 'active' AND remote_uri IS NULL
+      SELECT 'memory' AS role, memory_revisions.content, memory_revisions.content_hash
+      FROM memory_records
+      INNER JOIN memory_revisions ON memory_revisions.id = memory_records.current_revision_id
+      WHERE memory_records.persona_id = ? AND memory_records.status = 'active'
       UNION ALL
-      SELECT 'growth' AS role, content, content_hash FROM persona_growth_records
-      WHERE persona_id = ? AND status = 'active'
+      SELECT 'growth' AS role, growth_revisions.content, growth_revisions.content_hash
+      FROM growth_records
+      INNER JOIN growth_revisions ON growth_revisions.id = growth_records.current_revision_id
+      WHERE growth_records.persona_id = ? AND growth_records.status = 'active'
+      UNION ALL
+      SELECT 'growth' AS role, growth_revisions.content, growth_revisions.content_hash
+      FROM personas
+      INNER JOIN growth_records ON growth_records.world_id = personas.world_id
+      INNER JOIN growth_revisions ON growth_revisions.id = growth_records.current_revision_id
+      WHERE personas.id = ? AND growth_records.status = 'active'
       ORDER BY role, content_hash
-    `).all(personaId, personaId).map((value) => {
+    `).all(personaId, personaId, personaId).map((value) => {
       const data = row(value)
       return {
         role: data.role as ActiveLocalLearning['role'],
@@ -175,8 +205,10 @@ export class SqliteContextIndexRepository implements ContextIndexRepository {
       ? this.client.prepare(`
           SELECT generation_runs.id, generation_runs.input_json, generation_runs.result_json,
             personas.id AS persona_id, personas.world_id,
+            persona_operation_records.result_summary,
             GROUP_CONCAT(block_attempts.output_text, '\n\n') AS block_output
           FROM generation_runs
+          INNER JOIN persona_operation_records ON persona_operation_records.run_id = generation_runs.id
           INNER JOIN soul_versions ON soul_versions.id = generation_runs.persona_version_id
           INNER JOIN personas ON personas.id = soul_versions.persona_id
           LEFT JOIN artifact_documents ON artifact_documents.run_id = generation_runs.id
@@ -203,7 +235,7 @@ export class SqliteContextIndexRepository implements ContextIndexRepository {
       ? String(input?.content ?? input?.requirement ?? '')
       : String(data.content)
     const assistantContent = sourceType === 'run'
-      ? String(data.result_json ?? data.block_output ?? '本次运行未产生可用结果。')
+      ? String(data.block_output ?? data.result_json ?? data.result_summary)
       : String(data.edited_output ?? '已收到并记录这条人物反馈。')
     return {
       sourceType,
@@ -214,19 +246,19 @@ export class SqliteContextIndexRepository implements ContextIndexRepository {
       sessionId: `ren-yang-${sourceType}-${sourceId}`,
       userContent,
       assistantContent,
-      extractMemory: sourceType === 'feedback',
+      extractMemory: true,
     }
   }
 
   /** @returns 没有成功同步状态的终态运行和反馈，用于进程重启后补回丢失任务。 */
   async listPendingSessionSources(): Promise<PendingContextSessionSource[]> {
     return this.client.prepare(`
-      SELECT 'run' AS source_type, generation_runs.id AS source_id
-      FROM generation_runs
-      WHERE generation_runs.status IN ('succeeded', 'partial', 'failed')
+      SELECT 'run' AS source_type, persona_operation_records.run_id AS source_id
+      FROM persona_operation_records
+      WHERE persona_operation_records.is_enabled = 1
         AND NOT EXISTS (
           SELECT 1 FROM openviking_session_records
-          WHERE source_type = 'run' AND source_id = generation_runs.id AND status = 'synchronized'
+          WHERE source_type = 'run' AND source_id = persona_operation_records.run_id AND status = 'synchronized'
         )
       UNION ALL
       SELECT 'feedback' AS source_type, feedback_events.id AS source_id
@@ -270,28 +302,60 @@ export class SqliteContextIndexRepository implements ContextIndexRepository {
         UPDATE openviking_session_records SET status = 'synchronized', error = NULL, updated_at = ?
         WHERE source_type = ? AND source_id = ?
       `).run(timestamp, exchange.sourceType, exchange.sourceId)
+      if (exchange.sourceType === 'run') {
+        this.client.prepare(`
+          UPDATE persona_operation_records SET session_record_id = ?, updated_at = ? WHERE run_id = ?
+        `).run(exchange.sessionId, timestamp, exchange.sourceId)
+      }
       const insert = this.client.prepare(`
-        INSERT INTO persona_memories (
-          id, persona_id, content, content_hash, memory_type, status,
-          source_type, source_id, remote_uri, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, 'candidate', 'openviking_session', ?, ?, ?, ?)
-        ON CONFLICT(remote_uri) DO UPDATE SET
+        INSERT INTO openviking_derived_memories (
+          id, persona_id, source_session_record_id, user_id, peer_id, remote_uri,
+          memory_type, content, content_hash, is_enabled, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+        ON CONFLICT(user_id, peer_id, remote_uri) DO UPDATE SET
+          persona_id = excluded.persona_id,
+          source_session_record_id = excluded.source_session_record_id,
           content = excluded.content, content_hash = excluded.content_hash,
-          memory_type = excluded.memory_type, updated_at = excluded.updated_at
+          memory_type = excluded.memory_type, is_enabled = 1, updated_at = excluded.updated_at
       `)
       for (const memory of memories) {
         insert.run(
-          memory.remoteUri,
+          randomUUID(),
           exchange.personaId,
+          exchange.sessionId,
+          exchange.userId,
+          exchange.peerId,
+          memory.remoteUri,
+          memory.memoryType,
           memory.content,
           memory.contentHash,
-          memory.memoryType,
-          exchange.sourceId,
-          memory.remoteUri,
           timestamp,
           timestamp,
         )
       }
+    }).immediate()
+  }
+
+  /** @param sourceId 已完成远端删除的人物反馈资料 UUID。 @param timestamp 完成时间。 @returns 本地敏感正文和活动行清理完成时结束。 */
+  async finalizePersonaFeedbackSourceDeletion(sourceId: string, timestamp: number): Promise<void> {
+    this.client.transaction(() => {
+      const source = this.client.prepare(`
+        SELECT id FROM persona_feedback_sources WHERE id = ? AND deletion_state = 'pending_remote_delete'
+      `).get(sourceId)
+      if (!source) return
+      this.client.prepare(`
+        UPDATE growth_revision_evidence SET source_available = 0
+        WHERE source_type = 'persona_feedback_source' AND source_id = ?
+      `).run(sourceId)
+      this.client.prepare(`
+        UPDATE analysis_batch_inputs SET content_snapshot = NULL, source_available = 0
+        WHERE input_type = 'persona_feedback_source' AND input_id = ?
+      `).run(sourceId)
+      this.client.prepare(`DELETE FROM persona_feedback_sources WHERE id = ?`).run(sourceId)
+      insertAuditEvent(this.client, {
+        actor: 'system', action: 'persona_feedback_source_deleted',
+        targetType: 'persona_feedback_source', targetId: sourceId, timestamp,
+      })
     }).immediate()
   }
 
@@ -305,19 +369,21 @@ export class SqliteContextIndexRepository implements ContextIndexRepository {
   async saveSyncRecord(record: ContextSyncRecordView): Promise<void> {
     this.client.prepare(`
       INSERT INTO context_sync_records (
-        id, source_id, scope_type, scope_id, user_id, peer_id, provider,
-        remote_uri, content_hash, status, error, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, 'openviking', ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(source_id, scope_type, scope_id, provider) DO UPDATE SET
+        id, entity_type, source_id, scope_type, scope_id, user_id, peer_id, provider,
+        remote_uri, content_hash, status, operation, error, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'openviking', ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(entity_type, source_id, scope_type, scope_id, provider) DO UPDATE SET
         user_id = excluded.user_id,
         peer_id = excluded.peer_id,
         remote_uri = excluded.remote_uri,
         content_hash = excluded.content_hash,
         status = excluded.status,
+        operation = excluded.operation,
         error = excluded.error,
         updated_at = excluded.updated_at
     `).run(
       record.id,
+      record.entityType,
       record.sourceId,
       record.scopeType,
       record.scopeId,
@@ -326,6 +392,7 @@ export class SqliteContextIndexRepository implements ContextIndexRepository {
       record.remoteUri,
       record.contentHash,
       record.status,
+      record.operation,
       record.error,
       record.createdAt,
       record.updatedAt,
@@ -348,6 +415,7 @@ function toSyncRecord(value: unknown): ContextSyncRecordView {
   const data = row(value)
   return {
     id: String(data.id),
+    entityType: data.entity_type as ContextSyncRecordView['entityType'],
     sourceId: String(data.source_id),
     scopeType: data.scope_type as ContextSyncRecordView['scopeType'],
     scopeId: String(data.scope_id),
@@ -357,6 +425,7 @@ function toSyncRecord(value: unknown): ContextSyncRecordView {
     remoteUri: data.remote_uri === null ? null : String(data.remote_uri),
     contentHash: String(data.content_hash),
     status: data.status as ContextSyncRecordView['status'],
+    operation: data.operation as ContextSyncRecordView['operation'],
     error: data.error === null ? null : String(data.error),
     createdAt: Number(data.created_at),
     updatedAt: Number(data.updated_at),
@@ -368,6 +437,7 @@ function toProjection(value: unknown): ContextSourceProjection {
   const data = row(value)
   return {
     source: {
+      entityType: data.entity_type as ContextSourceDocument['entityType'],
       id: String(data.id),
       name: String(data.name),
       role: data.role as ContextSourceDocument['role'],
@@ -379,5 +449,7 @@ function toProjection(value: unknown): ContextSourceProjection {
     userId: String(data.user_id),
     peerId: data.peer_id === null ? null : String(data.peer_id),
     priority: Number(data.priority),
+    operation: data.operation as ContextSourceProjection['operation'],
+    remoteUri: String(data.remote_uri),
   }
 }

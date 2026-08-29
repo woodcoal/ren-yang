@@ -182,6 +182,7 @@ export class ApplicationRuntime {
       learning: learningRepository,
       identifiers,
       clock: this.clock,
+      contextSyncQueue,
     })
     this.analysisService = new AnalysisApplicationService({
       content: contentRepository,

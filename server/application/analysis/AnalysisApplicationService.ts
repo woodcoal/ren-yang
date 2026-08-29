@@ -130,7 +130,7 @@ export class AnalysisApplicationService implements TaskHandler {
         responseSchemaName: 'learning_iteration',
       })
       const result = modelIterationResultSchema.parse(response.structuredOutput)
-      validateIterationResult(runtime.batch.analysisType, runtime.baseline, runtime.batch.inputs.map(item => item.id), result)
+      validateIterationResult(runtime.batch.analysisType, runtime.baseline, runtime.batch.inputs, result)
       if (!await this.dependencies.analysis.saveAnalysisResult(batchId, result, this.dependencies.clock.now())) {
         throw new Error('分析批次保存时状态已变化')
       }
@@ -148,7 +148,7 @@ export class AnalysisApplicationService implements TaskHandler {
     if (!subject.activeVersionId) throw new ApplicationError('SOUL_NOT_PUBLISHED', '请先发布当前灵魂，再分析成长或记忆', 409)
     const soul = await this.dependencies.souls.findSoulVersion(subject.activeVersionId)
     if (!soul) throw new ApplicationError('VERSION_CONFLICT', '当前灵魂版本不存在', 409)
-    const analyzedIds = new Set(await this.dependencies.analysis.listAnalyzedInputIds(analysisType, subjectId))
+    const analyzedKeys = new Set(await this.dependencies.analysis.listAnalyzedInputKeys(analysisType, subjectId))
     let baseline: Array<GrowthRecordView | MemoryRecordView>
     let sourceInputs: Array<Omit<CreateAnalysisBatchInputRecord, 'id' | 'isNew'>>
     if (analysisType === 'world_growth') {
@@ -174,19 +174,27 @@ export class AnalysisApplicationService implements TaskHandler {
       }))
     }
     else {
-      const [operations, memories] = await Promise.all([
+      const [operations, derivedMemories, memories] = await Promise.all([
         this.dependencies.learning.listPersonaOperationRecords(subjectId),
+        this.dependencies.learning.listOpenVikingDerivedMemories(subjectId),
         this.dependencies.learning.listMemories(subjectId),
       ])
       baseline = memories.filter(item => item.status === 'active')
-      sourceInputs = operations.filter(item => item.isEnabled).map(item => ({
-        inputType: 'persona_operation_record', inputId: item.id,
-        title: operationTypeLabel(item.operationType), content: item.resultSummary,
-        contentHash: hashContent(item.resultSummary),
-      }))
+      sourceInputs = [
+        ...operations.filter(item => item.isEnabled).map(item => ({
+          inputType: 'persona_operation_record' as const, inputId: item.id,
+          title: operationTypeLabel(item.operationType), content: item.resultSummary,
+          contentHash: hashContent(item.resultSummary),
+        })),
+        ...derivedMemories.map(item => ({
+          inputType: 'openviking_memory' as const, inputId: item.id,
+          title: `OpenViking 派生素材（${item.memoryType}）`, content: item.content,
+          contentHash: item.contentHash,
+        })),
+      ]
     }
     if (sourceInputs.length === 0) throw new ApplicationError('ANALYSIS_INPUT_REQUIRED', '没有已启用的原始资料可供分析', 422)
-    const hasNewInput = sourceInputs.some(item => !analyzedIds.has(item.inputId))
+    const hasNewInput = sourceInputs.some(item => !analyzedKeys.has(analysisInputKey(item)))
     if (mode === 'incremental' && !hasNewInput) {
       throw new ApplicationError('NO_NEW_ANALYSIS_INPUT', '没有尚未分析的新资料；如需重新检查全部内容，请选择完整重建', 409)
     }
@@ -196,7 +204,7 @@ export class AnalysisApplicationService implements TaskHandler {
       inputs: sourceInputs.map(item => ({
         ...item,
         id: this.dependencies.identifiers.create(),
-        isNew: mode === 'full_rebuild' || !analyzedIds.has(item.inputId),
+        isNew: mode === 'full_rebuild' || !analyzedKeys.has(analysisInputKey(item)),
       })),
     }
   }
@@ -236,16 +244,16 @@ function buildAnalysisPrompts(analysisType: AnalysisType, baseline: unknown[], i
   }
 }
 
-/** @param analysisType 分析类型。 @param baseline 当前基线。 @param inputIds 有效输入 UUID。 @param result 已通过结构校验的结果。 @returns 业务约束满足时结束。 */
+/** @param analysisType 分析类型。 @param baseline 当前基线。 @param inputs 有效批次输入。 @param result 已通过结构校验的结果。 @returns 业务约束满足时结束。 */
 function validateIterationResult(
   analysisType: AnalysisType,
   baseline: unknown[],
-  inputIds: string[],
+  inputs: AnalysisBatchView['inputs'],
   result: ReturnType<typeof modelIterationResultSchema.parse>,
 ): void {
   const expectedTarget = analysisType === 'persona_memory' ? 'memory' : 'growth'
   const baselineIds = new Set(baseline.slice(1).map(item => String((item as Record<string, unknown>).id)))
-  const validInputIds = new Set(inputIds)
+  const validInputIds = new Set(inputs.map(item => item.id))
   for (const proposal of result.proposals) {
     if (proposal.targetType !== expectedTarget) throw new Error('模型提案目标类型与分析类型不一致')
     if (proposal.targetIds.some(id => !baselineIds.has(id))) throw new Error('模型提案引用了不存在的有效基线')
@@ -255,8 +263,12 @@ function validateIterationResult(
     if (proposal.operation === 'add' && proposal.targetIds.length !== 0) throw new Error('新增提案不能包含目标')
     if (proposal.operation === 'revise' && proposal.targetIds.length !== 1) throw new Error('修订提案必须包含一个目标')
     if (['merge', 'supersede', 'archive'].includes(proposal.operation) && proposal.targetIds.length === 0) throw new Error('合并、取代或停用提案必须包含目标')
-    if (analysisType === 'persona_memory' && needsContent && proposal.evidenceInputIds.length < 2) {
-      throw new Error('人物记忆 AI 提案至少需要两个独立输入')
+    if (analysisType === 'persona_memory' && needsContent) {
+      const evidenceIds = new Set(proposal.evidenceInputIds)
+      const independentOperationIds = new Set(inputs
+        .filter(item => evidenceIds.has(item.id) && item.inputType === 'persona_operation_record')
+        .map(item => item.inputId))
+      if (independentOperationIds.size < 2) throw new Error('人物记忆 AI 提案至少需要两个独立处理记录')
     }
   }
 }
@@ -288,4 +300,9 @@ function operationTypeLabel(type: 'interest_assessment' | 'artifact_generation' 
 /** @param content 正文。 @returns SHA-256 十六进制哈希。 */
 function hashContent(content: string): string {
   return createHash('sha256').update(content, 'utf8').digest('hex')
+}
+
+/** @param input 分析原始输入。 @returns 类型、标识和正文哈希组成的稳定增量键。 */
+function analysisInputKey(input: { inputType: string, inputId: string, contentHash: string }): string {
+  return `${input.inputType}:${input.inputId}:${input.contentHash}`
 }

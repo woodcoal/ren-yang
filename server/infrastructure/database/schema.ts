@@ -919,6 +919,33 @@ export const openVikingSessionRecords = sqliteTable(
   ],
 )
 
+/** OpenViking 从人物 Peer Session 派生并同步回 SQLite 的记忆分析素材。 */
+export const openVikingDerivedMemories = sqliteTable(
+  'openviking_derived_memories',
+  {
+    id: text('id').primaryKey(),
+    personaId: text('persona_id').notNull().references(() => personas.id, { onDelete: 'cascade' }),
+    sourceSessionRecordId: text('source_session_record_id').notNull().references(() => openVikingSessionRecords.id, { onDelete: 'cascade' }),
+    userId: text('user_id').notNull(),
+    peerId: text('peer_id').notNull(),
+    remoteUri: text('remote_uri').notNull(),
+    memoryType: text('memory_type').notNull(),
+    content: text('content').notNull(),
+    contentHash: text('content_hash').notNull(),
+    isEnabled: integer('is_enabled').notNull().default(1),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  table => [
+    uniqueIndex('openviking_derived_memories_identity_uri_unique').on(table.userId, table.peerId, table.remoteUri),
+    index('openviking_derived_memories_persona_enabled_index').on(table.personaId, table.isEnabled, table.updatedAt),
+    check('openviking_derived_memories_type_check', sql`length(trim(${table.memoryType})) > 0`),
+    check('openviking_derived_memories_content_check', sql`length(trim(${table.content})) > 0`),
+    check('openviking_derived_memories_hash_check', sql`length(${table.contentHash}) = 64`),
+    check('openviking_derived_memories_enabled_check', sql`${table.isEnabled} IN (0, 1)`),
+  ],
+)
+
 /** 人物维护的固定回归评测用例。 */
 export const evaluationCases = sqliteTable(
   'evaluation_cases',
@@ -997,6 +1024,7 @@ export const contextSyncRecords = sqliteTable(
   'context_sync_records',
   {
     id: text('id').primaryKey(),
+    entityType: text('entity_type').notNull().default('source_material'),
     sourceId: text('source_id').notNull(),
     scopeType: text('scope_type').notNull(),
     scopeId: text('scope_id').notNull(),
@@ -1006,16 +1034,19 @@ export const contextSyncRecords = sqliteTable(
     remoteUri: text('remote_uri'),
     contentHash: text('content_hash').notNull(),
     status: text('status').notNull(),
+    operation: text('operation').notNull().default('upsert'),
     error: text('error'),
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull(),
   },
   table => [
-    uniqueIndex('context_sync_records_projection_unique').on(table.sourceId, table.scopeType, table.scopeId, table.provider),
+    uniqueIndex('context_sync_records_projection_unique').on(table.entityType, table.sourceId, table.scopeType, table.scopeId, table.provider),
     index('context_sync_records_provider_status_index').on(table.provider, table.status),
     check('context_sync_records_provider_check', sql`${table.provider} IN ('openviking')`),
+    check('context_sync_records_entity_type_check', sql`${table.entityType} IN ('source_material', 'persona_feedback_source', 'growth', 'memory')`),
     check('context_sync_records_scope_type_check', sql`${table.scopeType} IN ('world', 'persona')`),
     check('context_sync_records_status_check', sql`${table.status} IN ('pending', 'synchronized', 'failed')`),
+    check('context_sync_records_operation_check', sql`${table.operation} IN ('upsert', 'delete')`),
     check('context_sync_records_hash_check', sql`length(${table.contentHash}) = 64`),
   ],
 )
@@ -1061,6 +1092,7 @@ export const databaseSchema = {
   personaGrowthRecords,
   personaMemories,
   openVikingSessionRecords,
+  openVikingDerivedMemories,
   evaluationCases,
   evaluationRuns,
   evaluationResults,

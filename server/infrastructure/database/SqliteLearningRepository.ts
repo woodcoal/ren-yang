@@ -3,6 +3,7 @@ import type { Database as BetterSqliteDatabase } from 'better-sqlite3'
 import type {
   GrowthRecordView,
   MemoryRecordView,
+  OpenVikingDerivedMemoryView,
   PersonaFeedbackSourceView,
   PersonaOperationRecordView,
   WorldGrowthSourceView,
@@ -79,8 +80,8 @@ export class SqliteLearningRepository implements LearningRepository {
     })
   }
 
-  /** @param personaId 人物 UUID。 @param ids 反馈资料 UUID。 @param timestamp 删除时间。 @returns 物理删除数量。 */
-  async deletePersonaFeedbackSources(personaId: string, ids: string[], timestamp: number): Promise<number> {
+  /** @param personaId 人物 UUID。 @param ids 反馈资料 UUID。 @param timestamp 删除时间。 @param deferRemoteDeletion 是否先等待 OpenViking。 @returns 已受理数量。 */
+  async deletePersonaFeedbackSources(personaId: string, ids: string[], timestamp: number, deferRemoteDeletion: boolean): Promise<number> {
     return this.client.transaction(() => {
       const placeholders = createPlaceholders(ids)
       const rows = this.client.prepare(`
@@ -92,6 +93,20 @@ export class SqliteLearningRepository implements LearningRepository {
         UPDATE growth_revision_evidence SET source_available = 0
         WHERE source_type = 'persona_feedback_source' AND source_id IN (${placeholders})
       `).run(...ids)
+      if (deferRemoteDeletion) {
+        const changes = this.client.prepare(`
+          UPDATE persona_feedback_sources
+          SET deletion_state = 'pending_remote_delete', is_enabled = 0, updated_at = ?
+          WHERE persona_id = ? AND id IN (${placeholders})
+        `).run(timestamp, personaId, ...ids).changes
+        for (const id of ids) {
+          insertAuditEvent(this.client, {
+            actor: 'administrator', action: 'persona_feedback_source_deletion_requested',
+            targetType: 'persona_feedback_source', targetId: id, timestamp,
+          })
+        }
+        return changes
+      }
       this.client.prepare(`
         UPDATE analysis_batch_inputs SET content_snapshot = NULL, source_available = 0
         WHERE input_type = 'persona_feedback_source' AND input_id IN (${placeholders})
@@ -188,6 +203,22 @@ export class SqliteLearningRepository implements LearningRepository {
     return this.updateScopedEnabledState({
       table: 'persona_operation_records', scopeColumn: 'persona_id', idColumn: 'id', scopeId: personaId,
       ids, isEnabled, timestamp,
+    })
+  }
+
+  /** @param personaId 人物 UUID。 @returns 当前启用的 OpenViking 派生记忆分析素材。 */
+  async listOpenVikingDerivedMemories(personaId: string): Promise<OpenVikingDerivedMemoryView[]> {
+    return this.client.prepare(`
+      SELECT id, memory_type, content, content_hash, updated_at
+      FROM openviking_derived_memories
+      WHERE persona_id = ? AND is_enabled = 1
+      ORDER BY updated_at DESC, id DESC
+    `).all(personaId).map((value) => {
+      const row = value as Record<string, unknown>
+      return {
+        id: String(row.id), memoryType: String(row.memory_type), content: String(row.content),
+        contentHash: String(row.content_hash), updatedAt: Number(row.updated_at),
+      }
     })
   }
 

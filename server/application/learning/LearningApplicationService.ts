@@ -15,6 +15,7 @@ import type { Clock } from '../../ports/Clock'
 import type { ContentRepository } from '../../ports/ContentRepository'
 import type { IdentifierGenerator } from '../../ports/IdentifierGenerator'
 import type { LearningRepository } from '../../ports/LearningRepository'
+import type { ContextSyncTaskQueue } from '../../ports/ContextSyncTaskQueue'
 import { ApplicationError } from '../errors/ApplicationError'
 
 /** 统一学习应用服务依赖。 */
@@ -27,6 +28,8 @@ export interface LearningApplicationServiceDependencies {
   identifiers: IdentifierGenerator
   /** 可测试时钟。 */
   clock: Clock
+  /** OpenViking 启用时的人物反馈资料投影队列。 */
+  contextSyncQueue?: ContextSyncTaskQueue
 }
 
 /** 编排世界成长、人物成长和人物记忆的人工管理闭环。 */
@@ -81,6 +84,7 @@ export class LearningApplicationService {
       sourceId: input.sourceId ?? null,
       timestamp: this.dependencies.clock.now(),
     })
+    await this.enqueueFeedbackSourceSynchronization(id)
     const created = (await this.dependencies.learning.listPersonaFeedbackSources(personaId)).find(item => item.id === id)
     if (!created) throw new ApplicationError('PERSISTENCE_CONFLICT', '反馈资料创建后无法读取', 409)
     return created
@@ -102,9 +106,10 @@ export class LearningApplicationService {
     await this.requirePersona(personaId)
     const ids = uniqueIds(input.ids)
     const changes = await this.dependencies.learning.deletePersonaFeedbackSources(
-      personaId, ids, this.dependencies.clock.now(),
+      personaId, ids, this.dependencies.clock.now(), Boolean(this.dependencies.contextSyncQueue),
     )
     requireCompleteBatch(changes, ids.length, '部分反馈资料不存在、待删除或不属于当前人物')
+    for (const id of ids) await this.enqueueFeedbackSourceSynchronization(id)
     return await this.getPersonaGrowthWorkspace(personaId)
   }
 
@@ -181,7 +186,19 @@ export class LearningApplicationService {
       personaId, memoryId, this.dependencies.identifiers.create(), this.dependencies.clock.now(),
     )
     if (!created) throw new ApplicationError('RESOURCE_NOT_FOUND', '人物记忆不存在', 404)
+    await this.enqueueFeedbackSourceSynchronization(created.id)
     return created
+  }
+
+  /** @param sourceId 人物反馈资料 UUID。 @returns 能力关闭时直接结束，否则持久任务入队后结束。 */
+  private async enqueueFeedbackSourceSynchronization(sourceId: string): Promise<void> {
+    if (!this.dependencies.contextSyncQueue) return
+    await this.dependencies.contextSyncQueue.enqueueSourceSynchronization(
+      sourceId,
+      this.dependencies.identifiers.create(),
+      this.dependencies.clock.now(),
+      'persona_feedback_source',
+    )
   }
 
   /** @param subjectType 对象类型。 @param subjectId 对象 UUID。 @returns 对象存在时结束。 */

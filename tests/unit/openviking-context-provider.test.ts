@@ -32,7 +32,7 @@ class FixedContextIndexRepository implements ContextIndexRepository {
       peerId: 'persona-persona',
       targets: this.scopes.map(scope => ({
         ...scope,
-        remoteUri: `viking://~/peers/persona-persona/resources/ren-yang/${scope.sourceId}.md`,
+        remoteUri: `viking://~/peers/persona-persona/resources/ren-yang/persona-source/${scope.sourceId}.md`,
       })),
     }
   }
@@ -51,6 +51,9 @@ class FixedContextIndexRepository implements ContextIndexRepository {
 
   /** @returns 当前单元测试不保存 Session 结果。 */
   async saveSessionResult() {}
+
+  /** @returns 当前单元测试不执行反馈资料最终清理。 */
+  async finalizePersonaFeedbackSourceDeletion() {}
 
   /** @returns 同步记录副本。 */
   async listSyncRecords() { return [...this.records] }
@@ -172,10 +175,10 @@ describe('OpenViking 原生 HTTP 上下文适配器', () => {
     })
 
     const record: ContextSyncRecordView = {
-      id: 'record', sourceId: SOURCE_ID, scopeType: 'persona', scopeId: 'persona',
+      id: 'record', entityType: 'source_material', sourceId: SOURCE_ID, scopeType: 'persona', scopeId: 'persona',
       userId: 'world-world', peerId: 'persona-persona', provider: 'openviking',
-      remoteUri: `viking://~/peers/persona-persona/resources/ren-yang/${SOURCE_ID}.md`,
-      contentHash: 'a'.repeat(64), status: 'synchronized', error: null, createdAt: 1, updatedAt: 1,
+      remoteUri: `viking://~/peers/persona-persona/resources/ren-yang/persona-source/${SOURCE_ID}.md`,
+      contentHash: 'a'.repeat(64), status: 'synchronized', operation: 'upsert', error: null, createdAt: 1, updatedAt: 1,
     }
     await expect(provider.deleteProjection(record)).resolves.toBeUndefined()
     await expect(provider.deleteProjection(record)).resolves.toBeUndefined()
@@ -184,8 +187,8 @@ describe('OpenViking 原生 HTTP 上下文适配器', () => {
       const url = new URL(value)
       return { path: url.pathname, uri: url.searchParams.get('uri'), recursive: url.searchParams.get('recursive'), wait: url.searchParams.get('wait') }
     })).toEqual([
-      { path: '/api/v1/fs', uri: `viking://~/peers/persona-persona/resources/ren-yang/${SOURCE_ID}.md`, recursive: 'false', wait: 'true' },
-      { path: '/api/v1/fs', uri: `viking://~/peers/persona-persona/resources/ren-yang/${SOURCE_ID}.md`, recursive: 'false', wait: 'true' },
+      { path: '/api/v1/fs', uri: `viking://~/peers/persona-persona/resources/ren-yang/persona-source/${SOURCE_ID}.md`, recursive: 'false', wait: 'true' },
+      { path: '/api/v1/fs', uri: `viking://~/peers/persona-persona/resources/ren-yang/persona-source/${SOURCE_ID}.md`, recursive: 'false', wait: 'true' },
     ])
   })
 
@@ -195,12 +198,12 @@ describe('OpenViking 原生 HTTP 上下文适配器', () => {
       new Response(JSON.stringify({ status: 'ok', healthy: true, version: '0.7.7', auth_mode: 'trusted' })),
       new Response(JSON.stringify({ status: 'error', error: { code: 'NOT_FOUND', message: 'not found' } }), { status: 404 }),
       new Response(JSON.stringify({ status: 'ok', result: { temp_file_id: 'temp-1' } })),
-      new Response(JSON.stringify({ status: 'ok', result: { status: 'success', root_uri: `viking://~/peers/persona-persona/resources/ren-yang/${SOURCE_ID}.md` } })),
+      new Response(JSON.stringify({ status: 'ok', result: { status: 'success', root_uri: `viking://~/peers/persona-persona/resources/ren-yang/persona-source/${SOURCE_ID}.md` } })),
       new Response(JSON.stringify({
         status: 'ok',
         result: {
           resources: [{
-            uri: `viking://~/peers/persona-persona/resources/ren-yang/${SOURCE_ID}.md/chunk-1`,
+            uri: `viking://~/peers/persona-persona/resources/ren-yang/persona-source/${SOURCE_ID}.md/chunk-1`,
             score: 0.91,
             abstract: '摘要',
             content: '这是 OpenViking 返回的证据正文。',
@@ -220,9 +223,10 @@ describe('OpenViking 原生 HTTP 上下文适配器', () => {
 
     await expect(provider.checkHealth()).resolves.toEqual({ healthy: true, version: '0.7.7', authMode: 'trusted' })
     await expect(provider.synchronizeProjection({
-      source: { id: SOURCE_ID, name: '原著资料', role: 'canon_fact', contentHash: 'a'.repeat(64), contentText: '原著资料正文。' },
+      source: { entityType: 'source_material', id: SOURCE_ID, name: '原著资料', role: 'canon_fact', contentHash: 'a'.repeat(64), contentText: '原著资料正文。' },
       scopeType: 'persona', scopeId: 'persona', userId: 'world-world', peerId: 'persona-persona', priority: 10,
-    })).resolves.toBe(`viking://~/peers/persona-persona/resources/ren-yang/${SOURCE_ID}.md`)
+      operation: 'upsert', remoteUri: `viking://~/peers/persona-persona/resources/ren-yang/persona-source/${SOURCE_ID}.md`,
+    })).resolves.toBe(`viking://~/peers/persona-persona/resources/ren-yang/persona-source/${SOURCE_ID}.md`)
     await expect(provider.search({ personaId: 'persona', worldId: null, query: '证据', limit: 5 })).resolves.toEqual({
       provider: 'openviking',
       candidates: [{
@@ -243,15 +247,15 @@ describe('OpenViking 原生 HTTP 上下文适配器', () => {
     expect(requests[2]!.init.body).toBeInstanceOf(FormData)
     expect(JSON.parse(String(requests[3]!.init.body))).toMatchObject({
       temp_file_id: 'temp-1',
-      to: `viking://~/peers/persona-persona/resources/ren-yang/${SOURCE_ID}.md`,
+      to: `viking://~/peers/persona-persona/resources/ren-yang/persona-source/${SOURCE_ID}.md`,
       reason: '',
       wait: true,
       strict: true,
-      tags: [`source_id=${SOURCE_ID}`, 'source_role=canon_fact', 'scope_type=persona', 'scope_id=persona'],
+      tags: [`source_id=${SOURCE_ID}`, 'entity_type=source_material', 'source_role=canon_fact', 'scope_type=persona', 'scope_id=persona'],
     })
     expect(JSON.parse(String(requests[4]!.init.body))).toEqual({
       query: '证据',
-      target_uri: [`viking://~/peers/persona-persona/resources/ren-yang/${SOURCE_ID}.md`],
+      target_uri: [`viking://~/peers/persona-persona/resources/ren-yang/persona-source/${SOURCE_ID}.md`],
       context_type: 'resource',
       limit: 5,
       read_content: true,

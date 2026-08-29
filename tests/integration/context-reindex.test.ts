@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { ContextSynchronizationApplicationService } from '../../server/application/context/ContextSynchronizationApplicationService'
 import { ContentApplicationService } from '../../server/application/content/ContentApplicationService'
+import { LearningApplicationService } from '../../server/application/learning/LearningApplicationService'
 import { TaskRoutingApplicationService } from '../../server/application/tasks/TaskRoutingApplicationService'
 import { WorkerApplicationService } from '../../server/application/tasks/WorkerApplicationService'
 import { LocalSourceFileStorage } from '../../server/infrastructure/content/LocalSourceFileStorage'
@@ -12,6 +13,7 @@ import { SqliteContentRepository } from '../../server/infrastructure/database/Sq
 import { SqliteContextIndexRepository } from '../../server/infrastructure/database/SqliteContextIndexRepository'
 import { SqliteContextSyncTaskQueue } from '../../server/infrastructure/database/SqliteContextSyncTaskQueue'
 import { SqliteDatabase } from '../../server/infrastructure/database/SqliteDatabase'
+import { SqliteLearningRepository } from '../../server/infrastructure/database/SqliteLearningRepository'
 import { SqliteContextProvider } from '../../server/infrastructure/context/SqliteContextProvider'
 import { SqliteTaskJobRepository } from '../../server/infrastructure/database/SqliteTaskJobRepository'
 import type { Clock } from '../../server/ports/Clock'
@@ -19,6 +21,7 @@ import type { ContextSourceProjection } from '../../server/ports/ContextIndexRep
 import type { IdentifierGenerator } from '../../server/ports/IdentifierGenerator'
 import { OpenVikingError, type OpenVikingPort } from '../../server/ports/OpenVikingPort'
 import { ApplicationError } from '../../server/application/errors/ApplicationError'
+import type { DerivedMemoryDocument } from '../../server/ports/ContextIndexRepository'
 
 /** 测试使用的顺序 UUID。 */
 class SequentialIdentifierGenerator implements IdentifierGenerator {
@@ -54,6 +57,8 @@ class InMemoryOpenViking implements OpenVikingPort {
   public deleteFailuresRemaining = 0
   /** 已成功删除的旧投影身份，用于验证跨 User 迁移。 */
   public readonly deletedProjections: Array<{ userId: string, peerId: string | null, remoteUri: string | null }> = []
+  /** Session 提交后返回的固定派生记忆。 */
+  public sessionMemories: DerivedMemoryDocument[] = []
 
   /** @param enabled 能力开关。 */
   constructor(private readonly enabled = true) {}
@@ -88,15 +93,13 @@ class InMemoryOpenViking implements OpenVikingPort {
 
   /** @param projection SQLite 资料投影。 @returns 写入的稳定远端 URI。 */
   async synchronizeProjection(projection: ContextSourceProjection) {
-    const uri = projection.scopeType === 'world'
-      ? `viking://~/resources/ren-yang/${projection.source.id}.md`
-      : `viking://~/peers/${projection.peerId}/resources/ren-yang/${projection.source.id}.md`
+    const uri = projection.remoteUri
     this.resources.set(uri, projection.source.contentText)
     return uri
   }
 
-  /** @returns 集成测试不模拟 Session 派生记忆。 */
-  async synchronizeSession() { return [] }
+  /** @returns 当前测试配置的 Session 派生记忆。 */
+  async synchronizeSession() { return this.sessionMemories }
 }
 
 /** 当前测试数据目录。 */
@@ -113,7 +116,7 @@ beforeEach(() => {
     ) VALUES ('00000000-0000-4000-8000-000000000001', '原著资料', 'canon_fact', 'paste', ?, '第一版正文。', NULL, 1000, 1000)
   `).run('a'.repeat(64))
   database.getClient().prepare(`
-    INSERT INTO worlds (id, name, summary, active_version_id, created_at, updated_at)
+    INSERT INTO worlds (id, name, summary, active_soul_version_id, created_at, updated_at)
     VALUES ('00000000-0000-4000-8000-000000000100', '测试世界', '', NULL, 1000, 1000)
   `).run()
   database.getClient().prepare(`
@@ -130,7 +133,7 @@ afterEach(() => {
 describe('OpenViking 可关闭索引与 SQLite 重建', () => {
   it('同一资料关联世界和人物时生成两个隔离投影', async () => {
     database.getClient().prepare(`
-      INSERT INTO personas (id, world_id, name, origin, active_version_id, created_at, updated_at)
+      INSERT INTO personas (id, world_id, name, origin, active_soul_version_id, created_at, updated_at)
       VALUES ('00000000-0000-4000-8000-000000000200', '00000000-0000-4000-8000-000000000100', '测试人物', 'original', NULL, 1000, 1000)
     `).run()
     database.getClient().prepare(`
@@ -145,18 +148,18 @@ describe('OpenViking 可关闭索引与 SQLite 重建', () => {
 
     await expect(service.reindex()).resolves.toMatchObject({ total: 2, synchronized: 2, failed: 0 })
     expect([...openViking.resources.keys()].sort()).toEqual([
-      'viking://~/peers/persona-00000000-0000-4000-8000-000000000200/resources/ren-yang/00000000-0000-4000-8000-000000000001.md',
-      'viking://~/resources/ren-yang/00000000-0000-4000-8000-000000000001.md',
+      'viking://~/peers/persona-00000000-0000-4000-8000-000000000200/resources/ren-yang/persona-source/00000000-0000-4000-8000-000000000001.md',
+      'viking://~/resources/ren-yang/world-source/00000000-0000-4000-8000-000000000001.md',
     ])
   })
 
   it('人物更换世界时先用旧 User 删除投影，失败后保留旧身份供重试', async () => {
     database.getClient().prepare(`
-      INSERT INTO worlds (id, name, summary, active_version_id, created_at, updated_at)
+      INSERT INTO worlds (id, name, summary, active_soul_version_id, created_at, updated_at)
       VALUES ('00000000-0000-4000-8000-000000000101', '新世界', '', NULL, 1000, 1000)
     `).run()
     database.getClient().prepare(`
-      INSERT INTO personas (id, world_id, name, origin, active_version_id, created_at, updated_at)
+      INSERT INTO personas (id, world_id, name, origin, active_soul_version_id, created_at, updated_at)
       VALUES ('00000000-0000-4000-8000-000000000200', '00000000-0000-4000-8000-000000000100', '测试人物', 'original', NULL, 1000, 1000)
     `).run()
     database.getClient().prepare(`
@@ -188,7 +191,7 @@ describe('OpenViking 可关闭索引与 SQLite 重建', () => {
     expect(openViking.deletedProjections).toContainEqual({
       userId: 'world-00000000-0000-4000-8000-000000000100',
       peerId: 'persona-00000000-0000-4000-8000-000000000200',
-      remoteUri: 'viking://~/peers/persona-00000000-0000-4000-8000-000000000200/resources/ren-yang/00000000-0000-4000-8000-000000000001.md',
+      remoteUri: 'viking://~/peers/persona-00000000-0000-4000-8000-000000000200/resources/ren-yang/persona-source/00000000-0000-4000-8000-000000000001.md',
     })
     expect((await repository.listSyncRecords()).find(record => record.scopeType === 'persona')).toMatchObject({
       userId: 'world-00000000-0000-4000-8000-000000000101',
@@ -198,17 +201,25 @@ describe('OpenViking 可关闭索引与 SQLite 重建', () => {
 
   it('FTS5 只检索已生效成长和记忆，不暴露候选内容', async () => {
     database.getClient().prepare(`
-      INSERT INTO personas (id, world_id, name, origin, active_version_id, created_at, updated_at)
+      INSERT INTO personas (id, world_id, name, origin, active_soul_version_id, created_at, updated_at)
       VALUES ('00000000-0000-4000-8000-000000000200', NULL, '测试人物', 'original', NULL, 1000, 1000)
     `).run()
-    const insert = database.getClient().prepare(`
-      INSERT INTO persona_memories (
-        id, persona_id, content, content_hash, memory_type, status,
-        source_type, source_id, remote_uri, created_at, updated_at
-      ) VALUES (?, '00000000-0000-4000-8000-000000000200', ?, ?, 'events', ?, 'manual', NULL, NULL, 1000, 1000)
+    const insertMemory = database.getClient().prepare(`
+      INSERT INTO memory_records (
+        id, persona_id, current_revision_id, memory_type, status, created_at, updated_at
+      ) VALUES (?, '00000000-0000-4000-8000-000000000200', ?, 'preference', 'candidate', 1000, 1000)
     `)
-    insert.run('active-memory', '长期偏好使用克制表达', 'c'.repeat(64), 'active')
-    insert.run('candidate-memory', '候选偏好使用夸张表达', 'd'.repeat(64), 'candidate')
+    const insertRevision = database.getClient().prepare(`
+      INSERT INTO memory_revisions (
+        id, memory_id, revision_no, content, content_hash, scope, importance,
+        independent_evidence_count, created_by, created_at
+      ) VALUES (?, ?, 1, ?, ?, '表达方式', 4, 2, 'user', 1000)
+    `)
+    insertMemory.run('active-memory', 'active-memory-revision')
+    insertRevision.run('active-memory-revision', 'active-memory', '长期偏好使用克制表达', 'c'.repeat(64))
+    database.getClient().prepare(`UPDATE memory_records SET status = 'active' WHERE id = 'active-memory'`).run()
+    insertMemory.run('candidate-memory', 'candidate-memory-revision')
+    insertRevision.run('candidate-memory-revision', 'candidate-memory', '候选偏好使用夸张表达', 'd'.repeat(64))
     const provider = new SqliteContextProvider(database.getClient())
 
     await expect(provider.search({
@@ -242,6 +253,98 @@ describe('OpenViking 可关闭索引与 SQLite 重建', () => {
     expect(openViking.resetCount).toBe(2)
     expect([...openViking.resources.values()]).toEqual(['第二版完整正文。'])
     expect(rebuilt.records[0]).toMatchObject({ id: recordId, status: 'synchronized', contentHash: 'b'.repeat(64) })
+  })
+
+  it('人物反馈资料投影到 Peer Resource，删除失败时保留本地待删状态并可重试', async () => {
+    database.getClient().prepare(`
+      INSERT INTO personas (id, world_id, name, origin, active_soul_version_id, created_at, updated_at)
+      VALUES ('00000000-0000-4000-8000-000000000200', NULL, '测试人物', 'original', NULL, 1000, 1000)
+    `).run()
+    const identifiers = new SequentialIdentifierGenerator()
+    const clock = new IncrementingClock()
+    const queue = new SqliteContextSyncTaskQueue(database.getClient())
+    const learning = new LearningApplicationService({
+      content: new SqliteContentRepository(database.getClient()),
+      learning: new SqliteLearningRepository(database.getClient()),
+      identifiers,
+      clock,
+      contextSyncQueue: queue,
+    })
+    const openViking = new InMemoryOpenViking()
+    const context = new ContextSynchronizationApplicationService({
+      repository: new SqliteContextIndexRepository(database.getClient()),
+      openViking,
+      identifiers,
+      clock,
+    })
+
+    const feedback = await learning.createPersonaFeedbackSource('00000000-0000-4000-8000-000000000200', {
+      title: '表达反馈', content: '回答时先给结论。', sourceType: 'manual', sourceId: null,
+    })
+    await context.synchronizeProjectionEntity('persona_feedback_source', feedback.id)
+    const remoteUri = `viking://~/peers/persona-00000000-0000-4000-8000-000000000200/resources/ren-yang/feedback-source/${feedback.id}.md`
+    expect(openViking.resources.get(remoteUri)).toBe('回答时先给结论。')
+
+    await learning.deletePersonaFeedbackSources('00000000-0000-4000-8000-000000000200', { ids: [feedback.id] })
+    expect(database.getClient().prepare(`SELECT deletion_state FROM persona_feedback_sources WHERE id = ?`).get(feedback.id))
+      .toEqual({ deletion_state: 'pending_remote_delete' })
+    openViking.deleteFailuresRemaining = 1
+    await expect(context.synchronizeProjectionEntity('persona_feedback_source', feedback.id)).rejects.toMatchObject({ retryable: true })
+    expect(database.getClient().prepare(`SELECT content FROM persona_feedback_sources WHERE id = ?`).get(feedback.id))
+      .toEqual({ content: '回答时先给结论。' })
+
+    await expect(context.synchronizeProjectionEntity('persona_feedback_source', feedback.id)).resolves.toBeUndefined()
+    expect(database.getClient().prepare(`SELECT id FROM persona_feedback_sources WHERE id = ?`).get(feedback.id)).toBeUndefined()
+    expect(openViking.resources.has(remoteUri)).toBe(false)
+  })
+
+  it('人物处理记录写入 Peer Session 后只保存为记忆分析素材', async () => {
+    const personaId = '00000000-0000-4000-8000-000000000200'
+    const versionId = '00000000-0000-4000-8000-000000000201'
+    const runId = '00000000-0000-4000-8000-000000000202'
+    const operationId = '00000000-0000-4000-8000-000000000203'
+    database.getClient().prepare(`
+      INSERT INTO personas (id, world_id, name, origin, active_soul_version_id, created_at, updated_at)
+      VALUES (?, NULL, '测试人物', 'original', ?, 1000, 1000)
+    `).run(personaId, versionId)
+    database.getClient().prepare(`
+      INSERT INTO soul_versions (
+        id, subject_type, world_id, persona_id, chapters_json, runtime_summary,
+        runtime_token_count, token_counter, change_summary, status, published_at, created_at
+      ) VALUES (?, 'persona', NULL, ?, '[]', '测试人物', 4, 'test', '建立人物', 'published', 1000, 1000)
+    `).run(versionId, personaId)
+    database.getClient().prepare(`
+      INSERT INTO generation_runs (
+        id, kind, persona_version_id, status, input_json, parameter_snapshot_json,
+        model_snapshot_json, prompt_version, context_provider, result_json, created_at, updated_at, completed_at
+      ) VALUES (?, 'interest_assessment', ?, 'succeeded', '{"content":"判断这篇文章"}', '{}', '{}', 'test', 'sqlite_fts5', '{"interested":true}', 1000, 1000, 1000)
+    `).run(runId, versionId)
+    database.getClient().prepare(`
+      INSERT INTO persona_operation_records (
+        id, persona_id, run_id, operation_type, result_summary, is_enabled,
+        context_snapshot_json, created_at, updated_at
+      ) VALUES (?, ?, ?, 'interest_assessment', '对事实型文章感兴趣。', 1, '{}', 1000, 1000)
+    `).run(operationId, personaId, runId)
+    const openViking = new InMemoryOpenViking()
+    openViking.sessionMemories = [{
+      remoteUri: `viking://~/peers/persona-${personaId}/memories/events/event-1.md`,
+      memoryType: 'events', content: '多次选择事实型文章。', contentHash: 'e'.repeat(64),
+    }]
+    const context = new ContextSynchronizationApplicationService({
+      repository: new SqliteContextIndexRepository(database.getClient()),
+      openViking,
+      identifiers: new SequentialIdentifierGenerator(),
+      clock: new IncrementingClock(),
+    })
+
+    await context.synchronizeSession('run', runId)
+
+    expect(database.getClient().prepare(`
+      SELECT persona_id, memory_type, content, is_enabled FROM openviking_derived_memories
+    `).all()).toEqual([{ persona_id: personaId, memory_type: 'events', content: '多次选择事实型文章。', is_enabled: 1 }])
+    expect(database.getClient().prepare(`SELECT session_record_id FROM persona_operation_records WHERE id = ?`).get(operationId))
+      .toEqual({ session_record_id: `ren-yang-run-${runId}` })
+    expect(database.getClient().prepare(`SELECT COUNT(*) AS count FROM memory_records`).get()).toEqual({ count: 0 })
   })
 
   it('启动补偿会从 SQLite 补回缺失任务并保持重复扫描幂等', async () => {
@@ -322,7 +425,7 @@ describe('OpenViking 可关闭索引与 SQLite 重建', () => {
     expect([...openViking.resources.values()]).toContain('第一版增量正文。')
     await content.updateSource(created.source.id, { name: '增量资料', role: 'reference', content: '第二版增量正文。' })
     await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: true })
-    expect(openViking.resources.get(`viking://~/resources/ren-yang/${created.source.id}.md`)).toBe('第二版增量正文。')
+    expect(openViking.resources.get(`viking://~/resources/ren-yang/world-source/${created.source.id}.md`)).toBe('第二版增量正文。')
 
     await content.unlinkSource(created.source.id, 'world:00000000-0000-4000-8000-000000000100')
     openViking.deleteFailuresRemaining = 1
@@ -330,10 +433,10 @@ describe('OpenViking 可关闭索引与 SQLite 重建', () => {
     expect(database.getClient().prepare(`
       SELECT status, attempt_count FROM task_jobs WHERE type = 'sync_context_source' AND status = 'queued'
     `).get()).toEqual({ status: 'queued', attempt_count: 1 })
-    expect(openViking.resources.has(`viking://~/resources/ren-yang/${created.source.id}.md`)).toBe(true)
+    expect(openViking.resources.has(`viking://~/resources/ren-yang/world-source/${created.source.id}.md`)).toBe(true)
 
     await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: true })
-    expect(openViking.resources.has(`viking://~/resources/ren-yang/${created.source.id}.md`)).toBe(false)
+    expect(openViking.resources.has(`viking://~/resources/ren-yang/world-source/${created.source.id}.md`)).toBe(false)
     expect(database.getClient().prepare('SELECT COUNT(*) AS count FROM context_sync_records').get()).toEqual({ count: 0 })
 
     await content.deleteSource(created.source.id)

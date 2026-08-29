@@ -97,6 +97,20 @@ export interface PersonaOperationRecordView {
   updatedAt: number
 }
 
+/** OpenViking 从人物 Session 派生、只供记忆分析使用的原始素材。 */
+export interface OpenVikingDerivedMemoryView {
+  /** SQLite 素材 UUID。 */
+  id: string
+  /** OpenViking 记忆类别。 */
+  memoryType: string
+  /** 完整正文。 */
+  content: string
+  /** 正文 SHA-256。 */
+  contentHash: string
+  /** 最近同步时间。 */
+  updatedAt: number
+}
+
 /** 人物当前记忆修订。 */
 export interface MemoryRecordView {
   /** 稳定记忆 UUID。 */

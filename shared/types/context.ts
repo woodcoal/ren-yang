@@ -13,7 +13,9 @@ export interface OpenVikingCapabilityView {
 export interface ContextSyncRecordView {
   /** 同步记录 UUID。 */
   id: string
-  /** SQLite 资料 UUID。 */
+  /** SQLite 投影实体类型。 */
+  entityType: 'source_material' | 'persona_feedback_source' | 'growth' | 'memory'
+  /** SQLite 投影实体 UUID。 */
   sourceId: string
   /** 远端投影所属范围；世界资料进入 User，人物资料进入 Peer。 */
   scopeType: 'world' | 'persona'
@@ -31,6 +33,8 @@ export interface ContextSyncRecordView {
   contentHash: string
   /** 当前同步状态。 */
   status: 'pending' | 'synchronized' | 'failed'
+  /** 当前期望远端执行的操作。 */
+  operation: 'upsert' | 'delete'
   /** 脱敏错误摘要。 */
   error: string | null
   /** 首次创建时间。 */

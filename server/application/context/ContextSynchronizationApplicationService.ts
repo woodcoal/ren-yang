@@ -1,7 +1,7 @@
 import type { ContextReindexResult, ContextSyncRecordView } from '../../../shared/types/context'
 import type { Clock } from '../../ports/Clock'
 import type { ContextIndexRepository } from '../../ports/ContextIndexRepository'
-import type { ContextSourceProjection } from '../../ports/ContextIndexRepository'
+import type { ContextProjectionEntityType, ContextSourceProjection } from '../../ports/ContextIndexRepository'
 import type { ContextSyncTaskQueue } from '../../ports/ContextSyncTaskQueue'
 import type { IdentifierGenerator } from '../../ports/IdentifierGenerator'
 import type { OpenVikingPort } from '../../ports/OpenVikingPort'
@@ -69,24 +69,34 @@ export class ContextSynchronizationApplicationService implements TaskHandler {
     ])
     const desiredByKey = new Map(projections.map(projection => [projectionKey(projection), projection]))
     const recordsByKey = new Map(records.map(record => [recordKey(record), record]))
-    const sourceIds = new Set<string>()
+    const entities = new Map<string, { entityType: ContextProjectionEntityType, sourceId: string }>()
     for (const [key, projection] of desiredByKey) {
       const record = recordsByKey.get(key)
       if (!record
         || record.status !== 'synchronized'
         || record.contentHash !== projection.source.contentHash
+        || record.operation !== projection.operation
         || projectionIdentityChanged(record, projection)) {
-        sourceIds.add(projection.source.id)
+        entities.set(`${projection.source.entityType}:${projection.source.id}`, {
+          entityType: projection.source.entityType,
+          sourceId: projection.source.id,
+        })
       }
     }
     for (const record of records) {
-      if (!desiredByKey.has(recordKey(record))) sourceIds.add(record.sourceId)
+      if (!desiredByKey.has(recordKey(record)) && ['source_material', 'persona_feedback_source'].includes(record.entityType)) {
+        entities.set(`${record.entityType}:${record.sourceId}`, {
+          entityType: record.entityType as ContextProjectionEntityType,
+          sourceId: record.sourceId,
+        })
+      }
     }
-    for (const sourceId of sourceIds) {
+    for (const entity of entities.values()) {
       await queue.enqueueSourceSynchronization(
-        sourceId,
+        entity.sourceId,
         this.dependencies.identifiers.create(),
         this.dependencies.clock.now(),
+        entity.entityType,
       )
     }
     for (const session of sessions) {
@@ -106,7 +116,8 @@ export class ContextSynchronizationApplicationService implements TaskHandler {
    */
   async execute(job: TaskJob): Promise<void> {
     if (job.type === 'sync_context_source') {
-      await this.synchronizeSource(readSourceId(job.payloadJson))
+      const entity = readProjectionSource(job.payloadJson)
+      await this.synchronizeProjectionEntity(entity.entityType, entity.sourceId)
       return
     }
     if (job.type === 'sync_openviking_session') {
@@ -123,12 +134,17 @@ export class ContextSynchronizationApplicationService implements TaskHandler {
    * @returns 同步完成时结束；外部故障保存失败事实并交由 Worker 重试。
    */
   async synchronizeSource(sourceId: string): Promise<void> {
+    await this.synchronizeProjectionEntity('source_material', sourceId)
+  }
+
+  /** @param entityType 普通资料或人物反馈资料。 @param sourceId SQLite 实体 UUID。 @returns 当前投影意图执行完成时结束。 */
+  async synchronizeProjectionEntity(entityType: ContextProjectionEntityType, sourceId: string): Promise<void> {
     this.requireConfigured(true)
     const [projections, allRecords] = await Promise.all([
-      this.dependencies.repository.listSourceProjections(sourceId),
+      this.dependencies.repository.listSourceProjections(entityType, sourceId),
       this.dependencies.repository.listSyncRecords(),
     ])
-    const records = allRecords.filter(record => record.sourceId === sourceId)
+    const records = allRecords.filter(record => record.entityType === entityType && record.sourceId === sourceId)
     const desiredKeys = new Set(projections.map(projectionKey))
     let failedMessage: string | null = null
     for (const record of records.filter(item => !desiredKeys.has(recordKey(item)))) {
@@ -171,6 +187,14 @@ export class ContextSynchronizationApplicationService implements TaskHandler {
       const pending = toPendingRecord(projection, previous, this.dependencies.identifiers.create(), timestamp)
       await this.dependencies.repository.saveSyncRecord(pending)
       try {
+        if (projection.operation === 'delete') {
+          await this.dependencies.openViking.deleteProjection(pending)
+          await this.dependencies.repository.deleteSyncRecord(pending.id)
+          if (projection.source.entityType === 'persona_feedback_source') {
+            await this.dependencies.repository.finalizePersonaFeedbackSourceDeletion(projection.source.id, this.dependencies.clock.now())
+          }
+          continue
+        }
         const remoteUri = await this.dependencies.openViking.synchronizeProjection(projection)
         await this.dependencies.repository.saveSyncRecord({
           ...pending,
@@ -259,6 +283,15 @@ export class ContextSynchronizationApplicationService implements TaskHandler {
       const pending = toPendingRecord(projection, previous, this.dependencies.identifiers.create(), timestamp)
       await this.dependencies.repository.saveSyncRecord(pending)
       try {
+        if (projection.operation === 'delete') {
+          await this.dependencies.openViking.deleteProjection(pending)
+          await this.dependencies.repository.deleteSyncRecord(pending.id)
+          if (projection.source.entityType === 'persona_feedback_source') {
+            await this.dependencies.repository.finalizePersonaFeedbackSourceDeletion(projection.source.id, this.dependencies.clock.now())
+          }
+          synchronized += 1
+          continue
+        }
         const remoteUri = await this.dependencies.openViking.synchronizeProjection(projection)
         await this.dependencies.repository.saveSyncRecord({
           ...pending,
@@ -299,12 +332,12 @@ export class ContextSynchronizationApplicationService implements TaskHandler {
 
 /** @param projection SQLite 当前投影。 @returns 稳定投影键。 */
 function projectionKey(projection: ContextSourceProjection): string {
-  return `${projection.source.id}:${projection.scopeType}:${projection.scopeId}`
+  return `${projection.source.entityType}:${projection.source.id}:${projection.scopeType}:${projection.scopeId}`
 }
 
 /** @param record 已保存同步记录。 @returns 稳定投影键。 */
 function recordKey(record: ContextSyncRecordView): string {
-  return `${record.sourceId}:${record.scopeType}:${record.scopeId}`
+  return `${record.entityType}:${record.sourceId}:${record.scopeType}:${record.scopeId}`
 }
 
 /**
@@ -314,7 +347,7 @@ function recordKey(record: ContextSyncRecordView): string {
  * @returns User 或 Peer 任一变化时返回 true。
  */
 function projectionIdentityChanged(record: ContextSyncRecordView, projection: ContextSourceProjection): boolean {
-  return record.userId !== projection.userId || record.peerId !== projection.peerId
+  return record.userId !== projection.userId || record.peerId !== projection.peerId || record.remoteUri !== projection.remoteUri
 }
 
 /**
@@ -333,15 +366,17 @@ function toPendingRecord(
 ): ContextSyncRecordView {
   return {
     id: previous?.id ?? newId,
+    entityType: projection.source.entityType,
     sourceId: projection.source.id,
     scopeType: projection.scopeType,
     scopeId: projection.scopeId,
     userId: projection.userId,
     peerId: projection.peerId,
     provider: 'openviking',
-    remoteUri: previous?.remoteUri ?? null,
+    remoteUri: projection.remoteUri,
     contentHash: projection.source.contentHash,
     status: 'pending',
+    operation: projection.operation,
     error: null,
     createdAt: previous?.createdAt ?? timestamp,
     updatedAt: timestamp,
@@ -362,11 +397,15 @@ function safeProviderMessage(error: unknown): string {
   return 'OpenViking 资料同步失败'
 }
 
-/** @param payloadJson 持久任务 JSON。 @returns 非空资料 UUID。 */
-function readSourceId(payloadJson: string): string {
+/** @param payloadJson 持久任务 JSON。 @returns 已校验投影实体类型和 UUID。 */
+function readProjectionSource(payloadJson: string): { entityType: ContextProjectionEntityType, sourceId: string } {
   try {
-    const payload = JSON.parse(payloadJson) as { sourceId?: unknown }
-    if (typeof payload.sourceId === 'string' && payload.sourceId.trim()) return payload.sourceId
+    const payload = JSON.parse(payloadJson) as { entityType?: unknown, sourceId?: unknown }
+    const entityType = payload.entityType ?? 'source_material'
+    if ((entityType === 'source_material' || entityType === 'persona_feedback_source')
+      && typeof payload.sourceId === 'string' && payload.sourceId.trim()) {
+      return { entityType, sourceId: payload.sourceId }
+    }
   }
   catch {
     // 统一在下方转为不可重试的安全任务错误。

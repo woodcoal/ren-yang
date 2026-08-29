@@ -103,7 +103,10 @@ export class OpenVikingHttpContextProvider implements ContextProvider, OpenVikin
    * @returns 实际写入的稳定 Viking URI。
    */
   async synchronizeProjection(projection: ContextSourceProjection): Promise<string> {
-    const remoteUri = projectionRemoteUri(projection)
+    if (projection.operation !== 'upsert') {
+      throw new OpenVikingError('PROVIDER_OUTPUT_INVALID', '删除投影不能进入资源写入流程')
+    }
+    const remoteUri = projection.remoteUri
     const identity = { userId: projection.userId, peerId: projection.peerId }
     await this.deleteUri(remoteUri, false, identity)
 
@@ -130,6 +133,7 @@ export class OpenVikingHttpContextProvider implements ContextProvider, OpenVikin
         source_name: `${projection.source.id}.md`,
         tags: [
           `source_id=${projection.source.id}`,
+          `entity_type=${projection.source.entityType}`,
           `source_role=${projection.source.role}`,
           `scope_type=${projection.scopeType}`,
           `scope_id=${projection.scopeId}`,
@@ -399,13 +403,6 @@ function parseEndpoint(value: string): URL | null {
   catch {
     return null
   }
-}
-
-/** @param sourceId SQLite 资料 UUID。 @returns 人样专属稳定资源 URI。 */
-function projectionRemoteUri(projection: ContextSourceProjection): string {
-  return projection.scopeType === 'world'
-    ? `viking://~/resources/ren-yang/${projection.source.id}.md`
-    : `viking://~/peers/${projection.peerId}/resources/ren-yang/${projection.source.id}.md`
 }
 
 /** 单次 OpenViking 请求的世界 User 与可选人物 Peer。 */

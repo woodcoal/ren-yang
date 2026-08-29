@@ -1,6 +1,7 @@
 import type {
   GrowthRecordView,
   MemoryRecordView,
+  OpenVikingDerivedMemoryView,
   PersonaFeedbackSourceView,
   PersonaOperationRecordView,
   WorldGrowthSourceView,
@@ -79,8 +80,8 @@ export interface LearningRepository {
   createPersonaFeedbackSource(record: CreatePersonaFeedbackSourceRecord): Promise<void>
   /** @param personaId 人物 UUID。 @param ids 反馈资料 UUID。 @param isEnabled 新状态。 @param timestamp 更新时间。 @returns 更新数量。 */
   updatePersonaFeedbackSourceStates(personaId: string, ids: string[], isEnabled: boolean, timestamp: number): Promise<number>
-  /** @param personaId 人物 UUID。 @param ids 反馈资料 UUID。 @param timestamp 删除时间。 @returns 物理删除数量。 */
-  deletePersonaFeedbackSources(personaId: string, ids: string[], timestamp: number): Promise<number>
+  /** @param personaId 人物 UUID。 @param ids 反馈资料 UUID。 @param timestamp 删除时间。 @param deferRemoteDeletion 是否先等待 OpenViking 删除。 @returns 已受理数量。 */
+  deletePersonaFeedbackSources(personaId: string, ids: string[], timestamp: number, deferRemoteDeletion: boolean): Promise<number>
 
   /** @param subjectType 对象类型。 @param subjectId 对象 UUID。 @returns 当前成长修订。 */
   listGrowth(subjectType: 'world' | 'persona', subjectId: string): Promise<GrowthRecordView[]>
@@ -95,6 +96,8 @@ export interface LearningRepository {
   createPersonaOperationRecord(record: CreatePersonaOperationRecord): Promise<boolean>
   /** @param personaId 人物 UUID。 @param ids 处理记录 UUID。 @param isEnabled 新状态。 @param timestamp 更新时间。 @returns 更新数量。 */
   updatePersonaOperationRecordStates(personaId: string, ids: string[], isEnabled: boolean, timestamp: number): Promise<number>
+  /** @param personaId 人物 UUID。 @returns 当前启用的 OpenViking 派生记忆分析素材。 */
+  listOpenVikingDerivedMemories(personaId: string): Promise<OpenVikingDerivedMemoryView[]>
 
   /** @param personaId 人物 UUID。 @returns 人物当前记忆修订。 */
   listMemories(personaId: string): Promise<MemoryRecordView[]>

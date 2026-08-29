@@ -3,9 +3,11 @@ import type { ContextSyncRecordView } from '../../shared/types/context'
 
 /** OpenViking 同步使用的完整 SQLite 资料事实。 */
 export interface ContextSourceDocument {
+  /** SQLite 投影实体类型。 */
+  entityType: 'source_material' | 'persona_feedback_source'
   id: string
   name: string
-  role: SourceRole
+  role: SourceRole | 'feedback'
   contentHash: string
   contentText: string
 }
@@ -31,7 +33,14 @@ export interface ContextSourceProjection {
   peerId: string | null
   /** 数值越小，检索优先级越高。 */
   priority: number
+  /** 当前投影应写入还是删除。 */
+  operation: 'upsert' | 'delete'
+  /** 按实体类型和范围生成的稳定远端 URI。 */
+  remoteUri: string
 }
+
+/** 可由持久任务定位的 OpenViking Resource 投影实体。 */
+export type ContextProjectionEntityType = ContextSourceDocument['entityType']
 
 /** 一次人物检索允许访问的精确远端目标。 */
 export interface ContextRemoteSearchScope {
@@ -110,8 +119,8 @@ export interface ContextIndexRepository {
   listSourceDocuments(): Promise<ContextSourceDocument[]>
   /** @param sourceId 资料 UUID。 @returns 当前完整 SQLite 资料；不存在时返回 null。 */
   findSourceDocument(sourceId: string): Promise<ContextSourceDocument | null>
-  /** @param sourceId 可选资料 UUID；为空时返回全部当前关联投影。 @returns SQLite 可重建投影。 */
-  listSourceProjections(sourceId?: string): Promise<ContextSourceProjection[]>
+  /** @param entityType 可选实体类型。 @param sourceId 可选实体 UUID；均为空时返回全部投影。 @returns SQLite 可重建投影及删除意图。 */
+  listSourceProjections(entityType?: ContextProjectionEntityType, sourceId?: string): Promise<ContextSourceProjection[]>
   /** @param personaId 人物 UUID。 @param worldId 可选世界 UUID。 @returns 允许当前运行检索的资料范围。 */
   listSourceScopes(personaId: string, worldId: string | null): Promise<ContextSourceScope[]>
   /** @param personaId 人物 UUID。 @param worldId 可选世界 UUID。 @returns 同一 User 下可检索的精确远端范围。 */
@@ -126,6 +135,8 @@ export interface ContextIndexRepository {
   saveSessionState(exchange: ContextSessionExchange, status: 'pending' | 'failed', error: string | null, timestamp: number): Promise<void>
   /** @param exchange 已成功同步的交流。 @param memories OpenViking 派生候选。 @param timestamp 同步时间。 @returns 无返回值。 */
   saveSessionResult(exchange: ContextSessionExchange, memories: DerivedMemoryDocument[], timestamp: number): Promise<void>
+  /** @param sourceId 已完成远端删除的人物反馈资料 UUID。 @param timestamp 完成时间。 @returns 本地正文和活动行清理完成时结束。 */
+  finalizePersonaFeedbackSourceDeletion(sourceId: string, timestamp: number): Promise<void>
   /** @returns 全部 OpenViking 同步记录。 */
   listSyncRecords(): Promise<ContextSyncRecordView[]>
   /** @param record 完整同步事实。 @returns 无返回值。 */

@@ -71,6 +71,13 @@
       "when": 1788023581482,
       "tag": "0009_analysis-proposals",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1788025081053,
+      "tag": "0010_openviking-learning-projection",
+      "breakpoints": true
     }
   ]
 }
