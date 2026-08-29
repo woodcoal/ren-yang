@@ -202,6 +202,8 @@ export interface SourceSummary {
   contentText: string
   /** 文件导入时保留的相对路径。 */
   originalFilePath: string | null
+  /** 是否允许资料进入人物、世界检索和 OpenViking 投影。 */
+  isEnabled: boolean
   /** 当前检索切片数。 */
   chunkCount: number
   /** 当前人物与世界关联数。 */
@@ -210,6 +212,28 @@ export interface SourceSummary {
   createdAt: number
   /** 更新时间，UTC Unix 毫秒。 */
   updatedAt: number
+}
+
+/** 服务端分页后的资料列表。 */
+export interface SourcePageView {
+  /** 当前页资料摘要。 */
+  items: SourceSummary[]
+  /** 全部资料数量。 */
+  total: number
+  /** 服务端确认后的当前页码，从 1 开始。 */
+  page: number
+  /** 当前每页数量。 */
+  pageSize: 5 | 10 | 20 | 50 | 100
+  /** 总页数；空列表时仍为 1。 */
+  totalPages: number
+}
+
+/** 批量修改资料状态的结果。 */
+export interface SourceStatusUpdateResult {
+  /** 去重后实际处理的资料 UUID。 */
+  sourceIds: string[]
+  /** 本次写入的统一状态。 */
+  isEnabled: boolean
 }
 
 /** 资料关联公开视图。 */

@@ -44,7 +44,7 @@ export class SqliteContextProvider implements ContextProvider {
       INNER JOIN source_chunks ON source_chunks.rowid = source_chunks_fts.rowid
       INNER JOIN source_materials ON source_materials.id = source_chunks.source_id
       INNER JOIN linked_sources ON linked_sources.source_id = source_chunks.source_id
-      WHERE source_chunks_fts MATCH ?
+      WHERE source_chunks_fts MATCH ? AND source_materials.is_enabled = 1
       ORDER BY CASE source_materials.role
         WHEN 'canon_fact' THEN 0 WHEN 'style_sample' THEN 1 ELSE 2 END,
         linked_sources.priority, bm25(source_chunks_fts), source_chunks.ordinal

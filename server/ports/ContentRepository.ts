@@ -107,6 +107,20 @@ export interface CreateSourceRecord extends SourceWriteRecord {
 /** 替换资料正文与切片的持久化命令，不改动现有关系。 */
 export interface ReplaceSourceRecord extends SourceWriteRecord {}
 
+/** 仓储返回的资料分页记录。 */
+export interface SourcePageRecord {
+  /** 当前页资料。 */
+  items: SourceMaterialRecord[]
+  /** 全部资料数量。 */
+  total: number
+  /** 已按总数修正的当前页码。 */
+  page: number
+  /** 每页数量。 */
+  pageSize: 5 | 10 | 20 | 50 | 100
+  /** 总页数；空列表时仍为 1。 */
+  totalPages: number
+}
+
 /** 删除人物时会一并删除的运行历史数量。 */
 export interface PersonaRunHistoryStatistics {
   /** 运行数量。 */
@@ -179,12 +193,18 @@ export interface ContentRepository {
 
   /** @returns 按更新时间倒序的全部资料。 */
   listSources(): Promise<SourceMaterialRecord[]>
+  /** @param page 从 1 开始的页码。 @param pageSize 每页数量。 @returns 已按总数修正的资料分页记录。 */
+  listSourcesPage(page: number, pageSize: 5 | 10 | 20 | 50 | 100): Promise<SourcePageRecord>
   /** @param id 资料标识。 @returns 资料或 null。 */
   findSource(id: string): Promise<SourceMaterialRecord | null>
   /** @param record 完整资料创建命令。 @returns 无返回值。 */
   createSource(record: CreateSourceRecord): Promise<void>
   /** @param record 完整资料替换命令。 @returns 是否更新成功。 */
   replaceSource(record: ReplaceSourceRecord): Promise<boolean>
+  /** @param sourceId 资料标识。 @param isEnabled 新启用状态。 @param timestamp 更新时间。 @returns 是否更新成功。 */
+  updateSourceStatus(sourceId: string, isEnabled: boolean, timestamp: number): Promise<boolean>
+  /** @param sourceIds 资料标识集合。 @param isEnabled 统一新状态。 @param timestamp 更新时间。 @returns 更新的资料数量。 */
+  updateSourcesStatus(sourceIds: string[], isEnabled: boolean, timestamp: number): Promise<number>
   /** @param sourceId 资料标识。 @returns 顺序稳定的切片。 */
   listSourceChunks(sourceId: string): Promise<SourceChunkRecord[]>
   /** @param sourceId 资料标识。 @returns 人物和世界关联。 */

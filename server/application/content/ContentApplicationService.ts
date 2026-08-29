@@ -2,10 +2,13 @@ import type {
   CreatePersonaInput,
   CreateSourceInput,
   CreateSourceLinkInput,
+  ListSourcesPageInput,
   SourceCreationTarget,
   CreateWorldInput,
   UpdatePersonaInput,
   UpdateSourceInput,
+  UpdateSourceStatusInput,
+  UpdateSourcesStatusInput,
   UpdateWorldInput,
 } from '../../../shared/schemas/content'
 import type {
@@ -14,6 +17,8 @@ import type {
   PersonaSummary,
   SourceChunkView,
   SourceDetails,
+  SourcePageView,
+  SourceStatusUpdateResult,
   SourceSummary,
   VersionFieldDiff,
   WorldDetails,
@@ -375,6 +380,19 @@ export class ContentApplicationService {
   }
 
   /**
+   * 分页查询资料摘要，避免资料库页面一次加载全部正文。
+   * @param input 已校验的页码和每页数量。
+   * @returns 服务端修正页码后的资料分页结果。
+   */
+  async listSourcesPage(input: ListSourcesPageInput): Promise<SourcePageView> {
+    const page = await this.dependencies.repository.listSourcesPage(input.page, input.pageSize)
+    return {
+      ...page,
+      items: await Promise.all(page.items.map(source => this.toSourceSummary(source))),
+    }
+  }
+
+  /**
    * 查询资料正文、切片和全部关联。
    * @param sourceId 资料 UUID。
    * @returns 资料详情。
@@ -485,6 +503,33 @@ export class ContentApplicationService {
     }
     await this.enqueueSourceSynchronization(sourceId)
     return await this.getSource(sourceId)
+  }
+
+  /**
+   * 修改资料全局启用状态，并异步刷新或删除 OpenViking 投影。
+   * @param sourceId 资料 UUID。
+   * @param input 已校验的新状态。
+   * @returns 保留正文和关系的最新资料详情。
+   */
+  async updateSourceStatus(sourceId: string, input: UpdateSourceStatusInput): Promise<SourceDetails> {
+    const current = await this.requireSource(sourceId)
+    if (current.isEnabled === input.isEnabled) return await this.getSource(sourceId)
+    await this.dependencies.repository.updateSourceStatus(sourceId, input.isEnabled, this.dependencies.clock.now())
+    await this.enqueueSourceSynchronization(sourceId)
+    return await this.getSource(sourceId)
+  }
+
+  /**
+   * 原子修改多项资料状态，再为每项资料分别创建可重试的 OpenViking 同步任务。
+   * @param input 已校验的资料 UUID 集合和统一状态。
+   * @returns 去重后的处理对象与新状态。
+   */
+  async updateSourcesStatus(input: UpdateSourcesStatusInput): Promise<SourceStatusUpdateResult> {
+    const sourceIds = [...new Set(input.sourceIds)]
+    await this.requireSources(sourceIds)
+    await this.dependencies.repository.updateSourcesStatus(sourceIds, input.isEnabled, this.dependencies.clock.now())
+    await this.enqueueSourceSynchronizations(sourceIds)
+    return { sourceIds, isEnabled: input.isEnabled }
   }
 
   /**

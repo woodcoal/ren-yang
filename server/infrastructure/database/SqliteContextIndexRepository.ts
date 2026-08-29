@@ -24,7 +24,8 @@ export class SqliteContextIndexRepository implements ContextIndexRepository {
   /** @returns 全部 SQLite 资料完整正文。 */
   async listSourceDocuments(): Promise<ContextSourceDocument[]> {
     return this.client.prepare(`
-      SELECT id, name, role, content_hash, content_text FROM source_materials ORDER BY created_at, id
+      SELECT id, name, role, content_hash, content_text FROM source_materials
+      WHERE is_enabled = 1 ORDER BY created_at, id
     `).all().map((value) => {
       const data = row(value)
       return {
@@ -41,7 +42,8 @@ export class SqliteContextIndexRepository implements ContextIndexRepository {
   /** @param sourceId 资料 UUID。 @returns 当前完整 SQLite 资料；不存在时返回 null。 */
   async findSourceDocument(sourceId: string): Promise<ContextSourceDocument | null> {
     const value = this.client.prepare(`
-      SELECT id, name, role, content_hash, content_text FROM source_materials WHERE id = ?
+      SELECT id, name, role, content_hash, content_text FROM source_materials
+      WHERE id = ? AND is_enabled = 1
     `).get(sourceId)
     if (!value) return null
     const data = row(value)
@@ -58,7 +60,9 @@ export class SqliteContextIndexRepository implements ContextIndexRepository {
   /** @param entityType 可选实体类型。 @param sourceId 可选实体 UUID。 @returns 当前写入投影与待删除人物反馈投影。 */
   async listSourceProjections(entityType?: 'source_material' | 'persona_feedback_source', sourceId?: string): Promise<ContextSourceProjection[]> {
     const projections: ContextSourceProjection[] = []
-    const filter = sourceId ? 'WHERE source_materials.id = ?' : ''
+    const filter = sourceId
+      ? 'WHERE source_materials.id = ? AND source_materials.is_enabled = 1'
+      : 'WHERE source_materials.is_enabled = 1'
     const parameters = sourceId ? [sourceId] : []
     if (!entityType || entityType === 'source_material') projections.push(...this.client.prepare(`
       SELECT source_materials.id, source_materials.name, source_materials.role,
@@ -119,6 +123,7 @@ export class SqliteContextIndexRepository implements ContextIndexRepository {
       SELECT linked_sources.source_id, source_materials.role, linked_sources.priority
       FROM linked_sources
       INNER JOIN source_materials ON source_materials.id = linked_sources.source_id
+      WHERE source_materials.is_enabled = 1
       ORDER BY CASE source_materials.role WHEN 'canon_fact' THEN 0 WHEN 'style_sample' THEN 1 ELSE 2 END,
         linked_sources.priority, linked_sources.source_id
     `).all(personaId, worldId ?? '').map((value) => {
@@ -152,6 +157,7 @@ export class SqliteContextIndexRepository implements ContextIndexRepository {
         AND context_sync_records.entity_type = 'source_material'
         AND context_sync_records.operation = 'upsert'
         AND context_sync_records.status = 'synchronized'
+        AND source_materials.is_enabled = 1
         AND context_sync_records.user_id = ?
         AND context_sync_records.remote_uri IS NOT NULL
         AND ((context_sync_records.scope_type = 'persona' AND context_sync_records.scope_id = ? AND persona_sources.source_id IS NOT NULL)

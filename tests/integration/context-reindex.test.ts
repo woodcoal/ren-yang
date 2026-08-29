@@ -427,6 +427,20 @@ describe('OpenViking 可关闭索引与 SQLite 重建', () => {
     await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: true })
     expect(openViking.resources.get(`viking://~/resources/ren-yang/world-source/${created.source.id}.md`)).toBe('第二版增量正文。')
 
+    await content.updateSourcesStatus({ sourceIds: [created.source.id], isEnabled: false })
+    const disabled = await content.getSource(created.source.id)
+    expect(disabled).toMatchObject({ source: { isEnabled: false, contentText: '第二版增量正文。' }, links: [{ targetType: 'world' }] })
+    await expect(new SqliteContextProvider(database.getClient()).search({
+      personaId: '无人物', worldId: '00000000-0000-4000-8000-000000000100', query: '第二版增量正文', limit: 5,
+    })).resolves.toEqual({ provider: 'sqlite_fts5', candidates: [] })
+    await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: true })
+    expect(openViking.resources.has(`viking://~/resources/ren-yang/world-source/${created.source.id}.md`)).toBe(false)
+    expect(database.getClient().prepare('SELECT COUNT(*) AS count FROM context_sync_records').get()).toEqual({ count: 0 })
+
+    await content.updateSourceStatus(created.source.id, { isEnabled: true })
+    await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: true })
+    expect(openViking.resources.get(`viking://~/resources/ren-yang/world-source/${created.source.id}.md`)).toBe('第二版增量正文。')
+
     await content.unlinkSource(created.source.id, 'world:00000000-0000-4000-8000-000000000100')
     openViking.deleteFailuresRemaining = 1
     await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: false })

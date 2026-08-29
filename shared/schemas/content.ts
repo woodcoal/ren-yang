@@ -135,6 +135,26 @@ export const importSourceFileMetadataSchema = z.object({
 /** 修改资料元数据与正文的输入。 */
 export const updateSourceSchema = createSourceSchema
 
+/** 修改资料全局启用状态的输入。 */
+export const updateSourceStatusSchema = z.object({
+  isEnabled: z.boolean({ error: '资料状态必须是布尔值' }),
+})
+
+/** 批量修改资料全局启用状态的输入。 */
+export const updateSourcesStatusSchema = updateSourceStatusSchema.extend({
+  sourceIds: z.array(z.string().uuid('资料标识无效'))
+    .min(1, '至少选择一项资料')
+    .max(100, '一次最多修改 100 项资料'),
+})
+
+/** 资料列表服务端分页参数。 */
+export const listSourcesPageSchema = z.object({
+  page: z.coerce.number().int('页码必须是整数').min(1, '页码不能小于 1').default(1),
+  pageSize: z.coerce.number().pipe(z.union([
+    z.literal(5), z.literal(10), z.literal(20), z.literal(50), z.literal(100),
+  ])).default(10),
+})
+
 /** 创建资料关联的输入。 */
 export const createSourceLinkSchema = z.object({
   targetType: z.enum(['persona', 'world'], { error: '关联目标类型无效' }),
@@ -177,4 +197,7 @@ export type CreateSourceInput = z.infer<typeof createSourceSchema>
 export type SourceCreationTarget = z.infer<typeof sourceCreationTargetSchema>
 export type CreateSourceWithTargetsInput = z.infer<typeof createSourceWithTargetsSchema>
 export type UpdateSourceInput = z.infer<typeof updateSourceSchema>
+export type UpdateSourceStatusInput = z.infer<typeof updateSourceStatusSchema>
+export type UpdateSourcesStatusInput = z.infer<typeof updateSourcesStatusSchema>
+export type ListSourcesPageInput = z.infer<typeof listSourcesPageSchema>
 export type CreateSourceLinkInput = z.infer<typeof createSourceLinkSchema>

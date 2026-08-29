@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { DrizzleAdministratorRepository } from '../../server/infrastructure/database/DrizzleAdministratorRepository'
@@ -50,7 +50,10 @@ describe('SqliteDatabase', () => {
       ORDER BY name
     `).all()
     expect(tables).toEqual([{ name: 'administrators' }, { name: 'task_jobs' }])
-    expect(current.getClient().prepare(`SELECT COUNT(*) AS count FROM __drizzle_migrations`).get()).toEqual({ count: 1 })
+    expect(current.getClient().prepare(`SELECT COUNT(*) AS count FROM __drizzle_migrations`).get()).toEqual({ count: 2 })
+    expect(current.getClient().prepare(`PRAGMA table_info(source_materials)`).all()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'is_enabled', notnull: 1, dflt_value: '1' }),
+    ]))
     expect(current.getClient().prepare(`
       SELECT name FROM sqlite_master
       WHERE sql LIKE 'CREATE VIRTUAL TABLE%' OR type = 'trigger'
@@ -71,6 +74,32 @@ describe('SqliteDatabase', () => {
       { name: 'task_jobs_run_insert_check' },
       { name: 'task_jobs_run_update_check' },
     ])
+  })
+
+  it('增量迁移保留旧资料并把原有数据设为启用', () => {
+    temporaryDirectory = mkdtempSync(resolve(tmpdir(), 'ren-yang-sqlite-upgrade-test-'))
+    const oldMigrationsDirectory = resolve(temporaryDirectory, 'old-drizzle')
+    mkdirSync(resolve(oldMigrationsDirectory, 'meta'), { recursive: true })
+    copyFileSync(resolve(process.cwd(), 'drizzle/0000_baseline.sql'), resolve(oldMigrationsDirectory, '0000_baseline.sql'))
+    writeFileSync(resolve(oldMigrationsDirectory, 'meta/_journal.json'), JSON.stringify({
+      version: '7',
+      dialect: 'sqlite',
+      entries: [{ idx: 0, version: '6', when: 1788028900254, tag: '0000_baseline', breakpoints: true }],
+    }))
+
+    database = new SqliteDatabase({ dataDirectory: temporaryDirectory, migrationsDirectory: oldMigrationsDirectory })
+    database.getClient().prepare(`
+      INSERT INTO source_materials (
+        id, name, role, input_type, content_hash, content_text, original_file_path, created_at, updated_at
+      ) VALUES ('source-1', '旧资料', 'reference', 'paste', ?, '迁移前正文。', NULL, 1000, 1000)
+    `).run('a'.repeat(64))
+    database.close()
+
+    database = new SqliteDatabase({ dataDirectory: temporaryDirectory, migrationsDirectory: resolve(process.cwd(), 'drizzle') })
+    expect(database.getClient().prepare(`
+      SELECT name, content_text, is_enabled FROM source_materials WHERE id = 'source-1'
+    `).get()).toEqual({ name: '旧资料', content_text: '迁移前正文。', is_enabled: 1 })
+    expect(database.getClient().prepare('PRAGMA foreign_key_check').all()).toEqual([])
   })
 
   it('数据库唯一约束阻止创建第二名管理员', async () => {

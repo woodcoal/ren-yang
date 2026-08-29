@@ -14,6 +14,7 @@ import { ConservativeTokenCounter } from '../../server/infrastructure/model/Cons
 import type { Clock } from '../../server/ports/Clock'
 import type { IdentifierGenerator } from '../../server/ports/IdentifierGenerator'
 import type { PersonaSnapshot } from '../../shared/types/content'
+import { listSourcesPageSchema } from '../../shared/schemas/content'
 
 /** 为测试提供单调递增且符合 UUID 格式的标识。 */
 class SequentialIdentifierGenerator implements IdentifierGenerator {
@@ -337,6 +338,75 @@ describe('人物、世界与资料管理闭环', () => {
     ])
     await service.deleteSource(imported.source.id)
     await expect(service.searchSources('导师监督', 10)).resolves.toEqual([])
+  })
+
+  it('禁用资料后保留正文和关系但停止检索，重新启用后恢复', async () => {
+    const source = await service.createPastedSource({
+      name: '港口规则',
+      role: 'canon_fact',
+      content: '北港只允许登记过的风帆船靠岸。',
+    })
+    const world = await service.createWorld({
+      name: '浮岛纪元', summary: '', snapshot: createWorldSnapshot('群岛依靠风帆船往来。'), changeSummary: '建立世界',
+    })
+    await service.linkSource(source.source.id, {
+      targetType: 'world', targetId: world.world.id, priority: 10,
+    })
+
+    expect(source.source.isEnabled).toBe(true)
+    await expect(service.searchSources('登记过的风帆船', 10)).resolves.toHaveLength(1)
+    const disabled = await service.updateSourceStatus(source.source.id, { isEnabled: false })
+
+    expect(disabled.source).toMatchObject({ isEnabled: false, contentText: '北港只允许登记过的风帆船靠岸。' })
+    expect(disabled.links).toEqual([expect.objectContaining({ targetType: 'world', targetId: world.world.id })])
+    expect(disabled.chunks).toHaveLength(1)
+    await expect(service.searchSources('登记过的风帆船', 10)).resolves.toEqual([])
+
+    const enabled = await service.updateSourceStatus(source.source.id, { isEnabled: true })
+    expect(enabled.source.isEnabled).toBe(true)
+    await expect(service.searchSources('登记过的风帆船', 10)).resolves.toHaveLength(1)
+  })
+
+  it('批量状态修改先验证全部资料，避免无效标识造成部分禁用', async () => {
+    const first = await service.createPastedSource({ name: '第一份资料', role: 'reference', content: '第一份批量资料正文。' })
+    const second = await service.createPastedSource({ name: '第二份资料', role: 'reference', content: '第二份批量资料正文。' })
+    const invalidId = '00000000-0000-4000-8000-999999999999'
+
+    await expect(service.updateSourcesStatus({
+      sourceIds: [first.source.id, invalidId], isEnabled: false,
+    })).rejects.toMatchObject<ApplicationError>({ code: 'RESOURCE_NOT_FOUND', statusCode: 404 })
+    await expect(service.getSource(first.source.id)).resolves.toMatchObject({ source: { isEnabled: true } })
+
+    await expect(service.updateSourcesStatus({
+      sourceIds: [first.source.id, second.source.id, first.source.id], isEnabled: false,
+    })).resolves.toEqual({ sourceIds: [first.source.id, second.source.id], isEnabled: false })
+    await expect(service.getSource(first.source.id)).resolves.toMatchObject({ source: { isEnabled: false } })
+    await expect(service.getSource(second.source.id)).resolves.toMatchObject({ source: { isEnabled: false } })
+  })
+
+  it('资料分页返回稳定页序、总数并修正超界页码', async () => {
+    for (let index = 1; index <= 23; index += 1) {
+      await service.createPastedSource({
+        name: `分页资料 ${String(index).padStart(2, '0')}`,
+        role: 'reference',
+        content: `分页资料正文 ${index}。`,
+      })
+    }
+
+    const first = await service.listSourcesPage({ page: 1, pageSize: 10 })
+    const second = await service.listSourcesPage({ page: 2, pageSize: 10 })
+    const third = await service.listSourcesPage({ page: 3, pageSize: 10 })
+    const overflow = await service.listSourcesPage({ page: 999, pageSize: 10 })
+
+    expect(listSourcesPageSchema.parse({})).toEqual({ page: 1, pageSize: 10 })
+    expect(first).toMatchObject({ total: 23, page: 1, pageSize: 10, totalPages: 3 })
+    expect(first.items).toHaveLength(10)
+    expect(second).toMatchObject({ total: 23, page: 2, pageSize: 10, totalPages: 3 })
+    expect(second.items).toHaveLength(10)
+    expect(third).toMatchObject({ total: 23, page: 3, pageSize: 10, totalPages: 3 })
+    expect(third.items).toHaveLength(3)
+    expect(new Set([...first.items, ...second.items, ...third.items].map(item => item.id)).size).toBe(23)
+    expect(overflow).toEqual(third)
   })
 
   it('列出资料关联阻断项，解除关联后允许删除资料', async () => {

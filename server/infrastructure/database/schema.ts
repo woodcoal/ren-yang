@@ -175,6 +175,7 @@ export const sourceMaterials = sqliteTable(
     contentHash: text('content_hash').notNull(),
     contentText: text('content_text').notNull(),
     originalFilePath: text('original_file_path'),
+    isEnabled: integer('is_enabled').notNull().default(1),
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull(),
   },
@@ -185,6 +186,7 @@ export const sourceMaterials = sqliteTable(
     check('source_materials_input_type_check', sql`${table.inputType} IN ('paste', 'txt', 'markdown')`),
     check('source_materials_hash_check', sql`length(${table.contentHash}) = 64`),
     check('source_materials_content_not_empty_check', sql`length(trim(${table.contentText})) > 0`),
+    check('source_materials_enabled_check', sql`${table.isEnabled} IN (0, 1)`),
   ],
 )
 

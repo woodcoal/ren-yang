@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { flushPromises } from '@vue/test-utils'
+import { DOMWrapper, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
 import PersonaDraftAssistant from '../../app/components/content/PersonaDraftAssistant.vue'
 import PersonaForm from '../../app/components/content/PersonaForm.vue'
@@ -7,6 +7,25 @@ import SourceImportForm from '../../app/components/content/SourceImportForm.vue'
 import WorldForm from '../../app/components/content/WorldForm.vue'
 import WorldSourceManager from '../../app/components/content/WorldSourceManager.vue'
 import SoulWorkspace from '../../app/components/content/SoulWorkspace.vue'
+
+/**
+ * 按用户可见文本在资料对象标签选择器中搜索并选择一项。
+ * @param wrapper 当前挂载的资料表单包装器。
+ * @param searchTerm 输入到搜索框的部分名称。
+ * @param optionLabel 期望选择的完整可见标签。
+ * @returns 选项点击及响应式更新完成时结束。
+ */
+async function selectSourceTarget(wrapper: VueWrapper, searchTerm: string, optionLabel: string): Promise<void> {
+  const input = wrapper.get('input[aria-label="资料使用对象"]')
+  await input.trigger('focus')
+  await input.setValue(searchTerm)
+  await flushPromises()
+  const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')]
+    .find(element => element.textContent?.includes(optionLabel))
+  expect(option).toBeDefined()
+  await new DOMWrapper(option!).trigger('click')
+  await flushPromises()
+}
 
 describe('阶段二内容表单', () => {
   it('原创人物在没有世界和资料时仍可提交初始候选档案', async () => {
@@ -42,7 +61,7 @@ describe('阶段二内容表单', () => {
         worlds: [],
         sources: [{
           id: sourceId, name: '学院资料', role: 'canon_fact', inputType: 'paste', contentHash: 'a'.repeat(64),
-          contentText: '学院事实', originalFilePath: null, chunkCount: 1, linkCount: 0, createdAt: 1_000, updatedAt: 1_000,
+          contentText: '学院事实', originalFilePath: null, isEnabled: true, chunkCount: 1, linkCount: 0, createdAt: 1_000, updatedAt: 1_000,
         }],
         textModelConfigured: true,
         loading: false,
@@ -139,7 +158,7 @@ describe('阶段二内容表单', () => {
     const linkedSource = {
       id: '00000000-0000-4000-8000-000000000001', name: '现有资料', role: 'canon_fact' as const,
       inputType: 'paste' as const, contentHash: 'a'.repeat(64), contentText: '已加入正文', originalFilePath: null,
-      chunkCount: 1, linkCount: 1, createdAt: 1_000, updatedAt: 1_000,
+      isEnabled: true, chunkCount: 1, linkCount: 1, createdAt: 1_000, updatedAt: 1_000,
     }
     const availableSource = {
       ...linkedSource,
@@ -200,11 +219,18 @@ describe('阶段二内容表单', () => {
     const fileNameInputs = wrapper.get('[aria-label="待导入文件"]').findAll('input[type="text"]')
     expect(fileNameInputs.map(input => (input.element as HTMLInputElement).value)).toEqual(['事实', '风格'])
     await fileNameInputs[1]!.setValue('人物表达样例')
-    const targetSelects = wrapper.findAll('select[multiple]')
-    expect(targetSelects).toHaveLength(2)
-    await targetSelects[0]!.setValue([personaId])
-    await targetSelects[1]!.setValue([worldId])
-    await wrapper.findAll('input[type="text"]')[0]!.setValue('共享对象文本')
+    expect(wrapper.findAll('select[multiple]')).toHaveLength(0)
+    await selectSourceTarget(wrapper, '档案', '人物 · 档案员')
+    await selectSourceTarget(wrapper, '浮岛', '世界 · 浮岛纪元')
+    expect(wrapper.text()).toContain('人物 · 档案员')
+    expect(wrapper.text()).toContain('世界 · 浮岛纪元')
+    const tagDeleteButtons = wrapper.findAll('[data-slot="tagsItemDelete"]')
+    expect(tagDeleteButtons).toHaveLength(2)
+    await tagDeleteButtons[0]!.trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('人物 · 档案员')
+    await selectSourceTarget(wrapper, '档案', '人物 · 档案员')
+    await wrapper.findAll('form')[0]!.get('input[type="text"]').setValue('共享对象文本')
     await wrapper.get('textarea').setValue('文本和文件使用相同对象。')
     await wrapper.findAll('form')[0]!.trigger('submit')
     await wrapper.findAll('form')[1]!.trigger('submit')
@@ -213,19 +239,19 @@ describe('阶段二内容表单', () => {
     expect(wrapper.emitted('paste')).toEqual([[
       expect.objectContaining({
         name: '共享对象文本',
-        targets: [
+        targets: expect.arrayContaining([
           { targetType: 'persona', targetId: personaId },
           { targetType: 'world', targetId: worldId },
-        ],
+        ]),
       }),
     ]])
     expect(wrapper.emitted('file')).toEqual([[
       {
         role: 'reference',
-        targets: [
+        targets: expect.arrayContaining([
           { targetType: 'persona', targetId: personaId },
           { targetType: 'world', targetId: worldId },
-        ],
+        ]),
         files: [
           { file: files[0], name: '事实' },
           { file: files[1], name: '人物表达样例' },
@@ -238,7 +264,7 @@ describe('阶段二内容表单', () => {
     const wrapper = await mountSuspended(SourceImportForm, {
       props: { loading: false, errorMessage: null, showTargetPicker: true, personas: [], worlds: [] },
     })
-    await wrapper.findAll('input[type="text"]')[0]!.setValue('独立资料')
+    await wrapper.findAll('form')[0]!.get('input[type="text"]').setValue('独立资料')
     await wrapper.get('textarea').setValue('这份资料暂时不属于任何人物或世界。')
     await wrapper.findAll('form')[0]!.trigger('submit')
     await flushPromises()

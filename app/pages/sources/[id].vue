@@ -1,9 +1,8 @@
 <script setup lang="ts">
 import type { FormSubmitEvent } from '@nuxt/ui'
-import { computed, reactive, shallowRef, watch } from 'vue'
+import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import {
-  createSourceLinkSchema,
-  type CreateSourceLinkInput,
+  type SourceCreationTarget,
   updateSourceSchema,
   type UpdateSourceInput,
 } from '#shared/schemas/content'
@@ -26,12 +25,13 @@ const editState = reactive<UpdateSourceInput>({
   role: 'reference',
   content: '',
 })
-const linkState = reactive<CreateSourceLinkInput>({ targetType: 'persona', targetId: '', priority: 100 })
+const relationTargets = ref<SourceCreationTarget[]>([])
 const actionLoading = shallowRef(false)
 const actionError = shallowRef<string | null>(null)
 const actionMessage = shallowRef<string | null>(null)
 const deletionImpact = shallowRef<DeletionImpact | null>(null)
 const deletionConfirmed = shallowRef(false)
+const disableConfirmationOpen = shallowRef(false)
 /** 是否已用首次成功加载的资料初始化编辑表单。 */
 const editStateInitialized = shallowRef(false)
 
@@ -50,10 +50,29 @@ function initializeEditState(current: SourceDetails | null): void {
 
 watch(details, initializeEditState, { immediate: true })
 
-/** 根据关联类型返回可选目标。 */
-const linkTargets = computed(() => linkState.targetType === 'persona'
-  ? personas.value.map(item => ({ id: item.id, name: item.name }))
-  : worlds.value.map(item => ({ id: item.id, name: item.name })))
+/**
+ * 把服务端关系转换为标签选择器使用的目标集合。
+ * @param current 当前资料详情；请求尚未成功时为 null。
+ * @returns 关系标签已同步或没有可用详情时结束。
+ */
+function synchronizeRelationTargets(current: SourceDetails | null): void {
+  if (!current) return
+  relationTargets.value = current.links.map(link => ({
+    targetType: link.targetType,
+    targetId: link.targetId,
+  }))
+}
+
+watch(details, synchronizeRelationTargets, { immediate: true })
+
+/**
+ * 生成关系差异比较使用的稳定复合值。
+ * @param target 人物或世界关联目标。
+ * @returns `类型:UUID` 格式的关系标识。
+ */
+function createTargetKey(target: SourceCreationTarget): string {
+  return `${target.targetType}:${target.targetId}`
+}
 
 /**
  * 保存资料元数据和正文，正文变化时服务端重建切片。
@@ -68,27 +87,67 @@ async function saveSource(event: FormSubmitEvent<UpdateSourceInput>): Promise<vo
 }
 
 /**
- * 建立或更新资料与目标聚合的关联。
- * @param event 已校验的目标与优先级。
- * @returns 请求完成时结束。
+ * 根据标签变化立即新增或解除关系，失败时恢复原选择。
+ * @param nextTargets 用户修改后的全部目标。
+ * @returns 关系请求和详情刷新完成时结束。
  */
-async function createLink(event: FormSubmitEvent<CreateSourceLinkInput>): Promise<void> {
-  await runAction('资料关联已保存', async () => {
-    await $fetch(`/api/v1/sources/${sourceId}/links`, { method: 'POST', body: event.data })
+async function updateRelationTargets(nextTargets: SourceCreationTarget[]): Promise<void> {
+  if (actionLoading.value) return
+  const previousTargets = relationTargets.value.map(target => ({ ...target }))
+  const previousKeys = new Set(previousTargets.map(createTargetKey))
+  const nextKeys = new Set(nextTargets.map(createTargetKey))
+  const added = nextTargets.filter(target => !previousKeys.has(createTargetKey(target)))
+  const removed = previousTargets.filter(target => !nextKeys.has(createTargetKey(target)))
+  if (added.length === 0 && removed.length === 0) return
+
+  relationTargets.value = nextTargets
+  const succeeded = await runAction('资料使用关系已保存', async () => {
+    for (const target of added) {
+      await $fetch(`/api/v1/sources/${sourceId}/links`, {
+        method: 'POST',
+        body: { ...target, priority: 100 },
+      })
+    }
+    for (const target of removed) {
+      await $fetch(`/api/v1/sources/${sourceId}/links/${encodeURIComponent(createTargetKey(target))}`, { method: 'DELETE' })
+    }
+    await refresh()
+  })
+  if (!succeeded) relationTargets.value = previousTargets
+}
+
+/**
+ * 写入资料全局启用状态，不删除正文和使用关系。
+ * @param isEnabled 需要写入的新状态。
+ * @returns 状态请求是否成功。
+ */
+async function updateSourceStatus(isEnabled: boolean): Promise<boolean> {
+  return await runAction(isEnabled ? '资料已启用' : '资料已禁用', async () => {
+    await $fetch(`/api/v1/sources/${sourceId}/status`, { method: 'PATCH', body: { isEnabled } })
     await refresh()
   })
 }
 
 /**
- * 解除一项资料关联，不删除人物、世界或资料。
- * @param linkId API 返回的复合关联标识。
- * @returns 请求完成时结束。
+ * 已启用资料先打开二次确认；已禁用资料直接重新启用。
+ * @returns 确认框打开或启用请求完成时结束。
  */
-async function removeLink(linkId: string): Promise<void> {
-  await runAction('资料关联已解除', async () => {
-    await $fetch(`/api/v1/sources/${sourceId}/links/${encodeURIComponent(linkId)}`, { method: 'DELETE' })
-    await refresh()
-  })
+async function requestSourceStatusChange(): Promise<void> {
+  if (!details.value) return
+  if (details.value.source.isEnabled) {
+    disableConfirmationOpen.value = true
+    return
+  }
+  await updateSourceStatus(true)
+}
+
+/**
+ * 用户二次确认后禁用当前资料。
+ * @returns 禁用请求完成时结束。
+ */
+async function confirmDisableSource(): Promise<void> {
+  const succeeded = await updateSourceStatus(false)
+  if (succeeded) disableConfirmationOpen.value = false
 }
 
 /** @returns 删除影响查询完成时结束。 */
@@ -109,17 +168,19 @@ async function deleteSource(): Promise<void> {
   })
 }
 
-/** @param successMessage 成功消息或 null。 @param action 异步操作。 @returns 操作结束时完成。 */
-async function runAction(successMessage: string | null, action: () => Promise<void>): Promise<void> {
+/** @param successMessage 成功消息或 null。 @param action 异步操作。 @returns 操作是否成功完成。 */
+async function runAction(successMessage: string | null, action: () => Promise<void>): Promise<boolean> {
   actionLoading.value = true
   actionError.value = null
   actionMessage.value = null
   try {
     await action()
     actionMessage.value = successMessage
+    return true
   }
   catch (requestError: unknown) {
     actionError.value = getApiErrorMessage(requestError, '操作失败')
+    return false
   }
   finally {
     actionLoading.value = false
@@ -130,6 +191,7 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
 <template>
   <div>
     <ContentPageHeader :title="details?.source.name || '资料详情'" description="编辑资料正文、查看系统整理的段落，以及管理它被哪些人物或世界使用。">
+      <UButton v-if="details" color="neutral" variant="soft" :loading="actionLoading" @click="requestSourceStatusChange">{{ details.source.isEnabled ? '禁用资料' : '启用资料' }}</UButton>
       <UButton to="/sources" color="neutral" variant="ghost">返回列表</UButton>
     </ContentPageHeader>
     <UAlert
@@ -144,10 +206,11 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
       <UAlert v-if="actionMessage" class="mb-5" color="success" title="操作完成" :description="actionMessage" />
       <div class="status-strip page-status-strip mb-6">
         <div class="status-cell"><span class="status-kicker">资料用途</span><strong class="status-value">{{ details.source.role === 'canon_fact' ? '确定事实' : details.source.role === 'style_sample' ? '风格参考' : '背景参考' }}</strong></div>
+        <div class="status-cell"><span class="status-kicker">当前状态</span><strong class="status-value">{{ details.source.isEnabled ? '已启用' : '已禁用' }}</strong></div>
         <div class="status-cell"><span class="status-kicker">可检索段落</span><strong class="status-value">{{ details.chunks.length }}</strong></div>
         <div class="status-cell"><span class="status-kicker">使用关系</span><strong class="status-value">{{ details.links.length }}</strong></div>
-        <div class="status-cell"><span class="status-kicker">原始输入</span><strong class="status-value">{{ details.source.inputType === 'paste' ? '粘贴文本' : details.source.inputType.toUpperCase() + ' 文件' }}</strong></div>
       </div>
+      <UAlert v-if="!details.source.isEnabled" class="mb-6" color="warning" title="资料当前已禁用" description="正文和使用关系仍保留，但不会进入人物或世界检索，也不会保留 OpenViking 投影。重新启用后会自动恢复。" />
       <nav class="mind-tabs mb-6" aria-label="资料详情标签">
         <button class="mind-tab" :aria-selected="selectedTab === 'body'" @click="selectedTab = 'body'">资料正文</button>
         <button class="mind-tab" :aria-selected="selectedTab === 'chunks'" @click="selectedTab = 'chunks'">可检索段落</button>
@@ -161,7 +224,7 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
             <UAlert v-if="details.source.originalFilePath" class="mb-4" color="info" title="文件导入资料" description="修改正文后将转为粘贴文本，旧原始文件会被删除，避免正文与文件不一致。" />
             <UForm :schema="updateSourceSchema" :state="editState" class="space-y-4" @submit="saveSource">
               <div class="grid gap-4 md:grid-cols-2">
-                <UFormField name="name" label="资料名称" required><UInput v-model="editState.name" class="w-full" /></UFormField>
+                <UFormField name="name" label="资料名称" description="文件名或自定义名称，用于在列表中显示。" required><UInput v-model="editState.name" class="w-full" /></UFormField>
                 <UFormField name="role" label="资料用途" description="决定 AI 应该怎样理解这份资料。" required><USelect v-model="editState.role" class="w-full" :items="[{ label: '原作中的确定事实', value: 'canon_fact' }, { label: '背景参考', value: 'reference' }, { label: '写作风格参考', value: 'style_sample' }]" /></UFormField>
               </div>
               <UFormField name="content" label="正文" required><UTextarea v-model="editState.content" class="w-full" :rows="14" autoresize /></UFormField>
@@ -183,18 +246,14 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
         <div class="contents">
           <UCard v-if="selectedTab === 'relations'">
             <template #header><div><h2 class="font-semibold text-highlighted">这份资料用在哪里</h2><p class="mt-1 text-sm text-muted">关联后，对应人物或世界的新任务才能搜索到这份资料。</p></div></template>
-            <div v-if="details.links.length" class="mb-5 space-y-2">
-              <div v-for="link in details.links" :key="link.id" class="flex items-center justify-between gap-2 rounded-md border border-default p-2">
-                <div class="min-w-0"><p class="truncate text-sm font-medium">{{ link.targetName }}</p><p class="text-xs text-muted">{{ link.targetType === 'persona' ? '人物' : '世界' }}</p></div>
-                <UButton icon="i-lucide-unlink" aria-label="解除资料关联" color="error" variant="ghost" size="sm" :loading="actionLoading" @click="removeLink(link.id)" />
-              </div>
-            </div>
-            <p v-else class="mb-5 text-sm text-muted">尚无关联。</p>
-            <UForm :schema="createSourceLinkSchema" :state="linkState" class="space-y-3" @submit="createLink">
-              <UFormField name="targetType" label="加入到"><USelect v-model="linkState.targetType" class="w-full" :items="[{ label: '人物', value: 'persona' }, { label: '世界', value: 'world' }]" @update:model-value="linkState.targetId = ''" /></UFormField>
-              <UFormField name="targetId" label="选择对象" required><select v-model="linkState.targetId" class="native-control" aria-label="资料关联目标"><option disabled value="">请选择</option><option v-for="target in linkTargets" :key="target.id" :value="target.id">{{ target.name }}</option></select></UFormField>
-              <UButton type="submit" color="neutral" variant="soft" :loading="actionLoading">加入</UButton>
-            </UForm>
+            <ContentSourceTargetPicker
+              :model-value="relationTargets"
+              :personas="personas"
+              :worlds="worlds"
+              :disabled="actionLoading"
+              @update:model-value="updateRelationTargets"
+            />
+            <p class="mt-3 text-xs text-muted">添加或移除标签后立即保存；解除关系不会删除资料、人物或世界。</p>
           </UCard>
 
           <UCard v-else-if="selectedTab === 'danger'">
@@ -212,5 +271,17 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
         </div>
       </div>
     </template>
+
+    <UModal v-model:open="disableConfirmationOpen" title="确认禁用资料" description="禁用不会删除正文、系统整理的段落或使用关系。">
+      <template #body>
+        <p class="text-sm text-muted">确定禁用“{{ details?.source.name }}”吗？禁用后它将停止进入人物和世界检索，并删除对应 OpenViking 投影。</p>
+      </template>
+      <template #footer>
+        <div class="flex w-full justify-end gap-2">
+          <UButton color="neutral" variant="ghost" :disabled="actionLoading" @click="disableConfirmationOpen = false">取消</UButton>
+          <UButton color="error" :loading="actionLoading" @click="confirmDisableSource">确认禁用</UButton>
+        </div>
+      </template>
+    </UModal>
   </div>
 </template>

@@ -3,6 +3,20 @@ import { computed } from 'vue'
 import type { SourceCreationTarget } from '#shared/schemas/content'
 import type { PersonaSummary, WorldSummary } from '#shared/types/content'
 
+/** 可搜索并用于标签展示的统一对象选项。 */
+interface TargetOption {
+  /** 人物或世界前缀与 UUID 组成的稳定值。 */
+  key: string
+  /** 同时包含对象类型和名称的标签。 */
+  label: string
+  /** 用于模糊匹配的补充文本。 */
+  searchText: string
+  /** 关联目标类型。 */
+  targetType: SourceCreationTarget['targetType']
+  /** 关联目标 UUID。 */
+  targetId: string
+}
+
 /** 资料关联对象选择器属性。 */
 interface Props {
   /** 可选择的人物。 */
@@ -17,68 +31,71 @@ const props = defineProps<Props>()
 const targets = defineModel<SourceCreationTarget[]>({ default: () => [] })
 
 /**
- * 读取指定类型的已选目标标识。
- * @param targetType 人物或世界目标类型。
- * @returns 与目标类型匹配的 UUID 列表。
+ * 生成标签选择器使用的稳定复合值。
+ * @param target 人物或世界关联目标。
+ * @returns `类型:UUID` 格式的唯一值。
  */
-function readTargetIds(targetType: SourceCreationTarget['targetType']): string[] {
-  return targets.value.filter(target => target.targetType === targetType).map(target => target.targetId)
+function createTargetKey(target: SourceCreationTarget): string {
+  return `${target.targetType}:${target.targetId}`
 }
 
 /**
- * 替换指定类型的已选目标，同时保留另一类型的选择。
- * @param targetType 人物或世界目标类型。
- * @param targetIds 原生多选框返回的 UUID 列表。
- * @returns 无返回值。
+ * 把选择器复合值还原为服务端接受的关联目标。
+ * @param key `类型:UUID` 格式的选择值。
+ * @returns 人物或世界关联目标。
  */
-function replaceTargetIds(targetType: SourceCreationTarget['targetType'], targetIds: string[]): void {
-  targets.value = [
-    ...targets.value.filter(target => target.targetType !== targetType),
-    ...targetIds.map(targetId => ({ targetType, targetId })),
-  ]
+function parseTargetKey(key: string): SourceCreationTarget {
+  const separator = key.indexOf(':')
+  return {
+    targetType: key.slice(0, separator) as SourceCreationTarget['targetType'],
+    targetId: key.slice(separator + 1),
+  }
 }
 
-/** @returns 当前已选人物 UUID。 */
-function readPersonaIds(): string[] {
-  return readTargetIds('persona')
-}
+const options = computed<TargetOption[]>(() => [
+  ...props.personas.map(persona => ({
+    key: createTargetKey({ targetType: 'persona', targetId: persona.id }),
+    label: `人物 · ${persona.name}`,
+    searchText: `人物 ${persona.name}`,
+    targetType: 'persona' as const,
+    targetId: persona.id,
+  })),
+  ...props.worlds.map(world => ({
+    key: createTargetKey({ targetType: 'world', targetId: world.id }),
+    label: `世界 · ${world.name}`,
+    searchText: `世界 ${world.name}`,
+    targetType: 'world' as const,
+    targetId: world.id,
+  })),
+])
 
-/** @param targetIds 新人物 UUID 列表。 @returns 无返回值。 */
-function writePersonaIds(targetIds: string[]): void {
-  replaceTargetIds('persona', targetIds)
-}
-
-/** @returns 当前已选世界 UUID。 */
-function readWorldIds(): string[] {
-  return readTargetIds('world')
-}
-
-/** @param targetIds 新世界 UUID 列表。 @returns 无返回值。 */
-function writeWorldIds(targetIds: string[]): void {
-  replaceTargetIds('world', targetIds)
-}
-
-const selectedPersonaIds = computed({ get: readPersonaIds, set: writePersonaIds })
-const selectedWorldIds = computed({ get: readWorldIds, set: writeWorldIds })
+const selectedKeys = computed<string[]>({
+  get: () => targets.value.map(createTargetKey),
+  set: keys => {
+    targets.value = keys.map(parseTargetKey)
+  },
+})
 </script>
 
 <template>
   <fieldset class="space-y-3">
     <legend class="text-sm font-medium text-highlighted">具体使用对象（可选）</legend>
-    <p class="text-sm text-muted">可同时选择多个人物和世界；不选择时，资料只保存到资料库。</p>
-    <div class="grid gap-3 sm:grid-cols-2">
-      <UFormField label="人物" description="按住 Ctrl 或 Command 可多选">
-        <select v-model="selectedPersonaIds" class="native-control min-h-28" multiple :disabled="props.disabled || props.personas.length === 0">
-          <option v-if="props.personas.length === 0" disabled>暂无人物</option>
-          <option v-for="persona in props.personas" :key="persona.id" :value="persona.id">{{ persona.name }}</option>
-        </select>
-      </UFormField>
-      <UFormField label="世界" description="资料会进入所选世界的参考范围">
-        <select v-model="selectedWorldIds" class="native-control min-h-28" multiple :disabled="props.disabled || props.worlds.length === 0">
-          <option v-if="props.worlds.length === 0" disabled>暂无世界</option>
-          <option v-for="world in props.worlds" :key="world.id" :value="world.id">{{ world.name }}</option>
-        </select>
-      </UFormField>
-    </div>
+    <p class="text-sm text-muted">输入名称或“人物/世界”查找对象；已选对象显示为可移除标签。不选择时，资料只保存到资料库。</p>
+    <UInputMenu
+      v-model="selectedKeys"
+      class="w-full"
+      :items="options"
+      value-key="key"
+      label-key="label"
+      :filter-fields="['label', 'searchText']"
+      placeholder="搜索并选择人物或世界"
+      aria-label="资料使用对象"
+      multiple
+      :disabled="props.disabled || options.length === 0"
+    >
+      <template #empty="{ searchTerm }">
+        {{ searchTerm ? `没有找到“${searchTerm}”` : '暂无可选人物或世界' }}
+      </template>
+    </UInputMenu>
   </fieldset>
 </template>

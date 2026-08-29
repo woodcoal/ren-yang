@@ -19,6 +19,7 @@ import type {
   PersonaRunHistoryStatistics,
   ReplaceSourceRecord,
   SourceLinkRecord,
+  SourcePageRecord,
   WorldVersionDeletionReferences,
 } from '../../ports/ContentRepository'
 import type { PublishSoulDraftRecord, SoulRepository } from '../../ports/SoulRepository'
@@ -463,6 +464,25 @@ export class SqliteContentRepository implements ContentRepository, SoulRepositor
     return this.client.prepare('SELECT * FROM source_materials ORDER BY updated_at DESC, id').all().map(toSource)
   }
 
+  /**
+   * 分页读取资料，并把超出总页数的请求修正到最后一页。
+   * @param page 从 1 开始的请求页码。
+   * @param pageSize 受共享 Schema 限制的每页数量。
+   * @returns 顺序稳定的资料分页记录。
+   */
+  async listSourcesPage(page: number, pageSize: 5 | 10 | 20 | 50 | 100): Promise<SourcePageRecord> {
+    const count = this.client.prepare('SELECT COUNT(*) AS total FROM source_materials').get() as { total: number }
+    const total = Number(count.total)
+    const totalPages = Math.max(1, Math.ceil(total / pageSize))
+    const effectivePage = Math.min(page, totalPages)
+    const items = this.client.prepare(`
+      SELECT * FROM source_materials
+      ORDER BY updated_at DESC, id
+      LIMIT ? OFFSET ?
+    `).all(pageSize, (effectivePage - 1) * pageSize).map(toSource)
+    return { items, total, page: effectivePage, pageSize, totalPages }
+  }
+
   /** @param id 资料 UUID。 @returns 找到的资料或 null。 */
   async findSource(id: string): Promise<SourceMaterialRecord | null> {
     const row = this.client.prepare('SELECT * FROM source_materials WHERE id = ?').get(id)
@@ -531,6 +551,34 @@ export class SqliteContentRepository implements ContentRepository, SoulRepositor
       insertChunks(this.client, record.chunks)
       return true
     })()
+  }
+
+  /**
+   * 修改资料的全局启用状态，不删除正文、切片或任何关系。
+   * @param sourceId 资料 UUID。
+   * @param isEnabled 新启用状态。
+   * @param timestamp 更新时间。
+   * @returns 资料存在并完成更新时为 true。
+   */
+  async updateSourceStatus(sourceId: string, isEnabled: boolean, timestamp: number): Promise<boolean> {
+    return this.client.prepare(`
+      UPDATE source_materials SET is_enabled = ?, updated_at = ? WHERE id = ?
+    `).run(isEnabled ? 1 : 0, timestamp, sourceId).changes === 1
+  }
+
+  /**
+   * 使用单条参数化 SQL 原子修改多项资料状态。
+   * @param sourceIds 已去重且存在的资料 UUID。
+   * @param isEnabled 统一新状态。
+   * @param timestamp 更新时间。
+   * @returns 实际匹配并更新的资料数量。
+   */
+  async updateSourcesStatus(sourceIds: string[], isEnabled: boolean, timestamp: number): Promise<number> {
+    if (sourceIds.length === 0) return 0
+    const placeholders = sourceIds.map(() => '?').join(', ')
+    return this.client.prepare(`
+      UPDATE source_materials SET is_enabled = ?, updated_at = ? WHERE id IN (${placeholders})
+    `).run(isEnabled ? 1 : 0, timestamp, ...sourceIds).changes
   }
 
   /** @param sourceId 资料 UUID。 @returns 按序号排序的切片。 */
@@ -627,9 +675,11 @@ export class SqliteContentRepository implements ContentRepository, SoulRepositor
   async searchSourceChunks(query: string, limit: number): Promise<SourceChunkRecord[]> {
     if ([...query].length < 3) {
       return this.client.prepare(`
-        SELECT * FROM source_chunks
-        WHERE heading LIKE ? ESCAPE '\\' OR content LIKE ? ESCAPE '\\'
-        ORDER BY source_id, ordinal
+        SELECT source_chunks.* FROM source_chunks
+        INNER JOIN source_materials ON source_materials.id = source_chunks.source_id
+        WHERE source_materials.is_enabled = 1
+          AND (source_chunks.heading LIKE ? ESCAPE '\\' OR source_chunks.content LIKE ? ESCAPE '\\')
+        ORDER BY source_chunks.source_id, source_chunks.ordinal
         LIMIT ?
       `).all(toLikePattern(query), toLikePattern(query), limit).map(toChunk)
     }
@@ -637,7 +687,8 @@ export class SqliteContentRepository implements ContentRepository, SoulRepositor
     return this.client.prepare(`
       SELECT source_chunks.* FROM source_chunks_fts
       INNER JOIN source_chunks ON source_chunks.rowid = source_chunks_fts.rowid
-      WHERE source_chunks_fts MATCH ?
+      INNER JOIN source_materials ON source_materials.id = source_chunks.source_id
+      WHERE source_chunks_fts MATCH ? AND source_materials.is_enabled = 1
       ORDER BY bm25(source_chunks_fts), source_chunks.source_id, source_chunks.ordinal
       LIMIT ?
     `).all(`"${phrase}"`, limit).map(toChunk)
@@ -801,6 +852,7 @@ function toSource(value: unknown): SourceMaterialRecord {
     contentHash: String(row.content_hash),
     contentText: String(row.content_text),
     originalFilePath: row.original_file_path === null ? null : String(row.original_file_path),
+    isEnabled: Number(row.is_enabled) === 1,
     createdAt: Number(row.created_at),
     updatedAt: Number(row.updated_at),
   }

@@ -129,6 +129,8 @@ export interface SourceMaterialRecord {
   contentText: string
   /** 文件导入时保留的相对路径。 */
   originalFilePath: string | null
+  /** 是否允许资料进入检索和 OpenViking 投影。 */
+  isEnabled: boolean
   /** 创建时间。 */
   createdAt: number
   /** 更新时间。 */
