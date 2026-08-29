@@ -17,9 +17,10 @@
 3. 如需图片块，再配置：`NUXT_IMAGE_MODEL_ENDPOINT`、`NUXT_IMAGE_MODEL_API_KEY`、`NUXT_IMAGE_MODEL_MODEL`；不配置时纯文本路径保持可用。
 4. 如需语义上下文，设置 `NUXT_OPEN_VIKING_ENABLED=true`、`NUXT_OPEN_VIKING_ENDPOINT` 和可选的 `NUXT_OPEN_VIKING_API_KEY`；关闭时使用 SQLite FTS5。
 5. 低风险人物修订默认仍需人工发布；只有明确设置 `NUXT_FEEDBACK_AUTO_PUBLISH_LOW_RISK=true` 且全部评测通过时才允许自动发布。
-6. 安装依赖：`pnpm install`。
-7. 启动开发服务：`pnpm dev`。
-8. 首次访问 `/setup` 创建唯一管理员。
+6. 设置监听地址和端口：`HOST=127.0.0.1`、`PORT=3001`；端口可改为任意未占用端口。
+7. 安装依赖：`pnpm install`。
+8. 启动开发服务：`pnpm dev`。
+9. 首次访问 `/setup` 创建唯一管理员。
 
 运行数据默认保存在 `./data`，该目录不会进入 Git。可通过 `NUXT_DATA_DIRECTORY` 指向其他本地目录。
 

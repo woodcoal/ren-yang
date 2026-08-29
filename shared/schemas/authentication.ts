@@ -11,7 +11,7 @@ export const administratorUsernameSchema = z
 /** 管理员密码的统一校验规则。 */
 export const administratorPasswordSchema = z
   .string()
-  .min(12, '密码至少需要 12 个字符')
+  .min(8, '密码至少需要 8 个字符')
   .max(128, '密码不能超过 128 个字符')
 
 /** 首次创建管理员时使用的请求结构。 */

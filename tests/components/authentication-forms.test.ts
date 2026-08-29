@@ -36,6 +36,23 @@ describe('认证表单', () => {
     expect(wrapper.text()).toContain('两次输入的密码不一致')
   })
 
+  it('首次设置接受恰好 8 个字符的管理员密码', async () => {
+    const wrapper = await mountSuspended(SetupForm, {
+      props: { loading: false, errorMessage: null },
+    })
+
+    await wrapper.get('input[autocomplete="username"]').setValue('admin')
+    const passwordInputs = wrapper.findAll('input[autocomplete="new-password"]')
+    await passwordInputs[0]!.setValue('password')
+    await passwordInputs[1]!.setValue('password')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.emitted('submit')).toEqual([[
+      { username: 'admin', password: 'password', passwordConfirmation: 'password' },
+    ]])
+  })
+
   it('服务端错误消息以警告角色展示', async () => {
     const wrapper = await mountSuspended(LoginForm, {
       props: { loading: false, errorMessage: '用户名或密码错误' },

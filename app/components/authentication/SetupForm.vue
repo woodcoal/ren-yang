@@ -62,7 +62,7 @@ function handleSubmit(event: FormSubmitEvent<SetupAdministratorInput>): void {
     <UFormField
       name="password"
       label="管理员密码"
-      description="至少 12 个字符；密钥和密码不会写入开发记录。"
+      description="至少 8 个字符；密钥和密码不会写入开发记录。"
       required
     >
       <UInput
