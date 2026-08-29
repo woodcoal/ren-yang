@@ -79,6 +79,27 @@ describe('阶段三生成组件', () => {
     expect(wrapper.find('script').exists()).toBe(false)
     expect(wrapper.text()).toContain('<script>alert(1)</script>')
   })
+
+  it('证据快照明确标识来源以及对 AI 推断的支持或反对关系', async () => {
+    const supportingId = '00000000-0000-4000-8000-000000000004'
+    const opposingId = '00000000-0000-4000-8000-000000000005'
+    const sourceId = '00000000-0000-4000-8000-000000000006'
+    const wrapper = await mountSuspended(EvidenceList, {
+      props: {
+        evidence: [
+          { id: supportingId, sourceId, chunkId: null, role: 'canon_fact', content: '支持内容', contentHash: 'a'.repeat(64), rank: 0, metadata: {} },
+          { id: opposingId, sourceId: null, chunkId: null, role: 'user_setting', content: '反对内容', contentHash: 'b'.repeat(64), rank: 1, metadata: {} },
+        ],
+        supportingEvidenceIds: [supportingId],
+        opposingEvidenceIds: [opposingId],
+      },
+    })
+
+    expect(wrapper.text()).toContain('支持 AI 推断')
+    expect(wrapper.text()).toContain('反对 AI 推断')
+    expect(wrapper.text()).toContain('人物版本内设定')
+    expect(wrapper.get(`a[href="/sources/${sourceId}"]`).text()).toContain(sourceId)
+  })
 })
 
 /** 组件测试使用的图片块及两次成功尝试。 */

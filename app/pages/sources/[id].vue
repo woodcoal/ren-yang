@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { FormSubmitEvent } from '@nuxt/ui'
-import { computed, reactive, shallowRef } from 'vue'
+import { computed, reactive, shallowRef, watch } from 'vue'
 import {
   createSourceLinkSchema,
   type CreateSourceLinkInput,
@@ -20,11 +20,10 @@ const [{ data, error, refresh }, { data: personaData }, { data: worldData }] = a
 const details = computed(() => data.value?.data ?? null)
 const personas = computed(() => personaData.value?.data ?? [])
 const worlds = computed(() => worldData.value?.data ?? [])
-const initial = data.value?.data.source
 const editState = reactive<UpdateSourceInput>({
-  name: initial?.name ?? '',
-  role: initial?.role ?? 'reference',
-  content: initial?.contentText ?? '',
+  name: '',
+  role: 'reference',
+  content: '',
 })
 const linkState = reactive<CreateSourceLinkInput>({ targetType: 'persona', targetId: '', priority: 100 })
 const actionLoading = shallowRef(false)
@@ -32,6 +31,23 @@ const actionError = shallowRef<string | null>(null)
 const actionMessage = shallowRef<string | null>(null)
 const deletionImpact = shallowRef<DeletionImpact | null>(null)
 const deletionConfirmed = shallowRef(false)
+/** 是否已用首次成功加载的资料初始化编辑表单。 */
+const editStateInitialized = shallowRef(false)
+
+/**
+ * 首次成功加载资料后初始化编辑表单，失败重试成功时同样生效。
+ * @param current 当前资料详情；请求尚未成功时为 null。
+ * @returns 表单已初始化或没有可用详情时结束。
+ */
+function initializeEditState(current: SourceDetails | null): void {
+  if (!current || editStateInitialized.value) return
+  editState.name = current.source.name
+  editState.role = current.source.role
+  editState.content = current.source.contentText
+  editStateInitialized.value = true
+}
+
+watch(details, initializeEditState, { immediate: true })
 
 /** 根据关联类型返回可选目标。 */
 const linkTargets = computed(() => linkState.targetType === 'persona'
@@ -115,7 +131,13 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
     <ContentPageHeader :title="details?.source.name || '资料详情'" description="正文是 SQLite 事实源；页面只显示纯文本，不执行资料中的 HTML。">
       <UButton to="/sources" color="neutral" variant="ghost">返回列表</UButton>
     </ContentPageHeader>
-    <UAlert v-if="error || !details" color="error" title="资料详情加载失败" :actions="[{ label: '重试', onClick: () => refresh() }]" />
+    <UAlert
+      v-if="error || !details"
+      color="error"
+      title="资料详情加载失败"
+      :description="error ? getApiErrorMessage(error, '资料详情请求失败') : '服务端没有返回资料详情'"
+      :actions="[{ label: '重试', onClick: () => refresh() }]"
+    />
     <template v-else>
       <UAlert v-if="actionError" class="mb-5" color="error" title="操作失败" :description="actionError" />
       <UAlert v-if="actionMessage" class="mb-5" color="success" title="操作完成" :description="actionMessage" />
@@ -158,7 +180,7 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
             <p v-else class="mb-5 text-sm text-muted">尚无关联。</p>
             <UForm :schema="createSourceLinkSchema" :state="linkState" class="space-y-3" @submit="createLink">
               <UFormField name="targetType" label="目标类型"><USelect v-model="linkState.targetType" class="w-full" :items="[{ label: '人物', value: 'persona' }, { label: '世界', value: 'world' }]" @update:model-value="linkState.targetId = ''" /></UFormField>
-              <UFormField name="targetId" label="目标" required><select v-model="linkState.targetId" class="native-control"><option disabled value="">请选择</option><option v-for="target in linkTargets" :key="target.id" :value="target.id">{{ target.name }}</option></select></UFormField>
+              <UFormField name="targetId" label="目标" required><select v-model="linkState.targetId" class="native-control" aria-label="资料关联目标"><option disabled value="">请选择</option><option v-for="target in linkTargets" :key="target.id" :value="target.id">{{ target.name }}</option></select></UFormField>
               <UFormField name="priority" label="优先级"><UInput v-model.number="linkState.priority" type="number" min="0" max="10000" class="w-full" /></UFormField>
               <UButton type="submit" color="neutral" variant="soft" :loading="actionLoading">保存关联</UButton>
             </UForm>

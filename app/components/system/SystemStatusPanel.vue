@@ -28,7 +28,7 @@ defineProps<Props>()
       </div>
     </template>
 
-    <dl class="grid gap-4 sm:grid-cols-2">
+    <dl class="grid gap-4 sm:grid-cols-3">
       <div class="rounded-lg bg-muted p-4">
         <dt class="text-sm text-muted">
           SQLite
@@ -50,6 +50,18 @@ defineProps<Props>()
         </dd>
         <dd class="mt-1 text-xs text-muted">
           {{ health.worker.lastError || '没有运行错误' }}
+        </dd>
+      </div>
+
+      <div class="rounded-lg bg-muted p-4">
+        <dt class="text-sm text-muted">
+          持久任务队列
+        </dt>
+        <dd class="mt-1 font-medium text-highlighted">
+          {{ health.taskQueue.total }} 项待处理
+        </dd>
+        <dd class="mt-1 text-xs text-muted">
+          排队 {{ health.taskQueue.queued }} · 执行 {{ health.taskQueue.running }} · 取消中 {{ health.taskQueue.cancelRequested }}
         </dd>
       </div>
     </dl>

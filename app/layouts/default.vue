@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { shallowRef } from 'vue'
+import { onMounted, onUnmounted, shallowRef } from 'vue'
+import type { ApiResponse, AuthenticationSessionResult } from '#shared/types/api'
+import type { SystemCapabilitiesResult, SystemHealthResult } from '#shared/types/system'
 import { getApiErrorMessage } from '../utils/apiError'
 
 /** 工作台主导航。 */
@@ -18,6 +20,29 @@ const navigation = [
 
 const logoutLoading = shallowRef(false)
 const logoutError = shallowRef<string | null>(null)
+const [{ data: sessionData }, { data: healthData, refresh: refreshHealth }, { data: capabilityData }] = await Promise.all([
+  useFetch<ApiResponse<AuthenticationSessionResult>>('/api/v1/auth/session'),
+  useFetch<ApiResponse<SystemHealthResult>>('/api/v1/system/health'),
+  useFetch<ApiResponse<SystemCapabilitiesResult>>('/api/v1/system/capabilities'),
+])
+/** 全局任务数量刷新计时器。 */
+const healthRefreshTimer = shallowRef<ReturnType<typeof setInterval> | null>(null)
+
+/** @returns 启动低频健康状态刷新，避免布局持久存在时任务数量过期。 */
+function startHealthRefresh(): void {
+  if (healthRefreshTimer.value) return
+  healthRefreshTimer.value = setInterval(() => { void refreshHealth() }, 5_000)
+}
+
+/** @returns 停止全局健康状态刷新并释放计时器。 */
+function stopHealthRefresh(): void {
+  if (!healthRefreshTimer.value) return
+  clearInterval(healthRefreshTimer.value)
+  healthRefreshTimer.value = null
+}
+
+onMounted(startHealthRefresh)
+onUnmounted(stopHealthRefresh)
 
 /**
  * 清除当前管理员会话并返回登录页。
@@ -70,8 +95,15 @@ async function logout(): Promise<void> {
     </aside>
 
     <div class="min-w-0">
-      <header class="flex h-16 items-center justify-end gap-2 border-b border-default px-4 sm:px-6">
+      <header class="flex min-h-16 flex-wrap items-center justify-end gap-2 border-b border-default px-4 py-2 sm:px-6">
         <span v-if="logoutError" class="mr-auto text-sm text-error" role="alert">{{ logoutError }}</span>
+        <SystemNavigationStatus
+          v-if="sessionData?.data.administrator && healthData?.data && capabilityData?.data"
+          class="mr-auto"
+          :username="sessionData.data.administrator.username"
+          :task-queue="healthData.data.taskQueue"
+          :capabilities="capabilityData.data"
+        />
         <UColorModeButton class="hidden lg:inline-flex" aria-label="切换颜色模式" />
         <UButton color="neutral" variant="ghost" :loading="logoutLoading" @click="logout">
           退出

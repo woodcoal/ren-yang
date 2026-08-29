@@ -181,8 +181,9 @@ export class ApplicationRuntime {
       options.migrationsDirectory,
     ))
 
+    const taskJobRepository = new SqliteTaskJobRepository(this.sqlite.getClient())
     const workerService = new WorkerApplicationService({
-      taskJobRepository: new SqliteTaskJobRepository(this.sqlite.getClient()),
+      taskJobRepository,
       taskHandler: new TaskRoutingApplicationService(
         this.generationService,
         this.feedbackService,
@@ -196,6 +197,7 @@ export class ApplicationRuntime {
       administratorRepository: this.administratorRepository,
       databaseHealth: this.sqlite,
       workerStatus: this.worker,
+      taskQueue: taskJobRepository,
       audit: new SqliteAuditRepository(this.sqlite.getClient()),
     })
   }

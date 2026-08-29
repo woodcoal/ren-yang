@@ -115,6 +115,27 @@ describe('SqliteDatabase', () => {
     await expect(repository.claimNext(2_000, 60_000)).resolves.toBeNull()
   })
 
+  it('任务队列摘要只统计仍需 Worker 处理的任务', async () => {
+    const current = createDatabase()
+    const client = current.getClient()
+    const insert = client.prepare(`
+      INSERT INTO task_jobs (id, type, payload_json, status, attempt_count, max_attempts, created_at, updated_at)
+      VALUES (?, 'test', '{}', ?, 0, 2, 1_000, 1_000)
+    `)
+    insert.run('queued-job', 'queued')
+    insert.run('running-job', 'running')
+    insert.run('cancel-requested-job', 'cancel_requested')
+    insert.run('succeeded-job', 'succeeded')
+    insert.run('failed-job', 'failed')
+
+    await expect(new SqliteTaskJobRepository(client).getPendingSummary()).resolves.toEqual({
+      queued: 1,
+      running: 1,
+      cancelRequested: 1,
+      total: 3,
+    })
+  })
+
   it('按最大尝试次数恢复或终止过期租约', async () => {
     const current = createDatabase()
     const client = current.getClient()

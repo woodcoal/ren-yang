@@ -1,15 +1,9 @@
 <script setup lang="ts">
 import { computed, shallowRef } from 'vue'
-import type { ApiResponse } from '#shared/types/api'
+import type { ApiResponse, AuthenticationSessionResult } from '#shared/types/api'
 import type { ContextReindexResult, ContextSyncRecordView, OpenVikingCapabilityView } from '#shared/types/context'
-import type { AuditEventView } from '#shared/types/system'
+import type { AuditEventView, SystemCapabilitiesResult } from '#shared/types/system'
 import { getApiErrorMessage } from '../utils/apiError'
-
-/** 系统能力响应中本页面使用的上下文部分。 */
-interface CapabilityResponse {
-  openViking: OpenVikingCapabilityView
-  contextProvider: 'sqlite_fts5' | 'openviking'
-}
 
 /** 上下文同步状态接口。 */
 interface ContextStatusResponse {
@@ -21,13 +15,17 @@ const [
   { data: capabilityData, error: capabilityError, refresh: refreshCapabilities },
   { data: statusData, error: statusError, refresh: refreshStatus },
   { data: auditData, error: auditError, refresh: refreshAudit },
+  { data: sessionData, error: sessionError },
 ] = await Promise.all([
-  useFetch<ApiResponse<CapabilityResponse>>('/api/v1/system/capabilities'),
+  useFetch<ApiResponse<SystemCapabilitiesResult>>('/api/v1/system/capabilities'),
   useFetch<ApiResponse<ContextStatusResponse>>('/api/v1/system/context/status'),
   useFetch<ApiResponse<AuditEventView[]>>('/api/v1/system/audit?limit=50'),
+  useFetch<ApiResponse<AuthenticationSessionResult>>('/api/v1/auth/session'),
 ])
+const capabilities = computed(() => capabilityData.value?.data ?? null)
 const capability = computed(() => capabilityData.value?.data.openViking ?? statusData.value?.data.capability ?? null)
 const contextProvider = computed(() => capabilityData.value?.data.contextProvider ?? 'sqlite_fts5')
+const administrator = computed(() => sessionData.value?.data.administrator ?? null)
 const records = computed(() => statusData.value?.data.records ?? [])
 const auditEvents = computed(() => auditData.value?.data ?? [])
 const actionLoading = shallowRef(false)
@@ -89,7 +87,20 @@ function formatTime(timestamp: number): string {
     <ContentPageHeader title="系统设置" description="能力开关和凭据由部署环境提供；浏览器只显示非敏感状态并执行显式检测或重建。" />
     <UAlert v-if="actionError" class="mb-5" color="error" title="操作失败" :description="actionError" />
     <UAlert v-if="actionMessage" class="mb-5" color="success" title="操作完成" :description="actionMessage" />
-    <UAlert v-if="capabilityError || statusError || auditError" class="mb-5" color="error" title="系统数据加载失败" />
+    <UAlert v-if="capabilityError || statusError || auditError || sessionError" class="mb-5" color="error" title="系统数据加载失败" />
+
+    <div class="mb-6 grid gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(20rem,0.6fr)]">
+      <SystemCapabilityStatusPanel v-if="capabilities" :capabilities="capabilities" show-limits />
+      <UAlert v-else color="error" title="能力状态不可用" description="无法安全展示模型能力和系统默认运行限制。" />
+      <UCard>
+        <template #header><h2 class="font-semibold text-highlighted">账户安全</h2></template>
+        <dl v-if="administrator" class="space-y-3 text-sm">
+          <div><dt class="text-muted">当前管理员</dt><dd class="mt-1 font-medium text-highlighted">{{ administrator.username }}</dd></div>
+          <div><dt class="text-muted">账户范围</dt><dd class="mt-1">本机唯一管理员</dd></div>
+        </dl>
+        <UAlert class="mt-5" color="neutral" title="密码不在浏览器内维护" description="忘记密码时停止应用并执行本机维护命令；重置会撤销既有会话并写入审计。" />
+      </UCard>
+    </div>
 
     <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_24rem]">
       <UCard>

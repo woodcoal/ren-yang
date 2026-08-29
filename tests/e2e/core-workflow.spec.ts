@@ -48,6 +48,9 @@ test('首次设置、人物发布、文档确认及三格式导出形成可复�
   await page.getByLabel('密码', { exact: true }).fill(ADMINISTRATOR.password)
   await page.getByRole('button', { name: '登录', exact: true }).click()
   await expect(page.getByRole('heading', { name: '仪表盘', exact: true })).toBeVisible()
+  await expect(page.getByLabel('账户与系统状态')).toContainText('e2e_admin')
+  await expect(page.getByLabel('账户与系统状态')).toContainText('文本可用')
+  await expect(page.getByRole('heading', { name: '外部能力', exact: true })).toBeVisible()
 
   await page.getByRole('link', { name: '人物', exact: true }).click()
   await page.getByRole('link', { name: '创建人物', exact: true }).click()
@@ -80,4 +83,10 @@ test('首次设置、人物发布、文档确认及三格式导出形成可复�
   await downloadArtifact(page, '下载 HTML', 'html')
   await downloadArtifact(page, '下载 Markdown', 'md')
   await downloadArtifact(page, '下载 TXT', 'txt')
+
+  await page.getByRole('link', { name: '系统设置', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '账户安全', exact: true })).toBeVisible()
+  await expect(page.getByText('当前管理员', { exact: true }).locator('..')).toContainText(ADMINISTRATOR.username)
+  await expect(page.getByText('系统默认运行限制', { exact: true })).toBeVisible()
+  await expect(page.getByText('最多 12 个文字块', { exact: true })).toBeVisible()
 })

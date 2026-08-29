@@ -211,7 +211,12 @@ function toPersonaSnapshotFields(snapshot: PersonaSnapshot): Array<{ label: stri
           </UCard>
 
           <UCard v-if="details.run.result">
-            <template #header><h2 class="font-semibold text-highlighted">兴趣判断结果</h2></template>
+            <template #header>
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <h2 class="font-semibold text-highlighted">兴趣判断结果</h2>
+                <UBadge color="info" variant="subtle">AI 模拟推断，不是人物事实</UBadge>
+              </div>
+            </template>
             <div class="grid gap-3 sm:grid-cols-3">
               <div><p class="text-xs text-muted">结论</p><p class="mt-1 font-medium">{{ details.run.result.decision }}</p></div>
               <div><p class="text-xs text-muted">兴趣概率</p><p class="mt-1 font-medium">{{ Math.round(details.run.result.probability * 100) }}%</p></div>
@@ -262,7 +267,11 @@ function toPersonaSnapshotFields(snapshot: PersonaSnapshot): Array<{ label: stri
 
           <UCard>
             <template #header><h2 class="font-semibold text-highlighted">证据快照</h2></template>
-            <GenerationEvidenceList :evidence="details.evidence" />
+            <GenerationEvidenceList
+              :evidence="details.evidence"
+              :supporting-evidence-ids="details.run.result?.supportingEvidenceIds ?? []"
+              :opposing-evidence-ids="details.run.result?.opposingEvidenceIds ?? []"
+            />
           </UCard>
 
           <UCard>

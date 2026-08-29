@@ -1,6 +1,6 @@
 import type { AdministratorRepository } from '../../ports/AdministratorRepository'
 import type { DatabaseHealthReader } from '../../ports/DatabaseHealth'
-import type { WorkerStatusReader } from '../../ports/TaskPorts'
+import type { TaskQueueStatusReader, WorkerStatusReader } from '../../ports/TaskPorts'
 import type { SystemHealthResult } from '../../../shared/types/system'
 import type { AuditRepository } from '../../ports/AuditRepository'
 import type { AuditEventView } from '../../../shared/types/system'
@@ -13,6 +13,8 @@ export interface SystemApplicationServiceDependencies {
   databaseHealth: DatabaseHealthReader
   /** Worker 状态读取端口。 */
   workerStatus: WorkerStatusReader
+  /** 持久任务队列只读端口。 */
+  taskQueue: TaskQueueStatusReader
   /** 关键动作审计历史端口。 */
   audit: AuditRepository
 }
@@ -30,9 +32,10 @@ export class SystemApplicationService {
    * @returns 不包含密钥和绝对调用参数的健康摘要。
    */
   async getHealth(): Promise<SystemHealthResult> {
-    const [database, administratorExists] = await Promise.all([
+    const [database, administratorExists, taskQueue] = await Promise.all([
       this.dependencies.databaseHealth.check(),
       this.dependencies.administratorRepository.exists(),
+      this.dependencies.taskQueue.getPendingSummary(),
     ])
     const worker = this.dependencies.workerStatus.getStatus()
 
@@ -46,6 +49,7 @@ export class SystemApplicationService {
         integrity: database.integrity,
       },
       worker,
+      taskQueue,
     }
   }
 

@@ -1,3 +1,21 @@
+import type { OpenVikingCapabilityView } from './context'
+import type { ImageModelCapability, TextModelCapability } from './generation'
+import type { TextModelParameters } from '../schemas/generation'
+
+/** 管理界面可见的外部能力与默认运行参数。 */
+export interface SystemCapabilitiesResult {
+  /** 文本模型非敏感配置状态。 */
+  textModel: TextModelCapability
+  /** 图片模型非敏感配置状态。 */
+  imageModel: ImageModelCapability
+  /** OpenViking 非敏感配置状态。 */
+  openViking: OpenVikingCapabilityView
+  /** 新运行实际使用的上下文提供器。 */
+  contextProvider: 'sqlite_fts5' | 'openviking'
+  /** 未选择参数方案时固定到运行快照的默认参数。 */
+  defaultParameters: TextModelParameters
+}
+
 /** 管理界面可见的 SQLite 健康摘要。 */
 export interface PublicDatabaseHealth {
   /** SQLite 是否通过关键配置和完整性检查。 */
@@ -22,6 +40,18 @@ export interface PublicWorkerStatus {
   lastError: string | null
 }
 
+/** 管理界面可见的持久任务队列摘要。 */
+export interface PublicTaskQueueStatus {
+  /** 尚未领取的任务数量。 */
+  queued: number
+  /** 已被当前 Worker 领取的任务数量。 */
+  running: number
+  /** 正等待 Worker 协作取消的任务数量。 */
+  cancelRequested: number
+  /** 以上三种未终止任务的合计。 */
+  total: number
+}
+
 /** 管理界面使用的系统健康结果。 */
 export interface SystemHealthResult {
   /** 应用整体是否可用。 */
@@ -32,6 +62,8 @@ export interface SystemHealthResult {
   database: PublicDatabaseHealth
   /** 当前进程内 Worker 状态。 */
   worker: PublicWorkerStatus
+  /** SQLite 中尚未终止的持久任务队列摘要。 */
+  taskQueue: PublicTaskQueueStatus
 }
 
 /** 管理界面可见的关键动作审计记录。 */

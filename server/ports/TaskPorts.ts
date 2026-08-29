@@ -36,6 +36,20 @@ export interface TaskJobRepository {
   markFailed(jobId: string, error: string, timestamp: number, retryable: boolean): Promise<boolean>
 }
 
+/** 管理界面可读取的持久任务队列摘要。 */
+export interface TaskQueueStatusReader {
+  /**
+   * 统计仍需 Worker 处理或协作取消的持久任务。
+   * @returns 排队、运行中、请求取消和合计数量。
+   */
+  getPendingSummary(): Promise<{
+    queued: number
+    running: number
+    cancelRequested: number
+    total: number
+  }>
+}
+
 /** 任务处理器用于向 Worker 传递安全错误和重试语义。 */
 export class TaskExecutionError extends Error {
   /**

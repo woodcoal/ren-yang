@@ -25,6 +25,7 @@ import type {
   RenderedArtifactView,
   RunSummary,
 } from '../../../shared/types/generation'
+import type { SystemCapabilitiesResult } from '../../../shared/types/system'
 import type { PersonaRecord, PersonaVersionRecord } from '../../domain/content/ContentModels'
 import { ImageAssetError } from '../../domain/generation/ImageAssetError'
 import type { ArtifactBlockRecord, GenerationRunRecord, TextModelUsage } from '../../domain/generation/GenerationModels'
@@ -110,7 +111,7 @@ export class GenerationApplicationService implements TaskHandler {
   }
 
   /** @returns 当前阶段全部非敏感外部能力和实际上下文提供器。 */
-  getCapabilities() {
+  getCapabilities(): SystemCapabilitiesResult {
     const imageModel = this.dependencies.imageModel.getConfiguredModel()
     const openViking = this.dependencies.context.getOpenVikingCapability()
     return {
@@ -120,6 +121,7 @@ export class GenerationApplicationService implements TaskHandler {
         : { configured: false, provider: 'openai_compatible_images' as const, model: null, endpointOrigin: null },
       openViking,
       contextProvider: this.dependencies.context.getProvider(),
+      defaultParameters: { ...DEFAULT_TEXT_PARAMETERS },
     }
   }
 

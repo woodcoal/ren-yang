@@ -1,6 +1,6 @@
 import type { Database as BetterSqliteDatabase, RunResult } from 'better-sqlite3'
 import type { TaskJob } from '../../domain/tasks/TaskJob'
-import type { TaskJobRepository } from '../../ports/TaskPorts'
+import type { TaskJobRepository, TaskQueueStatusReader } from '../../ports/TaskPorts'
 
 /** SQLite 查询返回的任务行。 */
 interface TaskJobRow {
@@ -14,12 +14,33 @@ interface TaskJobRow {
 }
 
 /** 使用短事务和条件更新实现任务租约。 */
-export class SqliteTaskJobRepository implements TaskJobRepository {
+export class SqliteTaskJobRepository implements TaskJobRepository, TaskQueueStatusReader {
   /**
    * 创建任务仓储并预编译固定参数化语句。
    * @param client 已初始化的原生 SQLite 客户端。
    */
   constructor(private readonly client: BetterSqliteDatabase) {}
+
+  /**
+   * 统计排队、运行中和等待协作取消的持久任务。
+   * @returns 管理界面使用的精确任务队列摘要。
+   */
+  async getPendingSummary(): Promise<{ queued: number, running: number, cancelRequested: number, total: number }> {
+    const row = this.client.prepare(`
+      SELECT
+        COUNT(*) FILTER (WHERE status = 'queued') AS queued,
+        COUNT(*) FILTER (WHERE status = 'running') AS running,
+        COUNT(*) FILTER (WHERE status = 'cancel_requested') AS cancel_requested
+      FROM task_jobs
+      WHERE status IN ('queued', 'running', 'cancel_requested')
+    `).get() as { queued: number, running: number, cancel_requested: number }
+    return {
+      queued: row.queued,
+      running: row.running,
+      cancelRequested: row.cancel_requested,
+      total: row.queued + row.running + row.cancel_requested,
+    }
+  }
 
   /**
    * 恢复租约过期任务；仍有尝试次数的重新排队，否则终止。
