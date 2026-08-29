@@ -35,6 +35,7 @@ const actionError = shallowRef<string | null>(null)
 const actionMessage = shallowRef<string | null>(null)
 const pollingTimer = shallowRef<ReturnType<typeof setInterval> | null>(null)
 const artifactPreview = shallowRef<RenderedArtifactView | null>(null)
+const selectedTab = shallowRef<'result' | 'content' | 'evidence' | 'feedback' | 'settings'>('result')
 
 /** @returns 启动每两秒一次的活动运行轮询；已有计时器时不重复创建。 */
 function startPolling(): void {
@@ -50,6 +51,10 @@ function stopPolling(): void {
 }
 
 watch(active, value => value ? startPolling() : stopPolling())
+// 等待规格确认时直接展示创作内容，避免用户进入页面后还要猜测应打开哪个标签。
+watch(() => details.value?.run.status, (status) => {
+  if (status === 'awaiting_confirmation') selectedTab.value = 'content'
+}, { immediate: true })
 onMounted(startPolling)
 onUnmounted(stopPolling)
 
@@ -195,7 +200,10 @@ function skippedReasonLabel(reason: string | null): string {
 
 <template>
   <div>
-    <ContentPageHeader title="任务详情" description="查看这次任务使用的人物、资料和设置，确认内容规划，并管理每个图文内容块。">
+    <ContentPageHeader
+      :title="details ? `${details.run.personaName} · ${details.run.kind === 'interest_assessment' ? '兴趣判断' : '图文创作'}` : '任务详情'"
+      description="跟踪当前运行位置，审阅结果和图文内容，并追溯这次任务锁定的设定、资料与参数。"
+    >
       <UButton to="/history" color="neutral" variant="ghost">返回历史</UButton>
     </ContentPageHeader>
 
@@ -204,16 +212,25 @@ function skippedReasonLabel(reason: string | null): string {
       <UAlert v-if="actionError" class="mb-5" color="error" title="操作失败" :description="actionError" />
       <UAlert v-if="actionMessage" class="mb-5" color="success" title="操作完成" :description="actionMessage" />
 
-      <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_24rem]">
+      <GenerationRunStatusPanel :run="details.run" :tasks="details.tasks" :loading="actionLoading" @cancel="cancelRun" @retry="retryRun" />
+      <nav class="mind-tabs my-6" aria-label="任务详情标签">
+        <button class="mind-tab" :aria-selected="selectedTab === 'result'" @click="selectedTab = 'result'">结果</button>
+        <button class="mind-tab" :aria-selected="selectedTab === 'content'" @click="selectedTab = 'content'">创作内容</button>
+        <button class="mind-tab" :aria-selected="selectedTab === 'evidence'" @click="selectedTab = 'evidence'">使用依据</button>
+        <button class="mind-tab" :aria-selected="selectedTab === 'feedback'" @click="selectedTab = 'feedback'">反馈学习</button>
+        <button class="mind-tab" :aria-selected="selectedTab === 'settings'" @click="selectedTab = 'settings'">运行设置</button>
+      </nav>
+
+      <div>
         <div class="space-y-6">
-          <UCard>
+          <UCard v-if="selectedTab === 'result'">
             <template #header><h2 class="font-semibold text-highlighted">固定输入</h2></template>
             <pre class="content-pre">{{ 'content' in details.run.input ? details.run.input.content : details.run.input.requirement }}</pre>
             <div v-if="details.run.scene" class="mt-4 rounded-md bg-elevated p-3 text-sm">
               <p class="font-medium text-highlighted">临时场景</p><pre class="content-pre mt-2">{{ JSON.stringify(details.run.scene, null, 2) }}</pre>
             </div>
           </UCard>
-          <UCard v-if="details.run.promptContext">
+          <UCard v-if="selectedTab === 'result' && details.run.promptContext">
             <template #header><div><h2 class="font-semibold text-highlighted">本次提示词用量</h2><p class="mt-1 text-sm text-muted">创建任务时已固定；后续修改设置不会改变本次结果。</p></div></template>
             <div class="space-y-4 text-sm">
               <div class="grid grid-cols-2 gap-3">
@@ -241,7 +258,7 @@ function skippedReasonLabel(reason: string | null): string {
             </div>
           </UCard>
 
-          <UCard v-if="details.run.result">
+          <UCard v-if="selectedTab === 'result' && details.run.result">
             <template #header>
               <div class="flex flex-wrap items-center justify-between gap-2">
                 <h2 class="font-semibold text-highlighted">兴趣判断结果</h2>
@@ -258,7 +275,7 @@ function skippedReasonLabel(reason: string | null): string {
             <div v-if="details.run.result.unknowns.length" class="mt-4"><p class="text-sm font-medium">不确定项</p><ul class="mt-2 list-disc pl-5 text-sm text-muted"><li v-for="item in details.run.result.unknowns" :key="item">{{ item }}</li></ul></div>
           </UCard>
 
-          <UCard v-if="draftSpec && details.run.status === 'awaiting_confirmation'">
+          <UCard v-if="selectedTab === 'content' && draftSpec && details.run.status === 'awaiting_confirmation'">
             <template #header><div><h2 class="font-semibold text-highlighted">确认内容规划</h2><p class="mt-1 text-sm text-muted">这是第 {{ draftSpec.revision }} 版规划，确认前不会正式生成图文内容。</p></div></template>
             <GenerationDocumentSpecEditor
               :spec="draftSpec.spec"
@@ -269,7 +286,7 @@ function skippedReasonLabel(reason: string | null): string {
             />
           </UCard>
 
-          <UCard v-if="details.blocks.length">
+          <UCard v-if="selectedTab === 'content' && details.blocks.length">
             <template #header><h2 class="font-semibold text-highlighted">产物图文块</h2></template>
             <div class="space-y-4">
               <GenerationArtifactBlockCard
@@ -288,7 +305,7 @@ function skippedReasonLabel(reason: string | null): string {
           </UCard>
 
           <GenerationArtifactPreview
-            v-if="confirmedSpec && canRenderArtifact"
+            v-if="selectedTab === 'content' && confirmedSpec && canRenderArtifact"
             :run-id="runId"
             :formats="artifactFormats"
             :preview="artifactPreview"
@@ -296,7 +313,7 @@ function skippedReasonLabel(reason: string | null): string {
             @render="renderArtifact"
           />
 
-          <UCard>
+          <UCard v-if="selectedTab === 'evidence'">
             <template #header><div><h2 class="font-semibold text-highlighted">本次使用的设定与资料</h2><p class="mt-1 text-sm text-muted">任务创建时已固定保存，之后修改人物或资料不会改变这里的内容。</p></div></template>
             <GenerationEvidenceList
               :evidence="details.evidence"
@@ -305,7 +322,7 @@ function skippedReasonLabel(reason: string | null): string {
             />
           </UCard>
 
-          <UCard>
+          <UCard v-if="selectedTab === 'feedback'">
             <template #header><div><h2 class="font-semibold text-highlighted">运行反馈</h2><p class="mt-1 text-sm text-muted">原始反馈不会直接改写人物；确认“作为人物学习资料”后，仍需成长分析和人工审核。</p></div></template>
             <div class="space-y-5">
               <FeedbackForm :blocks="details.blocks" :loading="actionLoading" @submit="submitFeedback" />
@@ -334,8 +351,7 @@ function skippedReasonLabel(reason: string | null): string {
           </UCard>
         </div>
 
-        <div class="space-y-6">
-          <GenerationRunStatusPanel :run="details.run" :tasks="details.tasks" :loading="actionLoading" @cancel="cancelRun" @retry="retryRun" />
+        <div v-if="selectedTab === 'settings'" class="mt-6 space-y-6">
           <UCard>
             <template #header><div><h2 class="font-semibold text-highlighted">本次任务使用的设置</h2><p class="mt-1 text-sm text-muted">用于复查任务当时使用的人物版本、模型和生成限制。</p></div></template>
             <dl class="space-y-3 text-sm">

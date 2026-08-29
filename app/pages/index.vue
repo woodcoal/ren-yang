@@ -48,8 +48,8 @@ async function refreshDashboard(): Promise<void> {
 <template>
   <div>
     <ContentPageHeader
-      title="今日工作"
-      description="待处理事项、活动任务和会影响工作的系统问题按优先级排列。"
+      title="先处理会影响后续创作的事"
+      description="待确认的人物变化、活动任务和会阻断工作的系统问题，按照对后续创作的影响排列。"
     >
       <UButton to="/history" color="neutral" variant="outline">查看任务记录</UButton>
       <UButton to="/workbench" icon="i-lucide-plus">新建任务</UButton>
@@ -64,7 +64,7 @@ async function refreshDashboard(): Promise<void> {
       :actions="[{ label: '全部重试', onClick: refreshDashboard }]"
     />
 
-    <div class="metric-strip" aria-label="工作台资源摘要">
+    <div class="metric-strip page-status-strip" aria-label="工作台资源摘要">
       <div v-for="item in [
         { label: '人物', value: counts.personas, to: '/personas' },
         { label: '世界设定', value: counts.worlds, to: '/worlds' },

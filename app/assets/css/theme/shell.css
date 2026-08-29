@@ -38,18 +38,27 @@
   border-bottom: 1px solid color-mix(in oklch, var(--app-sidebar-fg) 10%, var(--app-sidebar-bg));
 }
 
-.brand-seal {
-  display: grid;
-  width: 2.375rem;
-  height: 2.375rem;
+.brand-lockup {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.brand-symbol {
+  width: 2.125rem;
+  height: 2.125rem;
   flex: 0 0 auto;
-  place-items: center;
-  border: 1px solid color-mix(in oklch, var(--app-accent) 58%, var(--app-sidebar-fg));
-  border-radius: 50% 50% 46% 54%;
-  background: var(--app-accent);
-  color: var(--app-surface-raised);
-  font-family: var(--font-display);
-  font-size: 1.1875rem;
+  overflow: visible;
+  color: var(--app-sidebar-fg);
+}
+
+.brand-symbol-accent {
+  fill: color-mix(in oklch, var(--app-accent) 74%, var(--app-sidebar-fg));
+}
+
+.brand-symbol-accent-stroke {
+  stroke: color-mix(in oklch, var(--app-accent) 74%, var(--app-sidebar-fg));
 }
 
 .brand-copy,
@@ -70,6 +79,7 @@
   display: block;
   color: var(--app-sidebar-muted);
   font-size: 0.6875rem;
+  letter-spacing: 0.035em;
   white-space: nowrap;
 }
 
@@ -217,6 +227,11 @@
   display: none;
 }
 
+.app-sidebar--collapsed .brand-symbol {
+  width: 1.75rem;
+  height: 1.75rem;
+}
+
 .app-sidebar--collapsed .sidebar-brand,
 .app-sidebar--collapsed .sidebar-navigation-item,
 .app-sidebar--collapsed .sidebar-system-status,
@@ -279,6 +294,48 @@
   color: var(--app-muted);
   font-family: var(--font-mono);
   font-size: 0.625rem;
+}
+
+/* 主题选择器以可见名称表达当前主题，色点不承担独立语义。 */
+.theme-control {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  gap: 0.4375rem;
+  padding: 0 0.625rem;
+  border: 1px solid var(--app-border);
+  border-radius: var(--radius-control);
+  background: var(--app-surface-raised);
+  color: var(--app-fg);
+}
+
+.theme-control:hover {
+  border-color: var(--app-border-strong);
+}
+
+.theme-control:focus-within {
+  border-color: var(--app-accent);
+  outline: 3px solid color-mix(in oklch, var(--app-accent) 18%, transparent);
+  outline-offset: 2px;
+}
+
+.theme-swatch {
+  width: 0.625rem;
+  height: 0.625rem;
+  flex: 0 0 auto;
+  border: 1px solid color-mix(in oklch, var(--app-fg) 18%, transparent);
+  border-radius: 50%;
+  background: var(--app-accent);
+}
+
+.theme-select {
+  min-height: 2.625rem;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
 }
 
 .topbar-status-link,
@@ -393,7 +450,6 @@
 }
 
 @media (max-width: 72rem) {
-  .topbar-model-status,
   .topbar-account span {
     display: none;
   }
@@ -444,7 +500,7 @@
 
   .sidebar-backdrop {
     position: fixed;
-    inset: 0;
+    inset: 0 0 0 min(86vw, 19.375rem);
     z-index: 45;
     display: block;
     border: 0;
@@ -479,9 +535,20 @@
   .topbar-command-label,
   .topbar-shortcut,
   .topbar-status-link span,
-  .topbar-model-status,
   .topbar-account {
     display: none;
+  }
+
+  .theme-control {
+    width: 2.75rem;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .theme-select {
+    position: absolute;
+    width: 2.75rem;
+    opacity: 0;
   }
 
   .command-result {

@@ -78,8 +78,14 @@ async function createPersona(input: CreatePersonaInput): Promise<void> {
 
 <template>
   <div>
-    <ContentPageHeader title="创建人物" description="可以完全原创，也可以选择一个共同世界和参考资料帮助 AI 整理人设。" />
-    <div class="space-y-6">
+    <ContentPageHeader title="先建立可审阅的人物修改稿" description="人物可以完全原创，也可以引用世界和参考资料；保存后仍需在人物工作区确认发布。" />
+    <div class="workflow-steps" aria-label="创建人物步骤">
+      <div class="workflow-step workflow-step--current"><span class="workflow-step-index">01</span><span>建立方式</span></div>
+      <div class="workflow-step"><span class="workflow-step-index">02</span><span>世界与资料</span></div>
+      <div class="workflow-step"><span class="workflow-step-index">03</span><span>检查灵魂初稿</span></div>
+      <div class="workflow-step"><span class="workflow-step-index">04</span><span>保存修改稿</span></div>
+    </div>
+    <div>
       <ContentPersonaDraftAssistant
         :worlds="worlds"
         :sources="sources"
@@ -94,22 +100,17 @@ async function createPersona(input: CreatePersonaInput): Promise<void> {
         title="草稿已生成，但部分参考内容过长"
         :description="draftWarnings.join('；')"
       />
-      <UCard>
-        <template #header>
-          <div>
-            <h2 class="font-semibold text-highlighted">检查人物设定</h2>
-            <p class="mt-1 text-sm text-muted">逐项检查后保存为修改稿，再到人物详情页确认使用。</p>
-          </div>
-        </template>
-      <ContentPersonaForm
-        :worlds="worlds"
-        :sources="sources"
-        :loading="loading"
-        :error-message="errorMessage"
-        :initial-value="generatedInitialValue"
-        @submit="createPersona"
-      />
-      </UCard>
+      <section class="workflow-panel" aria-labelledby="persona-review-heading">
+        <div class="section-heading"><div class="section-heading-copy"><p class="eyebrow">检查并保存</p><h2 id="persona-review-heading">检查人物灵魂修改稿</h2><p>逐项检查后保存为修改稿，再到人物工作区确认发布和用于新任务。</p></div></div>
+        <ContentPersonaForm
+          :worlds="worlds"
+          :sources="sources"
+          :loading="loading"
+          :error-message="errorMessage"
+          :initial-value="generatedInitialValue"
+          @submit="createPersona"
+        />
+      </section>
     </div>
   </div>
 </template>

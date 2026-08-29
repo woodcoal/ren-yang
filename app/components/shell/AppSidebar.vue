@@ -42,11 +42,7 @@ const systemReady = computed(() => Boolean(props.capabilities?.textModel.configu
     aria-label="应用导航"
   >
     <NuxtLink to="/" class="sidebar-brand" aria-label="人样人物工作室首页" @click="emit('navigate')">
-      <span class="brand-seal" aria-hidden="true">人</span>
-      <span class="brand-copy">
-        <strong class="brand-name">人样</strong>
-        <span class="brand-subtitle">人物工作室</span>
-      </span>
+      <BrandMark />
     </NuxtLink>
 
     <nav class="sidebar-navigation" aria-label="主导航">

@@ -7,6 +7,9 @@ import { getApiErrorMessage } from '../../utils/apiError'
 
 const { data, error, refresh } = await useFetch<ApiResponse<WorldSummary[]>>('/api/v1/worlds')
 const worlds = computed(() => data.value?.data ?? [])
+const activeWorldCount = computed(() => worlds.value.filter(world => world.activeVersionId).length)
+const linkedPersonaCount = computed(() => worlds.value.reduce((total, world) => total + world.personaCount, 0))
+const sourceCount = computed(() => worlds.value.reduce((total, world) => total + world.sourceCount, 0))
 const showCreate = shallowRef(false)
 const loading = shallowRef(false)
 const errorMessage = shallowRef<string | null>(null)
@@ -34,31 +37,40 @@ async function createWorld(input: CreateWorldInput): Promise<void> {
 
 <template>
   <div>
-    <ContentPageHeader title="世界设定" description="世界是多个相关人物共用的背景；人物也可以不关联任何世界。">
+    <ContentPageHeader title="世界设定" description="世界是相关人物共用的背景与规则；人物也可以不关联世界，独立完成任务。">
       <UButton icon="i-lucide-plus" @click="showCreate = !showCreate">{{ showCreate ? '收起表单' : '创建世界' }}</UButton>
     </ContentPageHeader>
 
-    <UCard v-if="showCreate" class="mb-6">
+    <div class="status-strip page-status-strip" aria-label="世界状态摘要">
+      <div class="status-cell"><span class="status-kicker">全部世界</span><strong class="status-value">{{ worlds.length }}</strong></div>
+      <div class="status-cell"><span class="status-kicker">已发布</span><strong class="status-value">{{ activeWorldCount }}</strong></div>
+      <div class="status-cell"><span class="status-kicker">关联人物</span><strong class="status-value">{{ linkedPersonaCount }}</strong></div>
+      <div class="status-cell"><span class="status-kicker">参考资料</span><strong class="status-value">{{ sourceCount }}</strong></div>
+    </div>
+
+    <UCard v-if="showCreate" class="mt-6 mb-6">
       <template #header><h2 class="font-semibold text-highlighted">新世界设定</h2></template>
       <ContentWorldForm :loading="loading" :error-message="errorMessage" @submit="createWorld" />
     </UCard>
 
     <UAlert v-if="error" color="error" title="世界列表加载失败" :actions="[{ label: '重试', onClick: () => refresh() }]" />
-    <div v-else-if="worlds.length" class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-      <UCard v-for="world in worlds" :key="world.id">
-        <template #header>
-          <div class="flex items-start justify-between gap-3">
-            <h2 class="font-semibold text-highlighted">{{ world.name }}</h2>
-            <UBadge :color="world.activeVersionId ? 'success' : 'warning'" variant="subtle">{{ world.activeVersionId ? '正在使用' : '待确认' }}</UBadge>
-          </div>
-        </template>
-        <p class="min-h-10 text-sm text-muted">{{ world.summary || '未填写摘要' }}</p>
-        <div class="mt-4 flex gap-4 text-xs text-muted">
-          <span>{{ world.personaCount }} 个人物</span><span>{{ world.versionCount }} 条修改记录</span><span>{{ world.sourceCount }} 项资料</span>
-        </div>
-        <template #footer><UButton :to="`/worlds/${world.id}`" color="neutral" variant="soft" block>查看与维护</UButton></template>
-      </UCard>
-    </div>
-    <UCard v-else><p class="py-8 text-center text-sm text-muted">尚无世界设定。独立人物仍可正常创建。</p></UCard>
+    <section v-else-if="worlds.length" class="content-section" aria-labelledby="world-list-heading">
+      <div class="section-heading"><div class="section-heading-copy"><p class="eyebrow">世界列表</p><h2 id="world-list-heading">已建立的世界设定</h2><p>已发布内容可被新任务使用，修改稿仍需人工确认。</p></div></div>
+      <div class="content-table-wrap">
+        <table class="content-table">
+          <thead><tr><th>世界</th><th>使用关系</th><th>版本</th><th>当前状态</th><th>操作</th></tr></thead>
+          <tbody>
+            <tr v-for="world in worlds" :key="world.id">
+              <td data-label="世界"><strong class="content-table-title">{{ world.name }}</strong><span class="content-table-description">{{ world.summary || '未填写摘要' }}</span></td>
+              <td data-label="使用关系"><span>{{ world.personaCount }} 个人物</span><span class="content-table-description">{{ world.sourceCount }} 项资料</span></td>
+              <td data-label="版本"><span>{{ world.versionCount }} 条修改记录</span></td>
+              <td data-label="当前状态"><UBadge :color="world.activeVersionId ? 'success' : 'warning'" variant="subtle">{{ world.activeVersionId ? '已发布，可使用' : '等待确认' }}</UBadge></td>
+              <td data-label="操作"><UButton :to="`/worlds/${world.id}`" color="neutral" variant="link">查看与维护</UButton></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+    <div v-else class="content-empty-state"><div><strong>还没有世界设定</strong><p>独立人物仍可正常创建和执行任务。</p></div></div>
   </div>
 </template>

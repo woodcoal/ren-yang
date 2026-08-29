@@ -33,7 +33,7 @@ function formatTime(timestamp: number): string {
 </script>
 
 <template>
-  <UCard>
+  <UCard class="run-status-board">
     <template #header>
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div><h2 class="font-semibold text-highlighted">运行状态</h2><p class="mt-1 text-xs text-muted">{{ run.id }}</p></div>

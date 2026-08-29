@@ -56,32 +56,38 @@ function formatTime(timestamp: number): string {
 
 <template>
   <div>
-    <ContentPageHeader title="任务记录" description="查看每次判断或创作使用了哪个人物、哪些资料、哪些设置，以及最终结果。">
+    <ContentPageHeader title="在可追溯的记录中继续工作" description="按人物、任务类型和当前状态查找历史任务，并继续处理尚未完成的确认或失败恢复。">
       <UButton to="/workbench" icon="i-lucide-plus">创建新任务</UButton>
     </ContentPageHeader>
 
-    <UCard class="mb-6">
-      <form class="grid gap-3 md:grid-cols-4" @submit.prevent="applyFilters">
+    <section class="content-section" aria-labelledby="history-filter-heading">
+      <div class="section-heading"><div class="section-heading-copy"><p class="eyebrow">缩小范围</p><h2 id="history-filter-heading">定位需要继续处理的任务</h2><p>筛选条件会写入地址，刷新页面后仍会保留。</p></div></div>
+      <form class="content-toolbar" @submit.prevent="applyFilters">
         <select v-model="filters.personaId" class="native-control" aria-label="按人物筛选"><option value="">全部人物</option><option v-for="persona in personas" :key="persona.id" :value="persona.id">{{ persona.name }}</option></select>
         <select v-model="filters.kind" class="native-control" aria-label="按类型筛选"><option value="">全部类型</option><option value="interest_assessment">兴趣判断</option><option value="artifact_generation">图文创作</option></select>
         <select v-model="filters.status" class="native-control" aria-label="按状态筛选"><option value="">全部状态</option><option v-for="(label, status) in statusLabels" :key="status" :value="status">{{ label }}</option></select>
         <UButton type="submit" color="neutral" variant="soft">应用筛选</UButton>
       </form>
-    </UCard>
+    </section>
 
     <UAlert v-if="error" color="error" title="任务记录加载失败" :actions="[{ label: '重试', onClick: () => refresh() }]" />
-    <div v-else-if="runs.length" class="space-y-3">
-      <NuxtLink v-for="run in runs" :key="run.id" :to="`/runs/${run.id}`" class="block rounded-md border border-default p-4 transition hover:bg-elevated">
-        <div class="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 class="font-medium text-highlighted">{{ run.personaName }} · {{ run.kind === 'interest_assessment' ? '兴趣判断' : '图文创作' }}</h2>
-            <p class="mt-1 text-sm text-muted">{{ inputPreview(run) }}</p>
-          </div>
-          <UBadge :color="run.status === 'failed' ? 'error' : run.status === 'succeeded' ? 'success' : 'neutral'" variant="subtle">{{ statusLabels[run.status] }}</UBadge>
-        </div>
-        <p class="mt-3 text-xs text-dimmed">{{ formatTime(run.createdAt) }} · {{ run.model.model }} · {{ run.id }}</p>
-      </NuxtLink>
-    </div>
-    <UCard v-else><p class="py-8 text-center text-sm text-muted">当前筛选条件下没有任务记录。</p></UCard>
+    <section v-else-if="runs.length" class="content-section" aria-labelledby="history-list-heading">
+      <div class="section-heading"><div class="section-heading-copy"><p class="eyebrow">任务列表</p><h2 id="history-list-heading">按当前状态阅读</h2><p>每条记录保留创建时锁定的人物版本、资料、设置和模型信息。</p></div><span class="text-sm text-muted">{{ runs.length }} 条记录</span></div>
+      <div class="content-table-wrap">
+        <table class="content-table">
+          <thead><tr><th>任务</th><th>人物</th><th>状态</th><th>创建时间</th><th>操作</th></tr></thead>
+          <tbody>
+            <tr v-for="run in runs" :key="run.id">
+              <td data-label="任务"><strong class="content-table-title">{{ run.kind === 'interest_assessment' ? '兴趣判断' : '图文创作' }}</strong><span class="content-table-description">{{ inputPreview(run) }}</span></td>
+              <td data-label="人物"><span class="content-table-title">{{ run.personaName }}</span><span class="content-table-description">{{ run.model.model }}</span></td>
+              <td data-label="状态"><UBadge :color="run.status === 'failed' ? 'error' : run.status === 'succeeded' ? 'success' : 'neutral'" variant="subtle">{{ statusLabels[run.status] }}</UBadge></td>
+              <td data-label="创建时间"><span>{{ formatTime(run.createdAt) }}</span><span class="content-table-description">{{ run.id }}</span></td>
+              <td data-label="操作"><UButton :to="`/runs/${run.id}`" color="neutral" variant="link">查看任务</UButton></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+    <div v-else class="content-empty-state"><div><strong>没有符合条件的任务</strong><p>调整筛选条件，或创建一项新任务。</p></div></div>
   </div>
 </template>

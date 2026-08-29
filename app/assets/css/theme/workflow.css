@@ -1,0 +1,129 @@
+/* 后台工作流：分步任务、固定操作区和任务详情运行状态板。 */
+.workflow-steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  overflow: hidden;
+  margin-top: 1.5rem;
+  border: 1px solid var(--app-border);
+  border-radius: var(--radius-control);
+  background: var(--app-surface-raised);
+}
+
+.workflow-step {
+  display: flex;
+  min-height: 3.75rem;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.75rem 1rem;
+  color: var(--app-muted);
+  font-size: 0.75rem;
+}
+
+.workflow-step + .workflow-step {
+  border-left: 1px solid var(--app-border);
+}
+
+.workflow-step-index {
+  display: grid;
+  width: 1.75rem;
+  height: 1.75rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid var(--app-border-strong);
+  border-radius: 50%;
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+}
+
+.workflow-step--current {
+  background: var(--app-accent-soft);
+  color: var(--app-accent-strong);
+  font-weight: 650;
+}
+
+.workflow-step--current .workflow-step-index {
+  border-color: var(--app-accent);
+  background: var(--app-accent);
+  color: var(--app-surface-raised);
+}
+
+.workflow-panel {
+  padding: 2.25rem 0;
+}
+
+.workflow-panel + .workflow-panel {
+  border-top: 1px solid var(--app-border);
+}
+
+.sticky-action-bar {
+  position: sticky;
+  bottom: 1rem;
+  z-index: 30;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.875rem 1rem;
+  border: 1px solid var(--app-border-strong);
+  border-radius: var(--radius-panel);
+  background: var(--app-surface-raised);
+}
+
+.run-status-board {
+  border-color: color-mix(in oklch, var(--app-sidebar-fg) 14%, var(--app-sidebar-bg)) !important;
+  background: var(--app-sidebar-bg) !important;
+  color: var(--app-sidebar-fg);
+}
+
+.run-status-board .text-highlighted,
+.run-status-board .text-default {
+  color: var(--app-sidebar-fg) !important;
+}
+
+.run-status-board .text-muted,
+.run-status-board .text-dimmed {
+  color: var(--app-sidebar-muted) !important;
+}
+
+.run-status-board .bg-elevated {
+  background: color-mix(in oklch, var(--app-sidebar-fg) 7%, var(--app-sidebar-bg)) !important;
+}
+
+@media (max-width: 57.5rem) {
+  .workflow-steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .workflow-step:nth-child(odd) {
+    border-left: 0;
+  }
+
+  .workflow-step:nth-child(n+3) {
+    border-top: 1px solid var(--app-border);
+  }
+}
+
+@media (max-width: 40rem) {
+  .workflow-steps {
+    display: flex;
+    overflow-x: auto;
+  }
+
+  .workflow-step,
+  .workflow-step + .workflow-step,
+  .workflow-step:nth-child(n+3) {
+    min-width: 10.5rem;
+    flex: 0 0 10.5rem;
+    border-top: 0;
+    border-left: 1px solid var(--app-border);
+  }
+
+  .workflow-step:first-child {
+    border-left: 0;
+  }
+
+  .sticky-action-bar > * {
+    width: 100%;
+  }
+}

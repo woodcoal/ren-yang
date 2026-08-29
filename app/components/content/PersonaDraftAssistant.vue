@@ -47,13 +47,8 @@ function handleSubmit(event: FormSubmitEvent<GeneratePersonaDraftInput>): void {
 </script>
 
 <template>
-  <UCard>
-    <template #header>
-      <div>
-        <h2 class="font-semibold text-highlighted">AI 整理人物草稿</h2>
-        <p class="mt-1 text-sm text-muted">先生成可编辑草稿，不会自动保存或发布。用户明确描述始终高于参考资料。</p>
-      </div>
-    </template>
+  <section class="workflow-panel" aria-labelledby="persona-draft-heading">
+    <div class="section-heading"><div class="section-heading-copy"><p class="eyebrow">建立方式与参考</p><h2 id="persona-draft-heading">用自然语言整理人物初稿</h2><p>AI 只生成可编辑草稿，不会自动保存或发布；你的明确描述始终高于参考资料。</p></div></div>
 
     <UAlert
       v-if="!textModelConfigured"
@@ -103,5 +98,5 @@ function handleSubmit(event: FormSubmitEvent<GeneratePersonaDraftInput>): void {
         生成并填入下方表单
       </UButton>
     </UForm>
-  </UCard>
+  </section>
 </template>

@@ -27,6 +27,7 @@ const capability = computed(() => capabilityData.value?.data.openViking ?? statu
 const contextProvider = computed(() => capabilityData.value?.data.contextProvider ?? 'sqlite_fts5')
 const administrator = computed(() => sessionData.value?.data.administrator ?? null)
 const records = computed(() => statusData.value?.data.records ?? [])
+const failedSyncCount = computed(() => records.value.filter(record => record.status === 'failed').length)
 const auditEvents = computed(() => auditData.value?.data ?? [])
 const actionLoading = shallowRef(false)
 const actionError = shallowRef<string | null>(null)
@@ -84,12 +85,18 @@ function formatTime(timestamp: number): string {
 
 <template>
   <div>
-    <ContentPageHeader title="系统中心" description="查看模型、资料检索、备份和审计状态；浏览器只显示非敏感配置。" />
+    <ContentPageHeader title="系统中心" description="按能力、检索同步、备份和审计分区检查系统；浏览器只显示可确认的非敏感状态。" />
+    <div class="status-strip page-status-strip" aria-label="系统能力状态摘要">
+      <div class="status-cell"><span class="status-kicker">文本生成</span><strong class="status-value">{{ capabilities?.textModel.configured ? '已配置' : '未配置' }}</strong></div>
+      <div class="status-cell"><span class="status-kicker">图片能力</span><strong class="status-value">{{ capabilities?.imageModel.configured ? '已配置' : '未配置' }}</strong></div>
+      <div class="status-cell"><span class="status-kicker">资料检索</span><strong class="status-value">{{ contextProvider === 'openviking' ? 'OpenViking 增强' : 'SQLite 本地检索' }}</strong></div>
+      <div class="status-cell"><span class="status-kicker">同步失败</span><strong class="status-value">{{ failedSyncCount }}</strong></div>
+    </div>
     <UAlert v-if="actionError" class="mb-5" color="error" title="操作失败" :description="actionError" />
     <UAlert v-if="actionMessage" class="mb-5" color="success" title="操作完成" :description="actionMessage" />
     <UAlert v-if="capabilityError || statusError || auditError || sessionError" class="mb-5" color="error" title="系统数据加载失败" />
 
-    <div class="mb-6 grid gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(20rem,0.6fr)]">
+    <div class="mt-8 mb-6 grid gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(20rem,0.6fr)]">
       <SystemCapabilityStatusPanel v-if="capabilities" :capabilities="capabilities" show-limits />
       <UAlert v-else color="error" title="能力状态不可用" description="无法安全展示模型能力和系统默认运行限制。" />
       <UCard>
@@ -103,8 +110,8 @@ function formatTime(timestamp: number): string {
     </div>
 
     <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_24rem]">
-      <UCard>
-        <template #header><h2 class="font-semibold text-highlighted">OpenViking 上下文索引</h2></template>
+      <section class="archive-panel" aria-labelledby="openviking-settings-heading">
+        <div class="section-heading"><div class="section-heading-copy"><p class="eyebrow">检索与同步</p><h2 id="openviking-settings-heading">OpenViking 上下文索引</h2><p>SQLite 保存业务事实，OpenViking 只承担按世界和人物隔离的上下文增强。</p></div></div>
         <dl v-if="capability" class="grid gap-4 sm:grid-cols-2">
           <div><dt class="text-xs text-muted">已配置</dt><dd class="mt-1 font-medium">{{ capability.configured ? '是' : '否' }}</dd></div>
           <div><dt class="text-xs text-muted">已启用</dt><dd class="mt-1 font-medium">{{ capability.enabled ? '是' : '否' }}</dd></div>
@@ -119,12 +126,12 @@ function formatTime(timestamp: number): string {
           <UCheckbox v-model="reindexConfirmed" label="确认删除人样专属远端索引并从 SQLite 全量重建" />
           <UButton class="mt-3" :loading="actionLoading" color="warning" variant="soft" @click="reindex">全量重建索引</UButton>
         </div>
-      </UCard>
+      </section>
 
-      <UCard>
-        <template #header><h2 class="font-semibold text-highlighted">同步记录</h2></template>
-        <div v-if="records.length" class="space-y-3">
-          <div v-for="record in records" :key="record.id" class="rounded-md border border-default p-3 text-sm">
+      <section class="archive-panel" aria-labelledby="sync-record-heading">
+        <div class="section-heading"><div class="section-heading-copy"><p class="eyebrow">最近状态</p><h2 id="sync-record-heading">同步记录</h2></div></div>
+        <div v-if="records.length" class="log-list">
+          <div v-for="record in records" :key="record.id" class="p-3 text-sm not-last:border-b not-last:border-default">
             <div class="flex justify-between gap-2"><span class="break-all">{{ record.sourceId }}</span><UBadge :color="record.status === 'synchronized' ? 'success' : record.status === 'failed' ? 'error' : 'neutral'" variant="subtle">{{ record.status }}</UBadge></div>
             <p class="mt-2 break-all text-xs text-muted">{{ record.remoteUri ?? '尚无远端 URI' }}</p>
             <p v-if="record.error" class="mt-2 text-xs text-error">{{ record.error }}</p>
@@ -132,7 +139,7 @@ function formatTime(timestamp: number): string {
           </div>
         </div>
         <p v-else class="py-6 text-center text-sm text-muted">尚无同步记录。</p>
-      </UCard>
+      </section>
     </div>
     <div class="mt-6 grid gap-6 xl:grid-cols-2">
       <SystemBackupPanel />

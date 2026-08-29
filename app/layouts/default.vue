@@ -112,7 +112,6 @@ async function logout(): Promise<void> {
         :sidebar-collapsed="sidebarCollapsed"
         :username="sessionData?.data.administrator?.username || ''"
         :task-queue="healthData?.data.taskQueue || null"
-        :capabilities="capabilityData?.data || null"
         :logout-loading="logoutLoading"
         :logout-error="logoutError"
         @toggle-sidebar="toggleSidebar"

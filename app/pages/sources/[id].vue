@@ -20,6 +20,7 @@ const [{ data, error, refresh }, { data: personaData }, { data: worldData }] = a
 const details = computed(() => data.value?.data ?? null)
 const personas = computed(() => personaData.value?.data ?? [])
 const worlds = computed(() => worldData.value?.data ?? [])
+const selectedTab = shallowRef<'body' | 'chunks' | 'relations' | 'danger'>('body')
 const editState = reactive<UpdateSourceInput>({
   name: '',
   role: 'reference',
@@ -141,9 +142,21 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
     <template v-else>
       <UAlert v-if="actionError" class="mb-5" color="error" title="操作失败" :description="actionError" />
       <UAlert v-if="actionMessage" class="mb-5" color="success" title="操作完成" :description="actionMessage" />
-      <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
-        <div class="space-y-6">
-          <UCard>
+      <div class="status-strip page-status-strip mb-6">
+        <div class="status-cell"><span class="status-kicker">资料用途</span><strong class="status-value">{{ details.source.role === 'canon_fact' ? '确定事实' : details.source.role === 'style_sample' ? '风格参考' : '背景参考' }}</strong></div>
+        <div class="status-cell"><span class="status-kicker">可检索段落</span><strong class="status-value">{{ details.chunks.length }}</strong></div>
+        <div class="status-cell"><span class="status-kicker">使用关系</span><strong class="status-value">{{ details.links.length }}</strong></div>
+        <div class="status-cell"><span class="status-kicker">原始输入</span><strong class="status-value">{{ details.source.inputType === 'paste' ? '粘贴文本' : details.source.inputType.toUpperCase() + ' 文件' }}</strong></div>
+      </div>
+      <nav class="mind-tabs mb-6" aria-label="资料详情标签">
+        <button class="mind-tab" :aria-selected="selectedTab === 'body'" @click="selectedTab = 'body'">资料正文</button>
+        <button class="mind-tab" :aria-selected="selectedTab === 'chunks'" @click="selectedTab = 'chunks'">可检索段落</button>
+        <button class="mind-tab" :aria-selected="selectedTab === 'relations'" @click="selectedTab = 'relations'">使用关系</button>
+        <button class="mind-tab" :aria-selected="selectedTab === 'danger'" @click="selectedTab = 'danger'">删除资料</button>
+      </nav>
+      <div class="space-y-6">
+        <div class="contents">
+          <UCard v-if="selectedTab === 'body'">
             <template #header><div><h2 class="font-semibold text-highlighted">资料正文</h2><p class="mt-1 text-sm text-muted">修改后，系统会自动重新整理可供 AI 查找的内容段落。</p></div></template>
             <UAlert v-if="details.source.originalFilePath" class="mb-4" color="info" title="文件导入资料" description="修改正文后将转为粘贴文本，旧原始文件会被删除，避免正文与文件不一致。" />
             <UForm :schema="updateSourceSchema" :state="editState" class="space-y-4" @submit="saveSource">
@@ -156,7 +169,7 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
             </UForm>
           </UCard>
 
-          <UCard>
+          <UCard v-else-if="selectedTab === 'chunks'">
             <template #header><div><h2 class="font-semibold text-highlighted">系统整理的内容段落（{{ details.chunks.length }}）</h2><p class="mt-1 text-sm text-muted">AI 搜索资料时会按这些段落寻找相关内容，无需手工调整。</p></div></template>
             <div class="space-y-3">
               <div v-for="chunk in details.chunks" :key="chunk.id" class="rounded-md border border-default p-3">
@@ -167,8 +180,8 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
           </UCard>
         </div>
 
-        <div class="space-y-6">
-          <UCard>
+        <div class="contents">
+          <UCard v-if="selectedTab === 'relations'">
             <template #header><div><h2 class="font-semibold text-highlighted">这份资料用在哪里</h2><p class="mt-1 text-sm text-muted">关联后，对应人物或世界的新任务才能搜索到这份资料。</p></div></template>
             <div v-if="details.links.length" class="mb-5 space-y-2">
               <div v-for="link in details.links" :key="link.id" class="flex items-center justify-between gap-2 rounded-md border border-default p-2">
@@ -184,7 +197,7 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
             </UForm>
           </UCard>
 
-          <UCard>
+          <UCard v-else-if="selectedTab === 'danger'">
             <template #header><h2 class="font-semibold text-error">永久删除</h2></template>
             <UButton v-if="!deletionImpact" color="error" variant="soft" :loading="actionLoading" @click="inspectDeletion">查看删除影响</UButton>
             <div v-else class="space-y-3 text-sm">

@@ -71,16 +71,23 @@ async function submitRun(): Promise<void> {
 
 <template>
   <div>
-    <ContentPageHeader title="新建任务" description="选择人物并说明任务。临时场景只影响这一次，不会改写人物设定。">
+    <ContentPageHeader title="在提交前锁定本次创作边界" description="选择人物、任务类型和本次场景，并确认会被锁定到运行记录中的内容与设置。">
       <UButton to="/history" color="neutral" variant="ghost">运行历史</UButton>
     </ContentPageHeader>
 
     <UAlert v-if="!textCapability?.configured" class="mb-5" color="warning" title="文本模型未配置" description="请通过环境变量配置 OpenAI-compatible 接口后重启服务；密钥不会进入数据库。" />
     <UAlert v-if="errorMessage" class="mb-5" color="error" title="无法创建运行" :description="errorMessage" />
 
-    <form class="space-y-6" @submit.prevent="submitRun">
-      <UCard>
-        <template #header><h2 class="font-semibold text-highlighted">任务</h2></template>
+    <div class="workflow-steps" aria-label="新建任务步骤">
+      <div class="workflow-step workflow-step--current"><span class="workflow-step-index">01</span><span>选择人物</span></div>
+      <div class="workflow-step"><span class="workflow-step-index">02</span><span>任务类型</span></div>
+      <div class="workflow-step"><span class="workflow-step-index">03</span><span>任务与场景</span></div>
+      <div class="workflow-step"><span class="workflow-step-index">04</span><span>确认并提交</span></div>
+    </div>
+
+    <form @submit.prevent="submitRun">
+      <section class="workflow-panel" aria-labelledby="workbench-task-heading">
+        <div class="section-heading"><div class="section-heading-copy"><p class="eyebrow">01—03 · 任务边界</p><h2 id="workbench-task-heading">本次由谁参与，要完成什么</h2><p>临时场景只属于这次运行，不会写回人物灵魂、成长或记忆。</p></div></div>
         <div class="grid gap-4 md:grid-cols-2">
           <UFormField label="任务类型" required>
             <select v-model="form.task" class="native-control" aria-label="任务类型"><option value="interest">判断人物兴趣</option><option value="generation">结构化图文创作</option></select>
@@ -106,10 +113,10 @@ async function submitRun(): Promise<void> {
             <UTextarea v-model="form.content" :rows="7" class="w-full" :placeholder="form.task === 'interest' ? '输入希望人物判断是否感兴趣的内容' : '说明主题、受众、篇幅和希望的表达形式'" />
           </UFormField>
         </div>
-      </UCard>
+      </section>
 
-      <UCard>
-        <template #header><div><h2 class="font-semibold text-highlighted">这次任务中的临时场景</h2><p class="mt-1 text-sm text-muted">可选，只影响本次判断或创作，不会保存进人物设定。</p></div></template>
+      <section class="workflow-panel" aria-labelledby="workbench-scene-heading">
+        <div class="section-heading"><div class="section-heading-copy"><p class="eyebrow">可选 · 临时场景</p><h2 id="workbench-scene-heading">补充人物此刻所处的情境</h2><p>留空时只使用已确认的人物、世界、成长、记忆和参考资料。</p></div></div>
         <div class="grid gap-4 md:grid-cols-2">
           <UFormField label="年龄阶段"><UInput v-model="form.scene.ageStage" class="w-full" /></UFormField>
           <UFormField label="地点"><UInput v-model="form.scene.location" class="w-full" /></UFormField>
@@ -117,11 +124,14 @@ async function submitRun(): Promise<void> {
           <UFormField label="情绪"><UInput v-model="form.scene.emotion" class="w-full" /></UFormField>
           <UFormField label="当前事件" class="md:col-span-2"><UTextarea v-model="form.scene.event" :rows="3" class="w-full" /></UFormField>
         </div>
-      </UCard>
+      </section>
 
-      <UButton type="submit" size="lg" :disabled="!textCapability?.configured || personas.length === 0" :loading="loading">
-        {{ form.task === 'interest' ? '开始判断' : '开始规划内容' }}
-      </UButton>
+      <div class="sticky-action-bar">
+        <p class="text-sm text-muted">提交后会锁定本次人物版本、上下文和生成设置，并进入任务详情。</p>
+        <UButton type="submit" size="lg" :disabled="!textCapability?.configured || personas.length === 0" :loading="loading">
+          {{ form.task === 'interest' ? '确认并开始判断' : '确认并开始规划' }}
+        </UButton>
+      </div>
     </form>
   </div>
 </template>

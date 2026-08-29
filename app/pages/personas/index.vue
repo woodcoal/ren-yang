@@ -5,6 +5,9 @@ import type { PersonaSummary } from '#shared/types/content'
 
 const { data, error, refresh } = await useFetch<ApiResponse<PersonaSummary[]>>('/api/v1/personas')
 const personas = computed(() => data.value?.data ?? [])
+const usablePersonaCount = computed(() => personas.value.filter(persona => persona.activeVersionId).length)
+const pendingPersonaCount = computed(() => personas.value.length - usablePersonaCount.value)
+const independentPersonaCount = computed(() => personas.value.filter(persona => !persona.worldName).length)
 
 /** 人物来源模式中文标签。 */
 const originLabels: Record<PersonaSummary['origin'], string> = {
@@ -16,40 +19,47 @@ const originLabels: Record<PersonaSummary['origin'], string> = {
 
 <template>
   <div>
-    <ContentPageHeader title="人物" description="管理人物设定、共同世界和参考资料；每次修改都会留下记录，方便恢复。">
+    <ContentPageHeader title="人物工作区" description="查看每个人物当前是否可工作，以及其灵魂版本、所属世界、资料和待确认状态。">
       <UButton to="/personas/new" icon="i-lucide-plus">创建人物</UButton>
     </ContentPageHeader>
 
-    <UAlert v-if="error" color="error" title="人物列表加载失败" :actions="[{ label: '重试', onClick: () => refresh() }]" />
-    <div v-else-if="personas.length" class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-      <UCard v-for="persona in personas" :key="persona.id">
-        <template #header>
-          <div class="flex items-start justify-between gap-3">
-            <div>
-              <h2 class="font-semibold text-highlighted">{{ persona.name }}</h2>
-              <p class="mt-1 text-xs text-muted">{{ originLabels[persona.origin] }} · {{ persona.worldName || '独立人物' }}</p>
-            </div>
-            <UBadge :color="persona.activeVersionId ? 'success' : 'warning'" variant="subtle">
-              {{ persona.activeVersionId ? '正在使用' : '待确认' }}
-            </UBadge>
-          </div>
-        </template>
-        <p class="min-h-10 text-sm text-muted">{{ persona.currentSummary || '还没有确认使用的人物设定' }}</p>
-        <div class="mt-4 flex gap-4 text-xs text-muted">
-          <span>{{ persona.versionCount }} 条修改记录</span>
-          <span>{{ persona.sourceCount }} 项资料</span>
-        </div>
-        <template #footer>
-          <UButton :to="`/personas/${persona.id}`" color="neutral" variant="soft" block>查看与维护</UButton>
-        </template>
-      </UCard>
+    <div class="status-strip page-status-strip" aria-label="人物状态摘要">
+      <div class="status-cell"><span class="status-kicker">全部人物</span><strong class="status-value">{{ personas.length }}</strong></div>
+      <div class="status-cell"><span class="status-kicker">可创建任务</span><strong class="status-value">{{ usablePersonaCount }}</strong></div>
+      <div class="status-cell"><span class="status-kicker">待确认设定</span><strong class="status-value">{{ pendingPersonaCount }}</strong></div>
+      <div class="status-cell"><span class="status-kicker">独立人物</span><strong class="status-value">{{ independentPersonaCount }}</strong></div>
     </div>
-    <UCard v-else>
-      <div class="py-8 text-center">
-        <p class="font-medium text-highlighted">还没有人物</p>
+
+    <UAlert v-if="error" color="error" title="人物列表加载失败" :actions="[{ label: '重试', onClick: () => refresh() }]" />
+    <section v-else-if="personas.length" class="content-section" aria-labelledby="persona-list-heading">
+      <div class="section-heading">
+        <div class="section-heading-copy">
+          <p class="eyebrow">人物状态</p>
+          <h2 id="persona-list-heading">可工作的人物与待确认事项</h2>
+          <p>先处理待确认的人物设定，再开始会引用这些人物的新任务。</p>
+        </div>
+      </div>
+      <div class="content-table-wrap">
+        <table class="content-table">
+          <thead><tr><th>人物</th><th>世界</th><th>版本与资料</th><th>当前状态</th><th>操作</th></tr></thead>
+          <tbody>
+            <tr v-for="persona in personas" :key="persona.id">
+              <td data-label="人物"><strong class="content-table-title">{{ persona.name }}</strong><span class="content-table-description">{{ persona.currentSummary || '还没有确认使用的人物设定' }}</span></td>
+              <td data-label="世界"><span class="content-table-title">{{ persona.worldName || '独立人物' }}</span><span class="content-table-description">{{ originLabels[persona.origin] }}</span></td>
+              <td data-label="版本与资料"><span>{{ persona.versionCount }} 条修改记录</span><span class="content-table-description">{{ persona.sourceCount }} 项参考资料</span></td>
+              <td data-label="当前状态"><UBadge :color="persona.activeVersionId ? 'success' : 'warning'" variant="subtle">{{ persona.activeVersionId ? '可创建任务' : '等待确认设定' }}</UBadge></td>
+              <td data-label="操作"><UButton :to="`/personas/${persona.id}`" color="neutral" variant="link">进入工作区</UButton></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+    <div v-else class="content-empty-state">
+      <div>
+        <strong>还没有人物</strong>
         <p class="mt-1 text-sm text-muted">原创人物不需要先导入资料。</p>
         <UButton to="/personas/new" class="mt-4">创建第一个人物</UButton>
       </div>
-    </UCard>
+    </div>
   </div>
 </template>

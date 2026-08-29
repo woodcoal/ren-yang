@@ -8,6 +8,8 @@ import { getApiErrorMessage } from '../utils/apiError'
 
 const { data, error, refresh } = await useFetch<ApiResponse<FormatTemplateView[]>>('/api/v1/format-templates')
 const templates = computed(() => data.value?.data ?? [])
+const activeTemplateCount = computed(() => templates.value.filter(template => template.isActive).length)
+const latestTemplate = computed(() => templates.value[0] ?? null)
 const loading = shallowRef(false)
 const actionError = shallowRef<string | null>(null)
 const form = reactive<CreateFormatTemplateInput>({
@@ -39,10 +41,16 @@ function formatTime(timestamp: number): string { return new Date(timestamp).toLo
 
 <template>
   <div>
-    <ContentPageHeader title="内容模板" description="规定生成内容的结构和段落数量，例如文章、报告或图文卡片；不会改变人物性格。" />
-    <div class="grid gap-6 xl:grid-cols-[26rem_minmax(0,1fr)]">
-      <UCard>
-        <template #header><div><h2 class="font-semibold text-highlighted">新建内容格式</h2><p class="mt-1 text-sm text-muted">同名再次保存会生成一条新记录，旧任务仍保留原来的格式。</p></div></template>
+    <ContentPageHeader title="让内容格式保持可追溯" description="用版本化模板规定文章、报告或图文内容的结构；模板只约束输出格式，不改变人物性格。" />
+    <div class="status-strip page-status-strip" aria-label="内容模板状态摘要">
+      <div class="status-cell"><span class="status-kicker">全部版本</span><strong class="status-value">{{ templates.length }}</strong></div>
+      <div class="status-cell"><span class="status-kicker">当前启用</span><strong class="status-value">{{ activeTemplateCount }}</strong></div>
+      <div class="status-cell"><span class="status-kicker">最新模板</span><strong class="status-value">{{ latestTemplate?.name || '系统默认' }}</strong></div>
+      <div class="status-cell"><span class="status-kicker">输出格式</span><strong class="status-value">HTML / Markdown / Txt</strong></div>
+    </div>
+    <div class="grid gap-6 py-9 xl:grid-cols-[26rem_minmax(0,1fr)]">
+      <section class="archive-panel" aria-labelledby="template-create-heading">
+        <div class="section-heading"><div class="section-heading-copy"><p class="eyebrow">新版本</p><h2 id="template-create-heading">新建内容格式</h2><p>同名再次保存会生成一条新记录，旧任务仍保留原来的格式。</p></div></div>
         <UAlert v-if="actionError" class="mb-4" color="error" title="创建失败" :description="actionError" />
         <UForm :schema="createFormatTemplateSchema" :state="form" class="space-y-4" @submit="createTemplate">
           <UFormField name="name" label="模板名称" required><UInput v-model="form.name" class="w-full" /></UFormField>
@@ -53,19 +61,20 @@ function formatTime(timestamp: number): string { return new Date(timestamp).toLo
           </div>
           <UButton type="submit" :loading="loading">保存内容格式</UButton>
         </UForm>
-      </UCard>
+      </section>
 
-      <div>
+      <section aria-labelledby="template-list-heading">
+        <div class="section-heading"><div class="section-heading-copy"><p class="eyebrow">模板记录</p><h2 id="template-list-heading">按版本检查格式规则</h2><p>每个任务使用创建时锁定的模板版本。</p></div></div>
         <UAlert v-if="error" color="error" title="模板加载失败" :actions="[{ label: '重试', onClick: () => refresh() }]" />
-        <div v-else-if="templates.length" class="space-y-3">
-          <UCard v-for="template in templates" :key="template.id">
-            <template #header><div class="flex justify-between gap-3"><h2 class="font-medium text-highlighted">{{ template.name }} v{{ template.version }}</h2><UBadge color="neutral" variant="subtle">{{ template.isActive ? '启用' : '停用' }}</UBadge></div></template>
-            <pre class="content-pre">{{ template.spec.guidance }}</pre>
-            <p class="mt-3 text-xs text-muted">{{ template.spec.minimumBlocks }}–{{ template.spec.maximumBlocks }} 个内容块 · {{ formatTime(template.createdAt) }}</p>
-          </UCard>
+        <div v-else-if="templates.length" class="log-list">
+          <article v-for="template in templates" :key="template.id" class="log-row">
+            <span class="log-row-meta">v{{ template.version }}<br>{{ formatTime(template.createdAt) }}</span>
+            <span class="log-row-main"><strong class="log-row-title">{{ template.name }}</strong><span class="log-row-description">{{ template.spec.guidance }}</span><span class="log-row-description">{{ template.spec.minimumBlocks }}–{{ template.spec.maximumBlocks }} 个内容块</span></span>
+            <span class="log-row-end"><UBadge color="neutral" variant="subtle">{{ template.isActive ? '当前启用' : '历史版本' }}</UBadge></span>
+          </article>
         </div>
-        <UCard v-else><p class="py-8 text-center text-sm text-muted">还没有自定义内容格式，创作时会使用默认纯文本结构。</p></UCard>
-      </div>
+        <div v-else class="content-empty-state"><div><strong>还没有自定义内容格式</strong><p>创作时会使用系统默认纯文本结构。</p></div></div>
+      </section>
     </div>
   </div>
 </template>

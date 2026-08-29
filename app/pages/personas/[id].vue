@@ -275,11 +275,11 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
       <UAlert v-if="actionError" class="mb-5" color="error" title="操作失败" :description="actionError" />
       <UAlert v-if="actionMessage" class="mb-5" color="success" title="操作完成" :description="actionMessage" />
 
-      <div class="mb-6 grid gap-px overflow-hidden rounded-lg border border-default bg-default sm:grid-cols-4">
-        <div class="bg-default p-4"><p class="text-xs text-muted">所属世界</p><p class="mt-1 font-medium text-highlighted">{{ details.persona.worldName || '未关联世界' }}</p></div>
-        <div class="bg-default p-4"><p class="text-xs text-muted">当前灵魂</p><p class="mt-1 font-medium text-highlighted">{{ soul.activeVersion ? '已发布，可用于任务' : '尚未发布' }}</p></div>
-        <div class="bg-default p-4"><p class="text-xs text-muted">参考资料</p><p class="mt-1 font-medium text-highlighted">{{ details.sources.length }} 项</p></div>
-        <div class="bg-default p-4"><p class="text-xs text-muted">待确认修改</p><p class="mt-1 font-medium text-highlighted">{{ soul.draft ? '1 份灵魂修改稿' : '没有灵魂修改稿' }}</p></div>
+      <div class="status-strip page-status-strip mb-6">
+        <div class="status-cell"><span class="status-kicker">所属世界</span><strong class="status-value">{{ details.persona.worldName || '未关联世界' }}</strong></div>
+        <div class="status-cell"><span class="status-kicker">当前灵魂</span><strong class="status-value">{{ soul.activeVersion ? '已发布，可用于任务' : '尚未发布' }}</strong></div>
+        <div class="status-cell"><span class="status-kicker">参考资料</span><strong class="status-value">{{ details.sources.length }} 项</strong></div>
+        <div class="status-cell"><span class="status-kicker">待确认修改</span><strong class="status-value">{{ soul.draft ? '1 份灵魂修改稿' : '没有灵魂修改稿' }}</strong></div>
       </div>
 
       <nav class="mind-tabs mb-6" aria-label="人物工作区标签">

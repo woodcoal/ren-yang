@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, shallowRef } from 'vue'
-import type { PublicTaskQueueStatus, SystemCapabilitiesResult } from '#shared/types/system'
+import type { PublicTaskQueueStatus } from '#shared/types/system'
 import { appNavigationGroups, appNavigationItems } from '../../utils/navigation'
 
 /** 应用顶部工具栏的只读属性。 */
@@ -11,8 +11,6 @@ interface Props {
   username: string
   /** 后台任务队列摘要；首次加载时可以为空。 */
   taskQueue: PublicTaskQueueStatus | null
-  /** 系统能力摘要；首次加载时可以为空。 */
-  capabilities: SystemCapabilitiesResult | null
   /** 退出请求是否正在进行。 */
   logoutLoading: boolean
   /** 退出失败后的安全错误说明。 */
@@ -105,11 +103,7 @@ onUnmounted(() => window.removeEventListener('keydown', handleGlobalShortcut))
         <span class="topbar-status-dot" :class="{ 'topbar-status-dot--active': taskQueue?.total }" aria-hidden="true" />
         <span>{{ taskQueue?.total ? `${taskQueue.total} 项后台任务` : '后台队列空闲' }}</span>
       </NuxtLink>
-      <span class="topbar-model-status">
-        <UIcon name="i-lucide-cpu" aria-hidden="true" />
-        {{ capabilities?.textModel.configured ? '文本模型可用' : '文本模型未配置' }}
-      </span>
-      <UColorModeButton aria-label="切换颜色模式" />
+      <ShellThemeSelector />
       <UButton to="/settings" color="neutral" variant="ghost" icon="i-lucide-user-round" class="topbar-account">
         <span>{{ username || '管理员' }}</span>
       </UButton>

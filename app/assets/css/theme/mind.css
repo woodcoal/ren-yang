@@ -77,21 +77,32 @@
     gap: 0.25rem;
     overflow-x: auto;
     border-bottom: 1px solid var(--ui-border);
-    padding-bottom: 0.5rem;
   }
 
   .mind-tab {
+    position: relative;
+    min-height: 2.875rem;
     flex: 0 0 auto;
-    border-radius: var(--ui-radius);
-    padding: 0.5rem 0.875rem;
+    border: 0;
+    background: transparent;
+    padding: 0 0.875rem;
     color: var(--ui-text-muted);
     font-size: 0.875rem;
   }
 
   .mind-tab[aria-selected='true'] {
-    background: var(--ui-bg-elevated);
-    color: var(--ui-text-highlighted);
+    color: var(--app-accent-strong);
     font-weight: 600;
+  }
+
+  .mind-tab[aria-selected='true']::after {
+    position: absolute;
+    right: 0.625rem;
+    bottom: -1px;
+    left: 0.625rem;
+    height: 2px;
+    background: var(--app-accent);
+    content: '';
   }
 
   .learning-create-form {

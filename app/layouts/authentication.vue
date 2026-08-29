@@ -36,11 +36,7 @@ const boundaryItems = computed(() => isSetupPage.value
     <section class="auth-story" :aria-labelledby="isSetupPage ? 'setup-story-title' : 'login-story-title'">
       <div class="auth-story-main">
         <NuxtLink to="/" class="auth-brand" aria-label="人样人物工作室首页">
-          <span class="brand-seal" aria-hidden="true">人</span>
-          <span class="brand-copy">
-            <strong class="brand-name">人样</strong>
-            <span class="brand-subtitle">人物工作室</span>
-          </span>
+          <BrandMark />
         </NuxtLink>
         <p class="eyebrow">{{ isSetupPage ? '首次启动 · 本机设置' : '本机访问 · 唯一管理员' }}</p>
         <h1 :id="isSetupPage ? 'setup-story-title' : 'login-story-title'">{{ storyTitle }}</h1>
@@ -59,7 +55,7 @@ const boundaryItems = computed(() => isSetupPage.value
     </section>
 
     <main id="authentication-form" class="auth-form-area" tabindex="-1">
-      <UColorModeButton class="auth-color-mode" aria-label="切换颜色模式" />
+      <ShellThemeSelector class="auth-color-mode" />
       <div class="auth-form-content">
         <slot />
       </div>

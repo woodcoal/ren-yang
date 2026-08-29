@@ -8,6 +8,8 @@ import { getApiErrorMessage } from '../utils/apiError'
 
 const { data, error, refresh } = await useFetch<ApiResponse<ParameterProfileView[]>>('/api/v1/parameter-profiles')
 const profiles = computed(() => data.value?.data ?? [])
+const activeProfileCount = computed(() => profiles.value.filter(profile => profile.isActive).length)
+const latestProfile = computed(() => profiles.value[0] ?? null)
 const loading = shallowRef(false)
 const actionError = shallowRef<string | null>(null)
 const form = reactive<CreateParameterProfileInput>({
@@ -60,10 +62,16 @@ function formatTime(timestamp: number): string { return new Date(timestamp).toLo
 
 <template>
   <div>
-    <ContentPageHeader title="生成设置" description="控制 AI 输出、等待时间，以及世界、人物、记忆和参考资料进入提示词的长度。" />
-    <div class="grid gap-6 2xl:grid-cols-[32rem_minmax(0,1fr)]">
-      <UCard>
-        <template #header><div><h2 class="font-semibold text-highlighted">新建生成设置</h2><p class="mt-1 text-sm text-muted">同名再次保存会生成新记录，已经创建的任务不会随之变化。</p></div></template>
+    <ContentPageHeader title="把生成规则写成可追溯的版本" description="控制 AI 输出、等待时间和各类上下文长度；每个任务会锁定创建时使用的设置版本。" />
+    <div class="status-strip page-status-strip" aria-label="生成设置状态摘要">
+      <div class="status-cell"><span class="status-kicker">全部版本</span><strong class="status-value">{{ profiles.length }}</strong></div>
+      <div class="status-cell"><span class="status-kicker">当前启用</span><strong class="status-value">{{ activeProfileCount }}</strong></div>
+      <div class="status-cell"><span class="status-kicker">最新方案</span><strong class="status-value">{{ latestProfile?.name || '系统默认' }}</strong></div>
+      <div class="status-cell"><span class="status-kicker">可用输入</span><strong class="status-value">{{ availableInputTokens }} Token</strong></div>
+    </div>
+    <div class="grid gap-6 py-9 2xl:grid-cols-[32rem_minmax(0,1fr)]">
+      <section class="archive-panel" aria-labelledby="profile-create-heading">
+        <div class="section-heading"><div class="section-heading-copy"><p class="eyebrow">新版本</p><h2 id="profile-create-heading">新建生成设置</h2><p>同名再次保存会生成新记录，已经创建的任务不会随之变化。</p></div></div>
         <UAlert v-if="actionError" class="mb-4" color="error" title="创建失败" :description="actionError" />
         <UForm :schema="createParameterProfileSchema" :state="form" class="space-y-4" @submit="createProfile">
           <UFormField name="name" label="方案名称" required><UInput v-model="form.name" class="w-full" /></UFormField>
@@ -99,13 +107,15 @@ function formatTime(timestamp: number): string { return new Date(timestamp).toLo
           <UFormField name="values.sourceBudgetTokens" label="参考资料总长度" description="达到上限后会整段跳过低优先级资料，不会截断半段正文。" required><UInput v-model.number="form.values.sourceBudgetTokens" type="number" min="0" class="w-full" /></UFormField>
           <UButton type="submit" :loading="loading">保存生成设置</UButton>
         </UForm>
-      </UCard>
+      </section>
 
-      <div>
+      <section aria-labelledby="profile-list-heading">
+        <div class="section-heading"><div class="section-heading-copy"><p class="eyebrow">版本记录</p><h2 id="profile-list-heading">当前设置与历史版本</h2><p>修改设置不会追溯改写已经创建的任务。</p></div></div>
         <UAlert v-if="error" color="error" title="生成设置加载失败" :actions="[{ label: '重试', onClick: () => refresh() }]" />
-        <div v-else-if="profiles.length" class="space-y-3">
-          <UCard v-for="profile in profiles" :key="profile.id">
-            <template #header><div class="flex justify-between gap-3"><h2 class="font-medium text-highlighted">{{ profile.name }} v{{ profile.version }}</h2><UBadge color="neutral" variant="subtle">{{ profile.isActive ? '启用' : '停用' }}</UBadge></div></template>
+        <div v-else-if="profiles.length" class="log-list">
+          <article v-for="profile in profiles" :key="profile.id" class="log-row profile-log-row">
+            <span class="log-row-meta">v{{ profile.version }}<br>{{ formatTime(profile.createdAt) }}</span>
+            <div class="log-row-main"><strong class="log-row-title">{{ profile.name }}</strong>
             <dl class="grid grid-cols-2 gap-3 text-sm md:grid-cols-3">
               <div><dt class="text-muted">温度</dt><dd>{{ profile.values.temperature }}</dd></div>
               <div><dt class="text-muted">输出 Token</dt><dd>{{ profile.values.maxOutputTokens }}</dd></div>
@@ -118,12 +128,13 @@ function formatTime(timestamp: number): string { return new Date(timestamp).toLo
               <div><dt class="text-muted">块尝试</dt><dd>{{ profile.values.maxBlockAttempts }}</dd></div>
               <div><dt class="text-muted">可用输入</dt><dd>{{ profile.values.contextWindowTokens - profile.values.reservedOutputTokens - profile.values.safetyMarginTokens }} Token</dd></div>
               <div><dt class="text-muted">世界 / 人物 / 资料</dt><dd>{{ profile.values.worldBudgetTokens }} / {{ profile.values.personaBudgetTokens }} / {{ profile.values.sourceBudgetTokens }}</dd></div>
-              <div><dt class="text-muted">创建时间</dt><dd>{{ formatTime(profile.createdAt) }}</dd></div>
             </dl>
-          </UCard>
+            </div>
+            <div class="log-row-end"><UBadge color="neutral" variant="subtle">{{ profile.isActive ? '当前启用' : '历史版本' }}</UBadge></div>
+          </article>
         </div>
-        <UCard v-else><p class="py-8 text-center text-sm text-muted">还没有自定义生成设置，任务会使用系统默认值。</p></UCard>
-      </div>
+        <div v-else class="content-empty-state"><div><strong>还没有自定义生成设置</strong><p>任务会使用系统默认值。</p></div></div>
+      </section>
     </div>
   </div>
 </template>
