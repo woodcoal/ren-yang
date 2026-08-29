@@ -170,7 +170,7 @@ describe('阶段二内容表单', () => {
     expect(wrapper.text()).toContain('必须至少选择一个 TXT 或 Markdown 文件')
   })
 
-  it('多文件共用用途和关联对象，并允许逐个修改默认资料名称', async () => {
+  it('顶部对象选择由文本和多文件表单共用，并允许逐个修改默认资料名称', async () => {
     const personaId = '00000000-0000-4000-8000-000000000011'
     const worldId = '00000000-0000-4000-8000-000000000012'
     const wrapper = await mountSuspended(SourceImportForm, {
@@ -201,11 +201,24 @@ describe('阶段二内容表单', () => {
     expect(fileNameInputs.map(input => (input.element as HTMLInputElement).value)).toEqual(['事实', '风格'])
     await fileNameInputs[1]!.setValue('人物表达样例')
     const targetSelects = wrapper.findAll('select[multiple]')
-    await targetSelects[2]!.setValue([personaId])
-    await targetSelects[3]!.setValue([worldId])
+    expect(targetSelects).toHaveLength(2)
+    await targetSelects[0]!.setValue([personaId])
+    await targetSelects[1]!.setValue([worldId])
+    await wrapper.findAll('input[type="text"]')[0]!.setValue('共享对象文本')
+    await wrapper.get('textarea').setValue('文本和文件使用相同对象。')
+    await wrapper.findAll('form')[0]!.trigger('submit')
     await wrapper.findAll('form')[1]!.trigger('submit')
     await flushPromises()
 
+    expect(wrapper.emitted('paste')).toEqual([[
+      expect.objectContaining({
+        name: '共享对象文本',
+        targets: [
+          { targetType: 'persona', targetId: personaId },
+          { targetType: 'world', targetId: worldId },
+        ],
+      }),
+    ]])
     expect(wrapper.emitted('file')).toEqual([[
       {
         role: 'reference',
