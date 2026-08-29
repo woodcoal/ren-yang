@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "kind": "html",
+  "title": "setup.html",
+  "entry": "setup.html",
+  "renderer": "html",
+  "status": "complete",
+  "exports": [
+    "html",
+    "pdf",
+    "zip"
+  ],
+  "createdAt": "2026-08-29T11:54:00.506Z",
+  "updatedAt": "2026-08-29T11:54:00.506Z",
+  "metadata": {
+    "inferred": true,
+    "reconciled": true
+  }
+}

@@ -36,7 +36,7 @@ export const appNavigationGroups: AppNavigationGroup[] = [
     label: '人物空间',
     items: [
       { label: '人物', to: '/personas', icon: 'i-lucide-users-round' },
-      { label: '世界设定', to: '/worlds', icon: 'i-lucide-globe-2' },
+      { label: '世界', to: '/worlds', icon: 'i-lucide-globe-2' },
       { label: '资料库', to: '/sources', icon: 'i-lucide-library' },
     ],
   },

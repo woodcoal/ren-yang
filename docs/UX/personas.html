@@ -1,0 +1,232 @@
+<!doctype html>
+<!--
+  人样后台重设计原型：人物列表。
+  当前页面对应产品路由 /personas，页面中的所有数量均为示例数据，不代表真实统计结果。
+-->
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="人样人物列表高保真交互原型">
+  <title>人物 · 人样</title>
+  <link rel="icon" href="assets/brand/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/prototype.css">
+</head>
+<body data-page="personas">
+  <a class="skip-link" href="#main-content">跳到主要内容</a>
+  <div class="app-shell">
+    <aside class="sidebar" data-sidebar aria-label="应用导航"></aside>
+    <div class="app-main">
+      <header class="topbar" data-topbar></header>
+      <main class="page" id="main-content">
+        <nav class="breadcrumbs" aria-label="面包屑">
+          <span>人物空间</span>
+          <span aria-hidden="true">/</span>
+          <strong>人物</strong>
+        </nav>
+
+        <header class="page-header" data-od-id="personas-header">
+          <div class="page-header-copy">
+            <p class="route-code">路由 /PERSONAS · 所有数量均为示例数据</p>
+            <h1 data-od-id="personas-title">人物工作区</h1>
+            <p class="lead">按人物当前是否可创建任务、待审事项与所属世界管理创作上下文；聚合能力不会伪装成已上线数据。</p>
+          </div>
+          <div class="page-actions">
+            <a class="btn btn-primary" href="persona-create.html" data-od-id="personas-primary-cta">建立人物</a>
+          </div>
+        </header>
+
+        <section class="section" data-od-id="personas-capability-boundary" aria-labelledby="personas-capability-title">
+          <div class="notice is-target">
+            <span class="notice-icon"><span class="capability-badge">目标态能力</span></span>
+            <div class="notice-copy">
+              <strong id="personas-capability-title">待审成长与有效记忆是目标态聚合能力，需要后端支持</strong>
+              <p>列表仅以示例数据展示待审数量与有效记忆摘要；现有候选记忆不会被表述为已经生效或会参与检索。</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" data-od-id="personas-list-section" aria-labelledby="personas-list-heading">
+          <div class="section-head">
+            <div class="section-head-copy">
+              <p class="eyebrow">01 · 人物目录</p>
+              <h2 id="personas-list-heading">可工作的三位人物</h2>
+              <p>搜索和筛选只改变当前原型中的可见结果，不调用真实接口。</p>
+            </div>
+            <p class="meta" id="personas-filter-status" aria-live="polite">显示 3 位人物（示例数据）</p>
+          </div>
+
+          <div class="toolbar" data-od-id="personas-filter-toolbar" aria-label="人物筛选工具">
+            <label class="search-field" for="personas-search" data-od-id="personas-search-control">
+              <span class="field-label">搜索人物</span>
+              <input class="input" id="personas-search" type="search" placeholder="输入人物名称、世界或任务" autocomplete="off" data-search-target="personas-list">
+            </label>
+            <label class="field" for="personas-world-filter" data-od-id="personas-world-filter-control">
+              <span class="field-label">世界</span>
+              <select class="select" id="personas-world-filter" data-personas-filter="world">
+                <option value="all">全部世界</option>
+                <option value="学院档案世界">学院档案世界</option>
+                <option value="未绑定世界">未绑定世界</option>
+              </select>
+            </label>
+            <label class="field" for="personas-availability-filter" data-od-id="personas-availability-filter-control">
+              <span class="field-label">可用状态</span>
+              <select class="select" id="personas-availability-filter" data-personas-filter="availability">
+                <option value="all">全部状态</option>
+                <option value="可创建任务">可创建任务</option>
+                <option value="暂不可创建任务">暂不可创建任务</option>
+              </select>
+            </label>
+            <label class="field" for="personas-pending-filter" data-od-id="personas-pending-filter-control">
+              <span class="field-label">待处理</span>
+              <select class="select" id="personas-pending-filter" data-personas-filter="pending">
+                <option value="all">全部待处理</option>
+                <option value="有待处理">有待处理</option>
+                <option value="无待处理">无待处理</option>
+              </select>
+            </label>
+            <button class="btn btn-ghost" type="button" data-personas-clear data-od-id="personas-clear-filter-control">清除筛选</button>
+          </div>
+
+          <div class="log-list" id="personas-list" aria-label="人物工作区列表">
+            <article class="log-row" data-persona-item data-persona-world="学院档案世界" data-persona-availability="可创建任务" data-persona-pending="有待处理" data-search-text="顾岚 谨慎核验资料的档案整理者 学院档案世界 旧物传闻三步核验" data-od-id="personas-item-gu-lan">
+              <span class="meta">人物 01 · 混合建立</span>
+              <div class="log-row-main">
+                <a class="log-row-title" href="persona-workspace.html">顾岚 · 谨慎核验资料的档案整理者</a>
+                <span class="log-row-sub">所属世界：学院档案世界 · 灵魂版本 v3（示例数据） · 最近任务：旧物传闻三步核验，8 分钟前</span>
+                <span class="log-row-sub">待审成长：1 项（示例数据，目标态聚合） · 有效记忆：12 条（示例数据，目标态聚合）</span>
+              </div>
+              <span class="log-row-end"><span class="badge">可创建任务</span></span>
+            </article>
+
+            <article class="log-row" data-persona-item data-persona-world="未绑定世界" data-persona-availability="可创建任务" data-persona-pending="有待处理" data-search-text="沈砚 重视事实边界的观察者 未绑定世界 学院资料不足" data-od-id="personas-item-shen-yan">
+              <span class="meta">人物 02 · 资料整理</span>
+              <div class="log-row-main">
+                <a class="log-row-title" href="persona-workspace.html">沈砚 · 重视事实边界的观察者</a>
+                <span class="log-row-sub">所属世界：未绑定世界 · 灵魂版本 v2（示例数据） · 最近任务：学院资料不足时如何回应，昨天</span>
+                <span class="log-row-sub">待审成长：1 项（示例数据，目标态聚合） · 有效记忆：6 条（示例数据，目标态聚合）</span>
+              </div>
+              <span class="log-row-end"><span class="badge">可创建任务</span></span>
+            </article>
+
+            <article class="log-row" data-persona-item data-persona-world="学院档案世界" data-persona-availability="暂不可创建任务" data-persona-pending="有待处理" data-search-text="闻秋 关注旧物来源的记录者 学院档案世界 风帆船" data-od-id="personas-item-wen-qiu">
+              <span class="meta">人物 03 · 手工建立</span>
+              <div class="log-row-main">
+                <a class="log-row-title" href="persona-workspace.html">闻秋 · 关注旧物来源的记录者</a>
+                <span class="log-row-sub">所属世界：学院档案世界 · 灵魂版本 v1（示例数据） · 最近任务：是否愿意接触风帆船，今天 10:18</span>
+                <span class="log-row-sub">待审成长：0 项（示例数据，目标态聚合） · 有效记忆：0 条（示例数据，目标态聚合） · 待审候选记忆：2 项（示例数据，尚未生效）</span>
+              </div>
+              <span class="log-row-end"><span class="badge is-warning">暂不可创建任务</span></span>
+            </article>
+
+            <div class="empty-state" data-filter-empty hidden data-od-id="personas-empty-filter-result">
+              <div class="empty-state-inner">
+                <h3>没有符合条件的人物</h3>
+                <p>可清除搜索和筛选条件，再检查全部人物工作区。</p>
+                <button class="btn btn-secondary" type="button" data-personas-clear data-od-id="personas-empty-clear-filter">清除筛选</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" data-od-id="personas-state-explanation" aria-labelledby="personas-state-heading">
+          <div class="section-head">
+            <div class="section-head-copy">
+              <p class="eyebrow">02 · 状态说明</p>
+              <h2 id="personas-state-heading">先确认是否会影响后续任务</h2>
+              <p>人物可创建任务只取决于当前已发布灵魂、必需世界资料和本地状态；待审内容不会自动写入人物。</p>
+            </div>
+          </div>
+          <div class="grid-2">
+            <div class="panel" data-od-id="personas-available-state">
+              <h3>可创建任务</h3>
+              <p>已存在可用灵魂版本，当前任务可以锁定人物、世界与资料上下文。创建任务不会默认纳入待审成长或候选记忆。</p>
+            </div>
+            <div class="panel" data-od-id="personas-pending-state">
+              <h3>待处理不等于已生效</h3>
+              <p>成长候选和候选记忆必须进入人物工作区审阅；只有人工确认后的目标态数据才可能影响对应范围的后续任务。</p>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <script src="assets/prototype.js"></script>
+  <script>
+    'use strict';
+
+    /**
+     * 按搜索文本、世界、可用状态和待处理状态同步筛选人物列表。
+     * @param {Event} event 由搜索框或筛选控件触发的事件。
+     * @returns {void} 不返回结果，直接更新列表行、空状态和状态播报。
+     * 特殊业务逻辑：此函数仅过滤原型中的示例人物，不请求或修改任何后端人物数据。
+     */
+    function applyPersonaFilters(event) {
+      const search = document.getElementById('personas-search');
+      const world = document.getElementById('personas-world-filter');
+      const availability = document.getElementById('personas-availability-filter');
+      const pending = document.getElementById('personas-pending-filter');
+      const rows = document.querySelectorAll('[data-persona-item]');
+      const empty = document.querySelector('[data-filter-empty]');
+      const status = document.getElementById('personas-filter-status');
+      const query = search.value.trim().toLocaleLowerCase('zh-CN');
+      let visibleCount = 0;
+
+      for (let index = 0; index < rows.length; index += 1) {
+        const row = rows[index];
+        const text = (row.dataset.searchText || '').toLocaleLowerCase('zh-CN');
+        const matchesSearch = query === '' || text.includes(query);
+        const matchesWorld = world.value === 'all' || row.dataset.personaWorld === world.value;
+        const matchesAvailability = availability.value === 'all' || row.dataset.personaAvailability === availability.value;
+        const matchesPending = pending.value === 'all' || row.dataset.personaPending === pending.value;
+        const visible = matchesSearch && matchesWorld && matchesAvailability && matchesPending;
+        row.hidden = !visible;
+        if (visible) visibleCount += 1;
+      }
+
+      empty.hidden = visibleCount !== 0;
+      status.textContent = '显示 ' + visibleCount + ' 位人物（示例数据）';
+    }
+
+    /**
+     * 清空人物列表的搜索和三项筛选条件。
+     * @param {Event} event 清除按钮触发的点击事件。
+     * @returns {void} 不返回值，恢复全部示例人物可见。
+     * 特殊业务逻辑：清空仅作用于当前浏览器页面的原型筛选状态。
+     */
+    function clearPersonaFilters(event) {
+      const search = document.getElementById('personas-search');
+      const world = document.getElementById('personas-world-filter');
+      const availability = document.getElementById('personas-availability-filter');
+      const pending = document.getElementById('personas-pending-filter');
+      search.value = '';
+      world.value = 'all';
+      availability.value = 'all';
+      pending.value = 'all';
+      applyPersonaFilters(event);
+      search.focus();
+    }
+
+    /**
+     * 绑定人物列表筛选控件的输入、变更和清除事件。
+     * @returns {void} 不返回值，页面加载后使全部筛选控件可键盘操作。
+     * 特殊业务逻辑：保留共享脚本的基础搜索行为，同时以本页组合条件得到最终结果。
+     */
+    function initializePersonaFilters() {
+      const search = document.getElementById('personas-search');
+      const controls = document.querySelectorAll('[data-personas-filter]');
+      const clearButtons = document.querySelectorAll('[data-personas-clear]');
+      search.addEventListener('input', applyPersonaFilters);
+      for (let index = 0; index < controls.length; index += 1) {
+        controls[index].addEventListener('change', applyPersonaFilters);
+      }
+      for (let index = 0; index < clearButtons.length; index += 1) {
+        clearButtons[index].addEventListener('click', clearPersonaFilters);
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', initializePersonaFilters);
+  </script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 人样横向主标：清晰人形符号与中文主名称组成的基础品牌组合。 -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 122 44" role="img" aria-labelledby="renyang-horizontal-title renyang-horizontal-desc">
+  <title id="renyang-horizontal-title">人样</title>
+  <desc id="renyang-horizontal-desc">人样人物标志与中文品牌名称的横向组合。</desc>
+  <!-- 符号按 28.8px 视觉尺寸放置，与文字大写高度形成稳定比例。 -->
+  <g transform="translate(2 7.6) scale(1.2)">
+    <circle cx="12" cy="4.6" r="2.6" fill="#a94f46"/>
+    <path d="M10.3 10 3.7 20.4" fill="none" stroke="#20262c" stroke-width="4.4" stroke-linecap="round"/>
+    <path d="M13.7 10 20.3 20.4" fill="none" stroke="#a94f46" stroke-width="4.4" stroke-linecap="round"/>
+  </g>
+  <!-- 标准字采用中文系统字库回退，保证网页原型中的真实可读性。 -->
+  <text x="42" y="31.5" fill="#20262c" font-family="'Noto Sans SC', 'Microsoft YaHei', 'PingFang SC', sans-serif" font-size="28" font-weight="750" letter-spacing="-1.4">人样</text>
+</svg>

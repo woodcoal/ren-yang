@@ -5,7 +5,7 @@ const initializationMetaPhrases = ['候选草稿', '待用户编辑确认', '待
 
 /**
  * 拒绝把应用创建流程状态混入模型生成的实际提示词。
- * @param values 需要进入人物或世界设定的模型文本字段。
+ * @param values 需要进入人物或世界的模型文本字段。
  * @param context Zod 精细校验上下文，用于返回可重试的结构错误。
  * @returns 无返回值；命中元话术时向校验上下文添加错误。
  * @remarks 只匹配明确的应用流程短语，避免删改或清洗模型输出导致语义残缺。
@@ -121,7 +121,7 @@ export const rollbackPersonaSchema = z.object({
   versionId: z.string().uuid('版本标识无效'),
 })
 
-/** 创建世界设定及其初始候选版本的输入。 */
+/** 创建世界及其初始候选版本的输入。 */
 export const createWorldSchema = z.object({
   name: z.string().trim().min(1, '世界名称不能为空').max(100, '世界名称不能超过 100 字'),
   summary: z.string().trim().max(2_000, '世界摘要不能超过 2000 字').default(''),
@@ -129,7 +129,7 @@ export const createWorldSchema = z.object({
   changeSummary: z.string().trim().min(1, '变化摘要不能为空').max(500, '变化摘要不能超过 500 字'),
 })
 
-/** 修改世界设定可变元数据的输入。 */
+/** 修改世界可变元数据的输入。 */
 export const updateWorldSchema = z.object({
   name: z.string().trim().min(1, '世界名称不能为空').max(100, '世界名称不能超过 100 字'),
   summary: z.string().trim().max(2_000, '世界摘要不能超过 2000 字'),

@@ -1,0 +1,207 @@
+<!doctype html>
+<!--
+  人样本地登录页。
+  仅展示本机唯一管理员的访问边界与原型交互，不调用真实认证接口。
+-->
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="人样本机管理员登录">
+  <title>本机管理员登录 · 人样</title>
+  <link rel="icon" href="assets/brand/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/prototype.css">
+</head>
+<body data-page="login">
+  <a class="skip-link" href="#main-content">跳到登录表单</a>
+
+  <div class="auth-page" data-od-id="login-page">
+    <section class="auth-story" data-od-id="login-boundary-section" aria-labelledby="login-title">
+      <div class="auth-story-copy">
+        <div class="row" data-od-id="login-brand">
+          <span class="brand-mark" aria-hidden="true">
+            <svg class="brand-symbol" viewBox="0 0 24 24" focusable="false">
+              <circle class="brand-symbol-accent" cx="12" cy="4.6" r="2.6" fill="currentColor"/>
+              <path d="M10.3 10 3.7 20.4" fill="none" stroke="currentColor" stroke-width="4.4" stroke-linecap="round"/>
+              <path class="brand-symbol-accent" d="M13.7 10 20.3 20.4" fill="none" stroke="currentColor" stroke-width="4.4" stroke-linecap="round"/>
+            </svg>
+          </span>
+          <span class="brand-copy">
+            <span class="brand-name">人样</span>
+            <span class="brand-sub">让它有个人样</span>
+          </span>
+        </div>
+        <p class="eyebrow">本机访问 · 唯一管理员</p>
+        <h1 id="login-title" data-od-id="login-title">进入只属于这台设备的创作工作台</h1>
+        <p class="lead">人样以单人、本地使用为边界。此处不会创建账户、邀请其他用户，或将管理员密码发送到网络。</p>
+      </div>
+
+      <div class="stack" data-od-id="login-boundary-list">
+        <div class="notice" data-od-id="login-local-boundary">
+          <span class="notice-icon" aria-hidden="true">01</span>
+          <div class="notice-copy">
+            <strong>数据留在本机</strong>
+            <p>人物、资料和任务记录由本机保存；远端索引不是事实来源。</p>
+          </div>
+        </div>
+        <div class="notice" data-od-id="login-single-admin-boundary">
+          <span class="notice-icon" aria-hidden="true">02</span>
+          <div class="notice-copy">
+            <strong>只有一位管理员</strong>
+            <p>本机管理员负责进入工作台、管理配置和确认会影响后续任务的内容。</p>
+          </div>
+        </div>
+        <div class="notice" data-od-id="login-reset-boundary">
+          <span class="notice-icon" aria-hidden="true">03</span>
+          <div class="notice-copy">
+            <strong>恢复仅在本机完成</strong>
+            <p>没有在线找回、邮件重置或第三方登录；密码恢复只能通过本机命令行（CLI）处理。</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <main class="auth-form-wrap" id="main-content" data-od-id="login-form-section">
+      <div class="auth-form">
+        <p class="eyebrow">登录</p>
+        <h2 data-od-id="login-form-title">验证本机管理员</h2>
+        <p>请输入此设备上已设置的唯一管理员身份和密码。</p>
+
+        <div class="notice" id="login-error-summary" data-od-id="login-error-summary" hidden role="alert" tabindex="-1">
+          <span class="notice-icon" aria-hidden="true">!</span>
+          <div class="notice-copy">
+            <strong>尚未完成登录</strong>
+            <p id="login-error-summary-text">请检查标记的字段后重试。已填写的信息会保留在当前页面。</p>
+          </div>
+        </div>
+
+        <form id="login-form" data-od-id="login-form" novalidate>
+          <div class="field" data-od-id="login-admin-field">
+            <label for="login-admin-name">管理员名称 <span aria-hidden="true">*</span></label>
+            <input class="input" id="login-admin-name" name="adminName" type="text" autocomplete="username" required aria-describedby="login-admin-help login-admin-error">
+            <span class="field-help" id="login-admin-help">仅用于识别这台设备上的唯一管理员。</span>
+            <span class="field-error" id="login-admin-error" hidden>请输入管理员名称。</span>
+          </div>
+
+          <div class="field" data-od-id="login-password-field">
+            <label for="login-password">管理员密码 <span aria-hidden="true">*</span></label>
+            <input class="input" id="login-password" name="currentPassword" type="password" autocomplete="current-password" required aria-describedby="login-password-help login-password-error">
+            <span class="field-help" id="login-password-help">可使用密码管理器填充或粘贴密码。</span>
+            <span class="field-error" id="login-password-error" hidden>请输入管理员密码。</span>
+          </div>
+
+          <button class="btn btn-primary" id="login-submit" type="submit" data-od-id="login-primary-cta">登录并进入工作台</button>
+          <button class="text-link" type="button" data-login-error-demo data-od-id="login-error-recovery-control">查看密码错误后的恢复方式</button>
+        </form>
+
+        <details class="details" data-od-id="login-cli-reset-details">
+          <summary>无法恢复管理员密码？</summary>
+          <div class="details-content">
+            <p>请在运行人样的本机终端中查看当前安装版本的命令行（CLI）帮助，并按其中的管理员密码重置流程操作。系统不会提供在线重置链接，也不会将恢复信息发送到其他设备。</p>
+          </div>
+        </details>
+      </div>
+    </main>
+  </div>
+
+  <script src="assets/prototype.js"></script>
+  <script>
+    'use strict';
+
+    /**
+     * 显示或隐藏登录字段旁的错误说明，并同步无障碍校验状态。
+     * @param {HTMLInputElement} field 需要更新状态的输入框。
+     * @param {HTMLElement} error 对应输入框的错误说明元素。
+     * @param {boolean} invalid 当前字段是否无效。
+     * @returns {void}
+     */
+    function setLoginFieldError(field, error, invalid) {
+      field.setAttribute('aria-invalid', String(invalid));
+      error.hidden = !invalid;
+    }
+
+    /**
+     * 校验本机管理员登录表单，并将焦点移至首个需要恢复的字段。
+     * @param {HTMLFormElement} form 登录表单元素。
+     * @returns {boolean} 当管理员名称和密码均已填写时返回 true。
+     */
+    function validateLoginForm(form) {
+      const adminName = document.getElementById('login-admin-name');
+      const password = document.getElementById('login-password');
+      const adminError = document.getElementById('login-admin-error');
+      const passwordError = document.getElementById('login-password-error');
+      const summary = document.getElementById('login-error-summary');
+      const summaryText = document.getElementById('login-error-summary-text');
+      const missingAdminName = adminName.value.trim() === '';
+      const missingPassword = password.value.trim() === '';
+      passwordError.textContent = '请输入管理员密码。';
+
+      setLoginFieldError(adminName, adminError, missingAdminName);
+      setLoginFieldError(password, passwordError, missingPassword);
+
+      if (!missingAdminName && !missingPassword) {
+        summary.hidden = true;
+        return true;
+      }
+
+      summaryText.textContent = '请检查标记的字段后重试。已填写的信息会保留在当前页面。';
+      summary.hidden = false;
+      (missingAdminName ? adminName : password).focus();
+      return false;
+    }
+
+    /**
+     * 展示密码校验失败后的本机恢复路径，不清空已填写的管理员名称。
+     * @returns {void}
+     */
+    function showLoginPasswordRecovery() {
+      const password = document.getElementById('login-password');
+      const passwordError = document.getElementById('login-password-error');
+      const summary = document.getElementById('login-error-summary');
+      const summaryText = document.getElementById('login-error-summary-text');
+
+      setLoginFieldError(password, passwordError, true);
+      passwordError.textContent = '密码未通过本机验证。请检查后重试；若无法恢复，请使用下方的本机命令行说明。';
+      summaryText.textContent = '密码未通过本机验证。管理员名称已保留，请重新输入密码或按本机命令行说明恢复访问。';
+      summary.hidden = false;
+      password.focus();
+    }
+
+    /**
+     * 提交登录原型；校验通过后给出短暂反馈并跳转至工作台。
+     * @param {SubmitEvent} event 登录表单提交事件。
+     * @returns {void}
+     */
+    function submitLoginDemo(event) {
+      event.preventDefault();
+      const form = event.currentTarget;
+      if (!validateLoginForm(form)) return;
+
+      const submitButton = document.getElementById('login-submit');
+      submitButton.disabled = true;
+      submitButton.textContent = '正在进入工作台';
+      showToast('本机管理员验证完成', '原型将进入今日工作台。');
+      /**
+       * 在短暂展示登录成功反馈后跳转到今日工作台。
+       * @returns {void}
+       */
+      window.setTimeout(function navigateAfterLogin() {
+        window.location.href = 'dashboard.html';
+      }, 520);
+    }
+
+    /**
+     * 绑定登录页专属的校验、错误恢复和演示提交事件。
+     * @returns {void}
+     */
+    function initLoginPage() {
+      const form = document.getElementById('login-form');
+      const recoveryButton = document.querySelector('[data-login-error-demo]');
+      if (form) form.addEventListener('submit', submitLoginDemo);
+      if (recoveryButton) recoveryButton.addEventListener('click', showLoginPasswordRecovery);
+    }
+
+    document.addEventListener('DOMContentLoaded', initLoginPage);
+  </script>
+</body>
+</html>

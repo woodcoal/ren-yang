@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 人样中文标准字：使用可靠的中文无衬线字库回退，避免上一版手绘骨架造成字形失真。 -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 40" role="img" aria-labelledby="renyang-wordmark-title">
+  <title id="renyang-wordmark-title">人样中文标准字</title>
+  <!-- 字重与产品标题保持一致，紧凑字距强化二字品牌整体性。 -->
+  <text x="1" y="31" fill="#20262c" font-family="'Noto Sans SC', 'Microsoft YaHei', 'PingFang SC', sans-serif" font-size="30" font-weight="750" letter-spacing="-1.5">人样</text>
+</svg>

@@ -195,7 +195,7 @@ describe('人物、世界与资料管理闭环', () => {
         chapters: [{ id: '00000000-0000-4000-8000-000000000201', title: '基本规则', content: '所有城市位于浮岛，远行依赖风帆船。', order: 0, required: true }],
         runtimeSummary: '所有城市位于浮岛，远行依赖风帆船。',
       },
-      changeSummary: '建立世界设定',
+      changeSummary: '建立世界',
     })
     await soulService.publishDraft('world', world.world.id)
     const persona = await service.createPersona({
@@ -615,7 +615,7 @@ describe('人物、世界与资料管理闭环', () => {
   it('灵魂发布和永久删除与对应审计记录在同一 SQLite 事务中完成', async () => {
     const source = await service.createPastedSource({ name: '临时资料', role: 'reference', content: '临时正文。' })
     const world = await service.createWorld({
-      name: '临时世界', summary: '', snapshot: createWorldSnapshot('临时世界设定。'), changeSummary: '建立世界',
+      name: '临时世界', summary: '', snapshot: createWorldSnapshot('临时世界。'), changeSummary: '建立世界',
     })
     const persona = await service.createPersona({
       name: '临时人物', origin: 'original', worldId: null, sourceIds: [],

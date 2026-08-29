@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 人样单色标志：全部几何统一使用深色，适用于打印与不可使用品牌强调色的浅色表面。 -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" role="img" aria-labelledby="renyang-monochrome-title renyang-monochrome-desc">
+  <title id="renyang-monochrome-title">人样单色标志</title>
+  <desc id="renyang-monochrome-desc">由圆形头部和人字形身体组成的深色单色人物标志。</desc>
+  <!-- 单色版本保持正式主符号的全部比例，只统一颜色。 -->
+  <circle cx="12" cy="4.6" r="2.6" fill="#20262c"/>
+  <path d="M10.3 10 3.7 20.4" fill="none" stroke="#20262c" stroke-width="4.4" stroke-linecap="round"/>
+  <path d="M13.7 10 20.3 20.4" fill="none" stroke="#20262c" stroke-width="4.4" stroke-linecap="round"/>
+</svg>

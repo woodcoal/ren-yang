@@ -72,7 +72,7 @@ export const taskJobs = sqliteTable(
   ],
 )
 
-/** 可选的世界设定聚合根。 */
+/** 可选的世界聚合根。 */
 export const worlds = sqliteTable(
   'worlds',
   {
@@ -230,7 +230,7 @@ export const personaSources = sqliteTable(
   ],
 )
 
-/** 世界设定与可复用资料的显式关联。 */
+/** 世界与可复用资料的显式关联。 */
 export const worldSources = sqliteTable(
   'world_sources',
   {

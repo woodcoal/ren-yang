@@ -4,7 +4,7 @@ import { createWorldSchema } from '#shared/schemas/content'
 import { executeController } from '../../../presentation/http/controller'
 
 /**
- * 创建世界设定和初始候选版本。
+ * 创建世界和初始候选版本。
  * @param event 当前 H3 请求事件。
  * @returns 新世界详情响应。
  */

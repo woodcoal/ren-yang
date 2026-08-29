@@ -47,27 +47,18 @@ async function refreshDashboard(): Promise<void> {
 
 <template>
   <div>
-    <ContentPageHeader
-      title="先处理会影响后续创作的事"
-      description="待确认的人物变化、活动任务和会阻断工作的系统问题，按照对后续创作的影响排列。"
-    >
+    <ContentPageHeader title="先处理会影响后续创作的事" description="待确认的人物变化、活动任务和会阻断工作的系统问题，按照对后续创作的影响排列。">
       <UButton to="/history" color="neutral" variant="outline">查看任务记录</UButton>
       <UButton to="/workbench" icon="i-lucide-plus">新建任务</UButton>
     </ContentPageHeader>
 
-    <UAlert
-      v-if="summaryError"
-      class="mb-5"
-      color="error"
-      title="部分仪表盘数据加载失败"
-      description="资源、活动运行或待处理反馈数量可能不完整。"
-      :actions="[{ label: '全部重试', onClick: refreshDashboard }]"
-    />
+    <UAlert v-if="summaryError" class="mb-5" color="error" title="部分仪表盘数据加载失败" description="资源、活动运行或待处理反馈数量可能不完整。"
+      :actions="[{ label: '全部重试', onClick: refreshDashboard }]" />
 
     <div class="metric-strip page-status-strip" aria-label="工作台资源摘要">
       <div v-for="item in [
         { label: '人物', value: counts.personas, to: '/personas' },
-        { label: '世界设定', value: counts.worlds, to: '/worlds' },
+        { label: '世界', value: counts.worlds, to: '/worlds' },
         { label: '资料库', value: counts.sources, to: '/sources' },
         { label: '后台任务', value: health?.taskQueue.total ?? 0, to: '/history' },
       ]" :key="item.label" class="metric-cell">
@@ -77,11 +68,7 @@ async function refreshDashboard(): Promise<void> {
       </div>
     </div>
 
-    <SystemDashboardWorkPanel
-      :personas="personas"
-      :runs="runs"
-      :pending-feedback-count="pendingFeedbackCount"
-    />
+    <SystemDashboardWorkPanel :personas="personas" :runs="runs" :pending-feedback-count="pendingFeedbackCount" />
 
     <section class="content-section" aria-labelledby="dashboard-system-heading">
       <div class="section-heading">
@@ -95,27 +82,14 @@ async function refreshDashboard(): Promise<void> {
       <details class="system-details">
         <summary>查看完整系统状态</summary>
         <div class="system-details-content">
-          <SystemStatusPanel
-            v-if="health"
-            :health="health"
-          />
+          <SystemStatusPanel v-if="health" :health="health" />
 
-          <UAlert
-            v-else
-            color="error"
-            title="无法读取系统状态"
-            :description="healthError ? '健康检查请求失败' : '健康检查没有返回数据'"
-            :actions="[{ label: '重试', onClick: () => refreshHealth() }]"
-          />
+          <UAlert v-else color="error" title="无法读取系统状态" :description="healthError ? '健康检查请求失败' : '健康检查没有返回数据'"
+            :actions="[{ label: '重试', onClick: () => refreshHealth() }]" />
 
           <SystemCapabilityStatusPanel v-if="capabilities" :capabilities="capabilities" />
-          <UAlert
-            v-else
-            color="error"
-            title="无法读取外部能力状态"
-            :description="capabilityError ? '能力状态请求失败' : '能力状态没有返回数据'"
-            :actions="[{ label: '重试', onClick: () => refreshCapabilities() }]"
-          />
+          <UAlert v-else color="error" title="无法读取外部能力状态" :description="capabilityError ? '能力状态请求失败' : '能力状态没有返回数据'"
+            :actions="[{ label: '重试', onClick: () => refreshCapabilities() }]" />
         </div>
       </details>
     </section>

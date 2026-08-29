@@ -87,7 +87,7 @@ async function createWorld(prompt: string): Promise<void> {
     await navigateTo(`/worlds/${created.data.world.id}`)
   }
   catch (requestError: unknown) {
-    errorMessage.value = getApiErrorMessage(requestError, '世界设定创建失败')
+    errorMessage.value = getApiErrorMessage(requestError, '世界创建失败')
   }
   finally {
     loading.value = false
@@ -149,7 +149,7 @@ async function changePageSize(pageSize: number): Promise<void> {
 
 <template>
   <div>
-    <ContentPageHeader title="世界设定" description="世界是相关人物共用的背景与规则；人物也可以不关联世界，独立完成任务。">
+    <ContentPageHeader title="世界" description="世界是相关人物共用的背景与规则；人物也可以不关联世界，独立完成任务。">
       <ContentQuickCreateSubjectModal v-model:open="showCreate" subject-type="world" :loading="loading"
         :error-message="errorMessage" @submit="createWorld">
         <UButton icon="i-lucide-plus">创建世界</UButton>
@@ -157,58 +157,106 @@ async function changePageSize(pageSize: number): Promise<void> {
     </ContentPageHeader>
 
     <div class="status-strip page-status-strip" aria-label="世界状态摘要">
-      <div class="status-cell"><span class="status-kicker">全部世界</span><strong class="status-value">{{ worldPage.total }}</strong></div>
-      <div class="status-cell"><span class="status-kicker">本页可使用</span><strong class="status-value">{{ usableWorldCount }}</strong></div>
-      <div class="status-cell"><span class="status-kicker">本页待确认</span><strong class="status-value">{{ pendingWorldCount }}</strong></div>
-      <div class="status-cell"><span class="status-kicker">本页已禁用</span><strong class="status-value">{{ disabledWorldCount }}</strong></div>
+      <div class="status-cell"><span class="status-kicker">全部世界</span><strong class="status-value">{{ worldPage.total
+          }}</strong></div>
+      <div class="status-cell"><span class="status-kicker">本页可使用</span><strong class="status-value">{{ usableWorldCount
+          }}</strong></div>
+      <div class="status-cell"><span class="status-kicker">本页待确认</span><strong class="status-value">{{ pendingWorldCount
+          }}</strong></div>
+      <div class="status-cell"><span class="status-kicker">本页已禁用</span><strong class="status-value">{{
+          disabledWorldCount }}</strong></div>
     </div>
 
     <UAlert v-if="actionErrorMessage" class="mb-5" color="error" title="操作失败" :description="actionErrorMessage" />
     <UAlert v-if="error" color="error" title="世界列表加载失败" :actions="[{ label: '重试', onClick: () => refresh() }]" />
     <section v-else-if="worlds.length" class="content-section" aria-labelledby="world-list-heading">
-      <div class="section-heading"><div class="section-heading-copy"><p class="eyebrow">世界列表</p><h2 id="world-list-heading">已建立的世界设定</h2><p>禁用后不再进入后续新任务，历史版本、人物关系和资料仍会保留。</p></div></div>
+      <div class="section-heading">
+        <div class="section-heading-copy">
+          <p class="eyebrow">世界列表</p>
+          <h2 id="world-list-heading">已建立的世界</h2>
+          <p>禁用后不再进入后续新任务，历史版本、人物关系和资料仍会保留。</p>
+        </div>
+      </div>
       <div class="content-toolbar !rounded-none !bg-transparent !border-0">
-        <span v-if="selectedWorldIds.length > 0" class="text-sm text-muted">已选择 {{ selectedWorldIds.length }} 个世界</span><span v-else aria-hidden="true"></span>
+        <span v-if="selectedWorldIds.length > 0" class="text-sm text-muted">已选择 {{ selectedWorldIds.length }}
+          个世界</span><span v-else aria-hidden="true"></span>
         <div class="flex items-center justify-end gap-1">
           <UButton color="success" variant="ghost" size="xs" :loading="batchStatusUpdating === true"
-            :disabled="selectedDisabledWorldIds.length === 0 || batchStatusUpdating !== null" @click="enableSelectedWorlds">批量启用</UButton>
-          <UButton color="error" variant="ghost" size="xs" :disabled="selectedEnabledWorldIds.length === 0 || batchStatusUpdating !== null"
+            :disabled="selectedDisabledWorldIds.length === 0 || batchStatusUpdating !== null"
+            @click="enableSelectedWorlds">批量启用</UButton>
+          <UButton color="error" variant="ghost" size="xs"
+            :disabled="selectedEnabledWorldIds.length === 0 || batchStatusUpdating !== null"
             @click="requestBatchDisable">批量禁用</UButton>
         </div>
       </div>
       <div class="content-table-wrap">
         <table class="content-table">
-          <thead><tr><th><input type="checkbox" aria-label="选择当前页全部世界" :checked="allPageWorldsSelected"
-            :indeterminate="somePageWorldsSelected" :disabled="pageWorldIds.length === 0" @change="updateCurrentPageSelection"></th>
-            <th>世界</th><th>使用关系</th><th>版本</th><th>启用状态</th><th>设定状态</th><th>操作</th></tr></thead>
-          <tbody><tr v-for="world in worlds" :key="world.id">
-            <td data-label="选择"><input type="checkbox" :aria-label="`选择世界：${world.name}`" :checked="selectedWorldIds.includes(world.id)" @change="updateWorldSelection(world.id, $event)"></td>
-            <td data-label="世界"><strong class="content-table-title">{{ world.name }}</strong><span class="content-table-description">{{ world.summary || '未填写摘要' }}</span></td>
-            <td data-label="使用关系"><span>{{ world.personaCount }} 个人物</span><span class="content-table-description">{{ world.sourceCount }} 项资料</span></td>
-            <td data-label="版本">{{ world.versionCount }} 条修改记录</td>
-            <td data-label="启用状态"><UBadge :color="world.isEnabled ? 'success' : 'neutral'" variant="subtle">{{ world.isEnabled ? '已启用' : '已禁用' }}</UBadge></td>
-            <td data-label="设定状态"><UBadge :color="world.activeVersionId ? 'success' : 'warning'" variant="subtle">{{ world.activeVersionId ? '已有可用设定' : '等待确认设定' }}</UBadge></td>
-            <td data-label="操作"><UButton :to="`/worlds/${world.id}`" color="neutral" variant="ghost" size="xs"
-              icon="i-lucide-chevron-right" :aria-label="`查看与维护：${world.name}`" /></td>
-          </tr></tbody>
+          <thead>
+            <tr>
+              <th><input type="checkbox" aria-label="选择当前页全部世界" :checked="allPageWorldsSelected"
+                  :indeterminate="somePageWorldsSelected" :disabled="pageWorldIds.length === 0"
+                  @change="updateCurrentPageSelection"></th>
+              <th>世界</th>
+              <th>使用关系</th>
+              <th>版本</th>
+              <th>启用状态</th>
+              <th>设定状态</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="world in worlds" :key="world.id">
+              <td data-label="选择"><input type="checkbox" :aria-label="`选择世界：${world.name}`"
+                  :checked="selectedWorldIds.includes(world.id)" @change="updateWorldSelection(world.id, $event)"></td>
+              <td data-label="世界"><strong class="content-table-title">{{ world.name }}</strong><span
+                  class="content-table-description">{{ world.summary || '未填写摘要' }}</span></td>
+              <td data-label="使用关系"><span>{{ world.personaCount }} 个人物</span><span class="content-table-description">{{
+                world.sourceCount }} 项资料</span></td>
+              <td data-label="版本">{{ world.versionCount }} 条修改记录</td>
+              <td data-label="启用状态">
+                <UBadge :color="world.isEnabled ? 'success' : 'neutral'" variant="subtle">{{ world.isEnabled ? '已启用' :
+                  '已禁用' }}</UBadge>
+              </td>
+              <td data-label="设定状态">
+                <UBadge :color="world.activeVersionId ? 'success' : 'warning'" variant="subtle">{{ world.activeVersionId
+                  ? '已有可用设定' : '等待确认设定' }}</UBadge>
+              </td>
+              <td data-label="操作">
+                <UButton :to="`/worlds/${world.id}`" color="neutral" variant="ghost" size="xs"
+                  icon="i-lucide-chevron-right" :aria-label="`查看与维护：${world.name}`" />
+              </td>
+            </tr>
+          </tbody>
         </table>
       </div>
       <div class="mt-5 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
-        <p class="text-sm text-muted">第 {{ worldPage.page }} / {{ worldPage.totalPages }} 页，共 {{ worldPage.total }} 项</p>
+        <p class="text-sm text-muted">第 {{ worldPage.page }} / {{ worldPage.totalPages }} 页，共 {{ worldPage.total }} 项
+        </p>
         <div class="flex flex-wrap items-center gap-3">
-          <USelect :model-value="worldPage.pageSize" class="w-34" :items="pageSizeItems" aria-label="每页世界数量" @update:model-value="changePageSize" />
-          <UPagination :page="worldPage.page" :total="worldPage.total" :items-per-page="worldPage.pageSize" show-edges @update:page="changePage" />
+          <USelect :model-value="worldPage.pageSize" class="w-34" :items="pageSizeItems" aria-label="每页世界数量"
+            @update:model-value="changePageSize" />
+          <UPagination :page="worldPage.page" :total="worldPage.total" :items-per-page="worldPage.pageSize" show-edges
+            @update:page="changePage" />
         </div>
       </div>
     </section>
-    <div v-else class="content-empty-state"><div><strong>还没有世界设定</strong><p>独立人物仍可正常创建和执行任务。</p></div></div>
+    <div v-else class="content-empty-state">
+      <div><strong>还没有世界</strong>
+        <p>独立人物仍可正常创建和执行任务。</p>
+      </div>
+    </div>
 
     <UModal v-model:open="batchDisableConfirmationOpen" title="确认批量禁用世界" description="世界版本、人物关系、资料和历史记录仍会保留。">
-      <template #body><p class="text-sm text-muted">确定禁用当前页已选择的 {{ selectedEnabledWorldIds.length }} 个启用世界吗？这些世界将停止进入后续新任务。</p></template>
-      <template #footer><div class="flex w-full justify-end gap-2">
-        <UButton color="neutral" variant="ghost" :disabled="batchStatusUpdating !== null" @click="batchDisableConfirmationOpen = false">取消</UButton>
-        <UButton color="error" :loading="batchStatusUpdating === false" @click="confirmBatchDisable">确认禁用</UButton>
-      </div></template>
+      <template #body>
+        <p class="text-sm text-muted">确定禁用当前页已选择的 {{ selectedEnabledWorldIds.length }} 个启用世界吗？这些世界将停止进入后续新任务。</p>
+      </template>
+      <template #footer>
+        <div class="flex w-full justify-end gap-2">
+          <UButton color="neutral" variant="ghost" :disabled="batchStatusUpdating !== null"
+            @click="batchDisableConfirmationOpen = false">取消</UButton>
+          <UButton color="error" :loading="batchStatusUpdating === false" @click="confirmBatchDisable">确认禁用</UButton>
+        </div>
+      </template>
     </UModal>
   </div>
 </template>

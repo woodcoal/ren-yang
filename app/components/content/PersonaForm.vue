@@ -6,7 +6,7 @@ import type { SourceSummary, WorldSummary } from '#shared/types/content'
 
 /** 人物创建表单属性。 */
 interface Props {
-  /** 可选世界设定。 */
+  /** 可选世界。 */
   worlds: WorldSummary[]
   /** 可选参考资料。 */
   sources: SourceSummary[]
@@ -83,18 +83,13 @@ function handleSubmit(event: FormSubmitEvent<CreatePersonaInput>): void {
         <UInput v-model="state.name" class="w-full" :disabled="loading" />
       </UFormField>
       <UFormField name="origin" label="来源模式" required>
-        <USelect
-          v-model="state.origin"
-          class="w-full"
-          :items="[
-            { label: '原创', value: 'original' },
-            { label: '资料型', value: 'source_based' },
-            { label: '混合型', value: 'hybrid' },
-          ]"
-          :disabled="loading"
-        />
+        <USelect v-model="state.origin" class="w-full" :items="[
+          { label: '原创', value: 'original' },
+          { label: '资料型', value: 'source_based' },
+          { label: '混合型', value: 'hybrid' },
+        ]" :disabled="loading" />
       </UFormField>
-      <UFormField name="worldId" label="世界设定（可选）">
+      <UFormField name="worldId" label="世界（可选）">
         <select v-model="state.worldId" class="native-control" :disabled="loading">
           <option :value="null">不关联世界</option>
           <option v-for="world in worlds" :key="world.id" :value="world.id">{{ world.name }}</option>

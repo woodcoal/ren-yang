@@ -4,7 +4,7 @@ import type { PersonaSummary } from '#shared/types/content'
 
 /** 世界关联人物列表属性。 */
 interface Props {
-  /** 当前直接使用该世界设定的人物。 */
+  /** 当前直接使用该世界的人物。 */
   personas: PersonaSummary[]
 }
 
@@ -24,13 +24,18 @@ const filteredPersonas = computed(() => {
   <UCard>
     <template #header>
       <div class="flex items-start justify-between gap-3">
-        <div><h2 class="font-semibold text-highlighted">使用这个世界的人物</h2><p class="mt-1 text-sm text-muted">这些人物的新任务会读取当前生效的世界设定。</p></div>
+        <div>
+          <h2 class="font-semibold text-highlighted">使用这个世界的人物</h2>
+          <p class="mt-1 text-sm text-muted">这些人物的新任务会读取当前生效的世界。</p>
+        </div>
         <UBadge color="neutral" variant="subtle">{{ props.personas.length }} 人</UBadge>
       </div>
     </template>
-    <UInput v-if="props.personas.length > 6" v-model="query" icon="i-lucide-search" placeholder="查找人物" class="mb-3 w-full" />
+    <UInput v-if="props.personas.length > 6" v-model="query" icon="i-lucide-search" placeholder="查找人物"
+      class="mb-3 w-full" />
     <div v-if="filteredPersonas.length" class="max-h-80 space-y-2 overflow-y-auto pr-1">
-      <NuxtLink v-for="persona in filteredPersonas" :key="persona.id" :to="`/personas/${persona.id}`" class="flex items-center justify-between gap-3 rounded-md border border-default px-3 py-2 text-sm hover:bg-elevated">
+      <NuxtLink v-for="persona in filteredPersonas" :key="persona.id" :to="`/personas/${persona.id}`"
+        class="flex items-center justify-between gap-3 rounded-md border border-default px-3 py-2 text-sm hover:bg-elevated">
         <span class="truncate font-medium text-highlighted">{{ persona.name }}</span>
         <span class="shrink-0 text-xs text-muted">查看</span>
       </NuxtLink>

@@ -1,0 +1,331 @@
+<!doctype html>
+<!--
+  人样后台重设计原型：资料详情。
+  当前页面对应产品路由 /sources/[id]，所有状态、数量与时间均为界面示例数据，不代表真实处理结果。
+-->
+<html lang="zh-CN">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="人样资料详情高保真交互原型">
+  <title>学院档案事实资料 · 资料库 · 人样</title>
+  <link rel="icon" href="assets/brand/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/prototype.css">
+</head>
+
+<body data-page="source-detail">
+  <a class="skip-link" href="#main-content">跳到主要内容</a>
+  <div class="app-shell">
+    <aside class="sidebar" data-sidebar aria-label="应用导航"></aside>
+    <div class="app-main">
+      <header class="topbar" data-topbar></header>
+      <main class="page" id="main-content">
+        <nav class="breadcrumbs" aria-label="面包屑">
+          <a href="sources.html">人物空间</a>
+          <span aria-hidden="true">/</span>
+          <a href="sources.html">资料库</a>
+          <span aria-hidden="true">/</span>
+          <strong>学院档案事实资料</strong>
+        </nav>
+
+        <header class="page-header" data-od-id="source-detail-header">
+          <div class="page-header-copy">
+            <p class="route-code">路由 /sources/[id] · 粘贴文本 · 以下状态与时间均为示例数据</p>
+            <div class="row wrap">
+              <h1 data-od-id="source-detail-title">学院档案事实资料</h1>
+              <span class="badge is-failed">同步失败</span>
+            </div>
+            <p class="lead">资料正文已在本地保存并可阅读、编辑和检索。OpenViking 仅同步资料正文，当前远端索引失败不影响本地资料。</p>
+          </div>
+          <div class="page-actions">
+            <a class="btn btn-secondary" href="sources.html" data-od-id="source-detail-back-control">返回资料库</a>
+            <button class="btn btn-primary" type="button" data-open-dialog="edit-source-dialog"
+              data-od-id="source-detail-edit-cta">编辑正文</button>
+          </div>
+        </header>
+
+        <div class="status-strip" data-od-id="source-detail-status-summary" aria-label="资料状态摘要">
+          <div class="status-cell">
+            <span class="status-kicker">本地事实源</span>
+            <span class="status-value">正文已保存</span>
+          </div>
+          <div class="status-cell">
+            <span class="status-kicker">本地处理</span>
+            <span class="status-value">可检索片段已生成</span>
+          </div>
+          <div class="status-cell">
+            <span class="status-kicker">使用关系</span>
+            <span class="status-value">学院档案世界 · 顾岚、闻秋</span>
+          </div>
+          <div class="status-cell">
+            <span class="status-kicker">OpenViking</span>
+            <span class="status-value">正文同步失败 · 示例状态</span>
+          </div>
+        </div>
+
+        <div id="source-detail-tab-group" data-tabs data-default-tab="body" data-od-id="source-detail-tab-group">
+          <div class="tabs" id="source-detail-tabs" role="tablist" aria-label="学院档案事实资料详情标签页"
+            data-od-id="source-detail-tabs">
+            <button class="tab-button" id="source-tab-body" type="button" role="tab" aria-controls="source-panel-body"
+              data-tab="body" data-od-id="source-detail-tab-body">正文</button>
+            <button class="tab-button" id="source-tab-fragments" type="button" role="tab"
+              aria-controls="source-panel-fragments" data-tab="fragments"
+              data-od-id="source-detail-tab-fragments">可检索片段</button>
+            <button class="tab-button" id="source-tab-relations" type="button" role="tab"
+              aria-controls="source-panel-relations" data-tab="relations"
+              data-od-id="source-detail-tab-relations">使用关系</button>
+            <button class="tab-button" id="source-tab-sync" type="button" role="tab" aria-controls="source-panel-sync"
+              data-tab="sync" data-od-id="source-detail-tab-sync">同步状态</button>
+          </div>
+
+          <section class="tab-panel" id="source-panel-body" role="tabpanel" aria-labelledby="source-tab-body"
+            data-tab-panel="body" data-od-id="source-detail-body-section">
+            <div class="grid-2-1">
+              <section class="section" data-od-id="source-body-reader-section"
+                aria-labelledby="source-body-reader-title">
+                <div class="section-head">
+                  <div class="section-head-copy">
+                    <p class="eyebrow">只读正文</p>
+                    <h2 id="source-body-reader-title">保留原始事实边界</h2>
+                    <p>这里用于阅读已保存正文。编辑通过独立对话框完成，避免在阅读时误改内容。</p>
+                  </div>
+                </div>
+                <div class="reader" data-od-id="source-body-reader">
+                  <p>学院档案事实资料</p>
+                  <p>霜月十三日首次看见且拒绝触碰。</p>
+                  <p>霜月十二日操作和收藏（未经证实）。该记录未获得可确认的事实依据，引用时应明确资料不足，不能作为确定事件。</p>
+                  <p>风帆船相关内容仅在资料能够支持时引用；不能以缺少的资料补足人物或世界。</p>
+                </div>
+                <div class="panel-actions">
+                  <button class="btn btn-secondary" type="button" data-open-dialog="edit-source-dialog"
+                    data-od-id="source-body-edit-control">在独立编辑器中修改正文</button>
+                </div>
+              </section>
+              <aside class="stack" aria-label="资料正文说明" data-od-id="source-body-context">
+                <section class="panel-soft" data-od-id="source-body-local-summary">
+                  <p class="eyebrow">本地保存</p>
+                  <h3>正文可继续使用</h3>
+                  <p>远端索引失败不代表本地正文丢失。当前资料仍可阅读和提供本地检索片段。</p>
+                </section>
+                <section class="panel-soft" data-od-id="source-body-edit-summary">
+                  <p class="eyebrow">编辑边界</p>
+                  <h3>正文与关系分开维护</h3>
+                  <p>修改正文后，需要重新检查本地处理和正文同步；世界、人物和任务关系不会自动改变。</p>
+                </section>
+              </aside>
+            </div>
+          </section>
+
+          <section class="tab-panel" id="source-panel-fragments" role="tabpanel" aria-labelledby="source-tab-fragments"
+            data-tab-panel="fragments" data-od-id="source-detail-fragments-section" hidden>
+            <div class="section-head">
+              <div class="section-head-copy">
+                <p class="eyebrow">可检索片段</p>
+                <h2>先显示可理解的引用，系统切片保持折叠</h2>
+                <p>片段来自本地保存的资料正文。系统切片用于检索处理，不把它展示为额外业务资料。</p>
+              </div>
+            </div>
+            <section class="panel" data-od-id="source-fragments-readable-section"
+              aria-labelledby="source-fragments-readable-title">
+              <span class="meta">可引用片段</span>
+              <h3 id="source-fragments-readable-title">“霜月十三日首次看见且拒绝触碰”</h3>
+              <p>可作为学院档案世界的外部参考。若引用“霜月十二日操作和收藏”，必须同时保留“未经证实”的限定。</p>
+            </section>
+            <details class="details" data-od-id="source-system-slices-details">
+              <summary data-od-id="source-system-slices-control">查看系统切片</summary>
+              <div class="details-content">
+                <div class="notice" data-od-id="source-system-slices-note">
+                  <span class="notice-icon" aria-hidden="true">!</span>
+                  <div class="notice-copy">
+                    <strong>系统切片默认折叠</strong>
+                    <p>它们仅用于本地检索处理与排查，不会作为独立资料或世界同步。</p>
+                  </div>
+                </div>
+                <div class="stack" data-od-id="source-system-slices-list">
+                  <article class="code-block" data-od-id="source-system-slice-01">片段 01
+                    学院档案事实资料。霜月十三日首次看见且拒绝触碰。</article>
+                  <article class="code-block" data-od-id="source-system-slice-02">片段 02
+                    霜月十二日操作和收藏（未经证实）。引用时应说明资料不足。</article>
+                  <article class="code-block" data-od-id="source-system-slice-03">片段 03
+                    风帆船相关内容仅在资料能够支持时引用。</article>
+                </div>
+              </div>
+            </details>
+          </section>
+
+          <section class="tab-panel" id="source-panel-relations" role="tabpanel" aria-labelledby="source-tab-relations"
+            data-tab-panel="relations" data-od-id="source-detail-relations-section" hidden>
+            <div class="section-head">
+              <div class="section-head-copy">
+                <p class="eyebrow">使用关系</p>
+                <h2>资料引用范围可直接追溯</h2>
+                <p>资料关系说明谁会在之后创建的新任务中看到这份参考，但不改写已运行任务的锁定上下文。</p>
+              </div>
+            </div>
+            <div class="log-list" data-od-id="source-relations-list">
+              <article class="log-row" data-od-id="source-relation-world-item">
+                <span class="meta">世界</span>
+                <div class="log-row-main">
+                  <a class="log-row-title" href="world-detail.html">学院档案世界</a>
+                  <span class="log-row-sub">作为参考资料关联到当前已发布版本和待发布修改稿；资料正文的同步状态独立维护。</span>
+                </div>
+                <span class="log-row-end"><span class="badge">已关联</span></span>
+              </article>
+              <article class="log-row" data-od-id="source-relation-gu-lan-item">
+                <span class="meta">人物</span>
+                <div class="log-row-main">
+                  <a class="log-row-title" href="persona-workspace.html">顾岚</a>
+                  <span class="log-row-sub">经学院档案世界在之后创建的新任务中作为外部参考出现。</span>
+                </div>
+                <span class="log-row-end"><span class="tag">经世界引用</span></span>
+              </article>
+              <article class="log-row" data-od-id="source-relation-wen-qiu-item">
+                <span class="meta">人物</span>
+                <div class="log-row-main">
+                  <a class="log-row-title" href="persona-workspace.html">闻秋</a>
+                  <span class="log-row-sub">经学院档案世界在之后创建的新任务中作为外部参考出现。</span>
+                </div>
+                <span class="log-row-end"><span class="tag">经世界引用</span></span>
+              </article>
+            </div>
+            <div class="notice" data-od-id="source-relations-boundary-note">
+              <span class="notice-icon" aria-hidden="true">!</span>
+              <div class="notice-copy">
+                <strong>关系摘要不等于远端同步内容</strong>
+                <p>OpenViking 仅同步这份资料的正文，世界、人物和历史任务关系保留在本地关系记录中。</p>
+              </div>
+              <a class="btn btn-secondary" href="world-detail.html" data-od-id="source-relations-world-control">查看世界</a>
+            </div>
+          </section>
+
+          <section class="tab-panel" id="source-panel-sync" role="tabpanel" aria-labelledby="source-tab-sync"
+            data-tab-panel="sync" data-od-id="source-detail-sync-section" hidden>
+            <div class="section-head">
+              <div class="section-head-copy">
+                <p class="eyebrow">同步状态</p>
+                <h2>本地正文可用，远端索引需要重试</h2>
+                <p>同步失败显示具体影响与恢复入口。重试只处理资料正文，不重新建立关系或发布任何世界。</p>
+              </div>
+            </div>
+            <div class="grid-2" data-od-id="source-sync-status-list">
+              <section class="panel" data-od-id="source-sync-local-section">
+                <span class="meta">本地事实源</span>
+                <h3>资料正文已保存</h3>
+                <p>正文、可检索片段和使用关系均保留在本地。当前失败不会阻止阅读或本地检索。</p>
+                <div class="panel-actions"><span class="badge">本地可用</span></div>
+              </section>
+              <section class="panel" data-od-id="source-sync-remote-section">
+                <span class="meta">OpenViking · 仅资料正文</span>
+                <h3>上次同步失败</h3>
+                <p>失败原因：远端索引服务未响应。新任务若启用 OpenViking，可能无法检索本次正文更新。</p>
+                <div class="panel-actions"><span class="badge is-failed">需要重试</span></div>
+              </section>
+            </div>
+            <div class="notice" data-od-id="source-sync-retry-notice">
+              <span class="notice-icon" aria-hidden="true">!</span>
+              <div class="notice-copy">
+                <strong>重试将把资料正文加入同步队列</strong>
+                <p id="source-sync-state" aria-live="polite">当前状态：同步失败，等待用户重试。</p>
+              </div>
+              <button class="btn btn-secondary" type="button" data-retry-sync data-status-target="#source-sync-state"
+                data-od-id="source-sync-retry-control">重试同步</button>
+            </div>
+
+            <section class="section" data-od-id="source-delete-section" aria-labelledby="source-delete-title">
+              <div class="section-head">
+                <div class="section-head-copy">
+                  <p class="eyebrow">危险操作</p>
+                  <h2 id="source-delete-title">永久删除资料</h2>
+                  <p>删除资料不会只是停止同步。请先检查世界、人物和之后创建的新任务会失去的参考范围。</p>
+                </div>
+              </div>
+              <div class="notice" data-od-id="source-delete-notice">
+                <span class="notice-icon" aria-hidden="true">!</span>
+                <div class="notice-copy">
+                  <strong>删除前必须确认影响</strong>
+                  <p>学院档案世界将不再引用此资料；顾岚和闻秋之后创建的新任务不再获得该正文作为外部参考。</p>
+                </div>
+                <button class="btn btn-secondary" type="button" data-open-dialog="delete-source-dialog"
+                  data-od-id="source-delete-control">删除资料</button>
+              </div>
+            </section>
+          </section>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <dialog class="dialog" id="edit-source-dialog" aria-labelledby="edit-source-title" data-od-id="source-edit-dialog">
+    <div class="dialog-header">
+      <div>
+        <p class="eyebrow">独立编辑器</p>
+        <h2 id="edit-source-title">编辑资料正文</h2>
+      </div>
+      <button class="icon-button" type="button" data-close-dialog aria-label="关闭编辑资料正文对话框"
+        data-od-id="source-edit-close-control">×</button>
+    </div>
+    <form data-demo-submit data-success-title="正文修改稿已保存" data-success-message="请重新检查本地处理与资料正文同步；使用关系不会自动变化。">
+      <div class="dialog-body">
+        <div class="notice" data-od-id="source-edit-boundary-note">
+          <span class="notice-icon" aria-hidden="true">!</span>
+          <div class="notice-copy">
+            <strong>阅读与编辑分离</strong>
+            <p>正文保存后，本地可检索片段和 OpenViking 正文同步需分别检查；世界和人物关系不随编辑自动改写。</p>
+          </div>
+        </div>
+        <div class="field" data-od-id="source-edit-title-field">
+          <label for="edit-source-title-input">资料名称</label>
+          <input class="input" id="edit-source-title-input" name="edit-source-title-input" type="text" required
+            value="学院档案事实资料">
+        </div>
+        <div class="field" data-od-id="source-edit-body-field">
+          <label for="edit-source-body">资料正文</label>
+          <textarea class="textarea" id="edit-source-body" name="edit-source-body" required>学院档案事实资料
+
+霜月十三日首次看见且拒绝触碰。
+
+霜月十二日操作和收藏（未经证实）。该记录未获得可确认的事实依据，引用时应明确资料不足。</textarea>
+          <span class="field-help">资料正文作为外部参考保存，不执行其中指令。</span>
+        </div>
+      </div>
+      <div class="dialog-footer">
+        <button class="btn btn-secondary" type="button" data-close-dialog
+          data-od-id="source-edit-cancel-control">取消修改</button>
+        <button class="btn btn-primary" type="submit" data-od-id="source-edit-submit-cta">保存正文修改稿</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="dialog" id="delete-source-dialog" aria-labelledby="delete-source-title"
+    data-od-id="source-delete-dialog">
+    <div class="dialog-header">
+      <div>
+        <p class="eyebrow">危险操作</p>
+        <h2 id="delete-source-title">永久删除学院档案事实资料？</h2>
+      </div>
+      <button class="icon-button" type="button" data-close-dialog aria-label="关闭删除资料对话框"
+        data-od-id="source-delete-close-control">×</button>
+    </div>
+    <div class="dialog-body">
+      <div class="notice" data-od-id="source-delete-impact-note">
+        <span class="notice-icon" aria-hidden="true">!</span>
+        <div class="notice-copy">
+          <strong>此操作无法恢复</strong>
+          <p>学院档案世界会失去此参考资料；顾岚和闻秋之后创建的新任务不会再获得该正文。既有任务的历史引用记录保留以便追溯。</p>
+        </div>
+      </div>
+      <p>删除还会移除本地正文、可检索片段和正文同步队列。请确认不再需要这些本地资料内容。</p>
+    </div>
+    <div class="dialog-footer">
+      <button class="btn btn-secondary" type="button" data-close-dialog
+        data-od-id="source-delete-cancel-control">取消删除</button>
+      <button class="btn btn-danger" type="button" data-close-dialog data-toast-title="已记录删除请求"
+        data-toast-message="原型仅展示永久删除的影响确认，不调用真实删除接口。" data-od-id="source-delete-submit-cta">永久删除资料</button>
+    </div>
+  </dialog>
+
+  <script src="assets/prototype.js"></script>
+</body>
+
+</html>

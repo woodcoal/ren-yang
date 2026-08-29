@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "kind": "html",
+  "title": "generation-settings.html",
+  "entry": "generation-settings.html",
+  "renderer": "html",
+  "status": "complete",
+  "exports": [
+    "html",
+    "pdf",
+    "zip"
+  ],
+  "createdAt": "2026-08-29T12:01:20.931Z",
+  "updatedAt": "2026-08-29T12:01:20.931Z",
+  "metadata": {
+    "inferred": true,
+    "reconciled": true
+  }
+}

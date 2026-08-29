@@ -2,7 +2,7 @@
 .content-toolbar {
   display: flex;
   flex-wrap: wrap;
-  align-items: end;
+  align-items: center;
   gap: 0.5625rem;
   padding: 0.75rem;
   border-radius: var(--radius-control);
@@ -12,6 +12,9 @@
 .content-toolbar > * {
   min-width: 9rem;
   flex: 1;
+}
+.content-toolbar > button {
+  min-width: auto;
 }
 
 .content-toolbar > :last-child {

@@ -32,7 +32,7 @@ const state = reactive<CreateWorldInput>({
     }],
     runtimeSummary: '',
   },
-  changeSummary: '建立初始世界设定',
+  changeSummary: '建立初始世界',
 })
 
 /**
@@ -48,8 +48,12 @@ function handleSubmit(event: FormSubmitEvent<CreateWorldInput>): void {
 <template>
   <UForm :schema="createWorldSchema" :state="state" class="space-y-5" @submit="handleSubmit">
     <div class="grid gap-4 md:grid-cols-2">
-      <UFormField name="name" label="世界名称" required><UInput v-model="state.name" class="w-full" :disabled="loading" /></UFormField>
-      <UFormField name="summary" label="简短说明" description="只方便后台辨认，不会提供给人物。"><UInput v-model="state.summary" class="w-full" :disabled="loading" /></UFormField>
+      <UFormField name="name" label="世界名称" description="方便后台辨认。" required>
+        <UInput v-model="state.name" class="w-full" :disabled="loading" />
+      </UFormField>
+      <UFormField name="summary" label="简短说明" description="只方便后台辨认，不会提供给人物。">
+        <UInput v-model="state.summary" class="w-full" :disabled="loading" />
+      </UFormField>
     </div>
     <ContentSoulChapterEditor v-model="state.snapshot" subject-type="world" :disabled="loading" />
     <UFormField name="changeSummary" label="这次写了什么" description="方便以后在修改记录中辨认。" required>

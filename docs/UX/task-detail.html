@@ -1,0 +1,681 @@
+<!doctype html>
+<!--
+  人样后台重设计原型：任务详情。
+  当前页面对应产品路由 /runs/[id]，所有运行状态、内容、证据和反馈仅用于演示可审查的创作流程。
+-->
+<html lang="zh-CN">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="人样任务详情高保真交互原型">
+  <title>旧物传闻三步核验 · 人样</title>
+  <link rel="icon" href="assets/brand/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/prototype.css">
+</head>
+
+<body data-page="task-detail">
+  <a class="skip-link" href="#main-content">跳到主要内容</a>
+  <div class="app-shell">
+    <aside class="sidebar" data-sidebar aria-label="应用导航"></aside>
+    <div class="app-main">
+      <header class="topbar" data-topbar></header>
+      <main class="page" id="main-content">
+        <nav class="breadcrumbs" aria-label="面包屑">
+          <a href="dashboard.html">工作台</a>
+          <span aria-hidden="true">/</span>
+          <a href="task-history.html">任务记录</a>
+          <span aria-hidden="true">/</span>
+          <strong>任务详情</strong>
+        </nav>
+
+        <header class="page-header" data-od-id="task-detail-page-header">
+          <div class="page-header-copy">
+            <p class="route-code">路由 /runs/[id] · 以下运行状态与时间均为示例数据</p>
+            <h1 data-od-id="task-detail-page-title">旧物传闻三步核验</h1>
+            <p class="lead" id="task-detail-page-lead">顾岚正在基于锁定的资料和版本生成内容。已完成内容可审阅，未完成阶段不会被表述为结果。</p>
+          </div>
+          <div class="page-actions">
+            <a class="btn btn-secondary" href="task-history.html" data-od-id="task-detail-return-history">返回任务记录</a>
+            <button class="btn btn-secondary" type="button" data-open-dialog="task-detail-cancel-dialog"
+              data-od-id="task-detail-open-cancel-dialog">取消任务</button>
+          </div>
+        </header>
+
+        <section class="status-strip" data-od-id="task-detail-context-status-header" aria-label="固定任务上下文状态">
+          <div class="status-cell" data-od-id="task-detail-status-persona">
+            <span class="status-kicker">人物与类型</span>
+            <span class="status-value" id="task-detail-persona-type-value">顾岚 · 内容创作</span>
+          </div>
+          <div class="status-cell" data-od-id="task-detail-status-run">
+            <span class="status-kicker">当前状态</span>
+            <span class="status-value" id="task-detail-run-status-value">执行中 · 正在生成内容段落</span>
+          </div>
+          <div class="status-cell" data-od-id="task-detail-status-context">
+            <span class="status-kicker">锁定上下文</span>
+            <span class="status-value" id="task-detail-context-value">灵魂 v3 · 学院档案世界 v2</span>
+          </div>
+          <div class="status-cell" data-od-id="task-detail-status-created">
+            <span class="status-kicker">创建时间</span>
+            <span class="status-value num">示例 · 今天 10:26</span>
+          </div>
+        </section>
+
+        <section class="section" data-od-id="task-detail-stage-progress-section"
+          aria-labelledby="task-detail-stage-progress-heading">
+          <div class="section-head">
+            <div class="section-head-copy">
+              <p class="eyebrow">阶段进度</p>
+              <h2 id="task-detail-stage-progress-heading">稳定展示当前运行位置</h2>
+              <p>轮询更新时保留这一结构，避免状态变化导致页面内容跳动。</p>
+            </div>
+          </div>
+          <div class="progress" data-od-id="task-detail-progress-bar" aria-label="示例任务进度：已完成上下文锁定，正在生成内容段落">
+            <div class="progress-bar" style="width: 66.667%;"></div>
+          </div>
+          <div class="stage-list" data-od-id="task-detail-stage-list">
+            <article class="stage-row is-complete" data-od-id="task-detail-stage-context">
+              <span class="stage-mark">01</span>
+              <div>
+                <strong>锁定上下文</strong>
+                <p class="meta">人物、灵魂、世界、资料与生成设置已写入本次运行快照。</p>
+              </div>
+              <span class="badge">已完成</span>
+            </article>
+            <article class="stage-row is-current" data-od-id="task-detail-stage-content">
+              <span class="stage-mark">02</span>
+              <div>
+                <strong id="task-detail-stage-content-title">生成内容段落</strong>
+                <p class="meta" id="task-detail-stage-content-detail">正在核验冲突传闻并形成第二个内容段落。</p>
+              </div>
+              <span class="badge is-warning">进行中</span>
+            </article>
+            <article class="stage-row" data-od-id="task-detail-stage-result">
+              <span class="stage-mark">03</span>
+              <div>
+                <strong>汇总可审阅结果</strong>
+                <p class="meta">仅在所有可用段落完成后，才生成结果摘要与反馈入口。</p>
+              </div>
+              <span class="tag">等待中</span>
+            </article>
+          </div>
+        </section>
+
+        <section class="section" data-od-id="task-detail-tabs-section" aria-label="任务详情内容">
+          <div id="task-detail-tabs" data-tabs data-default-tab="result" data-od-id="task-detail-tabs">
+            <div class="tabs" role="tablist" aria-label="任务详情标签页">
+              <button class="tab-button" id="task-detail-tab-result" type="button" role="tab"
+                aria-controls="task-detail-panel-result" data-tab="result"
+                data-od-id="task-detail-result-tab">结果</button>
+              <button class="tab-button" id="task-detail-tab-content" type="button" role="tab"
+                aria-controls="task-detail-panel-content" data-tab="content"
+                data-od-id="task-detail-content-tab">创作内容</button>
+              <button class="tab-button" id="task-detail-tab-evidence" type="button" role="tab"
+                aria-controls="task-detail-panel-evidence" data-tab="evidence"
+                data-od-id="task-detail-evidence-tab">使用依据</button>
+              <button class="tab-button" id="task-detail-tab-feedback" type="button" role="tab"
+                aria-controls="task-detail-panel-feedback" data-tab="feedback"
+                data-od-id="task-detail-feedback-tab">反馈学习</button>
+              <button class="tab-button" id="task-detail-tab-settings" type="button" role="tab"
+                aria-controls="task-detail-panel-settings" data-tab="settings"
+                data-od-id="task-detail-settings-tab">运行设置</button>
+            </div>
+
+            <section class="tab-panel" id="task-detail-panel-result" role="tabpanel"
+              aria-labelledby="task-detail-tab-result" data-tab-panel="result" data-od-id="task-detail-result-panel">
+              <div class="section-head">
+                <div class="section-head-copy">
+                  <p class="eyebrow">当前可审阅部分</p>
+                  <h2 id="task-detail-result-heading">先核验传闻，再形成结论</h2>
+                  <p id="task-detail-result-lead">以下是当前已形成的内容草稿，任务仍在执行中，尚未完成的段落不会被当作最终结果。</p>
+                </div>
+                <div class="section-actions">
+                  <button class="btn btn-secondary" type="button" data-open-dialog="task-detail-retry-dialog"
+                    data-od-id="task-detail-open-retry-dialog">以当前上下文重试</button>
+                </div>
+              </div>
+
+              <div class="notice" data-od-id="task-detail-ai-trust-notice">
+                <span class="notice-icon" aria-hidden="true">AI</span>
+                <div class="notice-copy">
+                  <strong>AI 可信度说明：内容是基于锁定上下文的创作草稿，不等同于人物事实。</strong>
+                  <p>仅列出具体资料依据的表述可被追溯；资料不足、冲突或未列明的内容都需要保留为未知项。</p>
+                </div>
+              </div>
+
+              <div class="grid-2" data-od-id="task-detail-result-summary">
+                <article class="panel" data-od-id="task-detail-result-verified">
+                  <p class="eyebrow">已核验记录</p>
+                  <h3 id="task-detail-result-verified-title">第一步：保留可追溯的资料事实</h3>
+                  <p id="task-detail-result-verified-body">“霜月十三日首次看见且拒绝触碰”来自学院档案事实资料，当前草稿仅将其作为已证实记录。</p>
+                </article>
+                <article class="panel" data-od-id="task-detail-result-unverified">
+                  <p class="eyebrow">未经证实的内容</p>
+                  <h3 id="task-detail-result-unverified-title">第二步：明确冲突尚未成立</h3>
+                  <p id="task-detail-result-unverified-body">“霜月十二日操作和收藏”与现有事实记录相冲突，草稿会标记为未经证实，不补写动机或后续事件。</p>
+                </article>
+              </div>
+
+              <section class="section" data-od-id="task-detail-result-draft-section"
+                aria-labelledby="task-detail-result-draft-heading">
+                <div class="section-head">
+                  <div class="section-head-copy">
+                    <p class="eyebrow">内容草稿</p>
+                    <h2 id="task-detail-result-draft-heading">第三步：等待结论段完成</h2>
+                  </div>
+                </div>
+                <div class="reader" data-od-id="task-detail-result-draft-content">
+                  <p id="task-detail-result-draft-paragraph-one">
+                    旧物传闻应先回到可核验的记录。学院档案事实资料只确认：霜月十三日，顾岚首次看见该旧物并拒绝触碰。该记录能够说明当日的观察与选择，但不足以推出她此前是否接触、收藏或操作过该物件。</p>
+                  <p id="task-detail-result-draft-paragraph-two">
+                    关于“霜月十二日操作和收藏”的说法与已知记录存在冲突，目前没有可追溯资料支撑。此处应保留为未经证实的传闻，而不是将其纳入人物经历。结论段仍在生成，完成后会补充资料不足的范围。</p>
+                </div>
+              </section>
+            </section>
+
+            <section class="tab-panel" id="task-detail-panel-content" role="tabpanel"
+              aria-labelledby="task-detail-tab-content" data-tab-panel="content" data-od-id="task-detail-content-panel"
+              hidden>
+              <div class="section-head">
+                <div class="section-head-copy">
+                  <p class="eyebrow">创作内容</p>
+                  <h2>按内容块审阅，不掩盖未完成状态</h2>
+                  <p>每一段可独立查看状态、依据与后续动作；锁定段落不会被正在进行的尝试覆盖。</p>
+                </div>
+              </div>
+              <div class="log-list" data-od-id="task-detail-content-block-list">
+                <article class="log-row" data-od-id="task-detail-content-block-one">
+                  <span class="meta">内容块 01</span>
+                  <div class="log-row-main">
+                    <strong class="log-row-title" id="task-detail-content-block-one-title">事实清单</strong>
+                    <span class="log-row-sub"
+                      id="task-detail-content-block-one-detail">已从资料中提取可追溯片段，并锁定为草稿第一段的依据。</span>
+                  </div>
+                  <span class="log-row-end"><span class="badge">已锁定</span></span>
+                </article>
+                <article class="log-row" data-od-id="task-detail-content-block-two">
+                  <span class="meta">内容块 02</span>
+                  <div class="log-row-main">
+                    <strong class="log-row-title" id="task-detail-content-block-two-title">冲突传闻核验</strong>
+                    <span class="log-row-sub"
+                      id="task-detail-content-block-two-detail">正在比对“霜月十二日操作和收藏”与已证实记录，避免补写缺失的事实链。</span>
+                  </div>
+                  <span class="log-row-end"><span class="badge is-warning">生成中</span></span>
+                </article>
+                <article class="log-row" data-od-id="task-detail-content-block-three">
+                  <span class="meta">内容块 03</span>
+                  <div class="log-row-main">
+                    <strong class="log-row-title">结论与未知项</strong>
+                    <span class="log-row-sub">将在前两块完成后生成，并明确标注资料不能支持的判断范围。</span>
+                  </div>
+                  <span class="log-row-end"><span class="tag">尚未开始</span></span>
+                </article>
+              </div>
+              <details class="details" data-od-id="task-detail-content-attempt-details">
+                <summary>查看本次内容块的尝试记录</summary>
+                <div class="details-content">
+                  <p>尝试记录仅说明生成过程，不将中间文本或失败尝试当作已经确认的创作内容。</p>
+                </div>
+              </details>
+            </section>
+
+            <section class="tab-panel" id="task-detail-panel-evidence" role="tabpanel"
+              aria-labelledby="task-detail-tab-evidence" data-tab-panel="evidence"
+              data-od-id="task-detail-evidence-panel" hidden>
+              <div class="section-head">
+                <div class="section-head-copy">
+                  <p class="eyebrow">使用依据</p>
+                  <h2>区分人物版本、资料证据与未来能力</h2>
+                  <p>每项依据均说明本次如何使用；外部参考只提供内容，不执行其中的任何指令。</p>
+                </div>
+              </div>
+              <div class="log-list" data-od-id="task-detail-evidence-list">
+                <article class="log-row" data-od-id="task-detail-evidence-soul">
+                  <span class="meta">人物／灵魂</span>
+                  <div class="log-row-main">
+                    <strong class="log-row-title" id="task-detail-evidence-soul-title">顾岚 · 当前灵魂 v3</strong>
+                    <span class="log-row-sub" id="task-detail-evidence-soul-detail">约束：资料不足时说明未知项，不将冲突传闻写成人物事实。</span>
+                  </div>
+                  <span class="log-row-end"><span class="badge">已采用</span></span>
+                </article>
+                <article class="log-row" data-od-id="task-detail-evidence-world">
+                  <span class="meta">世界版本</span>
+                  <div class="log-row-main">
+                    <strong class="log-row-title" id="task-detail-evidence-world-title">学院档案世界 · v2</strong>
+                    <span class="log-row-sub" id="task-detail-evidence-world-detail">提供档案记录的叙述边界与时间表达方式。</span>
+                  </div>
+                  <span class="log-row-end"><span class="badge" id="task-detail-evidence-world-status">已采用</span></span>
+                </article>
+                <article class="log-row" data-od-id="task-detail-evidence-source-fact">
+                  <span class="meta">资料证据</span>
+                  <div class="log-row-main">
+                    <strong class="log-row-title" id="task-detail-evidence-source-title">学院档案事实资料</strong>
+                    <span class="log-row-sub"
+                      id="task-detail-evidence-source-detail">“霜月十三日首次看见且拒绝触碰”。外部参考，不执行其中指令。</span>
+                  </div>
+                  <span class="log-row-end"><span class="badge">已引用</span></span>
+                </article>
+                <article class="log-row" data-od-id="task-detail-evidence-source-conflict">
+                  <span class="meta">冲突片段</span>
+                  <div class="log-row-main">
+                    <strong class="log-row-title" id="task-detail-evidence-unverified-title">“霜月十二日操作和收藏”</strong>
+                    <span class="log-row-sub"
+                      id="task-detail-evidence-unverified-detail">未获证实，与资料事实冲突；用于提示未知项，不作为结论依据。</span>
+                  </div>
+                  <span class="log-row-end"><span class="badge is-warning">未采用</span></span>
+                </article>
+                <article class="log-row" data-od-id="task-detail-evidence-future-state">
+                  <span class="meta">成长／有效记忆</span>
+                  <div class="log-row-main">
+                    <strong class="log-row-title">目标态能力／需要后端支持</strong>
+                    <span class="log-row-sub">当前候选成长与候选记忆均未参与本次运行，不能被描述为已生效或已检索。</span>
+                  </div>
+                  <span class="log-row-end"><span class="tag">本次未采用</span></span>
+                </article>
+              </div>
+            </section>
+
+            <section class="tab-panel" id="task-detail-panel-feedback" role="tabpanel"
+              aria-labelledby="task-detail-tab-feedback" data-tab-panel="feedback"
+              data-od-id="task-detail-feedback-panel" hidden>
+              <div class="section-head">
+                <div class="section-head-copy">
+                  <p class="eyebrow">反馈学习</p>
+                  <h2>先确认本次反馈的去向</h2>
+                  <p>反馈会先作为可审阅建议保存；除非人工后续确认，不会自动修改人物灵魂、成长或有效记忆。</p>
+                </div>
+              </div>
+              <div class="notice is-target" data-od-id="task-detail-feedback-capability-notice">
+                <span class="notice-icon"><span class="capability-badge">目标态能力</span></span>
+                <div class="notice-copy">
+                  <strong>成长与有效记忆的学习闭环需要后端支持</strong>
+                  <p>本原型展示反馈进入审阅队列的边界，不把候选反馈或候选记忆表述为已经影响后续任务。</p>
+                </div>
+              </div>
+              <form class="stack" data-od-id="task-detail-feedback-form">
+                <fieldset class="field" data-od-id="task-detail-feedback-rating-field">
+                  <legend class="field-label">本次结果是否符合资料边界</legend>
+                  <div class="row wrap">
+                    <label class="radio-row" data-od-id="task-detail-feedback-rating-yes">
+                      <input type="radio" name="feedback-rating" value="符合" checked
+                        data-od-id="task-detail-feedback-rating-yes-control">
+                      <span>符合</span>
+                    </label>
+                    <label class="radio-row" data-od-id="task-detail-feedback-rating-partial">
+                      <input type="radio" name="feedback-rating" value="部分符合"
+                        data-od-id="task-detail-feedback-rating-partial-control">
+                      <span>部分符合</span>
+                    </label>
+                    <label class="radio-row" data-od-id="task-detail-feedback-rating-no">
+                      <input type="radio" name="feedback-rating" value="不符合"
+                        data-od-id="task-detail-feedback-rating-no-control">
+                      <span>不符合</span>
+                    </label>
+                  </div>
+                </fieldset>
+                <label class="field" for="task-detail-feedback-classification"
+                  data-od-id="task-detail-feedback-classification-field">
+                  <span class="field-label">AI 建议归类</span>
+                  <select class="select" id="task-detail-feedback-classification"
+                    data-od-id="task-detail-feedback-classification-control">
+                    <option>仅处理本次结果</option>
+                    <option selected>人物变化建议</option>
+                    <option>资料问题</option>
+                  </select>
+                  <span class="field-help">AI 分类只是建议，用户可以纠正；“人物变化建议”不会自动生效。</span>
+                </label>
+                <label class="field" for="task-detail-feedback-note" data-od-id="task-detail-feedback-note-field">
+                  <span class="field-label">补充反馈</span>
+                  <textarea class="textarea" id="task-detail-feedback-note"
+                    data-od-id="task-detail-feedback-note-control">请在结论段继续明确：没有资料支持时不能推断顾岚此前接触过该旧物。</textarea>
+                </label>
+                <div class="panel-actions" data-od-id="task-detail-feedback-actions">
+                  <button class="btn btn-primary" type="button" data-open-dialog="task-detail-feedback-dialog"
+                    data-od-id="task-detail-open-feedback-dialog">确认反馈去向</button>
+                </div>
+              </form>
+            </section>
+
+            <section class="tab-panel" id="task-detail-panel-settings" role="tabpanel"
+              aria-labelledby="task-detail-tab-settings" data-tab-panel="settings"
+              data-od-id="task-detail-settings-panel" hidden>
+              <div class="section-head">
+                <div class="section-head-copy">
+                  <p class="eyebrow">运行设置</p>
+                  <h2>运行时配置默认按需展开</h2>
+                  <p>模型、参数、检索方式与技术标识留在此处，避免干扰对结果和依据的审阅。</p>
+                </div>
+              </div>
+              <details class="details" data-od-id="task-detail-model-settings-details">
+                <summary>模型与生成参数</summary>
+                <div class="details-content">
+                  <div class="status-strip">
+                    <div class="status-cell"><span class="status-kicker">模型</span><span
+                        class="status-value">本地文本模型</span></div>
+                    <div class="status-cell"><span class="status-kicker">生成设置</span><span class="status-value"
+                        id="task-detail-settings-profile-value">严谨核验 · 内容创作</span></div>
+                    <div class="status-cell"><span class="status-kicker">场景与语气</span><span class="status-value"
+                        id="task-detail-settings-scene-value">安静、克制、可核验</span></div>
+                    <div class="status-cell"><span class="status-kicker">失败处理</span><span
+                        class="status-value">保留已锁定内容后重试</span></div>
+                  </div>
+                </div>
+              </details>
+              <details class="details" data-od-id="task-detail-retrieval-settings-details">
+                <summary>资料检索与上下文快照</summary>
+                <div class="details-content">
+                  <p id="task-detail-settings-retrieval-detail">本次使用学院档案事实资料正文与当前人物、世界版本；成长与有效记忆属于目标态能力，当前未参与运行。</p>
+                </div>
+              </details>
+              <details class="details" data-od-id="task-detail-technical-settings-details">
+                <summary>查看技术运行标识</summary>
+                <div class="details-content">
+                  <div class="code-block" id="task-detail-technical-run-context">运行标识：run_20260829_1026_old-object
+                    上下文快照：persona_gu-lan_soul_v3_world_v2
+                    生成配置：profile_rigorous-archive_v1
+                    检索方式：本地资料正文</div>
+                </div>
+              </details>
+            </section>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <dialog class="dialog" id="task-detail-cancel-dialog" aria-labelledby="task-detail-cancel-title"
+    data-od-id="task-detail-cancel-dialog">
+    <div class="dialog-header">
+      <div>
+        <p class="eyebrow">取消执行</p>
+        <h2 id="task-detail-cancel-title">确认停止当前任务</h2>
+      </div>
+      <!-- 关闭控件统一使用 × 作为可见图形，完整语义由 aria-label 提供。 -->
+      <button class="icon-button" type="button" data-close-dialog aria-label="关闭取消确认"
+        data-od-id="task-detail-cancel-dialog-close">×</button>
+    </div>
+    <div class="dialog-body">
+      <p>取消会停止尚未完成的内容段落。已锁定的草稿、上下文快照和运行记录会保留，未完成的结论段不会自动补齐。</p>
+    </div>
+    <div class="dialog-footer">
+      <button class="btn btn-secondary" type="button" data-close-dialog
+        data-od-id="task-detail-cancel-dialog-back">继续执行</button>
+      <button class="btn btn-danger" type="button" data-close-dialog data-toast-title="任务已取消"
+        data-toast-message="未完成的内容段落已停止；已锁定草稿和运行记录仍可审阅。" data-od-id="task-detail-cancel-dialog-confirm">确认取消</button>
+    </div>
+  </dialog>
+
+  <dialog class="dialog" id="task-detail-retry-dialog" aria-labelledby="task-detail-retry-title"
+    data-od-id="task-detail-retry-dialog">
+    <div class="dialog-header">
+      <div>
+        <p class="eyebrow">重试运行</p>
+        <h2 id="task-detail-retry-title">确认以当前上下文重试</h2>
+      </div>
+      <button class="icon-button" type="button" data-close-dialog aria-label="关闭重试确认"
+        data-od-id="task-detail-retry-dialog-close">×</button>
+    </div>
+    <div class="dialog-body">
+      <p>重试会新建一次尝试，并继续使用本页展示的锁定上下文和运行设置。现有草稿不会被覆盖；新输出仍需单独审阅其证据与状态。</p>
+    </div>
+    <div class="dialog-footer">
+      <button class="btn btn-secondary" type="button" data-close-dialog
+        data-od-id="task-detail-retry-dialog-back">暂不重试</button>
+      <button class="btn btn-primary" type="button" data-close-dialog data-toast-title="已创建重试尝试"
+        data-toast-message="原型会保留当前草稿，并用相同上下文开始新的尝试记录。" data-od-id="task-detail-retry-dialog-confirm">确认重试</button>
+    </div>
+  </dialog>
+
+  <dialog class="dialog" id="task-detail-feedback-dialog" aria-labelledby="task-detail-feedback-dialog-title"
+    data-od-id="task-detail-feedback-dialog">
+    <div class="dialog-header">
+      <div>
+        <p class="eyebrow">确认反馈去向</p>
+        <h2 id="task-detail-feedback-dialog-title">将反馈送入审阅流程</h2>
+      </div>
+      <button class="icon-button" type="button" data-close-dialog aria-label="关闭反馈确认"
+        data-od-id="task-detail-feedback-dialog-close">×</button>
+    </div>
+    <div class="dialog-body">
+      <p id="task-detail-feedback-dialog-message">提交后，反馈会以“人物变化建议”进入待审队列。AI
+        分类仅为建议，反馈不会自动修改灵魂、成长或有效记忆；任何影响后续任务的内容都需要人工确认。</p>
+    </div>
+    <div class="dialog-footer">
+      <button class="btn btn-secondary" type="button" data-close-dialog
+        data-od-id="task-detail-feedback-dialog-back">返回修改</button>
+      <button class="btn btn-primary" id="task-detail-feedback-dialog-confirm" type="button" data-close-dialog
+        data-toast-title="反馈已送入待审队列" data-toast-message="原型仅记录建议，不会自动改变人物的后续任务上下文。"
+        data-od-id="task-detail-feedback-dialog-confirm">确认提交反馈</button>
+    </div>
+  </dialog>
+
+  <script src="assets/prototype.js"></script>
+  <script>
+    'use strict';
+
+    const TASK_DETAIL_FEEDBACK_DESTINATIONS = {
+      '仅处理本次结果': {
+        message: '提交后，反馈只会关联本次结果，不会进入人物变化、成长、记忆或资料问题队列。AI 分类仅为建议，当前选择以人工确认为准。',
+        toastTitle: '本次结果反馈已保存',
+        toastMessage: '反馈仅关联当前任务结果，不会改变人物或资料。'
+      },
+      '人物变化建议': {
+        message: '提交后，反馈会以“人物变化建议”进入待审队列。AI 分类仅为建议，反馈不会自动修改灵魂、成长或有效记忆；任何影响后续任务的内容都需要人工确认。',
+        toastTitle: '人物变化建议已送审',
+        toastMessage: '原型仅记录待审建议，不会自动改变人物的后续任务上下文。'
+      },
+      '资料问题': {
+        message: '提交后，反馈会以“资料问题”进入待审队列，供人工核对资料正文与使用关系；不会自动改写资料、人物灵魂、成长或有效记忆。',
+        toastTitle: '资料问题已送审',
+        toastMessage: '原型仅记录待核对问题，不会自动修改资料正文或人物上下文。'
+      }
+    };
+
+    /**
+     * 读取新建任务页保存的当前会话上下文。
+     * @returns {Object|null} 返回经过基本字段校验的任务上下文；非新建任务入口、无数据或数据损坏时返回 null。
+     * 特殊业务逻辑：只有查询参数 `source=new-task` 时才读取会话数据，避免覆盖任务记录等入口展示的固定历史示例。
+     */
+    function readSubmittedTaskContext() {
+      const source = new URLSearchParams(window.location.search).get('source');
+      if (source !== 'new-task') return null;
+
+      try {
+        const stored = window.sessionStorage.getItem('renyang-submitted-task-context');
+        if (!stored) return null;
+        const context = JSON.parse(stored);
+        const requiredFields = ['personaName', 'soul', 'world', 'source', 'taskTypeLabel', 'settingsTitle', 'brief', 'title'];
+        if (!context) return null;
+        for (let index = 0; index < requiredFields.length; index += 1) {
+          const field = requiredFields[index];
+          if (typeof context[field] !== 'string' || context[field].trim().length === 0) return null;
+        }
+        return context;
+      } catch (error) {
+        showToast('无法读取任务上下文', '会话数据不可用，当前详情页继续展示默认示例。');
+        return null;
+      }
+    }
+
+    /**
+     * 更新任务详情中的单个文本节点。
+     * @param {string} id 目标元素的唯一 ID。
+     * @param {string} value 需要显示的纯文本内容。
+     * @returns {void} 不返回值；目标不存在时不执行修改。
+     * 特殊业务逻辑：统一使用 textContent，避免把任务输入解释为 HTML。
+     */
+    function setTaskDetailText(id, value) {
+      const element = document.getElementById(id);
+      if (element) element.textContent = value;
+    }
+
+    /**
+     * 将新建任务页提交的人物、类型、说明和锁定上下文应用到任务详情。
+     * @param {Object} context 新建任务页写入 sessionStorage 的任务上下文对象。
+     * @returns {void} 不返回值，直接更新当前详情页中与本次任务相关的可见内容。
+     * 特殊业务逻辑：兴趣判断只生成带有未知项的模拟判断；任何任务说明都不会被当作资料事实。
+     */
+    function applySubmittedTaskContext(context) {
+      const isInterest = context.taskTypeKey === 'interest';
+      const title = context.title.trim();
+      const brief = context.brief.trim();
+      const scene = typeof context.scene === 'string' && context.scene.trim()
+        ? context.scene.trim()
+        : '未提供额外场景约束';
+      const sceneSummary = scene.length > 42 ? scene.slice(0, 42) + '…' : scene;
+      const hasWorld = context.world !== '未绑定世界';
+      const pageTitle = document.querySelector('[data-od-id="task-detail-page-title"]');
+      const progress = document.querySelector('[data-od-id="task-detail-progress-bar"]');
+
+      if (pageTitle) pageTitle.textContent = title;
+      document.title = title + ' · 任务详情 · 人样';
+      setTaskDetailText(
+        'task-detail-page-lead',
+        context.personaName + '正在基于提交时锁定的资料和版本执行“' + context.taskTypeLabel + '”。已完成内容可审阅，未完成阶段不会被表述为结果。'
+      );
+      setTaskDetailText('task-detail-persona-type-value', context.personaName + ' · ' + context.taskTypeLabel);
+      setTaskDetailText('task-detail-run-status-value', '执行中 · 正在生成' + context.taskTypeLabel + '结果');
+      setTaskDetailText('task-detail-context-value', context.soul + ' · ' + context.world);
+      setTaskDetailText('task-detail-stage-content-title', isInterest ? '生成兴趣判断' : '生成内容段落');
+      setTaskDetailText(
+        'task-detail-stage-content-detail',
+        isInterest
+          ? '正在区分资料依据、模拟推断与无法确认的未知项。'
+          : '正在依据任务说明核验可追溯内容，并形成可独立审阅的段落。'
+      );
+      if (progress) {
+        progress.setAttribute(
+          'aria-label',
+          '示例任务进度：已完成上下文锁定，正在生成' + context.taskTypeLabel + '结果'
+        );
+      }
+
+      setTaskDetailText(
+        'task-detail-result-heading',
+        isInterest
+          ? '对“' + title + '”保留事实、推断与未知项'
+          : '围绕“' + title + '”先核验依据，再形成内容'
+      );
+      setTaskDetailText(
+        'task-detail-result-lead',
+        isInterest
+          ? '以下是当前已形成的模拟判断草稿，不等同于人物事实；任务仍在执行中。'
+          : '以下是当前已形成的内容草稿，任务仍在执行中，尚未完成的段落不会被当作最终结果。'
+      );
+      setTaskDetailText(
+        'task-detail-result-verified-title',
+        isInterest ? '第一步：区分资料能够支持的判断' : '第一步：只采用可追溯的资料依据'
+      );
+      setTaskDetailText(
+        'task-detail-result-verified-body',
+        context.source + '只作为本次任务的资料依据；只有能够从正文追溯的片段才可用于结果，任务说明本身不构成人物事实。'
+      );
+      setTaskDetailText(
+        'task-detail-result-unverified-title',
+        isInterest ? '第二步：不把模拟偏好写成既定事实' : '第二步：明确资料无法支持的内容'
+      );
+      setTaskDetailText(
+        'task-detail-result-unverified-body',
+        '任务说明“' + brief + '”定义本次处理目标，但其中没有资料依据的表述仍需标记为未知或待核验内容。'
+      );
+      setTaskDetailText(
+        'task-detail-result-draft-heading',
+        isInterest ? '第三步：等待最终判断与未知项完成' : '第三步：等待最终内容与未知项完成'
+      );
+      setTaskDetailText(
+        'task-detail-result-draft-paragraph-one',
+        isInterest
+          ? '现有资料不足以直接确认' + context.personaName + '对“' + title + '”存在稳定兴趣。当前草稿先列出能够从' + context.source + '追溯的内容，再说明这些内容能够支持到什么程度。'
+          : '本次内容围绕“' + title + '”展开。当前草稿先从' + context.source + '提取可追溯依据，再按任务说明组织内容；任务描述不会反向写入人物经历。'
+      );
+      setTaskDetailText(
+        'task-detail-result-draft-paragraph-two',
+        isInterest
+          ? '如需继续给出兴趣判断，只能作为模拟推断并列明依据与未知项，不能将推断保存为' + context.personaName + '的既定事实。最终判断仍在生成。'
+          : '凡是无法从资料正文追溯的事件、动机或经历，当前草稿都会保留为未知项，不会为了完成文本而自行补写。最终内容仍在生成。'
+      );
+
+      setTaskDetailText('task-detail-content-block-one-title', isInterest ? '资料依据清单' : '可追溯事实清单');
+      setTaskDetailText(
+        'task-detail-content-block-one-detail',
+        '已将' + context.source + '作为本次检索来源，并锁定可追溯片段作为第一部分依据。'
+      );
+      setTaskDetailText('task-detail-content-block-two-title', isInterest ? '模拟推断边界' : '任务要求核验');
+      setTaskDetailText(
+        'task-detail-content-block-two-detail',
+        isInterest
+          ? '正在检查模拟判断是否明确区分资料依据、推断和未知项。'
+          : '正在检查任务要求是否超出资料能够支持的范围，避免补写缺失事实链。'
+      );
+
+      setTaskDetailText('task-detail-evidence-soul-title', context.personaName + ' · ' + context.soul);
+      setTaskDetailText(
+        'task-detail-evidence-soul-detail',
+        '约束：资料不足时说明未知项，不将任务说明或模拟推断写成' + context.personaName + '的人物事实。'
+      );
+      setTaskDetailText('task-detail-evidence-world-title', context.world);
+      setTaskDetailText(
+        'task-detail-evidence-world-detail',
+        hasWorld ? '提供本次任务的世界边界与表达方式。' : '本次未绑定世界，不会补充任何世界事实。'
+      );
+      setTaskDetailText('task-detail-evidence-world-status', hasWorld ? '已采用' : '本次未绑定');
+      setTaskDetailText('task-detail-evidence-source-title', context.source);
+      setTaskDetailText('task-detail-evidence-source-detail', context.sourceDetail || '本地资料正文用于核验可追溯内容。');
+      setTaskDetailText('task-detail-evidence-unverified-title', '任务说明中的待核验内容');
+      setTaskDetailText(
+        'task-detail-evidence-unverified-detail',
+        '“' + brief + '”只定义任务目标；其中无法从资料追溯的内容不会作为结论依据。'
+      );
+
+      setTaskDetailText('task-detail-settings-profile-value', context.settingsTitle);
+      setTaskDetailText('task-detail-settings-scene-value', sceneSummary);
+      setTaskDetailText(
+        'task-detail-settings-retrieval-detail',
+        '本次使用' + context.source + '正文、' + context.personaName + '的' + context.soul + (hasWorld ? '与' + context.world : '；未绑定世界') + '；成长与有效记忆属于目标态能力，当前未参与运行。'
+      );
+      setTaskDetailText(
+        'task-detail-technical-run-context',
+        '运行标识：run_session_new-task\n人物快照：' + context.personaName + ' · ' + context.soul + '\n世界快照：' + context.world + '\n生成配置：' + context.settingsTitle + '\n检索资料：' + context.source
+      );
+      const feedbackNote = document.getElementById('task-detail-feedback-note');
+      if (feedbackNote) {
+        feedbackNote.value = '请继续检查：没有资料支持时，不能把对' + context.personaName + '的推断或任务说明写成既有事实。';
+      }
+    }
+
+    /**
+     * 根据人工选择的反馈分类更新确认对话框与提交结果提示。
+     * @returns {void} 不返回值，直接同步当前分类对应的确认文案和 Toast 文案。
+     * 特殊业务逻辑：分类下拉框中的 AI 建议可被用户纠正，最终去向必须以当前人工选择为准。
+     */
+    function updateTaskDetailFeedbackConfirmation() {
+      const classification = document.getElementById('task-detail-feedback-classification');
+      const confirm = document.getElementById('task-detail-feedback-dialog-confirm');
+      const destination = classification
+        ? TASK_DETAIL_FEEDBACK_DESTINATIONS[classification.value]
+        : null;
+      if (!destination || !confirm) return;
+
+      setTaskDetailText('task-detail-feedback-dialog-message', destination.message);
+      confirm.dataset.toastTitle = destination.toastTitle;
+      confirm.dataset.toastMessage = destination.toastMessage;
+    }
+
+    /**
+     * 初始化任务详情的跨页面上下文恢复与反馈分类联动。
+     * @returns {void} 不返回值；仅在 DOM 就绪后读取页面元素并绑定交互。
+     * 特殊业务逻辑：普通任务详情入口保留固定历史示例，仅新建任务入口应用 sessionStorage 中的本次提交数据。
+     */
+    function initializeTaskDetailPage() {
+      const context = readSubmittedTaskContext();
+      const classification = document.getElementById('task-detail-feedback-classification');
+      if (context) applySubmittedTaskContext(context);
+      if (classification) classification.addEventListener('change', updateTaskDetailFeedbackConfirmation);
+      updateTaskDetailFeedbackConfirmation();
+    }
+
+    document.addEventListener('DOMContentLoaded', initializeTaskDetailPage);
+  </script>
+</body>
+
+</html>

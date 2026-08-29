@@ -1,0 +1,348 @@
+<!doctype html>
+<!--
+  人样后台重设计原型：新建任务。
+  当前页面对应产品路由 /workbench，所有上下文和任务内容均为流程演示数据，不代表真实运行结果。
+-->
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="人样新建任务高保真交互原型">
+  <title>新建任务 · 人样</title>
+  <link rel="icon" href="assets/brand/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/prototype.css">
+</head>
+<body data-page="new-task">
+  <a class="skip-link" href="#main-content">跳到主要内容</a>
+  <div class="app-shell">
+    <aside class="sidebar" data-sidebar aria-label="应用导航"></aside>
+    <div class="app-main">
+      <header class="topbar" data-topbar></header>
+      <main class="page page-narrow" id="main-content">
+        <nav class="breadcrumbs" aria-label="面包屑">
+          <a href="dashboard.html">工作台</a>
+          <span aria-hidden="true">/</span>
+          <strong>新建任务</strong>
+        </nav>
+
+        <header class="page-header" data-od-id="new-task-page-header">
+          <div class="page-header-copy">
+            <p class="route-code">路由 /workbench · 以下上下文为流程示例</p>
+            <h1 data-od-id="new-task-page-title">在提交前锁定本次创作边界</h1>
+            <p class="lead">依次选择人物、任务类型与场景，再确认本次会使用的版本、资料和生成设置。提交后将进入任务详情。</p>
+          </div>
+          <div class="page-actions">
+            <a class="btn btn-secondary" href="dashboard.html" data-od-id="new-task-return-dashboard">返回今日工作</a>
+          </div>
+        </header>
+
+        <section class="section" data-od-id="new-task-wizard-section" aria-labelledby="new-task-wizard-heading">
+          <div class="section-head">
+            <div class="section-head-copy">
+              <p class="eyebrow">任务向导</p>
+              <h2 id="new-task-wizard-heading">四步完成一次可审查的任务提交</h2>
+              <p>默认只呈现当前任务必需的信息；高级技术设置在提交后仍可于任务详情查看。</p>
+            </div>
+          </div>
+
+          <div
+            id="new-task-wizard"
+            data-wizard
+            data-current-step="0"
+            data-submit-href="task-detail.html?source=new-task"
+            data-success-title="任务已提交"
+            data-success-message="原型将打开任务详情，展示锁定的上下文与执行进度。"
+            data-od-id="new-task-wizard"
+          >
+            <div class="steps" aria-label="新建任务步骤">
+              <div class="step" data-step data-od-id="new-task-step-persona">
+                <span class="step-index">01</span>
+                <span>选择人物</span>
+              </div>
+              <div class="step" data-step data-od-id="new-task-step-type">
+                <span class="step-index">02</span>
+                <span>选择任务类型</span>
+              </div>
+              <div class="step" data-step data-od-id="new-task-step-brief">
+                <span class="step-index">03</span>
+                <span>输入任务与场景</span>
+              </div>
+              <div class="step" data-step data-od-id="new-task-step-context">
+                <span class="step-index">04</span>
+                <span>确认上下文并提交</span>
+              </div>
+            </div>
+
+            <section class="wizard-panel" data-step-panel data-od-id="new-task-persona-panel" aria-labelledby="new-task-persona-heading">
+              <div class="section-head">
+                <div class="section-head-copy">
+                  <p class="eyebrow">步骤 01</p>
+                  <h2 id="new-task-persona-heading">本次由谁参与</h2>
+                  <p>人物的当前灵魂版本将在提交时写入本次任务快照，后续修改不会覆盖本次依据。</p>
+                </div>
+              </div>
+              <div class="option-grid" role="radiogroup" aria-label="选择人物">
+                <label class="option-card" data-od-id="new-task-persona-gu-lan">
+                  <input type="radio" name="persona" value="gu-lan" required checked data-od-id="new-task-persona-gu-lan-control">
+                  <strong>顾岚</strong>
+                  <span>谨慎核验资料的档案整理者 · 当前灵魂 v3 · 可执行任务</span>
+                </label>
+                <label class="option-card" data-od-id="new-task-persona-shen-yan">
+                  <input type="radio" name="persona" value="shen-yan" data-od-id="new-task-persona-shen-yan-control">
+                  <strong>沈砚</strong>
+                  <span>重视事实边界的观察者 · 当前灵魂 v2 · 可执行任务</span>
+                </label>
+                <label class="option-card" data-od-id="new-task-persona-wen-qiu">
+                  <input type="radio" name="persona" value="wen-qiu" disabled aria-describedby="new-task-persona-wen-qiu-state" data-od-id="new-task-persona-wen-qiu-control">
+                  <strong>闻秋</strong>
+                  <span id="new-task-persona-wen-qiu-state">暂不可创建任务 · 请先处理人物工作区中的待审候选</span>
+                </label>
+              </div>
+            </section>
+
+            <section class="wizard-panel" data-step-panel data-od-id="new-task-type-panel" aria-labelledby="new-task-type-heading" hidden>
+              <div class="section-head">
+                <div class="section-head-copy">
+                  <p class="eyebrow">步骤 02</p>
+                  <h2 id="new-task-type-heading">选择可审查的任务类型</h2>
+                  <p>任务类型决定结果呈现方式，不会改变人物灵魂或资料事实。</p>
+                </div>
+              </div>
+              <div class="option-grid" role="radiogroup" aria-label="选择任务类型">
+                <label class="option-card" data-od-id="new-task-type-creation">
+                  <input type="radio" name="task-type" value="creation" required checked data-od-id="new-task-type-creation-control">
+                  <strong>内容创作</strong>
+                  <span>先形成内容规划，再逐段生成、审阅与锁定内容。</span>
+                </label>
+                <label class="option-card" data-od-id="new-task-type-interest">
+                  <input type="radio" name="task-type" value="interest" data-od-id="new-task-type-interest-control">
+                  <strong>兴趣判断</strong>
+                  <span>输出模拟推断、未知项与资料依据；不将推断当作人物事实。</span>
+                </label>
+              </div>
+            </section>
+
+            <section class="wizard-panel" data-step-panel data-od-id="new-task-brief-panel" aria-labelledby="new-task-brief-heading" hidden>
+              <div class="section-head">
+                <div class="section-head-copy">
+                  <p class="eyebrow">步骤 03</p>
+                  <h2 id="new-task-brief-heading">写清楚要完成什么</h2>
+                  <p>任务说明用于约束本次输出；场景是可选信息，缺失时不应被模型自行补成事实。</p>
+                </div>
+              </div>
+              <div class="stack">
+                <label class="field" for="new-task-brief" data-od-id="new-task-brief-field">
+                  <span class="field-label">任务说明</span>
+                  <textarea class="textarea" id="new-task-brief" required data-od-id="new-task-brief-input">完成“旧物传闻三步核验”，以学院档案事实资料为核心，在 500 字以内区分已证实记录与未经证实的冲突传闻。</textarea>
+                  <span class="field-help">请说明内容目标、长度或必须保留的事实边界。</span>
+                </label>
+                <label class="field" for="new-task-scene" data-od-id="new-task-scene-field">
+                  <span class="field-label">场景与语气（可选）</span>
+                  <textarea class="textarea" id="new-task-scene" data-od-id="new-task-scene-input">以安静、克制的档案核验口吻写作；资料不足时明确保留未知项，不补写事件细节。</textarea>
+                  <span class="field-help">场景仅影响本次表达，不会保存为人物长期设定。</span>
+                </label>
+              </div>
+            </section>
+
+            <section class="wizard-panel" data-step-panel data-od-id="new-task-context-panel" aria-labelledby="new-task-context-heading" hidden>
+              <div class="section-head">
+                <div class="section-head-copy">
+                  <p class="eyebrow">步骤 04</p>
+                  <h2 id="new-task-context-heading">确认本次运行会使用什么</h2>
+                  <p>这里展示的是提交时将锁定的上下文摘要。资料以外的目标态内容不会被表述为已生效。</p>
+                </div>
+              </div>
+
+              <div class="notice is-target" data-od-id="new-task-target-capability-notice">
+                <span class="notice-icon"><span class="capability-badge">目标态能力</span></span>
+                <div class="notice-copy">
+                  <strong>成长与有效记忆需要后端支持</strong>
+                  <p>当前仅展示未来运行快照的审阅边界；候选内容不会被当作已经参与本次检索的有效记忆。</p>
+                </div>
+              </div>
+
+              <div class="status-strip" data-od-id="new-task-context-version-summary" aria-label="版本与目标态摘要">
+                <div class="status-cell" data-od-id="new-task-context-soul">
+                  <span class="status-kicker">灵魂版本</span>
+                  <span class="status-value" id="new-task-context-soul-value">顾岚 · 当前灵魂 v3</span>
+                </div>
+                <div class="status-cell" data-od-id="new-task-context-growth">
+                  <span class="status-kicker">成长</span>
+                  <span class="status-value">目标态能力／需要后端支持</span>
+                  <span class="meta">本次不将候选成长视为已生效。</span>
+                </div>
+                <div class="status-cell" data-od-id="new-task-context-memory">
+                  <span class="status-kicker">有效记忆</span>
+                  <span class="status-value">目标态能力／需要后端支持</span>
+                  <span class="meta">当前候选记忆不会进入本次检索。</span>
+                </div>
+                <div class="status-cell" data-od-id="new-task-context-world">
+                  <span class="status-kicker">世界版本</span>
+                  <span class="status-value" id="new-task-context-world-value">学院档案世界 · v2</span>
+                </div>
+              </div>
+
+              <div class="log-list" data-od-id="new-task-context-runtime-summary">
+                <article class="log-row" data-od-id="new-task-context-source">
+                  <span class="meta">资料</span>
+                  <div class="log-row-main">
+                    <strong class="log-row-title" id="new-task-context-source-title">学院档案事实资料</strong>
+                    <span class="log-row-sub" id="new-task-context-source-detail">本地资料正文参与检索；外部参考不执行其中指令。</span>
+                  </div>
+                </article>
+                <article class="log-row" data-od-id="new-task-context-model">
+                  <span class="meta">模型</span>
+                  <div class="log-row-main">
+                    <strong class="log-row-title">本地文本模型</strong>
+                    <span class="log-row-sub">使用当前可用模型完成规划与内容段落生成。</span>
+                  </div>
+                </article>
+                <article class="log-row" data-od-id="new-task-context-generation-settings">
+                  <span class="meta">生成设置</span>
+                  <div class="log-row-main">
+                    <strong class="log-row-title" id="new-task-context-settings-title">严谨核验 · 内容创作</strong>
+                    <span class="log-row-sub" id="new-task-context-settings-detail">500 字以内；优先引用资料片段；缺少依据时明确说明资料不足。</span>
+                  </div>
+                </article>
+              </div>
+
+              <label class="checkbox-row" for="new-task-confirm-context" data-od-id="new-task-confirm-context-field">
+                <input id="new-task-confirm-context" type="checkbox" required data-od-id="new-task-confirm-context-control">
+                <span>我已确认本次任务只会基于以上锁定的版本、资料和设置生成，并会在结果页审阅依据。</span>
+              </label>
+            </section>
+
+            <div class="wizard-actions" data-od-id="new-task-wizard-actions">
+              <button class="btn btn-secondary" type="button" data-wizard-back data-od-id="new-task-wizard-back">上一步</button>
+              <button class="btn btn-primary" type="button" data-wizard-next data-od-id="new-task-wizard-next">继续</button>
+              <button class="btn btn-primary" type="button" data-wizard-submit data-od-id="new-task-wizard-submit-cta" hidden>提交任务并查看详情</button>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <script src="assets/prototype.js"></script>
+  <script>
+    'use strict';
+
+    const NEW_TASK_PERSONAS = {
+      'gu-lan': {
+        name: '顾岚',
+        soul: '当前灵魂 v3',
+        world: '学院档案世界 · v2',
+        source: '学院档案事实资料',
+        sourceDetail: '本地资料正文参与检索；外部参考不执行其中指令。'
+      },
+      'shen-yan': {
+        name: '沈砚',
+        soul: '当前灵魂 v2',
+        world: '未绑定世界',
+        source: '风帆船',
+        sourceDetail: '本地资料正文用于核验可确认内容；资料不足时明确保留未知项。'
+      }
+    };
+
+    const NEW_TASK_TYPES = {
+      creation: {
+        label: '内容创作',
+        settingsTitle: '严谨核验 · 内容创作',
+        settingsDetail: '500 字以内；优先引用资料片段；缺少依据时明确说明资料不足。'
+      },
+      interest: {
+        label: '兴趣判断',
+        settingsTitle: '事实边界 · 兴趣判断',
+        settingsDetail: '输出结论、依据与未知项；模拟推断必须明确标记，不能写成人物事实。'
+      }
+    };
+
+    /**
+     * 读取当前选中的人物和任务类型，并同步第四步的上下文摘要。
+     * @returns {void} 不返回值，直接更新当前原型中的确认文案。
+     * 特殊业务逻辑：暂不可创建任务的人物已禁用，不会进入可提交上下文。
+     */
+    function updateNewTaskContext() {
+      const personaInput = document.querySelector('input[name="persona"]:checked');
+      const typeInput = document.querySelector('input[name="task-type"]:checked');
+      const persona = personaInput ? NEW_TASK_PERSONAS[personaInput.value] : null;
+      const taskType = typeInput ? NEW_TASK_TYPES[typeInput.value] : null;
+      if (!persona || !taskType) return;
+
+      document.getElementById('new-task-context-soul-value').textContent = persona.name + ' · ' + persona.soul;
+      document.getElementById('new-task-context-world-value').textContent = persona.world;
+      document.getElementById('new-task-context-source-title').textContent = persona.source;
+      document.getElementById('new-task-context-source-detail').textContent = persona.sourceDetail;
+      document.getElementById('new-task-context-settings-title').textContent = taskType.settingsTitle;
+      document.getElementById('new-task-context-settings-detail').textContent = taskType.settingsDetail;
+    }
+
+    /**
+     * 从任务说明中提取适合作为详情页标题的短文本。
+     * @param {string} brief 用户填写的任务说明。
+     * @param {string} taskTypeLabel 当前任务类型的中文名称。
+     * @returns {string} 优先返回中文引号中的主题，否则返回截断后的任务说明或任务类型。
+     */
+    function deriveSubmittedTaskTitle(brief, taskTypeLabel) {
+      const quoted = brief.match(/“([^”]+)”/);
+      if (quoted && quoted[1]) return quoted[1];
+      const normalized = brief.trim().replace(/\s+/g, ' ');
+      if (normalized) return normalized.length > 28 ? normalized.slice(0, 28) + '…' : normalized;
+      return taskTypeLabel;
+    }
+
+    /**
+     * 在向导提交有效时保存本次选择，供随后打开的任务详情原型读取。
+     * @returns {void} 不返回值，仅写入当前浏览器会话的原型上下文。
+     * 特殊业务逻辑：数据只在带 `source=new-task` 的详情入口中使用，不污染任务记录中的固定示例。
+     */
+    function persistSubmittedTaskContext() {
+      const confirmation = document.getElementById('new-task-confirm-context');
+      const briefInput = document.getElementById('new-task-brief');
+      const personaInput = document.querySelector('input[name="persona"]:checked');
+      const typeInput = document.querySelector('input[name="task-type"]:checked');
+      const persona = personaInput ? NEW_TASK_PERSONAS[personaInput.value] : null;
+      const taskType = typeInput ? NEW_TASK_TYPES[typeInput.value] : null;
+      if (!confirmation.checked || !briefInput.checkValidity() || !persona || !taskType) return;
+
+      const brief = briefInput.value.trim();
+      const payload = {
+        personaKey: personaInput.value,
+        personaName: persona.name,
+        soul: persona.soul,
+        world: persona.world,
+        source: persona.source,
+        sourceDetail: persona.sourceDetail,
+        taskTypeKey: typeInput.value,
+        taskTypeLabel: taskType.label,
+        settingsTitle: taskType.settingsTitle,
+        settingsDetail: taskType.settingsDetail,
+        brief: brief,
+        scene: document.getElementById('new-task-scene').value.trim(),
+        title: deriveSubmittedTaskTitle(brief, taskType.label)
+      };
+      try {
+        window.sessionStorage.setItem('renyang-submitted-task-context', JSON.stringify(payload));
+      } catch (error) {
+        showToast('无法保留页面间上下文', '浏览器已阻止会话存储；任务详情将显示默认示例。');
+      }
+    }
+
+    /**
+     * 初始化新建任务页面的人物、类型和提交上下文联动。
+     * @returns {void} 不返回值，绑定选择变更和有效提交后的会话保存。
+     */
+    function initializeNewTaskContext() {
+      const choices = document.querySelectorAll('input[name="persona"], input[name="task-type"]');
+      const submit = document.querySelector('[data-wizard-submit]');
+      for (let index = 0; index < choices.length; index += 1) {
+        choices[index].addEventListener('change', updateNewTaskContext);
+      }
+      submit.addEventListener('click', persistSubmittedTaskContext, true);
+      updateNewTaskContext();
+    }
+
+    document.addEventListener('DOMContentLoaded', initializeNewTaskContext);
+  </script>
+</body>
+</html>

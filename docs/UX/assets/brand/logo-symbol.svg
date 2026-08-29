@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 人样主标志：圆形头部与两条宽笔画共同构成清晰人形，同时保留汉字“人”的基本轮廓。 -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" role="img" aria-labelledby="renyang-symbol-title renyang-symbol-desc">
+  <title id="renyang-symbol-title">人样标志</title>
+  <desc id="renyang-symbol-desc">一个由圆形头部和人字形身体组成的简洁人物标志。</desc>
+  <!-- 头部独立于身体，保证在 16px 小尺寸下仍能首先识别为人物。 -->
+  <circle cx="12" cy="4.6" r="2.6" fill="#a94f46"/>
+  <!-- 两条等重宽笔画形成稳定的人字形身体；左右双色仅承担品牌识别，不表达状态。 -->
+  <path d="M10.3 10 3.7 20.4" fill="none" stroke="#20262c" stroke-width="4.4" stroke-linecap="round"/>
+  <path d="M13.7 10 20.3 20.4" fill="none" stroke="#a94f46" stroke-width="4.4" stroke-linecap="round"/>
+</svg>

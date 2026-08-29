@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "kind": "html",
+  "title": "persona-workspace.html",
+  "entry": "persona-workspace.html",
+  "renderer": "html",
+  "status": "complete",
+  "exports": [
+    "html",
+    "pdf",
+    "zip"
+  ],
+  "createdAt": "2026-08-29T11:50:54.502Z",
+  "updatedAt": "2026-08-29T11:50:54.502Z",
+  "metadata": {
+    "inferred": true,
+    "reconciled": true
+  }
+}

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 人样反白标志：全部几何统一使用暖白色，适用于深色侧栏、深色封面与反白印刷。 -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" role="img" aria-labelledby="renyang-reverse-title renyang-reverse-desc">
+  <title id="renyang-reverse-title">人样反白标志</title>
+  <desc id="renyang-reverse-desc">由圆形头部和人字形身体组成的暖白色反白人物标志。</desc>
+  <!-- 反白版本保持正式主符号的全部比例，只统一颜色。 -->
+  <circle cx="12" cy="4.6" r="2.6" fill="#f7f4ee"/>
+  <path d="M10.3 10 3.7 20.4" fill="none" stroke="#f7f4ee" stroke-width="4.4" stroke-linecap="round"/>
+  <path d="M13.7 10 20.3 20.4" fill="none" stroke="#f7f4ee" stroke-width="4.4" stroke-linecap="round"/>
+</svg>

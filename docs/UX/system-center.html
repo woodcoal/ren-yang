@@ -1,0 +1,424 @@
+<!doctype html>
+<!--
+  人样系统中心。
+  页面展示本机能力、资料检索、受保护数据操作、审计和唯一管理员安全边界。
+-->
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="人样系统中心">
+  <title>系统中心 · 人样</title>
+  <link rel="icon" href="assets/brand/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/prototype.css">
+</head>
+<body data-page="system-center">
+  <a class="skip-link" href="#main-content">跳到系统中心</a>
+
+  <div class="app-shell">
+    <aside class="sidebar" data-sidebar aria-label="应用导航"></aside>
+    <div class="app-main">
+      <header class="topbar" data-topbar></header>
+      <main class="page" id="main-content">
+        <nav class="breadcrumbs" aria-label="面包屑">
+          <a href="dashboard.html">工作台</a>
+          <span aria-hidden="true">/</span>
+          <strong>系统中心</strong>
+        </nav>
+
+        <header class="page-header" data-od-id="system-center-header">
+          <div class="page-header-copy">
+            <p class="route-code">ROUTE /settings · 以下状态为原型示例</p>
+            <h1 data-od-id="system-center-title">系统中心</h1>
+            <p class="lead">以本机数据为准，查看能力状态、资料检索与同步，并在受保护区域执行会影响数据或远端索引的操作。</p>
+          </div>
+          <div class="page-actions">
+            <button class="btn btn-primary" type="button" data-toast-title="服务检测已完成" data-toast-message="已检查本机能力与远端索引连接；以下状态为示例数据。" data-od-id="system-center-primary-cta">检测全部服务</button>
+          </div>
+        </header>
+
+        <div class="status-strip" data-od-id="system-center-status-summary" aria-label="系统状态摘要，以下为示例数据">
+          <div class="status-cell" data-od-id="system-status-local-data">
+            <span class="status-kicker">本机事实库</span>
+            <span class="status-value">可用</span>
+          </div>
+          <div class="status-cell" data-od-id="system-status-remote-index">
+            <span class="status-kicker">远端索引</span>
+            <span class="status-value">有一项待重试（示例数据）</span>
+          </div>
+          <div class="status-cell" data-od-id="system-status-admin">
+            <span class="status-kicker">管理员身份</span>
+            <span class="status-value">已配置</span>
+          </div>
+          <div class="status-cell" data-od-id="system-status-secrets">
+            <span class="status-kicker">密钥状态</span>
+            <span class="status-value">仅显示已配置状态</span>
+          </div>
+        </div>
+
+        <div id="system-center-tabs" data-tabs data-default-tab="models" data-od-id="system-center-tab-group">
+          <div class="tabs" role="tablist" aria-label="系统中心分区" data-od-id="system-center-tab-list">
+          <button class="tab-button" id="system-tab-models" type="button" role="tab" aria-selected="true" aria-controls="system-panel-models" data-tab="models" data-od-id="system-tab-models">模型能力</button>
+          <button class="tab-button" id="system-tab-retrieval" type="button" role="tab" aria-selected="false" aria-controls="system-panel-retrieval" data-tab="retrieval" data-od-id="system-tab-retrieval">上下文检索与同步</button>
+          <button class="tab-button" id="system-tab-backup" type="button" role="tab" aria-selected="false" aria-controls="system-panel-backup" data-tab="backup" data-od-id="system-tab-backup">数据备份</button>
+          <button class="tab-button" id="system-tab-audit" type="button" role="tab" aria-selected="false" aria-controls="system-panel-audit" data-tab="audit" data-od-id="system-tab-audit">审计记录</button>
+          <button class="tab-button" id="system-tab-security" type="button" role="tab" aria-selected="false" aria-controls="system-panel-security" data-tab="security" data-od-id="system-tab-security">账户安全</button>
+        </div>
+
+        <section class="tab-panel" id="system-panel-models" role="tabpanel" aria-labelledby="system-tab-models" data-tab-panel="models" data-od-id="system-model-capabilities-section">
+          <div class="section-head">
+            <div class="section-head-copy">
+              <p class="eyebrow">模型能力</p>
+              <h2>只显示可确认的能力状态</h2>
+              <p>密钥内容和模型内部参数不会在此页面展示；进入对应设置页后再处理版本化的生成配置。</p>
+            </div>
+            <a class="btn btn-secondary" href="generation-settings.html" data-od-id="system-model-settings-control">查看生成设置</a>
+          </div>
+
+          <div class="grid-2" data-od-id="system-model-list">
+            <article class="panel" data-od-id="system-text-capability">
+              <div class="row-between wrap">
+                <span class="badge">已配置</span>
+                <span class="meta">本机能力状态</span>
+              </div>
+              <h3>文本生成</h3>
+              <p>可用于任务规划、创作和辅助判断。具体模型选择与生成限制由生成设置中的版本化方案决定。</p>
+              <div class="panel-actions">
+                <a class="text-link" href="generation-settings.html" data-od-id="system-text-settings-link">检查生成设置</a>
+              </div>
+            </article>
+            <article class="panel" data-od-id="system-image-capability">
+              <div class="row-between wrap">
+                <span class="badge is-muted">未启用</span>
+                <span class="meta">本机能力状态</span>
+              </div>
+              <h3>图片能力</h3>
+              <p>当前未作为工作台默认能力启用。未启用状态不会影响文本任务、人物资料或本机事实库。</p>
+              <div class="panel-actions">
+                <button class="btn btn-secondary" type="button" data-toast-title="能力状态未改变" data-toast-message="图片能力需要在本机完成配置后才可启用。" data-od-id="system-image-status-control">说明未启用原因</button>
+              </div>
+            </article>
+          </div>
+
+          <details class="details" data-od-id="system-secret-state-details">
+            <summary>查看非敏感配置状态</summary>
+            <div class="details-content">
+              <div class="status-strip" aria-label="非敏感密钥状态">
+                <div class="status-cell" data-od-id="system-text-secret-state">
+                  <span class="status-kicker">文本能力密钥</span>
+                  <span class="status-value">已配置，不显示内容</span>
+                </div>
+                <div class="status-cell" data-od-id="system-index-secret-state">
+                  <span class="status-kicker">检索服务密钥</span>
+                  <span class="status-value">已配置，不显示内容</span>
+                </div>
+                <div class="status-cell" data-od-id="system-secret-export-state">
+                  <span class="status-kicker">导出限制</span>
+                  <span class="status-value">不提供密钥导出</span>
+                </div>
+                <div class="status-cell" data-od-id="system-secret-recovery-state">
+                  <span class="status-kicker">恢复路径</span>
+                  <span class="status-value">仅本机命令行</span>
+                </div>
+              </div>
+            </div>
+          </details>
+        </section>
+
+        <section class="tab-panel" id="system-panel-retrieval" role="tabpanel" aria-labelledby="system-tab-retrieval" data-tab-panel="retrieval" data-od-id="system-retrieval-sync-section" hidden>
+          <div class="section-head">
+            <div class="section-head-copy">
+              <p class="eyebrow">上下文检索与同步</p>
+              <h2>本机事实库优先，远端索引提供资料正文检索增强</h2>
+              <p>OpenViking 只同步资料正文。本机事实库始终是事实来源，远端同步失败不会删除本机资料。</p>
+            </div>
+            <button class="btn btn-secondary" type="button" data-toast-title="检索服务检测已完成" data-toast-message="已重新检测 OpenViking 的配置、启用状态与队列；结果为示例数据。" data-od-id="system-detect-retrieval-control">检测服务</button>
+          </div>
+
+          <div class="status-strip" data-od-id="system-openviking-summary" aria-label="OpenViking 状态，以下为示例数据">
+            <div class="status-cell" data-od-id="system-openviking-configuration">
+              <span class="status-kicker">OpenViking 配置</span>
+              <span class="status-value">已配置</span>
+            </div>
+            <div class="status-cell" data-od-id="system-openviking-enabled">
+              <span class="status-kicker">OpenViking 启用</span>
+              <span class="status-value">已启用</span>
+            </div>
+            <div class="status-cell" data-od-id="system-retrieval-method">
+              <span class="status-kicker">当前检索方式</span>
+              <span class="status-value">本地全文检索优先</span>
+            </div>
+            <div class="status-cell" data-od-id="system-sync-queue">
+              <span class="status-kicker">同步队列</span>
+              <span class="status-value">一项待重试（示例数据）</span>
+            </div>
+          </div>
+
+          <div class="notice" data-od-id="system-openviking-boundary">
+            <span class="notice-icon" aria-hidden="true">!</span>
+            <div class="notice-copy">
+              <strong>远端索引的使用边界</strong>
+              <p>新任务可在同步成功后获得资料正文的检索增强；同步失败时仍以本机全文检索和本机资料为准。</p>
+            </div>
+          </div>
+
+          <div class="log-list" data-od-id="system-sync-failure-list">
+            <article class="log-row" data-od-id="system-sync-failure-source">
+              <span class="meta">资料同步 · 示例数据</span>
+              <div class="log-row-main">
+                <span class="log-row-title">学院档案事实资料</span>
+                <span class="log-row-sub">本机资料已保存；远端索引待重试。新任务若需要远端检索增强，可能无法使用本次更新。</span>
+              </div>
+              <span class="log-row-end"><span class="badge is-failed">同步失败</span></span>
+            </article>
+            <article class="log-row" data-od-id="system-sync-queue-source">
+              <span class="meta">同步队列 · 示例数据</span>
+              <div class="log-row-main">
+                <span class="log-row-title">等待本机管理员处理</span>
+                <span class="log-row-sub">可重试该资料的同步，或在受保护操作区域对全部资料重建远端索引。</span>
+              </div>
+              <span class="log-row-end"><span class="badge is-warning">待重试</span></span>
+            </article>
+          </div>
+
+          <div class="panel-actions" data-od-id="system-sync-actions">
+            <button class="btn btn-secondary" type="button" data-retry-sync data-status-target="#system-sync-state" data-od-id="system-retry-sync-control">重试资料同步</button>
+            <span class="meta" id="system-sync-state" aria-live="polite">等待本机管理员重试</span>
+          </div>
+
+          <section class="section" data-od-id="system-rebuild-danger-section" aria-labelledby="system-rebuild-danger-title">
+            <div class="section-head">
+              <div class="section-head-copy">
+                <p class="eyebrow">受保护操作</p>
+                <h2 id="system-rebuild-danger-title">全量重建远端索引</h2>
+                <p>该操作会将全部可同步资料重新加入队列，期间远端检索增强可能不完整；本机资料和本机事实库不会被删除。</p>
+              </div>
+              <button class="btn btn-danger" type="button" data-open-dialog="rebuild-index-dialog" data-od-id="system-rebuild-index-control">确认后全量重建</button>
+            </div>
+          </section>
+        </section>
+
+        <section class="tab-panel" id="system-panel-backup" role="tabpanel" aria-labelledby="system-tab-backup" data-tab-panel="backup" data-od-id="system-backup-section" hidden>
+          <div class="section-head">
+            <div class="section-head-copy">
+              <p class="eyebrow">数据备份</p>
+              <h2>备份前先确认本机保存范围</h2>
+              <p>备份用于保护本机资料、人物和任务记录。恢复操作只能在本机命令行（CLI）中按当前安装版本的说明完成。</p>
+            </div>
+          </div>
+
+          <div class="notice" data-od-id="system-backup-scope-notice">
+            <span class="notice-icon" aria-hidden="true">!</span>
+            <div class="notice-copy">
+              <strong>远端索引不替代本机备份</strong>
+              <p>远端索引仅保存用于资料正文检索增强的内容；它不能替代对本机工作台数据的备份。</p>
+            </div>
+          </div>
+
+          <section class="section" data-od-id="system-backup-danger-section" aria-labelledby="system-backup-danger-title">
+            <div class="section-head">
+              <div class="section-head-copy">
+                <p class="eyebrow">受保护操作</p>
+                <h2 id="system-backup-danger-title">创建本机备份</h2>
+                <p>确认后会生成当前本机数据的备份。恢复备份不会在网页中执行，请使用本机命令行（CLI）帮助中的恢复流程。</p>
+              </div>
+              <button class="btn btn-danger" type="button" data-open-dialog="create-backup-dialog" data-od-id="system-create-backup-control">确认后创建备份</button>
+            </div>
+          </section>
+
+          <details class="details" data-od-id="system-backup-recovery-details">
+            <summary>查看本机恢复说明</summary>
+            <div class="details-content">
+              <p>请在运行人样的本机终端中查看当前安装版本的命令行（CLI）帮助，并按其中的本机恢复流程操作。系统不提供在线恢复、远程恢复或跨设备找回。</p>
+            </div>
+          </details>
+        </section>
+
+        <section class="tab-panel" id="system-panel-audit" role="tabpanel" aria-labelledby="system-tab-audit" data-tab-panel="audit" data-od-id="system-audit-section" hidden>
+          <div class="section-head">
+            <div class="section-head-copy">
+              <p class="eyebrow">审计记录</p>
+              <h2>追溯配置和受保护操作</h2>
+              <p>以下内容为示例数据。审计记录用于说明发生了什么与影响范围，不以颜色作为唯一状态标记。</p>
+            </div>
+            <button class="btn btn-secondary" type="button" data-toast-title="审计记录已刷新" data-toast-message="已检查本机可用的审计记录；以下仍为示例数据。" data-od-id="system-refresh-audit-control">刷新记录</button>
+          </div>
+
+          <div class="log-list" data-od-id="system-audit-log-list">
+            <article class="log-row" data-od-id="system-audit-sync-failure">
+              <span class="meta">今天 · 示例数据</span>
+              <div class="log-row-main">
+                <span class="log-row-title">资料远端同步未完成</span>
+                <span class="log-row-sub">对象：学院档案事实资料。影响：本机资料可用，远端检索增强待恢复。</span>
+              </div>
+              <span class="log-row-end"><span class="badge is-failed">需要处理</span></span>
+            </article>
+            <article class="log-row" data-od-id="system-audit-model-check">
+              <span class="meta">今天 · 示例数据</span>
+              <div class="log-row-main">
+                <span class="log-row-title">文本能力状态已检测</span>
+                <span class="log-row-sub">仅记录非敏感配置状态；不记录、不展示或导出密钥内容。</span>
+              </div>
+              <span class="log-row-end"><span class="badge">已记录</span></span>
+            </article>
+            <article class="log-row" data-od-id="system-audit-admin-setup">
+              <span class="meta">首次设置 · 示例数据</span>
+              <div class="log-row-main">
+                <span class="log-row-title">唯一管理员完成本机设置</span>
+                <span class="log-row-sub">影响：本机工作台可用；未创建其他用户、邀请或外部登录方式。</span>
+              </div>
+              <span class="log-row-end"><span class="badge">已完成</span></span>
+            </article>
+          </div>
+        </section>
+
+        <section class="tab-panel" id="system-panel-security" role="tabpanel" aria-labelledby="system-tab-security" data-tab-panel="security" data-od-id="system-account-security-section" hidden>
+          <div class="section-head">
+            <div class="section-head-copy">
+              <p class="eyebrow">账户安全</p>
+              <h2>唯一管理员只在本机维护</h2>
+              <p>人样不提供注册、多用户、在线找回、邮件重置或第三方登录。管理员与恢复操作的边界始终留在当前设备。</p>
+            </div>
+          </div>
+
+          <div class="grid-2" data-od-id="system-security-list">
+            <article class="panel" data-od-id="system-admin-account-state">
+              <div class="row-between wrap">
+                <span class="badge">已设置</span>
+                <span class="meta">本机唯一管理员</span>
+              </div>
+              <h3>管理员身份</h3>
+              <p>当前设备只有一位管理员。管理员名称可用于本机识别，但不会用来邀请或管理其他用户。</p>
+            </article>
+            <article class="panel" data-od-id="system-password-state">
+              <div class="row-between wrap">
+                <span class="badge">已设置</span>
+                <span class="meta">密码状态</span>
+              </div>
+              <h3>管理员密码</h3>
+              <p>只显示已设置状态，不显示密码内容。密码管理器与粘贴输入均可在登录页使用。</p>
+            </article>
+          </div>
+
+          <div class="notice" data-od-id="system-cli-only-recovery">
+            <span class="notice-icon" aria-hidden="true">!</span>
+            <div class="notice-copy">
+              <strong>密码重置与访问恢复仅限本机命令行</strong>
+              <p>请在运行人样的本机终端中查看当前安装版本的命令行（CLI）帮助，并按其中的管理员密码重置或本机恢复流程操作。系统不会发送在线重置链接。</p>
+            </div>
+          </div>
+
+          <section class="section" data-od-id="system-index-delete-danger-section" aria-labelledby="system-index-delete-danger-title">
+            <div class="section-head">
+              <div class="section-head-copy">
+                <p class="eyebrow">受保护操作</p>
+                <h2 id="system-index-delete-danger-title">永久删除远端索引</h2>
+                <p>此操作只删除远端索引中的资料正文，且无法从远端恢复。本机资料、人物和任务记录不会删除；后续任务将只使用本地全文检索，直到再次同步或全量重建。</p>
+              </div>
+              <button class="btn btn-danger" type="button" data-open-dialog="delete-remote-index-dialog" data-od-id="system-delete-remote-index-control">确认后永久删除</button>
+            </div>
+          </section>
+        </section>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <dialog class="dialog" id="rebuild-index-dialog" data-od-id="system-rebuild-index-dialog" aria-labelledby="rebuild-index-title">
+    <div class="dialog-header">
+      <div>
+        <p class="eyebrow">受保护操作</p>
+        <h2 id="rebuild-index-title">确认全量重建远端索引</h2>
+      </div>
+      <button class="icon-button" type="button" data-close-dialog aria-label="关闭确认框" data-od-id="system-rebuild-dialog-close">×</button>
+    </div>
+    <form method="dialog" data-protected-operation data-success-title="已开始全量重建" data-success-message="全部可同步资料已进入重建队列；本机资料保持不变。">
+      <div class="dialog-body">
+        <p>全部可同步资料会重新进入队列。重建期间，远端检索增强可能不完整；本机资料和本机事实库不会被删除。</p>
+        <label class="checkbox-row" data-od-id="system-rebuild-confirmation">
+          <input type="checkbox" required>
+          <span>我理解此操作会重建全部远端索引，并可能暂时影响远端检索增强。</span>
+        </label>
+      </div>
+      <div class="dialog-footer">
+        <button class="btn btn-secondary" type="button" data-close-dialog data-od-id="system-rebuild-cancel">取消</button>
+        <button class="btn btn-danger" type="submit" data-od-id="system-rebuild-confirm">开始重建</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="dialog" id="create-backup-dialog" data-od-id="system-create-backup-dialog" aria-labelledby="create-backup-title">
+    <div class="dialog-header">
+      <div>
+        <p class="eyebrow">受保护操作</p>
+        <h2 id="create-backup-title">确认创建本机备份</h2>
+      </div>
+      <button class="icon-button" type="button" data-close-dialog aria-label="关闭确认框" data-od-id="system-backup-dialog-close">×</button>
+    </div>
+    <form method="dialog" data-protected-operation data-success-title="本机备份已创建" data-success-message="原型已记录创建备份的受保护操作。">
+      <div class="dialog-body">
+        <p>将生成当前本机资料、人物和任务记录的备份。恢复只能在本机命令行（CLI）中按当前安装版本的说明执行。</p>
+        <label class="checkbox-row" data-od-id="system-backup-confirmation">
+          <input type="checkbox" required>
+          <span>我理解备份不会替代本机访问控制，恢复不在网页中执行。</span>
+        </label>
+      </div>
+      <div class="dialog-footer">
+        <button class="btn btn-secondary" type="button" data-close-dialog data-od-id="system-backup-cancel">取消</button>
+        <button class="btn btn-danger" type="submit" data-od-id="system-backup-confirm">创建备份</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="dialog" id="delete-remote-index-dialog" data-od-id="system-delete-index-dialog" aria-labelledby="delete-remote-index-title">
+    <div class="dialog-header">
+      <div>
+        <p class="eyebrow">永久删除</p>
+        <h2 id="delete-remote-index-title">确认永久删除远端索引</h2>
+      </div>
+      <button class="icon-button" type="button" data-close-dialog aria-label="关闭确认框" data-od-id="system-delete-index-dialog-close">×</button>
+    </div>
+    <form method="dialog" data-protected-operation data-success-title="远端索引已删除" data-success-message="原型已记录永久删除操作；本机资料未受影响。">
+      <div class="dialog-body">
+        <p>远端索引中的资料正文将被永久删除，无法从远端恢复。本机资料、人物和任务记录不会删除；新任务将只使用本地全文检索，直到你重新同步或全量重建。</p>
+        <label class="checkbox-row" data-od-id="system-delete-index-confirmation">
+          <input type="checkbox" required>
+          <span>我理解远端索引将被永久删除，且删除后不再提供远端检索增强。</span>
+        </label>
+      </div>
+      <div class="dialog-footer">
+        <button class="btn btn-secondary" type="button" data-close-dialog data-od-id="system-delete-index-cancel">取消</button>
+        <button class="btn btn-danger" type="submit" data-od-id="system-delete-index-confirm">永久删除远端索引</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="assets/prototype.js"></script>
+  <script>
+    'use strict';
+
+    /**
+     * 在通过原生必填确认后，播报已执行的受保护原型操作。
+     * @param {SubmitEvent} event 原生对话框表单提交事件。
+     * @returns {void}
+     */
+    function handleProtectedOperationSubmit(event) {
+      const form = event.currentTarget;
+      showToast(form.dataset.successTitle || '受保护操作已完成', form.dataset.successMessage || '原型已记录本次操作。');
+    }
+
+    /**
+     * 为所有受保护操作的确认表单绑定成功反馈；未通过必填确认时不会触发提交事件。
+     * @returns {void}
+     */
+    function initSystemProtectedOperations() {
+      const forms = document.querySelectorAll('[data-protected-operation]');
+      for (let index = 0; index < forms.length; index += 1) {
+        forms[index].addEventListener('submit', handleProtectedOperationSubmit);
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', initSystemProtectedOperations);
+  </script>
+</body>
+</html>

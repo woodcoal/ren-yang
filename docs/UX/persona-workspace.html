@@ -1,0 +1,578 @@
+<!doctype html>
+<!--
+  人样后台重设计原型：人物工作区。
+  当前页面对应产品路由 /personas/[id]，页面中的所有数量与版本均为示例数据，不代表真实统计结果。
+-->
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="人样人物工作区高保真交互原型">
+  <title>顾岚 · 人物工作区 · 人样</title>
+  <link rel="icon" href="assets/brand/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/prototype.css">
+</head>
+<body data-page="persona-workspace">
+  <a class="skip-link" href="#main-content">跳到主要内容</a>
+  <div class="app-shell">
+    <aside class="sidebar" data-sidebar aria-label="应用导航"></aside>
+    <div class="app-main">
+      <header class="topbar" data-topbar></header>
+      <main class="page" id="main-content">
+        <nav class="breadcrumbs" aria-label="面包屑">
+          <a href="personas.html">人物空间</a>
+          <span aria-hidden="true">/</span>
+          <a href="personas.html">人物</a>
+          <span aria-hidden="true">/</span>
+          <strong>顾岚</strong>
+        </nav>
+
+        <header class="page-header" data-od-id="persona-workspace-fixed-header">
+          <div class="page-header-copy">
+            <p class="route-code">路由 /PERSONAS/[ID] · 顾岚 · 所有数量与版本均为示例数据</p>
+            <h1 data-od-id="persona-workspace-title">顾岚</h1>
+            <p class="lead">谨慎核验资料的档案整理者。当前人物上下文在各标签页中保持一致，所有后续影响都通过版本和审阅流程确认。</p>
+          </div>
+          <div class="page-actions">
+            <button class="btn btn-secondary" type="button" data-toggle-target="persona-workspace-more-actions" aria-expanded="false" data-od-id="persona-workspace-more-actions-control">更多人物操作</button>
+            <a class="btn btn-primary" href="new-task.html" data-od-id="persona-workspace-primary-cta">新建任务</a>
+          </div>
+        </header>
+
+        <div class="status-strip" data-od-id="persona-workspace-fixed-status" aria-label="顾岚固定状态">
+          <div class="status-cell">
+            <span class="status-kicker">所属世界</span>
+            <span class="status-value">学院档案世界</span>
+          </div>
+          <div class="status-cell">
+            <span class="status-kicker">当前灵魂</span>
+            <span class="status-value">已发布 v3（示例数据）</span>
+          </div>
+          <div class="status-cell">
+            <span class="status-kicker">任务状态</span>
+            <span class="status-value">可以创建任务</span>
+          </div>
+          <div class="status-cell">
+            <span class="status-kicker">待审对象</span>
+            <span class="status-value">成长 1 项、候选记忆 2 项（示例数据）</span>
+          </div>
+        </div>
+
+        <section class="section" id="persona-workspace-more-actions" hidden data-od-id="persona-workspace-secondary-actions" aria-label="人物次级操作">
+          <div class="toolbar">
+            <a class="btn btn-secondary" href="#persona-workspace-soul" data-od-id="persona-workspace-edit-draft-control">查看灵魂修改稿</a>
+            <a class="btn btn-secondary" href="#persona-workspace-versions" data-od-id="persona-workspace-version-control">查看版本记录</a>
+            <button class="btn btn-secondary" type="button" data-open-dialog="persona-workspace-archive-dialog" data-od-id="persona-workspace-archive-control">归档人物</button>
+          </div>
+          <p class="meta">归档、回滚和发布均为次级操作，不会替代“新建任务”这一主要路径。</p>
+        </section>
+
+        <section class="section" data-od-id="persona-workspace-capability-boundary" aria-labelledby="persona-workspace-capability-heading">
+          <div class="notice is-target">
+            <span class="notice-icon"><span class="capability-badge">目标态能力</span></span>
+            <div class="notice-copy">
+              <strong id="persona-workspace-capability-heading">成长与有效记忆需要后端支持</strong>
+              <p>当前页面展示人工审阅、检索范围和发布影响。候选记忆仍未生效，不会被描述为有效记忆或自动参与后续任务。</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" data-tabs id="persona-workspace-tabs" data-default-tab="overview" data-od-id="persona-workspace-tabs-section" aria-label="顾岚工作区内容">
+          <div class="tabs" role="tablist" aria-label="顾岚工作区标签" data-od-id="persona-workspace-tab-list">
+            <button class="tab-button" type="button" role="tab" id="persona-workspace-tab-overview" aria-controls="persona-workspace-panel-overview" data-tab="overview" data-od-id="persona-workspace-tab-overview">概览</button>
+            <button class="tab-button" type="button" role="tab" id="persona-workspace-tab-soul" aria-controls="persona-workspace-panel-soul" data-tab="soul" data-od-id="persona-workspace-tab-soul">灵魂</button>
+            <button class="tab-button" type="button" role="tab" id="persona-workspace-tab-growth" aria-controls="persona-workspace-panel-growth" data-tab="growth" data-od-id="persona-workspace-tab-growth">成长</button>
+            <button class="tab-button" type="button" role="tab" id="persona-workspace-tab-memory" aria-controls="persona-workspace-panel-memory" data-tab="memory" data-od-id="persona-workspace-tab-memory">记忆</button>
+            <button class="tab-button" type="button" role="tab" id="persona-workspace-tab-relations" aria-controls="persona-workspace-panel-relations" data-tab="relations" data-od-id="persona-workspace-tab-relations">世界与资料</button>
+            <button class="tab-button" type="button" role="tab" id="persona-workspace-tab-versions" aria-controls="persona-workspace-panel-versions" data-tab="versions" data-od-id="persona-workspace-tab-versions">版本</button>
+          </div>
+
+          <div class="tab-panel" id="persona-workspace-panel-overview" role="tabpanel" aria-labelledby="persona-workspace-tab-overview" data-tab-panel="overview" data-od-id="persona-workspace-overview-panel">
+            <div class="section-head">
+              <div class="section-head-copy">
+                <p class="eyebrow">人物概览</p>
+                <h2>当前可以做什么</h2>
+                <p>顾岚拥有可用于新任务的已发布灵魂。待审内容留在审阅流程中，不自动改变当前人物。</p>
+              </div>
+            </div>
+            <div class="grid-2">
+              <section class="panel" data-od-id="persona-workspace-overview-recent-task">
+                <p class="eyebrow">最近任务</p>
+                <h3>旧物传闻三步核验</h3>
+                <p>内容创作 · 8 分钟前 · 正在生成第 2 个内容段落（示例数据）。任务锁定的是已发布灵魂 v3，不会读取待审成长或候选记忆。</p>
+                <div class="panel-actions"><a class="btn btn-secondary" href="task-detail.html" data-od-id="persona-workspace-overview-task-control">查看任务</a></div>
+              </section>
+              <section class="panel" data-od-id="persona-workspace-overview-current-context">
+                <p class="eyebrow">当前上下文</p>
+                <h3>资料优先，冲突需要核验</h3>
+                <p>当前灵魂要求面对资料不足时明确说明未知项。学院档案世界与已选择资料将按任务规格独立锁定。</p>
+                <div class="panel-actions"><a class="btn btn-secondary" href="#persona-workspace-relations" data-od-id="persona-workspace-overview-context-control">检查世界与资料</a></div>
+              </section>
+            </div>
+            <section class="section" data-od-id="persona-workspace-overview-review-queue" aria-labelledby="persona-workspace-overview-review-heading">
+              <div class="section-head">
+                <div class="section-head-copy">
+                  <p class="eyebrow">待处理</p>
+                  <h2 id="persona-workspace-overview-review-heading">需要人工决定的内容</h2>
+                  <p>确认前均不影响人物的后续表现。</p>
+                </div>
+              </div>
+              <div class="log-list">
+                <article class="log-row" data-od-id="persona-workspace-overview-growth-candidate">
+                  <span class="meta">成长候选</span>
+                  <div class="log-row-main"><strong class="log-row-title">资料不足时先说明未知项</strong><span class="log-row-sub">来自顾岚的任务反馈，触及当前约束边界；尚未生效。</span></div>
+                  <span class="log-row-end"><a class="btn btn-secondary" href="#persona-workspace-growth" data-od-id="persona-workspace-overview-growth-review-control">审阅</a></span>
+                </article>
+                <article class="log-row" data-od-id="persona-workspace-overview-memory-candidate">
+                  <span class="meta">候选记忆</span>
+                  <div class="log-row-main"><strong class="log-row-title">霜月十三日首次看见且拒绝触碰</strong><span class="log-row-sub">来源任务已保留；这是候选记忆，不是有效记忆，尚未参与检索。</span></div>
+                  <span class="log-row-end"><a class="btn btn-secondary" href="#persona-workspace-memory" data-od-id="persona-workspace-overview-memory-review-control">检查范围</a></span>
+                </article>
+              </div>
+            </section>
+          </div>
+
+          <div class="tab-panel" id="persona-workspace-panel-soul" role="tabpanel" aria-labelledby="persona-workspace-tab-soul" data-tab-panel="soul" data-od-id="persona-workspace-soul-panel" hidden>
+            <div class="section-head" id="persona-workspace-soul">
+              <div class="section-head-copy">
+                <p class="eyebrow">灵魂与修改稿</p>
+                <h2>当前版本与修改稿并列审阅</h2>
+                <p>修改稿的每处变化均可与当前已发布灵魂比较。未发布内容不进入任务上下文。</p>
+              </div>
+              <div class="section-actions">
+                <button class="btn btn-secondary" type="button" data-open-dialog="persona-workspace-publish-dialog" data-od-id="persona-workspace-soul-publish-check-control">查看发布确认</button>
+              </div>
+            </div>
+            <div class="diff-grid" data-od-id="persona-workspace-soul-side-by-side">
+              <section class="diff-column" data-od-id="persona-workspace-soul-current">
+                <p class="eyebrow">当前已发布 · v3（示例数据）</p>
+                <h3>资料核验优先</h3>
+                <div class="reader">
+                  <p>顾岚将已证实资料与推断严格分开。面对资料不足的问题，说明未知项并指向可以核验的来源。</p>
+                  <p>资料出现冲突时，保留冲突，不以流畅叙述代替事实边界。</p>
+                </div>
+              </section>
+              <section class="diff-column" data-od-id="persona-workspace-soul-draft">
+                <p class="eyebrow">未发布修改稿 · v4（示例数据）</p>
+                <h3>增加冲突资料的处理顺序</h3>
+                <div class="reader">
+                  <p>顾岚将已证实资料与推断严格分开。面对资料不足的问题，先说明未知项，再指出可以核验的来源。</p>
+                  <p>资料出现冲突时，先标注未经证实内容，再请求人工确认，不以流畅叙述代替事实边界。</p>
+                </div>
+              </section>
+            </div>
+            <section class="section" data-od-id="persona-workspace-soul-diff-section" aria-labelledby="persona-workspace-soul-diff-heading">
+              <div class="section-head">
+                <div class="section-head-copy">
+                  <p class="eyebrow">差异摘要</p>
+                  <h2 id="persona-workspace-soul-diff-heading">会改变任务行为的两处内容</h2>
+                </div>
+              </div>
+              <div class="diff-grid">
+                <div class="diff-column" data-od-id="persona-workspace-soul-diff-unknown">
+                  <h3>资料不足</h3>
+                  <div class="diff-line">当前：说明未知项。</div>
+                  <div class="diff-line is-changed">修改稿：先说明未知项，再指出可核验来源。</div>
+                </div>
+                <div class="diff-column" data-od-id="persona-workspace-soul-diff-conflict">
+                  <h3>资料冲突</h3>
+                  <div class="diff-line">当前：保留冲突，等待核验。</div>
+                  <div class="diff-line is-changed">修改稿：明确标注未经证实内容，再请求人工确认。</div>
+                </div>
+              </div>
+              <div class="notice" data-od-id="persona-workspace-soul-evaluation-state">
+                <span class="notice-icon" aria-hidden="true">!</span>
+                <div class="notice-copy">
+                  <strong>修改稿 v4 的回归评测未通过（示例数据）</strong>
+                  <p>候选输出缺少“资料不足”说明，当前不能发布。评测失败不是自动回滚，当前已发布 v3 仍可用于新任务。</p>
+                </div>
+                <a class="btn btn-secondary" href="evaluation-detail.html" data-od-id="persona-workspace-soul-evaluation-control">查看评测</a>
+              </div>
+            </section>
+          </div>
+
+          <div class="tab-panel" id="persona-workspace-panel-growth" role="tabpanel" aria-labelledby="persona-workspace-tab-growth" data-tab-panel="growth" data-od-id="persona-workspace-growth-panel" hidden>
+            <div class="section-head" id="persona-workspace-growth">
+              <div class="section-head-copy">
+                <p class="eyebrow">成长审阅</p>
+                <h2>候选必须由人决定是否采用</h2>
+                <p>成长是目标态能力，需要后端支持。以下候选尚未生效，确认前不会改变新任务。</p>
+              </div>
+            </div>
+            <section class="panel-soft" data-od-id="persona-workspace-growth-candidate-review" aria-labelledby="persona-workspace-growth-candidate-heading">
+              <div class="row-between wrap">
+                <div>
+                  <p class="eyebrow">候选 · 尚未生效</p>
+                  <h3 id="persona-workspace-growth-candidate-heading">资料不足时先说明未知项</h3>
+                </div>
+                <span class="badge is-warning">需要审阅</span>
+              </div>
+              <p>来源：任务“旧物传闻三步核验”的用户反馈。AI 建议将其归为人物变化，用户可以纠正这一建议。</p>
+              <div class="status-strip" data-od-id="persona-workspace-growth-candidate-scope">
+                <div class="status-cell"><span class="status-kicker">适用范围</span><span class="status-value">顾岚的资料核验任务</span></div>
+                <div class="status-cell"><span class="status-kicker">冲突风险</span><span class="status-value">高风险：触及灵魂约束</span></div>
+                <div class="status-cell"><span class="status-kicker">来源反馈</span><span class="status-value">1 条（示例数据）</span></div>
+                <div class="status-cell"><span class="status-kicker">当前状态</span><span class="status-value">候选，未生效</span></div>
+              </div>
+              <div class="panel-actions">
+                <button class="btn btn-secondary" type="button" data-open-dialog="persona-workspace-growth-confirm-dialog" data-od-id="persona-workspace-growth-confirm-control">确认成长</button>
+                <button class="btn btn-secondary" type="button" data-toast-title="候选已废弃" data-toast-message="原型中该候选不会影响任何后续任务。" data-od-id="persona-workspace-growth-discard-control">废弃候选</button>
+                <button class="btn btn-secondary" type="button" data-toggle-target="persona-workspace-growth-upgrade-note" aria-expanded="false" data-od-id="persona-workspace-growth-upgrade-control">升级为灵魂修改稿</button>
+              </div>
+              <div class="notice" id="persona-workspace-growth-upgrade-note" hidden data-od-id="persona-workspace-growth-upgrade-note">
+                <span class="notice-icon" aria-hidden="true">i</span>
+                <div class="notice-copy">
+                  <strong>升级后必须走差异、评测与发布流程</strong>
+                  <p>因为该候选触及灵魂约束，不能仅作为成长项直接采用；会先形成未发布修改稿，且当前评测失败时不能发布。</p>
+                </div>
+              </div>
+            </section>
+            <section class="section" data-od-id="persona-workspace-growth-history" aria-labelledby="persona-workspace-growth-history-heading">
+              <div class="section-head">
+                <div class="section-head-copy">
+                  <p class="eyebrow">审阅记录</p>
+                  <h2 id="persona-workspace-growth-history-heading">状态分开保留</h2>
+                </div>
+              </div>
+              <div class="log-list">
+                <article class="log-row" data-od-id="persona-workspace-growth-history-effective">
+                  <span class="meta">已确认</span>
+                  <div class="log-row-main"><strong class="log-row-title">不以推断补足资料空白</strong><span class="log-row-sub">示例目标态记录。已确认内容的适用范围与来源任务应可追溯。</span></div>
+                  <span class="log-row-end"><span class="tag">目标态记录</span></span>
+                </article>
+                <article class="log-row" data-od-id="persona-workspace-growth-history-discarded">
+                  <span class="meta">已废弃</span>
+                  <div class="log-row-main"><strong class="log-row-title">将未经证实线索当作人物偏好</strong><span class="log-row-sub">因来源不足被废弃，不会恢复到新任务中。</span></div>
+                  <span class="log-row-end"><span class="tag">不影响任务</span></span>
+                </article>
+              </div>
+            </section>
+          </div>
+
+          <div class="tab-panel" id="persona-workspace-panel-memory" role="tabpanel" aria-labelledby="persona-workspace-tab-memory" data-tab-panel="memory" data-od-id="persona-workspace-memory-panel" hidden>
+            <div class="section-head" id="persona-workspace-memory">
+              <div class="section-head-copy">
+                <p class="eyebrow">记忆与检索范围</p>
+                <h2>候选记忆先说明会在何处被检索</h2>
+                <p>候选记忆不是有效记忆。只有人工确认的目标态记录才可能在其明确范围内参与后续检索。</p>
+              </div>
+              <p class="meta" id="persona-workspace-memory-status" aria-live="polite">显示 2 条候选记忆（示例数据）</p>
+            </div>
+            <div class="toolbar" data-od-id="persona-workspace-memory-toolbar" aria-label="候选记忆筛选工具">
+              <label class="search-field" for="persona-workspace-memory-search" data-od-id="persona-workspace-memory-search-control">
+                <span class="field-label">检索候选记忆</span>
+                <input class="input" id="persona-workspace-memory-search" type="search" placeholder="输入事实、来源或任务名称" autocomplete="off">
+              </label>
+              <label class="field" for="persona-workspace-memory-scope" data-od-id="persona-workspace-memory-scope-control">
+                <span class="field-label">拟定检索范围</span>
+                <select class="select" id="persona-workspace-memory-scope">
+                  <option value="all">全部范围</option>
+                  <option value="verification">资料核验任务</option>
+                  <option value="interest">兴趣判断任务</option>
+                </select>
+              </label>
+              <button class="btn btn-ghost" type="button" data-memory-clear data-od-id="persona-workspace-memory-clear-control">清除筛选</button>
+            </div>
+            <div class="log-list" id="persona-workspace-memory-list" aria-label="候选记忆列表">
+              <article class="log-row" data-memory-item data-memory-scope="verification" data-memory-search="霜月十三日首次看见且拒绝触碰 旧物传闻三步核验 反馈" data-od-id="persona-workspace-memory-candidate-thirteenth">
+                <span class="meta">候选记忆</span>
+                <div class="log-row-main"><strong class="log-row-title">“霜月十三日首次看见且拒绝触碰”</strong><span class="log-row-sub">来源：任务“旧物传闻三步核验”的反馈。拟定范围：仅顾岚的资料核验任务。当前尚未生效，不参与检索。</span></div>
+                <span class="log-row-end"><span class="badge is-warning">候选，未生效</span></span>
+              </article>
+              <article class="log-row" data-memory-item data-memory-scope="interest" data-memory-search="霜月十二日操作和收藏 未经证实 风帆船 兴趣判断" data-od-id="persona-workspace-memory-candidate-twelfth">
+                <span class="meta">候选记忆</span>
+                <div class="log-row-main"><strong class="log-row-title">“霜月十二日操作和收藏”</strong><span class="log-row-sub">来源材料存在冲突，当前标为未经证实。拟定范围：仅兴趣判断任务；尚未生效，不参与检索。</span></div>
+                <span class="log-row-end"><span class="badge is-warning">候选，未生效</span></span>
+              </article>
+              <div class="empty-state" data-memory-empty hidden data-od-id="persona-workspace-memory-empty-result">
+                <div class="empty-state-inner">
+                  <h3>没有符合条件的候选记忆</h3>
+                  <p>可清除检索词和范围筛选，重新检查尚未生效的候选。</p>
+                  <button class="btn btn-secondary" type="button" data-memory-clear data-od-id="persona-workspace-memory-empty-clear-control">清除筛选</button>
+                </div>
+              </div>
+            </div>
+            <section class="section" data-od-id="persona-workspace-memory-scope-explanation" aria-labelledby="persona-workspace-memory-scope-heading">
+              <div class="section-head">
+                <div class="section-head-copy">
+                  <p class="eyebrow">范围说明</p>
+                  <h2 id="persona-workspace-memory-scope-heading">检索范围不是全局开关</h2>
+                  <p>确认后也必须限制人物、任务类型、时间或资料条件，避免把一个局部结论带入不相关任务。</p>
+                </div>
+              </div>
+              <div class="grid-2">
+                <section class="panel" data-od-id="persona-workspace-memory-scope-inclusion">
+                  <h3>准备确认时必须写明</h3>
+                  <p>人物、可使用的任务类型、来源任务，以及何时应当排除。当前候选没有任何已启用范围。</p>
+                </section>
+                <section class="panel" data-od-id="persona-workspace-memory-scope-boundary">
+                  <h3>当前边界</h3>
+                  <p>现有 candidate_memories 不能等同于有效记忆。目标态能力需要新增模型、接口和任务运行快照支持。</p>
+                </section>
+              </div>
+            </section>
+          </div>
+
+          <div class="tab-panel" id="persona-workspace-panel-relations" role="tabpanel" aria-labelledby="persona-workspace-tab-relations" data-tab-panel="relations" data-od-id="persona-workspace-relations-panel" hidden>
+            <div class="section-head" id="persona-workspace-relations">
+              <div class="section-head-copy">
+                <p class="eyebrow">世界与资料关系</p>
+                <h2>任务上下文从关系中读取，不从人物描述猜测</h2>
+                <p>人物、世界、资料与同步状态各自独立维护。本地资料是事实源，远端索引只影响检索可用性。</p>
+              </div>
+            </div>
+            <div class="log-list" data-od-id="persona-workspace-relations-list">
+              <article class="log-row" data-od-id="persona-workspace-world-relation">
+                <span class="meta">所属世界</span>
+                <div class="log-row-main"><strong class="log-row-title">学院档案世界</strong><span class="log-row-sub">当前引用世界版本 v5（示例数据）。新建任务会锁定其版本，后续世界修改不会改写既有结果。</span></div>
+                <span class="log-row-end"><a class="btn btn-secondary" href="world-detail.html" data-od-id="persona-workspace-world-relation-control">查看世界</a></span>
+              </article>
+              <article class="log-row" data-od-id="persona-workspace-source-relation">
+                <span class="meta">直接资料</span>
+                <div class="log-row-main"><strong class="log-row-title">学院档案事实资料</strong><span class="log-row-sub">本地正文已保存。远端索引同步状态为待重试；不影响本地阅读，但可能影响启用 OpenViking 的新任务检索。</span></div>
+                <span class="log-row-end"><a class="btn btn-secondary" href="source-detail.html" data-od-id="persona-workspace-source-relation-control">查看资料</a></span>
+              </article>
+              <article class="log-row" data-od-id="persona-workspace-context-relation">
+                <span class="meta">任务引用规则</span>
+                <div class="log-row-main"><strong class="log-row-title">按任务规格单独确认</strong><span class="log-row-sub">创建任务时可检查人物灵魂、世界版本和资料范围；待审成长与候选记忆不会自动添加。</span></div>
+                <span class="log-row-end"><span class="tag">需要确认</span></span>
+              </article>
+            </div>
+            <section class="section" data-od-id="persona-workspace-relations-source-boundary" aria-labelledby="persona-workspace-relations-source-heading">
+              <div class="section-head">
+                <div class="section-head-copy">
+                  <p class="eyebrow">资料边界</p>
+                  <h2 id="persona-workspace-relations-source-heading">资料正文与远端索引不是同一状态</h2>
+                </div>
+              </div>
+              <div class="grid-2">
+                <section class="panel" data-od-id="persona-workspace-relations-local-source">
+                  <h3>SQLite 本地事实源</h3>
+                  <p>资料保存、读取与关系记录以本地数据为准。同步失败不会丢失本地正文。</p>
+                </section>
+                <section class="panel" data-od-id="persona-workspace-relations-remote-index">
+                  <h3>OpenViking 远端索引</h3>
+                  <p>仅同步资料正文。同步失败时，应在资料详情显示原因并允许重试，而非把人物关系标为失效。</p>
+                </section>
+              </div>
+            </section>
+          </div>
+
+          <div class="tab-panel" id="persona-workspace-panel-versions" role="tabpanel" aria-labelledby="persona-workspace-tab-versions" data-tab-panel="versions" data-od-id="persona-workspace-versions-panel" hidden>
+            <div class="section-head" id="persona-workspace-versions">
+              <div class="section-head-copy">
+                <p class="eyebrow">版本记录</p>
+                <h2>版本不可原地修改，发布和回滚均需确认</h2>
+                <p>时间线保留每份灵魂的状态、评测与影响。回滚只改变确认后的后续任务上下文，不改写历史任务。</p>
+              </div>
+              <div class="section-actions">
+                <button class="btn btn-secondary" type="button" data-toggle-target="persona-workspace-version-compare" aria-expanded="false" data-od-id="persona-workspace-version-compare-control">比较当前与修改稿</button>
+                <button class="btn btn-secondary" type="button" data-open-dialog="persona-workspace-publish-dialog" data-od-id="persona-workspace-version-publish-control">发布修改稿</button>
+                <button class="btn btn-secondary" type="button" data-open-dialog="persona-workspace-rollback-dialog" data-od-id="persona-workspace-version-rollback-control">回滚到 v2</button>
+              </div>
+            </div>
+            <section class="timeline" data-od-id="persona-workspace-version-timeline" aria-label="顾岚灵魂版本时间线">
+              <article class="timeline-item" data-od-id="persona-workspace-version-v4">
+                <p class="eyebrow">今天 09:31 · 未发布修改稿</p>
+                <h3>v4（示例数据）· 增加冲突资料处理顺序</h3>
+                <p>回归评测未通过：候选输出缺少“资料不足”说明。不能发布，当前 v3 保持可用。</p>
+              </article>
+              <article class="timeline-item" data-od-id="persona-workspace-version-v3">
+                <p class="eyebrow">昨天 14:20 · 当前已发布</p>
+                <h3>v3（示例数据）· 资料核验优先</h3>
+                <p>当前新任务可锁定此版本。发布说明与来源记录已保留在版本详情中。</p>
+              </article>
+              <article class="timeline-item" data-od-id="persona-workspace-version-v2">
+                <p class="eyebrow">三天前 · 可回滚版本</p>
+                <h3>v2（示例数据）· 初始资料边界</h3>
+                <p>可作为回滚目标。确认回滚后，新任务将使用 v2；已有任务继续保留原先锁定的版本。</p>
+              </article>
+              <article class="timeline-item" data-od-id="persona-workspace-version-v1">
+                <p class="eyebrow">五天前 · 已归档</p>
+                <h3>v1（示例数据）· 首次发布</h3>
+                <p>保留历史追溯，不可原地编辑。</p>
+              </article>
+            </section>
+            <section class="section" id="persona-workspace-version-compare" hidden data-od-id="persona-workspace-version-compare-result" aria-labelledby="persona-workspace-version-compare-heading">
+              <div class="section-head">
+                <div class="section-head-copy">
+                  <p class="eyebrow">版本比较</p>
+                  <h2 id="persona-workspace-version-compare-heading">v3 与 v4 的发布前差异（示例数据）</h2>
+                </div>
+              </div>
+              <div class="diff-grid">
+                <section class="diff-column" data-od-id="persona-workspace-version-compare-current">
+                  <h3>v3 当前已发布</h3>
+                  <div class="diff-line">资料不足时说明未知项。</div>
+                  <div class="diff-line">冲突资料保持为待核验状态。</div>
+                </section>
+                <section class="diff-column" data-od-id="persona-workspace-version-compare-draft">
+                  <h3>v4 未发布修改稿</h3>
+                  <div class="diff-line is-changed">先说明未知项，再指向可核验来源。</div>
+                  <div class="diff-line is-changed">冲突资料先标注未经证实，再请求人工确认。</div>
+                </section>
+              </div>
+            </section>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <dialog class="dialog" id="persona-workspace-growth-confirm-dialog" aria-labelledby="persona-workspace-growth-confirm-title" data-od-id="persona-workspace-growth-confirm-dialog">
+    <div class="dialog-header">
+      <div>
+        <p class="eyebrow">确认成长</p>
+        <h2 id="persona-workspace-growth-confirm-title">确认候选的适用范围</h2>
+      </div>
+      <button class="icon-button" type="button" data-close-dialog aria-label="关闭成长确认框" data-od-id="persona-workspace-growth-confirm-close">×</button>
+    </div>
+    <div class="dialog-body">
+      <p>你将确认“资料不足时先说明未知项”这一成长候选。其来源、适用范围和冲突风险会保留为可追溯记录。</p>
+      <div class="notice" data-od-id="persona-workspace-growth-confirm-impact">
+        <span class="notice-icon" aria-hidden="true">!</span>
+        <div class="notice-copy">
+          <strong>确认后才可能影响范围内的后续任务</strong>
+          <p>这是需要后端支持的目标态能力。它不会修改已完成任务，也不会替代触及灵魂约束时所需的修改稿、评测与发布流程。</p>
+        </div>
+      </div>
+    </div>
+    <div class="dialog-footer">
+      <button class="btn btn-secondary" type="button" data-close-dialog data-od-id="persona-workspace-growth-confirm-cancel">返回检查</button>
+      <button class="btn btn-secondary" type="button" data-close-dialog data-toast-title="成长候选已确认" data-toast-message="原型已记录目标态确认结果；已完成任务不会改变。" data-od-id="persona-workspace-growth-confirm-action">确认成长</button>
+    </div>
+  </dialog>
+
+  <dialog class="dialog" id="persona-workspace-publish-dialog" aria-labelledby="persona-workspace-publish-title" data-od-id="persona-workspace-publish-dialog">
+    <div class="dialog-header">
+      <div>
+        <p class="eyebrow">发布确认</p>
+        <h2 id="persona-workspace-publish-title">修改稿当前不能发布</h2>
+      </div>
+      <button class="icon-button" type="button" data-close-dialog aria-label="关闭发布确认框" data-od-id="persona-workspace-publish-close">×</button>
+    </div>
+    <div class="dialog-body">
+      <p>发布 v4（示例数据）会让后续新任务锁定其中的灵魂变化；已完成任务和已有产物不会被改写。</p>
+      <div class="notice" data-od-id="persona-workspace-publish-blocked">
+        <span class="notice-icon" aria-hidden="true">!</span>
+        <div class="notice-copy">
+          <strong>当前发布被回归评测阻止</strong>
+          <p>候选输出缺少“资料不足”说明。请先修改草稿并重新评测；评测通过后，仍需在此处再次确认发布影响。</p>
+        </div>
+      </div>
+    </div>
+    <div class="dialog-footer">
+      <button class="btn btn-secondary" type="button" data-close-dialog data-od-id="persona-workspace-publish-return">返回修改稿</button>
+      <button class="btn btn-secondary" type="button" disabled data-od-id="persona-workspace-publish-disabled">评测通过后才能确认发布</button>
+    </div>
+  </dialog>
+
+  <dialog class="dialog" id="persona-workspace-rollback-dialog" aria-labelledby="persona-workspace-rollback-title" data-od-id="persona-workspace-rollback-dialog">
+    <div class="dialog-header">
+      <div>
+        <p class="eyebrow">回滚确认</p>
+        <h2 id="persona-workspace-rollback-title">确认从 v3 回滚到 v2（示例数据）</h2>
+      </div>
+      <button class="icon-button" type="button" data-close-dialog aria-label="关闭回滚确认框" data-od-id="persona-workspace-rollback-close">×</button>
+    </div>
+    <div class="dialog-body">
+      <p>回滚后，顾岚的新任务会默认锁定已发布的 v2。正在运行和已完成的任务继续保留它们创建时锁定的版本。</p>
+      <div class="notice" data-od-id="persona-workspace-rollback-impact">
+        <span class="notice-icon" aria-hidden="true">!</span>
+        <div class="notice-copy">
+          <strong>回滚不会删除 v3 或修改任务历史</strong>
+          <p>v3 保留在版本时间线中，之后仍可建立新的修改稿。成长和候选记忆不会因为灵魂回滚而自动变更状态。</p>
+        </div>
+      </div>
+    </div>
+    <div class="dialog-footer">
+      <button class="btn btn-secondary" type="button" data-close-dialog data-od-id="persona-workspace-rollback-cancel">取消回滚</button>
+      <button class="btn btn-secondary" type="button" data-close-dialog data-toast-title="已回滚到 v2" data-toast-message="原型中的后续新任务将使用 v2；历史任务保持原版本。" data-od-id="persona-workspace-rollback-confirm">确认回滚</button>
+    </div>
+  </dialog>
+
+  <dialog class="dialog" id="persona-workspace-archive-dialog" aria-labelledby="persona-workspace-archive-title" data-od-id="persona-workspace-archive-dialog">
+    <div class="dialog-header">
+      <div>
+        <p class="eyebrow">归档人物</p>
+        <h2 id="persona-workspace-archive-title">确认归档顾岚</h2>
+      </div>
+      <button class="icon-button" type="button" data-close-dialog aria-label="关闭归档确认框" data-od-id="persona-workspace-archive-close">×</button>
+    </div>
+    <div class="dialog-body">
+      <p>归档会阻止在原型中继续为顾岚创建新任务，但不删除灵魂版本、资料关系、任务记录或待审候选。</p>
+    </div>
+    <div class="dialog-footer">
+      <button class="btn btn-secondary" type="button" data-close-dialog data-od-id="persona-workspace-archive-cancel">取消</button>
+      <button class="btn btn-secondary" type="button" data-close-dialog data-toast-title="人物已归档" data-toast-message="原型中保留所有历史记录，后续可通过人物操作恢复。" data-od-id="persona-workspace-archive-confirm">确认归档</button>
+    </div>
+  </dialog>
+
+  <script src="assets/prototype.js"></script>
+  <script>
+    'use strict';
+
+    /**
+     * 按检索词和拟定任务范围过滤尚未生效的候选记忆。
+     * @param {Event} event 由候选记忆搜索框或范围选择器触发的事件。
+     * @returns {void} 不返回值，直接更新候选记忆行、空状态和数量播报。
+     * 特殊业务逻辑：筛选仅处理示例候选，绝不把它们转换为有效记忆或加入真实检索。
+     */
+    function applyWorkspaceMemoryFilters(event) {
+      const search = document.getElementById('persona-workspace-memory-search');
+      const scope = document.getElementById('persona-workspace-memory-scope');
+      const rows = document.querySelectorAll('[data-memory-item]');
+      const empty = document.querySelector('[data-memory-empty]');
+      const status = document.getElementById('persona-workspace-memory-status');
+      const query = search.value.trim().toLocaleLowerCase('zh-CN');
+      let visibleCount = 0;
+
+      for (let index = 0; index < rows.length; index += 1) {
+        const row = rows[index];
+        const text = (row.dataset.memorySearch || '').toLocaleLowerCase('zh-CN');
+        const matchesSearch = query === '' || text.includes(query);
+        const matchesScope = scope.value === 'all' || row.dataset.memoryScope === scope.value;
+        const visible = matchesSearch && matchesScope;
+        row.hidden = !visible;
+        if (visible) visibleCount += 1;
+      }
+
+      empty.hidden = visibleCount !== 0;
+      status.textContent = '显示 ' + visibleCount + ' 条候选记忆（示例数据）';
+    }
+
+    /**
+     * 清空候选记忆检索词和拟定范围选择。
+     * @param {Event} event 清除筛选按钮触发的点击事件。
+     * @returns {void} 不返回值，恢复全部尚未生效的示例候选记忆。
+     * 特殊业务逻辑：清除不确认、删除或改变任何候选记忆的业务状态。
+     */
+    function clearWorkspaceMemoryFilters(event) {
+      const search = document.getElementById('persona-workspace-memory-search');
+      const scope = document.getElementById('persona-workspace-memory-scope');
+      search.value = '';
+      scope.value = 'all';
+      applyWorkspaceMemoryFilters(event);
+      search.focus();
+    }
+
+    /**
+     * 绑定候选记忆的筛选控件，使搜索、范围选择和清除操作可通过键盘完成。
+     * @returns {void} 不返回值，完成页面加载后的事件初始化。
+     * 特殊业务逻辑：标签页由共享脚本管理，本页仅补充候选记忆的组合筛选能力。
+     */
+    function initializeWorkspaceMemoryFilters() {
+      const search = document.getElementById('persona-workspace-memory-search');
+      const scope = document.getElementById('persona-workspace-memory-scope');
+      const clearButtons = document.querySelectorAll('[data-memory-clear]');
+      search.addEventListener('input', applyWorkspaceMemoryFilters);
+      scope.addEventListener('change', applyWorkspaceMemoryFilters);
+      for (let index = 0; index < clearButtons.length; index += 1) {
+        clearButtons[index].addEventListener('click', clearWorkspaceMemoryFilters);
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', initializeWorkspaceMemoryFilters);
+  </script>
+</body>
+</html>

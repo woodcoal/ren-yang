@@ -307,85 +307,136 @@ async function updateSelectedSourcesStatus(sourceIds: string[], isEnabled: boole
       <UButton icon="i-lucide-plus" @click="showImport = !showImport">{{ showImport ? '收起导入' : '导入资料' }}</UButton>
     </ContentPageHeader>
     <div class="status-strip page-status-strip" aria-label="资料状态摘要">
-      <div class="status-cell"><span class="status-kicker">全部资料</span><strong class="status-value">{{ sourcePage.total }}</strong></div>
-      <div class="status-cell"><span class="status-kicker">本页启用</span><strong class="status-value">{{ enabledSourceCount }} / {{ sources.length }}</strong></div>
-      <div class="status-cell"><span class="status-kicker">本页可检索段落</span><strong class="status-value">{{ chunkCount }}</strong></div>
-      <div class="status-cell"><span class="status-kicker">本页已建立关系</span><strong class="status-value">{{ linkedSourceCount }}</strong><span class="status-note">文件资料 {{ fileSourceCount }} 项</span></div>
+      <div class="status-cell"><span class="status-kicker">全部资料</span><strong class="status-value">{{ sourcePage.total
+          }}</strong></div>
+      <div class="status-cell"><span class="status-kicker">本页启用</span><strong class="status-value">{{ enabledSourceCount
+          }} / {{ sources.length }}</strong></div>
+      <div class="status-cell"><span class="status-kicker">本页可检索段落</span><strong class="status-value">{{ chunkCount
+          }}</strong></div>
+      <div class="status-cell"><span class="status-kicker">本页已建立关系</span><strong class="status-value">{{
+        linkedSourceCount }}</strong><span class="status-note">文件资料 {{ fileSourceCount }} 项</span></div>
     </div>
-    <UAlert v-if="showImport && (personaError || worldError)" class="mt-6" color="warning" title="部分关联对象加载失败" description="仍可不选择人物或世界，直接把资料保存到资料库。" />
-    <ContentSourceImportForm
-      v-if="showImport"
-      class="mt-6 mb-7"
-      :loading="loading"
-      :error-message="errorMessage"
-      :personas="personas"
-      :worlds="worlds"
-      show-target-picker
-      @paste="createPastedSource"
-      @file="importFiles"
-    />
+    <UAlert v-if="showImport && (personaError || worldError)" class="mt-6" color="warning" title="部分关联对象加载失败"
+      description="仍可不选择人物或世界，直接把资料保存到资料库。" />
+    <ContentSourceImportForm v-if="showImport" class="mt-6 mb-7" :loading="loading" :error-message="errorMessage"
+      :personas="personas" :worlds="worlds" show-target-picker @paste="createPastedSource" @file="importFiles" />
     <UAlert v-if="errorMessage && !showImport" class="mt-6" color="error" title="操作失败" :description="errorMessage" />
 
     <section class="content-section" aria-labelledby="source-search-heading">
-      <div class="section-heading"><div class="section-heading-copy"><p class="eyebrow">资料检索</p><h2 id="source-search-heading">查找资料中的事实与段落</h2><p>输入一句话或关键词，返回本地事实库中最相关的可追溯段落。</p></div></div>
+      <div class="section-heading">
+        <div class="section-heading-copy">
+          <p class="eyebrow">资料检索</p>
+          <h2 id="source-search-heading">查找资料中的事实与段落</h2>
+          <p>输入一句话或关键词，返回本地事实库中最相关的可追溯段落。</p>
+        </div>
+      </div>
       <form class="content-toolbar" @submit.prevent="searchSources">
         <UInput v-model="searchQuery" class="flex-1" placeholder="输入资料中的短语" aria-label="资料检索词" />
         <UButton type="submit" color="neutral" variant="soft" :loading="loading">检索</UButton>
       </form>
       <div v-if="searchResults" class="mt-4 space-y-3">
-          <p v-if="searchResults.length === 0" class="text-sm text-muted">没有找到相关段落。</p>
+        <p v-if="searchResults.length === 0" class="text-sm text-muted">没有找到相关段落。</p>
         <div v-for="chunk in searchResults" :key="chunk.id" class="archive-panel">
           <p class="text-xs font-medium text-primary">{{ chunk.heading || '无标题' }} · 第 {{ chunk.ordinal + 1 }} 段</p>
           <p class="mt-1 whitespace-pre-wrap text-sm text-muted">{{ chunk.content }}</p>
-          <UButton :to="`/sources/${chunk.sourceId}`" color="neutral" variant="link" size="sm" class="mt-1 px-0">查看资料</UButton>
+          <UButton :to="`/sources/${chunk.sourceId}`" color="neutral" variant="link" size="sm" class="mt-1 px-0">查看资料
+          </UButton>
         </div>
       </div>
     </section>
 
     <UAlert v-if="error" color="error" title="资料列表加载失败" :actions="[{ label: '重试', onClick: () => refresh() }]" />
     <section v-else-if="sources.length" class="content-section" aria-labelledby="source-list-heading">
-      <div class="section-heading"><div class="section-heading-copy"><p class="eyebrow">处理与关系</p><h2 id="source-list-heading">资料内容、检索段落与使用范围</h2><p>资料正文保存在 SQLite；关联关系决定它会进入哪个世界或人物的上下文。</p></div></div>
-      <div class="content-table-wrap">
-        <div class="content-toolbar !rounded-none !bg-transparent !border-0">
-          <span v-if="selectedSourceIds.length > 0" class="text-sm text-muted">已选择 {{ selectedSourceIds.length }} 项资料</span>
-          <span v-else aria-hidden="true"></span>
-          <div class="flex items-center justify-end gap-1">
-            <UButton color="success" variant="ghost" size="xs" :loading="batchStatusUpdating === true" :disabled="selectedDisabledSourceIds.length === 0 || batchStatusUpdating !== null" @click="enableSelectedSources">批量启用</UButton>
-            <UButton color="error" variant="ghost" size="xs" :disabled="selectedEnabledSourceIds.length === 0 || batchStatusUpdating !== null" @click="requestBatchDisable">批量禁用</UButton>
-          </div>
+      <div class="section-heading">
+        <div class="section-heading-copy">
+          <p class="eyebrow">处理与关系</p>
+          <h2 id="source-list-heading">资料内容、检索段落与使用范围</h2>
+          <p>资料正文保存在 SQLite；关联关系决定它会进入哪个世界或人物的上下文。</p>
         </div>
+      </div>
+
+      <div class="content-toolbar !rounded-none !bg-transparent !border-0">
+        <span v-if="selectedSourceIds.length > 0" class="text-sm text-muted">已选择 {{ selectedSourceIds.length }}
+          项资料</span>
+        <span v-else aria-hidden="true"></span>
+        <div class="flex items-center justify-end gap-1">
+          <UButton color="success" variant="ghost" size="xs" :loading="batchStatusUpdating === true"
+            :disabled="selectedDisabledSourceIds.length === 0 || batchStatusUpdating !== null"
+            @click="enableSelectedSources">批量启用</UButton>
+          <UButton color="error" variant="ghost" size="xs"
+            :disabled="selectedEnabledSourceIds.length === 0 || batchStatusUpdating !== null"
+            @click="requestBatchDisable">批量禁用</UButton>
+        </div>
+      </div>
+
+      <div class="content-table-wrap">
         <table class="content-table">
-          <thead><tr><th><input type="checkbox" aria-label="选择当前页全部资料" :checked="allPageSourcesSelected" :indeterminate="somePageSourcesSelected" :disabled="pageSourceIds.length === 0" @change="updateCurrentPageSelection"></th><th>资料</th><th>用途</th><th>状态</th><th>检索内容</th><th>使用关系</th><th>操作</th></tr></thead>
+          <thead>
+            <tr>
+              <th><input type="checkbox" aria-label="选择当前页全部资料" :checked="allPageSourcesSelected"
+                  :indeterminate="somePageSourcesSelected" :disabled="pageSourceIds.length === 0"
+                  @change="updateCurrentPageSelection"></th>
+              <th>资料</th>
+              <th>用途</th>
+              <th>状态</th>
+              <th>检索内容</th>
+              <th>使用关系</th>
+              <th>操作</th>
+            </tr>
+          </thead>
           <tbody>
             <tr v-for="source in sources" :key="source.id">
-              <td data-label="选择"><input type="checkbox" :aria-label="`选择资料：${source.name}`" :checked="selectedSourceIds.includes(source.id)" @change="updateSourceSelection(source.id, $event)"></td>
-              <td data-label="资料"><strong class="content-table-title">{{ source.name }}</strong><span class="content-table-description">{{ source.contentText.slice(0, 120) }}{{ source.contentText.length > 120 ? '…' : '' }}</span></td>
-              <td data-label="用途"><UBadge color="neutral" variant="subtle">{{ roleLabels[source.role] }}</UBadge><span class="content-table-description">{{ source.inputType === 'paste' ? '粘贴文本' : source.inputType.toUpperCase() + ' 文件' }}</span></td>
-              <td data-label="状态"><UBadge :color="source.isEnabled ? 'success' : 'neutral'" variant="subtle">{{ source.isEnabled ? '已启用' : '已禁用' }}</UBadge></td>
+              <td data-label="选择"><input type="checkbox" :aria-label="`选择资料：${source.name}`"
+                  :checked="selectedSourceIds.includes(source.id)" @change="updateSourceSelection(source.id, $event)">
+              </td>
+              <td data-label="资料"><strong class="content-table-title">{{ source.name }}</strong><span
+                  class="content-table-description">{{ source.contentText.slice(0, 120) }}{{ source.contentText.length >
+                    120 ? '…' : '' }}</span></td>
+              <td data-label="用途">
+                <UBadge color="neutral" variant="subtle">{{ roleLabels[source.role] }}</UBadge><span
+                  class="content-table-description">{{ source.inputType === 'paste' ? '粘贴文本' :
+                    source.inputType.toUpperCase() + ' 文件' }}</span>
+              </td>
+              <td data-label="状态">
+                <UBadge :color="source.isEnabled ? 'success' : 'neutral'" variant="subtle">{{ source.isEnabled ? '已启用' :
+                  '已禁用' }}</UBadge>
+              </td>
               <td data-label="检索内容">{{ source.chunkCount }} 个段落</td>
               <td data-label="使用关系">{{ source.linkCount }} 个对象</td>
-              <td data-label="操作"><UButton :to="`/sources/${source.id}`" color="neutral" variant="ghost" size="xs" icon="i-lucide-chevron-right" :aria-label="`查看与维护：${source.name}`" /></td>
+              <td data-label="操作">
+                <UButton :to="`/sources/${source.id}`" color="neutral" variant="ghost" size="xs"
+                  icon="i-lucide-chevron-right" :aria-label="`查看与维护：${source.name}`" />
+              </td>
             </tr>
           </tbody>
         </table>
       </div>
       <div class="mt-5 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
-        <p class="text-sm text-muted">第 {{ sourcePage.page }} / {{ sourcePage.totalPages }} 页，共 {{ sourcePage.total }} 项</p>
+        <p class="text-sm text-muted">第 {{ sourcePage.page }} / {{ sourcePage.totalPages }} 页，共 {{ sourcePage.total }} 项
+        </p>
         <div class="flex flex-wrap items-center gap-3">
-          <USelect :model-value="sourcePage.pageSize" class="w-34" :items="pageSizeItems" aria-label="每页资料数量" @update:model-value="changePageSize" />
-          <UPagination :page="sourcePage.page" :total="sourcePage.total" :items-per-page="sourcePage.pageSize" show-edges @update:page="changePage" />
+          <USelect :model-value="sourcePage.pageSize" class="w-34" :items="pageSizeItems" aria-label="每页资料数量"
+            @update:model-value="changePageSize" />
+          <UPagination :page="sourcePage.page" :total="sourcePage.total" :items-per-page="sourcePage.pageSize"
+            show-edges @update:page="changePage" />
         </div>
       </div>
     </section>
-    <div v-else class="content-empty-state"><div><strong>还没有资料</strong><p>可以先创建原创人物，也可以从粘贴文本、TXT 或 Markdown 开始导入。</p></div></div>
+    <div v-else class="content-empty-state">
+      <div><strong>还没有资料</strong>
+        <p>可以先创建原创人物，也可以从粘贴文本、TXT 或 Markdown 开始导入。</p>
+      </div>
+    </div>
 
     <UModal v-model:open="batchDisableConfirmationOpen" title="确认批量禁用资料" description="禁用后资料正文和使用关系仍会保留。">
       <template #body>
-        <p class="text-sm text-muted">确定禁用当前页已选择的 {{ selectedEnabledSourceIds.length }} 项启用资料吗？这些资料将停止进入人物和世界检索，并删除对应 OpenViking 投影。</p>
+        <p class="text-sm text-muted">确定禁用当前页已选择的 {{ selectedEnabledSourceIds.length }} 项启用资料吗？这些资料将停止进入人物和世界检索，并删除对应
+          OpenViking 投影。</p>
       </template>
       <template #footer>
         <div class="flex w-full justify-end gap-2">
-          <UButton color="neutral" variant="ghost" :disabled="batchStatusUpdating !== null" @click="batchDisableConfirmationOpen = false">取消</UButton>
+          <UButton color="neutral" variant="ghost" :disabled="batchStatusUpdating !== null"
+            @click="batchDisableConfirmationOpen = false">取消</UButton>
           <UButton color="error" :loading="batchStatusUpdating === false" @click="confirmBatchDisable">确认禁用</UButton>
         </div>
       </template>

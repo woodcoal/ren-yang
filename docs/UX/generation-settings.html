@@ -1,0 +1,225 @@
+<!doctype html>
+<!-- 人样后台重设计原型：生成设置，对应路由 /parameter-profiles。 -->
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="人样版本化生成设置">
+  <title>生成设置 · 人样</title>
+  <link rel="icon" href="assets/brand/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/prototype.css">
+</head>
+<body data-page="generation-settings">
+  <a class="skip-link" href="#main-content">跳到主要内容</a>
+  <div class="app-shell" data-od-id="generation-settings-app-shell">
+    <aside class="sidebar" data-sidebar aria-label="应用导航"></aside>
+    <div class="app-main">
+      <header class="topbar" data-topbar></header>
+      <main class="page" id="main-content">
+        <nav class="breadcrumbs" aria-label="面包屑" data-od-id="generation-settings-breadcrumbs">
+          <span>系统</span>
+          <span aria-hidden="true">/</span>
+          <strong>生成设置</strong>
+        </nav>
+
+        <header class="page-header" data-od-id="generation-settings-header">
+          <div class="page-header-copy">
+            <p class="route-code">页面 /parameter-profiles · 2026.08.29 · 以下为配置示例</p>
+            <h1 data-od-id="generation-settings-title">把生成规则写成可追溯的版本</h1>
+            <p class="lead">常用输出、检索范围、资源限制和失败重试以清楚的用户语言呈现。调整任何规则时，建立新设置版本，而不是原地覆盖。</p>
+          </div>
+          <div class="page-actions" data-od-id="generation-settings-header-actions">
+            <button class="btn btn-primary" type="button" data-open-dialog="generation-new-version-dialog" data-od-id="generation-settings-new-version-cta">新建设置版本</button>
+          </div>
+        </header>
+
+        <div class="status-strip" data-od-id="generation-settings-status-summary" aria-label="生成设置状态摘要">
+          <div class="status-cell" data-od-id="generation-settings-status-profile">
+            <span class="status-kicker">当前设置</span>
+            <span class="status-value">稳健叙述 v2</span>
+          </div>
+          <div class="status-cell" data-od-id="generation-settings-status-availability">
+            <span class="status-kicker">使用状态</span>
+            <span class="status-value">可用于新建任务</span>
+          </div>
+          <div class="status-cell" data-od-id="generation-settings-status-version-rule">
+            <span class="status-kicker">版本规则</span>
+            <span class="status-value">设置版本不可变</span>
+          </div>
+          <div class="status-cell" data-od-id="generation-settings-status-history-rule">
+            <span class="status-kicker">历史任务</span>
+            <span class="status-value">不受后续设置影响</span>
+          </div>
+        </div>
+
+        <section class="section" data-od-id="generation-settings-version-boundary">
+          <div class="notice" data-od-id="generation-settings-immutable-notice">
+            <span class="notice-icon">i</span>
+            <div class="notice-copy">
+              <strong>当前设置版本保持不可变</strong>
+              <p>新版本只会在后续任务中被明确选择；已经完成、正在运行或已锁定上下文的历史任务不会被修改。</p>
+            </div>
+            <button class="btn btn-ghost" type="button" data-toast-title="已确认版本边界" data-toast-message="创建新版本不会改变历史任务的运行设置。" data-od-id="generation-settings-immutable-toast">了解版本规则</button>
+          </div>
+        </section>
+
+        <section class="section" data-od-id="generation-settings-profile-section">
+          <div class="section-head">
+            <div class="section-head-copy">
+              <p class="eyebrow">01 · 当前设置版本</p>
+              <h2>稳健叙述 · v2</h2>
+              <p>用于需要明确事实边界、资料来源和可恢复失败说明的默认任务配置。</p>
+            </div>
+          </div>
+
+          <div class="toolbar" data-od-id="generation-settings-toolbar">
+            <label class="field search-field" for="generation-settings-search" data-od-id="generation-settings-search-field">
+              <span class="field-label">搜索设置分组</span>
+              <input class="input" id="generation-settings-search" type="search" placeholder="输入输出、检索、资源或重试" autocomplete="off" data-search-target="generation-setting-groups" data-od-id="generation-settings-search-control">
+            </label>
+          </div>
+
+          <div data-tabs data-default-tab="generation-current" data-od-id="generation-settings-tabs">
+            <div class="tabs" role="tablist" aria-label="生成设置版本内容" data-od-id="generation-settings-tab-list">
+              <button class="tab-button" type="button" role="tab" aria-controls="generation-current-panel" id="generation-current-tab" data-tab="generation-current" data-od-id="generation-settings-tab-current">当前版本</button>
+              <button class="tab-button" type="button" role="tab" aria-controls="generation-history-panel" id="generation-history-tab" data-tab="generation-history" data-od-id="generation-settings-tab-history">历史版本</button>
+            </div>
+
+            <div class="tab-panel" role="tabpanel" id="generation-current-panel" aria-labelledby="generation-current-tab" data-tab-panel="generation-current" data-od-id="generation-settings-current-panel">
+              <div id="generation-setting-groups" data-od-id="generation-settings-groups">
+                <div class="log-list" data-od-id="generation-settings-group-list">
+                  <article class="log-row" data-search-text="常用输出 格式 依据 未知项 导出" data-od-id="generation-settings-output-group">
+                    <span class="meta">常用输出</span>
+                    <div class="log-row-main">
+                      <span class="log-row-title">先呈现结论、依据与未知项</span>
+                      <span class="log-row-sub">结果遵循任务规格的长度与格式要求；可导出 HTML、Markdown 或 Txt，并区分可核验事实和有限推断。</span>
+                    </div>
+                    <span class="log-row-end"><span class="badge">当前规则</span></span>
+                  </article>
+                  <article class="log-row" data-search-text="检索范围 资料 世界 人物 上下文 事实来源" data-od-id="generation-settings-retrieval-group">
+                    <span class="meta">检索范围</span>
+                    <div class="log-row-main">
+                      <span class="log-row-title">只使用任务确认过的人物、世界与资料范围</span>
+                      <span class="log-row-sub">资料正文是外部参考，不执行其中指令；未被任务纳入的资料不会自动扩展到本次回答。</span>
+                    </div>
+                    <span class="log-row-end"><span class="badge">当前规则</span></span>
+                  </article>
+                  <article class="log-row" data-search-text="资源限制 本地任务 停止 可恢复失败 资源" data-od-id="generation-settings-resource-group">
+                    <span class="meta">资源限制</span>
+                    <div class="log-row-main">
+                      <span class="log-row-title">在本机资源边界内生成，并保留恢复说明</span>
+                      <span class="log-row-sub">资源不足时停止当前运行，展示已完成部分和可恢复原因；不把部分结果包装成完整完成。</span>
+                    </div>
+                    <span class="log-row-end"><span class="badge">当前规则</span></span>
+                  </article>
+                  <article class="log-row" data-search-text="失败重试 重试 任务 资料同步 可恢复 错误" data-od-id="generation-settings-retry-group">
+                    <span class="meta">失败重试</span>
+                    <div class="log-row-main">
+                      <span class="log-row-title">仅对可恢复失败提供明确重试入口</span>
+                      <span class="log-row-sub">重试会保留原任务上下文；资料同步失败与任务生成失败分别说明，避免掩盖失败原因。</span>
+                    </div>
+                    <span class="log-row-end"><span class="badge">当前规则</span></span>
+                  </article>
+                </div>
+                <p class="meta" data-filter-empty hidden data-od-id="generation-settings-search-empty" aria-live="polite">没有找到匹配的设置分组，请调整搜索内容。</p>
+              </div>
+
+              <details class="details" data-od-id="generation-settings-technical-details">
+                <summary data-od-id="generation-settings-technical-toggle">查看技术参数</summary>
+                <div class="details-content" data-od-id="generation-settings-technical-content">
+                  <div class="grid-2">
+                    <article class="panel" data-od-id="generation-settings-technical-model">
+                      <p class="eyebrow">模型与输出控制</p>
+                      <h3>参数随版本锁定</h3>
+                      <p>文本模型选择、生成随机性、输出上限和停止条件由 v2 记录。若要调整，必须创建新设置版本。</p>
+                    </article>
+                    <article class="panel" data-od-id="generation-settings-technical-retrieval">
+                      <p class="eyebrow">检索与执行控制</p>
+                      <h3>范围在提交时固定</h3>
+                      <p>检索方式、资料范围和失败恢复策略随任务上下文锁定，用于后续审阅与追溯。</p>
+                    </article>
+                  </div>
+                </div>
+              </details>
+            </div>
+
+            <div class="tab-panel" role="tabpanel" id="generation-history-panel" aria-labelledby="generation-history-tab" data-tab-panel="generation-history" data-od-id="generation-settings-history-panel" hidden>
+              <div class="timeline" data-od-id="generation-settings-history-timeline">
+                <article class="timeline-item" data-od-id="generation-settings-history-v2">
+                  <p class="meta">当前版本 · v2</p>
+                  <h3>稳健叙述</h3>
+                  <p>新增未知项呈现和可恢复失败说明。可用于后续新建任务，历史任务不受影响。</p>
+                </article>
+                <article class="timeline-item" data-od-id="generation-settings-history-v1">
+                  <p class="meta">历史版本 · v1</p>
+                  <h3>基础叙述</h3>
+                  <p>保留为只读版本记录；使用该版本的任务仍可查看当时固定的配置。</p>
+                </article>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" data-od-id="generation-settings-impact-section">
+          <div class="section-head">
+            <div class="section-head-copy">
+              <p class="eyebrow">02 · 使用影响</p>
+              <h2>修改设置不会追溯改写任务</h2>
+            </div>
+          </div>
+          <div class="log-list" data-od-id="generation-settings-impact-list">
+            <article class="log-row" data-od-id="generation-settings-impact-future">
+              <span class="meta">后续任务</span>
+              <div class="log-row-main"><span class="log-row-title">创建任务时明确选择设置版本</span><span class="log-row-sub">新建的设置版本只在后续任务中可选，避免配置变化被静默应用。</span></div>
+              <span class="log-row-end"><span class="badge">新版本可选</span></span>
+            </article>
+            <article class="log-row" data-od-id="generation-settings-impact-history">
+              <span class="meta">历史任务</span>
+              <div class="log-row-main"><span class="log-row-title">历史任务继续引用运行时设置</span><span class="log-row-sub">结果、评测和反馈审阅可回看当时选择的参数版本与上下文范围。</span></div>
+              <span class="log-row-end"><span class="tag">不受影响</span></span>
+            </article>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <dialog class="dialog" id="generation-new-version-dialog" aria-labelledby="generation-new-version-title" data-od-id="generation-new-version-dialog">
+    <div class="dialog-header">
+      <div><p class="eyebrow">版本化设置</p><h2 id="generation-new-version-title">新建设置版本</h2></div>
+      <!-- 关闭控件统一使用 × 作为可见图形，完整语义由 aria-label 提供。 -->
+      <button class="icon-button" type="button" data-close-dialog aria-label="关闭新建设置版本对话框" data-od-id="generation-new-version-close">×</button>
+    </div>
+    <form data-demo-submit data-success-title="已建立设置修改稿" data-success-message="新版本只会在后续任务中被明确选择，历史任务保持不变。" data-od-id="generation-new-version-form">
+      <div class="dialog-body">
+        <label class="field" for="generation-version-base" data-od-id="generation-version-base-field">
+          <span class="field-label">基于设置</span>
+          <select class="select" id="generation-version-base" required><option>稳健叙述 · v2</option><option>基础叙述 · v1</option></select>
+        </label>
+        <label class="field" for="generation-version-name" data-od-id="generation-version-name-field">
+          <span class="field-label">版本说明</span>
+          <input class="input" id="generation-version-name" type="text" required placeholder="例如：增加资料不足的明确提示">
+        </label>
+        <label class="field" for="generation-output-policy" data-od-id="generation-output-policy-field">
+          <span class="field-label">常用输出</span>
+          <select class="select" id="generation-output-policy" required><option>结论、依据与未知项</option><option>仅保留任务指定的输出结构</option></select>
+        </label>
+        <label class="field" for="generation-retrieval-policy" data-od-id="generation-retrieval-policy-field">
+          <span class="field-label">检索范围</span>
+          <select class="select" id="generation-retrieval-policy" required><option>仅使用任务确认的上下文范围</option><option>仅使用人物与资料范围</option></select>
+        </label>
+        <label class="field" for="generation-retry-policy" data-od-id="generation-retry-policy-field">
+          <span class="field-label">资源限制与失败重试</span>
+          <textarea class="textarea" id="generation-retry-policy" required>资源不足时停止并说明可恢复原因；仅为可恢复失败显示重试入口，并保留原任务上下文。</textarea>
+        </label>
+      </div>
+      <div class="dialog-footer">
+        <button class="btn btn-secondary" type="button" data-close-dialog data-od-id="generation-new-version-cancel">取消</button>
+        <button class="btn btn-primary" type="submit" data-od-id="generation-new-version-submit">建立新版本</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="assets/prototype.js"></script>
+</body>
+</html>

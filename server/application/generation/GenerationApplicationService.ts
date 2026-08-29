@@ -102,7 +102,7 @@ const DEFAULT_FORMAT_TEMPLATE = {
 /** 人物草稿单项资料最多发送给模型的字符数。 */
 const PERSONA_DRAFT_SOURCE_CHARACTER_LIMIT = 5_000
 
-/** 人物草稿世界设定最多发送给模型的字符数。 */
+/** 人物草稿世界最多发送给模型的字符数。 */
 const PERSONA_DRAFT_WORLD_CHARACTER_LIMIT = 10_000
 
 /** 生成应用服务依赖。 */
@@ -127,7 +127,7 @@ export interface GenerationApplicationServiceDependencies {
 /** 编排运行创建、查询、规格确认和 Worker 模型执行。 */
 export class GenerationApplicationService implements TaskHandler {
   /** @param dependencies 运行、内容、检索、模型、标识、时间和哈希端口。 */
-  constructor(private readonly dependencies: GenerationApplicationServiceDependencies) {}
+  constructor(private readonly dependencies: GenerationApplicationServiceDependencies) { }
 
   /** @returns 文本模型非敏感能力状态。 */
   getTextModelCapability() {
@@ -170,13 +170,13 @@ export class GenerationApplicationService implements TaskHandler {
     let world = null
     if (input.worldId) {
       const worldRecord = await this.dependencies.content.findWorld(input.worldId)
-      if (!worldRecord) throw new ApplicationError('RESOURCE_NOT_FOUND', '世界设定不存在', 404)
+      if (!worldRecord) throw new ApplicationError('RESOURCE_NOT_FOUND', '世界不存在', 404)
       if (!worldRecord.activeVersionId) {
-        throw new ApplicationError('WORLD_VERSION_NOT_ACTIVE', '所选世界设定尚无已发布版本', 409)
+        throw new ApplicationError('WORLD_VERSION_NOT_ACTIVE', '所选世界尚无已发布版本', 409)
       }
       const version = await this.dependencies.content.findWorldVersion(worldRecord.activeVersionId)
       if (!version || version.status !== 'published') {
-        throw new ApplicationError('WORLD_VERSION_NOT_ACTIVE', '所选世界设定当前版本不可用', 409)
+        throw new ApplicationError('WORLD_VERSION_NOT_ACTIVE', '所选世界当前版本不可用', 409)
       }
       const runtimeSummary = version.snapshot.runtimeSummary.slice(0, PERSONA_DRAFT_WORLD_CHARACTER_LIMIT)
       world = { chapters: version.snapshot.chapters, runtimeSummary }
@@ -562,12 +562,12 @@ export class GenerationApplicationService implements TaskHandler {
       },
     ]
     if (activeWorldVersion) {
-        const content = JSON.stringify(activeWorldVersion.snapshot)
-        userSettings.push({
-          id: this.dependencies.identifiers.create(), sourceId: null, chunkId: null, role: 'user_setting',
-          content, contentHash: this.dependencies.sourceProcessor.hash(content), rank: 1,
-          metadata: { worldVersionId: activeWorldVersion.id },
-        })
+      const content = JSON.stringify(activeWorldVersion.snapshot)
+      userSettings.push({
+        id: this.dependencies.identifiers.create(), sourceId: null, chunkId: null, role: 'user_setting',
+        content, contentHash: this.dependencies.sourceProcessor.hash(content), rank: 1,
+        metadata: { worldVersionId: activeWorldVersion.id },
+      })
     }
     const selectedSnapshots = selection.selected.map(candidate => toPromptContextItemSnapshot(candidate, null))
     const skippedSnapshots = [

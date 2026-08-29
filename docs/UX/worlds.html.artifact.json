@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "kind": "html",
+  "title": "worlds.html",
+  "entry": "worlds.html",
+  "renderer": "html",
+  "status": "complete",
+  "exports": [
+    "html",
+    "pdf",
+    "zip"
+  ],
+  "createdAt": "2026-08-29T12:01:32.014Z",
+  "updatedAt": "2026-08-29T12:01:32.014Z",
+  "metadata": {
+    "inferred": true,
+    "reconciled": true
+  }
+}

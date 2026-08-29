@@ -327,39 +327,50 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
 
 <template>
   <div>
-    <ContentPageHeader
-      :title="details?.world.name || '世界工作区'"
-      :description="details?.world.summary || '世界是多个人物共享的背景，也拥有自己的灵魂和成长。'"
-    >
-      <UButton v-if="details" color="neutral" variant="soft" :loading="actionLoading" @click="requestWorldStatusChange">{{ details.world.isEnabled ? '禁用世界' : '启用世界' }}</UButton>
+    <ContentPageHeader :title="details?.world.name || '世界工作区'"
+      :description="details?.world.summary || '世界是多个人物共享的背景，也拥有自己的灵魂和成长。'">
+      <UButton v-if="details" color="neutral" variant="soft" :loading="actionLoading" @click="requestWorldStatusChange">
+        {{ details.world.isEnabled ? '禁用世界' : '启用世界' }}</UButton>
       <UButton to="/worlds" color="neutral" variant="ghost">返回世界列表</UButton>
     </ContentPageHeader>
 
-    <UAlert v-if="error || !details || !soul" color="error" title="世界工作区加载失败" :actions="[{ label: '重试', onClick: () => Promise.all([refresh(), refreshSoul()]) }]" />
+    <UAlert v-if="error || !details || !soul" color="error" title="世界工作区加载失败"
+      :actions="[{ label: '重试', onClick: () => Promise.all([refresh(), refreshSoul()]) }]" />
     <template v-else>
       <UAlert v-if="actionError" class="mb-5" color="error" title="操作失败" :description="actionError" />
       <UAlert v-if="actionMessage" class="mb-5" color="success" title="操作完成" :description="actionMessage" />
-      <UAlert v-if="!details.world.isEnabled" class="mb-6" color="warning" title="世界当前已禁用" description="世界版本、人物关系、资料和历史任务仍会保留，但该世界不会进入后续新任务。" />
+      <UAlert v-if="!details.world.isEnabled" class="mb-6" color="warning" title="世界当前已禁用"
+        description="世界版本、人物关系、资料和历史任务仍会保留，但该世界不会进入后续新任务。" />
 
       <div class="status-strip page-status-strip mb-6">
-        <div class="status-cell"><span class="status-kicker">关联人物</span><strong class="status-value">{{ details.personas.length }} 个</strong></div>
-        <div class="status-cell"><span class="status-kicker">当前灵魂</span><strong class="status-value">{{ soul.activeVersion ? '已发布，可用于任务' : '尚未发布' }}</strong></div>
-        <div class="status-cell"><span class="status-kicker">世界资料</span><strong class="status-value">{{ details.sources.length }} 项</strong></div>
-        <div class="status-cell"><span class="status-kicker">待确认修改</span><strong class="status-value">{{ soul.draft ? '1 份灵魂修改稿' : '没有灵魂修改稿' }}</strong></div>
+        <div class="status-cell"><span class="status-kicker">关联人物</span><strong class="status-value">{{
+          details.personas.length }} 个</strong></div>
+        <div class="status-cell"><span class="status-kicker">当前灵魂</span><strong class="status-value">{{
+          soul.activeVersion ? '已发布，可用于任务' : '尚未发布' }}</strong></div>
+        <div class="status-cell"><span class="status-kicker">世界资料</span><strong class="status-value">{{
+          details.sources.length }} 项</strong></div>
+        <div class="status-cell"><span class="status-kicker">待确认修改</span><strong class="status-value">{{ soul.draft ? '1
+            份灵魂修改稿' : '没有灵魂修改稿' }}</strong></div>
       </div>
 
       <nav class="mind-tabs mb-6" aria-label="世界工作区标签">
-        <button v-for="tab in tabs" :key="tab.id" class="mind-tab" :aria-selected="selectedTab === tab.id" @click="selectTab(tab.id)">{{ tab.label }}</button>
+        <button v-for="tab in tabs" :key="tab.id" class="mind-tab" :aria-selected="selectedTab === tab.id"
+          @click="selectTab(tab.id)">{{ tab.label }}</button>
       </nav>
 
       <div v-if="selectedTab === 'overview'" class="grid gap-6 xl:grid-cols-2">
         <UCard>
-          <template #header><h2 class="font-semibold text-highlighted">当前世界状态</h2></template>
-          <p class="whitespace-pre-wrap text-sm leading-6 text-muted">{{ soul.activeVersion?.snapshot.runtimeSummary || '世界还没有发布灵魂。发布前，关联人物的新任务不会读取世界设定。' }}</p>
+          <template #header>
+            <h2 class="font-semibold text-highlighted">当前世界状态</h2>
+          </template>
+          <p class="whitespace-pre-wrap text-sm leading-6 text-muted">{{ soul.activeVersion?.snapshot.runtimeSummary ||
+            '世界还没有发布灵魂。发布前，关联人物的新任务不会读取世界。' }}</p>
           <UButton class="mt-4" color="neutral" variant="soft" @click="selectTab('soul')">查看和编辑世界灵魂</UButton>
         </UCard>
         <UCard>
-          <template #header><h2 class="font-semibold text-highlighted">世界如何变化</h2></template>
+          <template #header>
+            <h2 class="font-semibold text-highlighted">世界如何变化</h2>
+          </template>
           <div class="space-y-3 text-sm text-muted">
             <p>灵魂保存稳定的世界规则和受限运行摘要。</p>
             <p>成长从已启用的世界资料中分析，候选仍需人工确认。</p>
@@ -368,71 +379,64 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
         </UCard>
       </div>
 
-      <ContentSoulWorkspace
-        v-else-if="selectedTab === 'soul'"
-        :workspace="soul"
-        :loading="actionLoading"
-        @save="saveSoulDraft"
-        @publish="publishSoul"
-        @delete="deleteSoulDraft"
-        @from-version="createDraftFromVersion"
-      />
+      <ContentSoulWorkspace v-else-if="selectedTab === 'soul'" :workspace="soul" :loading="actionLoading"
+        @save="saveSoulDraft" @publish="publishSoul" @delete="deleteSoulDraft" @from-version="createDraftFromVersion" />
 
       <div v-else-if="selectedTab === 'growth'" class="space-y-6">
-        <AnalysisAnalysisPanel
-          title="世界成长"
-          :batch="growthAnalysis"
-          :loading="actionLoading"
-          @analyze="analyzeWorldGrowth"
-          @refresh="refreshAnalysis"
-          @review="reviewWorldGrowthProposal"
-        />
+        <AnalysisAnalysisPanel title="世界成长" :batch="growthAnalysis" :loading="actionLoading"
+          @analyze="analyzeWorldGrowth" @refresh="refreshAnalysis" @review="reviewWorldGrowthProposal" />
         <div class="grid items-start gap-6 xl:grid-cols-2">
-          <LearningWorldGrowthSourcePanel :items="growthWorkspace.sources" :loading="actionLoading" @status="updateWorldSourceStatus" />
-          <LearningGrowthRecordPanel
-          subject-label="世界"
-          :items="growthWorkspace.growth"
-          :sources="growthWorkspace.sources.map(item => ({ id: item.id, label: item.name }))"
-          :loading="actionLoading"
-          @create="createWorldGrowth"
-          @status="updateWorldGrowthStatus"
-          />
+          <LearningWorldGrowthSourcePanel :items="growthWorkspace.sources" :loading="actionLoading"
+            @status="updateWorldSourceStatus" />
+          <LearningGrowthRecordPanel subject-label="世界" :items="growthWorkspace.growth"
+            :sources="growthWorkspace.sources.map(item => ({ id: item.id, label: item.name }))" :loading="actionLoading"
+            @create="createWorldGrowth" @status="updateWorldGrowthStatus" />
         </div>
       </div>
 
-      <ContentWorldSourceManager
-        v-else-if="selectedTab === 'sources'"
-        :linked-sources="details.sources"
-        :all-sources="allSources"
-        :loading="actionLoading"
-        :error-message="actionError"
-        @link="linkSource"
-        @unlink="unlinkSource"
-        @paste="createPastedSource"
-        @file="importSourceFile"
-      />
+      <ContentWorldSourceManager v-else-if="selectedTab === 'sources'" :linked-sources="details.sources"
+        :all-sources="allSources" :loading="actionLoading" :error-message="actionError" @link="linkSource"
+        @unlink="unlinkSource" @paste="createPastedSource" @file="importSourceFile" />
 
       <div v-else class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
         <div class="space-y-6">
           <UCard>
-            <template #header><div><h2 class="font-semibold text-highlighted">基本信息</h2><p class="mt-1 text-sm text-muted">名称和简介只方便后台辨认，不会进入提示词。</p></div></template>
-            <UForm :schema="updateWorldSchema" :state="metadata" class="grid gap-4 md:grid-cols-2" @submit="saveMetadata">
-              <UFormField name="name" label="世界名称" required><UInput v-model="metadata.name" class="w-full" /></UFormField>
-              <UFormField name="summary" label="后台简介"><UInput v-model="metadata.summary" class="w-full" /></UFormField>
-              <div class="md:col-span-2"><UButton type="submit" :loading="actionLoading">保存基本信息</UButton></div>
+            <template #header>
+              <div>
+                <h2 class="font-semibold text-highlighted">基本信息</h2>
+                <p class="mt-1 text-sm text-muted">名称和简介只方便后台辨认，不会进入提示词。</p>
+              </div>
+            </template>
+            <UForm :schema="updateWorldSchema" :state="metadata" class="grid gap-4 md:grid-cols-2"
+              @submit="saveMetadata">
+              <UFormField name="name" label="世界名称" required>
+                <UInput v-model="metadata.name" class="w-full" />
+              </UFormField>
+              <UFormField name="summary" label="后台简介">
+                <UInput v-model="metadata.summary" class="w-full" />
+              </UFormField>
+              <div class="md:col-span-2">
+                <UButton type="submit" :loading="actionLoading">保存基本信息</UButton>
+              </div>
             </UForm>
           </UCard>
           <ContentWorldPersonaList :personas="details.personas" />
         </div>
         <UCard>
-          <template #header><h2 class="font-semibold text-error">删除世界</h2></template>
-          <UButton v-if="!deletionImpact" color="error" variant="soft" :loading="actionLoading" @click="inspectDeletion">先查看会删除什么</UButton>
+          <template #header>
+            <h2 class="font-semibold text-error">删除世界</h2>
+          </template>
+          <UButton v-if="!deletionImpact" color="error" variant="soft" :loading="actionLoading"
+            @click="inspectDeletion">
+            先查看会删除什么</UButton>
           <div v-else class="space-y-3 text-sm">
-            <UAlert v-if="!deletionImpact.canDelete" color="warning" title="现在不能删除" :description="deletionImpact.blockers.join('；')" />
+            <UAlert v-if="!deletionImpact.canDelete" color="warning" title="现在不能删除"
+              :description="deletionImpact.blockers.join('；')" />
             <template v-else>
               <p>将删除 {{ deletionImpact.versionCount }} 个灵魂版本，并解除 {{ deletionImpact.relatedSources.length }} 项资料关系。</p>
               <UCheckbox v-model="deletionConfirmed" label="我确认永久删除这个世界" />
-              <UButton color="error" :disabled="!deletionConfirmed" :loading="actionLoading" @click="deleteWorld">永久删除世界</UButton>
+              <UButton color="error" :disabled="!deletionConfirmed" :loading="actionLoading" @click="deleteWorld">永久删除世界
+              </UButton>
             </template>
           </div>
         </UCard>
@@ -440,11 +444,16 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
     </template>
 
     <UModal v-model:open="disableConfirmationOpen" title="确认禁用世界" description="禁用不会删除世界版本、人物关系、资料或历史任务。">
-      <template #body><p class="text-sm text-muted">确定禁用“{{ details?.world.name }}”吗？该世界将停止进入后续新任务，关联人物仍可按自身设定工作。</p></template>
-      <template #footer><div class="flex w-full justify-end gap-2">
-        <UButton color="neutral" variant="ghost" :disabled="actionLoading" @click="disableConfirmationOpen = false">取消</UButton>
-        <UButton color="error" :loading="actionLoading" @click="confirmDisableWorld">确认禁用</UButton>
-      </div></template>
+      <template #body>
+        <p class="text-sm text-muted">确定禁用“{{ details?.world.name }}”吗？该世界将停止进入后续新任务，关联人物仍可按自身设定工作。</p>
+      </template>
+      <template #footer>
+        <div class="flex w-full justify-end gap-2">
+          <UButton color="neutral" variant="ghost" :disabled="actionLoading" @click="disableConfirmationOpen = false">取消
+          </UButton>
+          <UButton color="error" :loading="actionLoading" @click="confirmDisableWorld">确认禁用</UButton>
+        </div>
+      </template>
     </UModal>
   </div>
 </template>

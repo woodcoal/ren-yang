@@ -1,0 +1,287 @@
+<!doctype html>
+<!--
+  人样后台重设计原型：任务记录。
+  当前页面对应产品路由 /history，所有任务、状态、日期与尝试记录均为可扫描的示例数据。
+-->
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="人样任务记录高保真交互原型">
+  <title>任务记录 · 人样</title>
+  <link rel="icon" href="assets/brand/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/prototype.css">
+</head>
+<body data-page="task-history">
+  <a class="skip-link" href="#main-content">跳到主要内容</a>
+  <div class="app-shell">
+    <aside class="sidebar" data-sidebar aria-label="应用导航"></aside>
+    <div class="app-main">
+      <header class="topbar" data-topbar></header>
+      <main class="page" id="main-content">
+        <nav class="breadcrumbs" aria-label="面包屑">
+          <a href="dashboard.html">工作台</a>
+          <span aria-hidden="true">/</span>
+          <strong>任务记录</strong>
+        </nav>
+
+        <header class="page-header" data-od-id="task-history-page-header">
+          <div class="page-header-copy">
+            <p class="route-code">路由 /history · 以下均为示例任务</p>
+            <h1 data-od-id="task-history-page-title">在可追溯的记录中继续工作</h1>
+            <p class="lead">搜索任务目标、人物或状态；先阅读任务摘要，再按需展开技术运行标识。</p>
+          </div>
+          <div class="page-actions">
+            <a class="btn btn-primary" href="new-task.html" data-od-id="task-history-primary-cta">新建任务</a>
+          </div>
+        </header>
+
+        <section class="section" data-od-id="task-history-filter-section" aria-labelledby="task-history-filter-heading">
+          <div class="section-head">
+            <div class="section-head-copy">
+              <p class="eyebrow">查找与筛选</p>
+              <h2 id="task-history-filter-heading">缩小需要继续处理的任务</h2>
+              <p>页面搜索可即时筛选当前列表；其余条件用于界定本次查看范围。</p>
+            </div>
+          </div>
+          <div class="toolbar" data-od-id="task-history-toolbar">
+            <label class="search-field" for="task-history-search" data-od-id="task-history-search-field">
+              <span class="field-label">搜索任务记录</span>
+              <input
+                class="input"
+                id="task-history-search"
+                type="search"
+                placeholder="搜索任务、人物、类型或状态"
+                autocomplete="off"
+                data-task-history-search
+                data-od-id="task-history-search-control"
+              >
+            </label>
+            <label class="field" for="task-history-persona-filter" data-od-id="task-history-persona-filter-field">
+              <span class="field-label">人物</span>
+              <select class="select" id="task-history-persona-filter" data-od-id="task-history-persona-filter-control">
+                <option value="all">全部人物</option>
+                <option value="顾岚">顾岚</option>
+                <option value="沈砚">沈砚</option>
+                <option value="闻秋">闻秋</option>
+              </select>
+            </label>
+            <label class="field" for="task-history-type-filter" data-od-id="task-history-type-filter-field">
+              <span class="field-label">类型</span>
+              <select class="select" id="task-history-type-filter" data-od-id="task-history-type-filter-control">
+                <option value="all">全部类型</option>
+                <option value="内容创作">内容创作</option>
+                <option value="兴趣判断">兴趣判断</option>
+              </select>
+            </label>
+            <label class="field" for="task-history-status-filter" data-od-id="task-history-status-filter-field">
+              <span class="field-label">状态</span>
+              <select class="select" id="task-history-status-filter" data-od-id="task-history-status-filter-control">
+                <option value="all">全部状态</option>
+                <option value="执行中">执行中</option>
+                <option value="待确认">待确认</option>
+                <option value="成功">成功</option>
+                <option value="部分成功">部分成功</option>
+                <option value="失败">失败</option>
+              </select>
+            </label>
+            <label class="field" for="task-history-date-filter" data-od-id="task-history-date-filter-field">
+              <span class="field-label">时间</span>
+              <select class="select" id="task-history-date-filter" data-od-id="task-history-date-filter-control">
+                <option value="seven-days">最近七天</option>
+                <option value="today">今天</option>
+                <option value="thirty-days">最近三十天</option>
+                <option value="all">全部时间</option>
+              </select>
+            </label>
+            <button class="btn btn-ghost" type="button" data-task-history-clear data-od-id="task-history-clear-filter-control">清除筛选</button>
+          </div>
+        </section>
+
+        <section class="section" data-od-id="task-history-list-section" aria-labelledby="task-history-list-heading">
+          <div class="section-head">
+            <div class="section-head-copy">
+              <p class="eyebrow">任务列表</p>
+              <h2 id="task-history-list-heading">按当前状态阅读</h2>
+              <p>状态说明与下一步操作优先于内部标识；窄屏下表格会自动转为带字段名称的纵向记录。</p>
+            </div>
+            <p class="meta" id="task-history-filter-status" aria-live="polite">显示 6 条任务记录（示例数据）</p>
+          </div>
+          <div class="table-wrap" data-od-id="task-history-table-wrap" tabindex="0" aria-label="任务记录表格，窄屏自动切换为纵向记录">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th scope="col">任务与人物</th>
+                  <th scope="col">类型</th>
+                  <th scope="col">状态</th>
+                  <th scope="col">最近进展</th>
+                  <th scope="col">创建时间</th>
+                  <th scope="col">操作</th>
+                </tr>
+              </thead>
+              <tbody id="task-history-rows">
+                <tr data-task-history-row data-task-persona="顾岚" data-task-type="内容创作" data-task-status="执行中" data-task-date="today seven-days thirty-days" data-search-text="旧物传闻三步核验 顾岚 内容创作 执行中" data-od-id="task-history-row-old-object-running">
+                  <td data-label="任务与人物" data-od-id="task-history-item-old-object-running">
+                    <strong class="table-title">旧物传闻三步核验</strong>
+                    <span class="table-sub">顾岚 · 以资料区分已证实记录与冲突传闻</span>
+                  </td>
+                  <td data-label="类型">内容创作</td>
+                  <td data-label="状态"><span class="badge">执行中</span></td>
+                  <td data-label="最近进展">正在生成第 2 个内容段落</td>
+                  <td class="num" data-label="创建时间">今天 10:26</td>
+                  <td data-label="操作"><a class="text-link" href="task-detail.html" data-od-id="task-history-open-old-object-running">查看详情</a></td>
+                </tr>
+                <tr data-task-history-row data-task-persona="闻秋" data-task-type="兴趣判断" data-task-status="待确认" data-task-date="today seven-days thirty-days" data-search-text="是否愿意接触风帆船 闻秋 兴趣判断 待确认" data-od-id="task-history-row-sailboat-pending">
+                  <td data-label="任务与人物" data-od-id="task-history-item-sailboat-pending">
+                    <strong class="table-title">是否愿意接触风帆船</strong>
+                    <span class="table-sub">闻秋 · 任务规格已形成，等待人工确认后继续</span>
+                  </td>
+                  <td data-label="类型">兴趣判断</td>
+                  <td data-label="状态"><span class="badge is-warning">待确认</span></td>
+                  <td data-label="最近进展">上下文已锁定，尚未开始推断</td>
+                  <td class="num" data-label="创建时间">今天 10:18</td>
+                  <td data-label="操作"><a class="text-link" href="task-detail.html" data-od-id="task-history-open-sailboat-pending">检查规格</a></td>
+                </tr>
+                <tr data-task-history-row data-task-persona="顾岚" data-task-type="兴趣判断" data-task-status="成功" data-task-date="seven-days thirty-days" data-search-text="学院旧信件的态度判断 顾岚 兴趣判断 成功" data-od-id="task-history-row-letters-success">
+                  <td data-label="任务与人物" data-od-id="task-history-item-letters-success">
+                    <strong class="table-title">学院旧信件的态度判断</strong>
+                    <span class="table-sub">顾岚 · 已附资料依据与未知项说明</span>
+                  </td>
+                  <td data-label="类型">兴趣判断</td>
+                  <td data-label="状态"><span class="badge">成功</span></td>
+                  <td data-label="最近进展">结果已审阅，反馈已提交</td>
+                  <td class="num" data-label="创建时间">昨天 17:06</td>
+                  <td data-label="操作"><a class="text-link" href="task-detail.html" data-od-id="task-history-open-letters-success">查看结果</a></td>
+                </tr>
+                <tr data-task-history-row data-task-persona="顾岚" data-task-type="内容创作" data-task-status="部分成功" data-task-date="today seven-days thirty-days" data-search-text="旧物传闻三步核验 顾岚 内容创作 部分成功" data-od-id="task-history-row-old-object-partial">
+                  <td data-label="任务与人物" data-od-id="task-history-item-old-object-partial">
+                    <strong class="table-title">旧物传闻三步核验</strong>
+                    <span class="table-sub">顾岚 · 已锁定前两段，结论段等待重试或人工补写</span>
+                  </td>
+                  <td data-label="类型">内容创作</td>
+                  <td data-label="状态"><span class="badge is-muted">部分成功</span></td>
+                  <td data-label="最近进展">资料核验完成，最后一段生成中断</td>
+                  <td class="num" data-label="创建时间">今天 09:31</td>
+                  <td data-label="操作"><a class="text-link" href="task-detail.html" data-od-id="task-history-open-old-object-partial">继续处理</a></td>
+                </tr>
+                <tr data-task-history-row data-task-persona="沈砚" data-task-type="内容创作" data-task-status="失败" data-task-date="seven-days thirty-days" data-search-text="霜月十三日旧物记录整理 沈砚 内容创作 失败" data-od-id="task-history-row-frost-moon-failed">
+                  <td data-label="任务与人物" data-od-id="task-history-item-frost-moon-failed">
+                    <strong class="table-title">霜月十三日旧物记录整理</strong>
+                    <span class="table-sub">沈砚 · 检索资料不足，尚未产出可审阅内容</span>
+                  </td>
+                  <td data-label="类型">内容创作</td>
+                  <td data-label="状态"><span class="badge is-failed">失败</span></td>
+                  <td data-label="最近进展">资料检索失败，可用同一上下文重试</td>
+                  <td class="num" data-label="创建时间">昨天 14:20</td>
+                  <td data-label="操作"><a class="text-link" href="task-detail.html" data-od-id="task-history-open-frost-moon-failed">查看原因</a></td>
+                </tr>
+                <tr data-task-history-row data-task-persona="顾岚" data-task-type="内容创作" data-task-status="成功" data-task-date="seven-days thirty-days" data-search-text="学院档案桌面图片简报 顾岚 内容创作 成功" data-od-id="task-history-row-archive-brief-success">
+                  <td data-label="任务与人物" data-od-id="task-history-item-archive-brief-success">
+                    <strong class="table-title">学院档案桌面图片简报</strong>
+                    <span class="table-sub">顾岚 · 低饱和蓝灰档案桌面，不含人物正脸或可见文字</span>
+                  </td>
+                  <td data-label="类型">内容创作</td>
+                  <td data-label="状态"><span class="badge">成功</span></td>
+                  <td data-label="最近进展">已确认内容简报，未产生长期修改</td>
+                  <td class="num" data-label="创建时间">本周一 11:08</td>
+                  <td data-label="操作"><a class="text-link" href="task-detail.html" data-od-id="task-history-open-archive-brief-success">查看结果</a></td>
+                </tr>
+                <tr data-filter-empty hidden>
+                  <td colspan="6" data-label="搜索结果">没有匹配的任务记录。请调整搜索词或筛选条件。</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="section" data-od-id="task-history-technical-section" aria-labelledby="task-history-technical-heading">
+          <details class="details" data-od-id="task-history-technical-details">
+            <summary id="task-history-technical-heading">查看本页示例任务的技术运行标识</summary>
+            <div class="details-content">
+              <p>技术标识仅用于原型中的追踪说明，不应替代任务标题、人物、状态或人工决策。</p>
+              <div class="code-block">示例运行标识
+run_20260829_1026_old-object
+run_20260829_1018_sailboat
+run_20260829_0931_old-object-recovery</div>
+            </div>
+          </details>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <script src="assets/prototype.js"></script>
+  <script>
+    'use strict';
+
+    /**
+     * 按搜索词、人物、任务类型、状态和时间范围组合筛选示例任务。
+     * @returns {void} 不返回值，直接更新任务行、空状态和结果数量。
+     * 特殊业务逻辑：筛选只作用于当前原型中的示例记录，不请求或修改后端任务。
+     */
+    function applyTaskHistoryFilters() {
+      const search = document.querySelector('[data-task-history-search]');
+      const persona = document.getElementById('task-history-persona-filter');
+      const type = document.getElementById('task-history-type-filter');
+      const status = document.getElementById('task-history-status-filter');
+      const date = document.getElementById('task-history-date-filter');
+      const rows = document.querySelectorAll('[data-task-history-row]');
+      const empty = document.querySelector('[data-filter-empty]');
+      const summary = document.getElementById('task-history-filter-status');
+      const query = search.value.trim().toLocaleLowerCase('zh-CN');
+      let visibleCount = 0;
+
+      for (let index = 0; index < rows.length; index += 1) {
+        const row = rows[index];
+        const searchableText = (row.dataset.searchText || '').toLocaleLowerCase('zh-CN');
+        const dateRanges = (row.dataset.taskDate || '').split(' ');
+        const matchesSearch = query === '' || searchableText.includes(query);
+        const matchesPersona = persona.value === 'all' || row.dataset.taskPersona === persona.value;
+        const matchesType = type.value === 'all' || row.dataset.taskType === type.value;
+        const matchesStatus = status.value === 'all' || row.dataset.taskStatus === status.value;
+        const matchesDate = date.value === 'all' || dateRanges.includes(date.value);
+        const visible = matchesSearch && matchesPersona && matchesType && matchesStatus && matchesDate;
+        row.hidden = !visible;
+        if (visible) visibleCount += 1;
+      }
+
+      empty.hidden = visibleCount !== 0;
+      summary.textContent = '显示 ' + visibleCount + ' 条任务记录（示例数据）';
+    }
+
+    /**
+     * 恢复任务记录的默认查看范围并清空搜索词。
+     * @param {MouseEvent} event 清除筛选按钮的点击事件。
+     * @returns {void} 不返回值，恢复最近七天内的全部示例任务。
+     */
+    function clearTaskHistoryFilters(event) {
+      const search = document.querySelector('[data-task-history-search]');
+      search.value = '';
+      document.getElementById('task-history-persona-filter').value = 'all';
+      document.getElementById('task-history-type-filter').value = 'all';
+      document.getElementById('task-history-status-filter').value = 'all';
+      document.getElementById('task-history-date-filter').value = 'seven-days';
+      applyTaskHistoryFilters();
+      event.currentTarget.focus();
+    }
+
+    /**
+     * 绑定任务记录的组合筛选和清除操作。
+     * @returns {void} 不返回值，完成页面加载后的筛选交互初始化。
+     */
+    function initializeTaskHistoryFilters() {
+      const search = document.querySelector('[data-task-history-search]');
+      const selects = document.querySelectorAll('#task-history-persona-filter, #task-history-type-filter, #task-history-status-filter, #task-history-date-filter');
+      const clear = document.querySelector('[data-task-history-clear]');
+      search.addEventListener('input', applyTaskHistoryFilters);
+      for (let index = 0; index < selects.length; index += 1) {
+        selects[index].addEventListener('change', applyTaskHistoryFilters);
+      }
+      clear.addEventListener('click', clearTaskHistoryFilters);
+      applyTaskHistoryFilters();
+    }
+
+    document.addEventListener('DOMContentLoaded', initializeTaskHistoryFilters);
+  </script>
+</body>
+</html>

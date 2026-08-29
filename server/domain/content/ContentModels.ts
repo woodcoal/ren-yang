@@ -67,7 +67,7 @@ export interface SoulVersionRecord {
 export interface PersonaRecord {
   /** 人物标识。 */
   id: string
-  /** 可选世界设定标识。 */
+  /** 可选世界标识。 */
   worldId: string | null
   /** 展示名称。 */
   name: string
@@ -91,7 +91,7 @@ export type PersonaVersionRecord = Omit<SoulVersionRecord, 'subjectType' | 'subj
   snapshot: PersonaSnapshot
 }
 
-/** 世界设定元数据。 */
+/** 世界元数据。 */
 export interface WorldRecord {
   /** 世界标识。 */
   id: string

@@ -1,0 +1,833 @@
+<!doctype html>
+<!--
+  人样品牌与图形规范页。
+  本页用于验证正式主符号、组合标、favicon 与应用图标在真实网页尺寸和不同表面上的可辨识度。
+-->
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>人样品牌与图形规范 · 让它有个人样</title>
+  <link rel="icon" href="assets/brand/favicon.svg" type="image/svg+xml">
+  <style>
+    :root {
+      --bg: #f3f2ef;
+      --surface: #ffffff;
+      --surface-soft: #e9e7e2;
+      --fg: #20262c;
+      --muted: #626971;
+      --border: #d9d7d1;
+      --accent: #a94f46;
+      --sidebar: #20262c;
+      --sidebar-fg: #f7f4ee;
+      --focus: #b65a50;
+      --danger: #a63f38;
+      --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+      --font-mono: ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+
+    html { color-scheme: light; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--fg);
+      font-family: var(--font-body);
+      font-size: 16px;
+      line-height: 1.6;
+      text-rendering: optimizeLegibility;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    img, svg { display: block; max-width: 100%; }
+
+    a { color: inherit; }
+
+    :focus-visible {
+      outline: 3px solid var(--focus);
+      outline-offset: 3px;
+    }
+
+    .skip-link {
+      position: fixed;
+      top: 8px;
+      left: 8px;
+      z-index: 10;
+      padding: 10px 14px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      transform: translateY(-160%);
+    }
+
+    .skip-link:focus { transform: translateY(0); }
+
+    .topbar {
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    .topbar-inner,
+    .container {
+      width: min(1180px, calc(100% - 48px));
+      margin-inline: auto;
+    }
+
+    .topbar-inner {
+      display: flex;
+      min-height: 72px;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+
+    .topbar-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 700;
+    }
+
+    .topbar-brand img { width: 28px; height: 28px; }
+
+    .meta {
+      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: 12px;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+
+    main { padding-bottom: 80px; }
+
+    .section {
+      padding-block: 64px;
+    }
+
+    .section + .section { border-top: 1px solid var(--border); }
+
+    .hero-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(360px, .9fr);
+      align-items: center;
+      gap: 72px;
+    }
+
+    h1, h2, h3, p { margin-top: 0; }
+
+    h1 {
+      max-width: 10ch;
+      margin-bottom: 20px;
+      font-size: clamp(44px, 7vw, 76px);
+      line-height: 1.04;
+      letter-spacing: -.05em;
+      text-wrap: balance;
+    }
+
+    h2 {
+      margin-bottom: 12px;
+      font-size: clamp(28px, 4vw, 40px);
+      line-height: 1.15;
+      letter-spacing: -.035em;
+    }
+
+    h3 {
+      margin-bottom: 8px;
+      font-size: 18px;
+      line-height: 1.35;
+    }
+
+    .lead {
+      max-width: 52ch;
+      margin-bottom: 0;
+      color: var(--muted);
+      font-size: 18px;
+    }
+
+    .hero-mark {
+      display: grid;
+      min-height: 420px;
+      place-items: center;
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      background: var(--surface);
+    }
+
+    .hero-mark img { width: min(220px, 55%); }
+
+    .section-head {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 32px;
+      margin-bottom: 36px;
+    }
+
+    .section-head p {
+      max-width: 52ch;
+      margin-bottom: 0;
+      color: var(--muted);
+    }
+
+    .size-strip {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      border-block: 1px solid var(--border);
+    }
+
+    .size-item {
+      display: grid;
+      min-height: 176px;
+      place-items: center;
+      align-content: center;
+      gap: 20px;
+      padding: 24px;
+    }
+
+    .size-item + .size-item { border-left: 1px solid var(--border); }
+
+    .size-item img { width: var(--mark-size); height: var(--mark-size); }
+
+    .size-label {
+      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: 12px;
+    }
+
+    .lockup-grid,
+    .context-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 24px;
+    }
+
+    .specimen {
+      display: grid;
+      min-height: 260px;
+      align-content: space-between;
+      gap: 40px;
+      padding: 32px;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: var(--surface);
+    }
+
+    .specimen img { max-height: 72px; width: auto; }
+
+    .specimen-copy p {
+      margin-bottom: 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .app-context {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      min-height: 144px;
+      padding: 28px;
+      border-radius: 16px;
+    }
+
+    .app-context.is-light {
+      border: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    .app-context.is-dark {
+      background: var(--sidebar);
+      color: var(--sidebar-fg);
+    }
+
+    .app-context img { width: 64px; height: 64px; }
+
+    .context-copy strong { display: block; font-size: 19px; }
+
+    .context-copy span { color: var(--muted); font-size: 14px; }
+
+    .is-dark .context-copy span { color: var(--surface-soft); }
+
+    /* 品牌规范以真实资产和可复现的错误示例说明，不创建额外装饰图形。 */
+    .usage-stack {
+      display: grid;
+      gap: 40px;
+    }
+
+    .usage-block-head {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 24px;
+      margin-bottom: 18px;
+    }
+
+    .usage-block-head h3,
+    .usage-block-head p { margin-bottom: 0; }
+
+    .usage-block-head p {
+      max-width: 58ch;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .usage-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .usage-grid.is-four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+    .usage-card {
+      min-width: 0;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: var(--surface);
+    }
+
+    .usage-visual {
+      display: grid;
+      min-height: 188px;
+      place-items: center;
+      padding: 28px;
+      background: var(--surface-soft);
+    }
+
+    .usage-visual.is-dark { background: var(--sidebar); }
+    .usage-visual > img,
+    .usage-visual > svg { width: 64px; height: 64px; }
+
+    .usage-copy {
+      padding: 16px 18px 18px;
+      border-top: 1px solid var(--border);
+    }
+
+    .usage-copy strong { display: block; margin-bottom: 4px; font-size: 15px; }
+    .usage-copy p { margin-bottom: 0; color: var(--muted); font-size: 13px; }
+
+    .usage-kicker {
+      display: inline-block;
+      margin-bottom: 10px;
+      color: var(--accent);
+      font-family: var(--font-mono);
+      font-size: 10px;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+
+    .usage-kicker.is-wrong { color: var(--danger); }
+
+    .clearspace-frame {
+      display: grid;
+      width: 96px;
+      height: 96px;
+      place-items: center;
+      padding: 16px;
+      border: 1px dashed var(--accent);
+      background: color-mix(in oklch, var(--accent) 4%, var(--surface));
+    }
+
+    .clearspace-frame img { width: 64px; height: 64px; max-width: none; }
+    .misuse-stretch img { width: 96px; height: 48px; }
+    .misuse-rotate img { transform: rotate(18deg); }
+    .misuse-status { color: var(--danger); }
+    .misuse-status svg { width: 64px; height: 64px; }
+
+    .criteria {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 1px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: var(--border);
+    }
+
+    .criterion {
+      min-height: 180px;
+      padding: 28px;
+      background: var(--surface);
+    }
+
+    .criterion-index {
+      display: block;
+      margin-bottom: 32px;
+      color: var(--accent);
+      font-family: var(--font-mono);
+      font-size: 12px;
+    }
+
+    .criterion p { margin-bottom: 0; color: var(--muted); font-size: 14px; }
+
+    /* 四主题只替换品牌强调色和应用壳中性色，不改变主符号几何。 */
+    .theme-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .theme-card {
+      overflow: hidden;
+      border-radius: 16px;
+      background: var(--theme-shell);
+      color: var(--theme-fg);
+    }
+
+    .theme-card.is-mist {
+      --theme-shell: oklch(19% .018 255);
+      --theme-fg: oklch(94% .008 250);
+      --theme-muted: oklch(71% .015 250);
+      --theme-accent: oklch(59% .105 28);
+    }
+
+    .theme-card.is-sand {
+      --theme-shell: oklch(22% .022 55);
+      --theme-fg: oklch(94% .012 70);
+      --theme-muted: oklch(72% .022 68);
+      --theme-accent: oklch(61% .095 35);
+    }
+
+    .theme-card.is-ocean {
+      --theme-shell: oklch(22% .035 245);
+      --theme-fg: oklch(94% .012 235);
+      --theme-muted: oklch(72% .025 235);
+      --theme-accent: oklch(64% .085 235);
+    }
+
+    .theme-card.is-sage {
+      --theme-shell: oklch(22% .03 165);
+      --theme-fg: oklch(94% .012 155);
+      --theme-muted: oklch(72% .024 155);
+      --theme-accent: oklch(63% .078 165);
+    }
+
+    .theme-preview {
+      display: flex;
+      min-height: 176px;
+      align-items: center;
+      gap: 16px;
+      padding: 24px;
+    }
+
+    .theme-preview svg { width: 44px; height: 44px; flex: 0 0 auto; }
+    .theme-preview .is-accent { color: var(--theme-accent); }
+    .theme-preview strong { display: block; font-size: 20px; }
+    .theme-preview span span { display: block; margin-top: 2px; color: var(--theme-muted); font-size: 11px; }
+
+    .theme-label {
+      display: flex;
+      justify-content: space-between;
+      padding: 11px 14px;
+      border-top: 1px solid color-mix(in oklch, var(--theme-fg) 12%, var(--theme-shell));
+      color: var(--theme-muted);
+      font-family: var(--font-mono);
+      font-size: 10px;
+    }
+
+    /* 图形资产使用单层连续表面，避免品牌板再次出现卡片套卡片。 */
+    .graphic-stack {
+      display: grid;
+      gap: 24px;
+    }
+
+    .asset-sheet {
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: var(--surface);
+    }
+
+    .asset-sheet-visual { overflow-x: auto; background: var(--surface-soft); }
+    .asset-sheet-visual img { width: 100%; height: auto; }
+    .asset-sheet-visual.is-wide img { min-width: 680px; }
+
+    .asset-sheet-copy {
+      display: flex;
+      align-items: start;
+      justify-content: space-between;
+      gap: 24px;
+      padding: 18px 20px;
+      border-top: 1px solid var(--border);
+    }
+
+    .asset-sheet-copy h3 { margin-bottom: 3px; }
+    .asset-sheet-copy p { max-width: 62ch; margin-bottom: 0; color: var(--muted); font-size: 13px; }
+    .asset-sheet-copy code { flex: 0 0 auto; color: var(--muted); font-family: var(--font-mono); font-size: 11px; }
+
+    .manifest {
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: var(--surface);
+    }
+
+    .manifest-row {
+      display: grid;
+      grid-template-columns: minmax(240px, .9fr) minmax(0, 1.1fr) auto;
+      gap: 24px;
+      align-items: center;
+      min-height: 62px;
+      padding: 12px 18px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .manifest-row:last-child { border-bottom: 0; }
+    .manifest-row code { overflow-wrap: anywhere; font-family: var(--font-mono); font-size: 12px; }
+    .manifest-row span { color: var(--muted); font-size: 13px; }
+    .manifest-row a { color: var(--accent); font-size: 13px; font-weight: 650; text-decoration: none; }
+    .manifest-row a:hover { text-decoration: underline; }
+
+    @media (max-width: 860px) {
+      .topbar-inner,
+      .container { width: min(100% - 32px, 720px); }
+
+      .hero-grid,
+      .lockup-grid,
+      .context-grid { grid-template-columns: 1fr; }
+
+      .hero-grid { gap: 40px; }
+
+      .hero-mark { min-height: 320px; }
+
+      .size-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+      .size-item:nth-child(3) { border-left: 0; border-top: 1px solid var(--border); }
+      .size-item:nth-child(4) { border-top: 1px solid var(--border); }
+
+      .criteria { grid-template-columns: 1fr; }
+      .theme-grid,
+      .usage-grid,
+      .usage-grid.is-four { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .manifest-row { grid-template-columns: minmax(220px, .9fr) minmax(0, 1.1fr); }
+      .manifest-row a { grid-column: 2; justify-self: start; }
+    }
+
+    @media (max-width: 520px) {
+      .topbar-inner { min-height: 64px; }
+      .topbar-inner .meta { display: none; }
+      .section { padding-block: 48px; }
+      .section-head { display: block; }
+      .section-head p { margin-top: 12px; }
+      .hero-mark { min-height: 260px; }
+      .hero-mark img { width: 150px; }
+      .size-item { min-height: 144px; padding: 20px 12px; }
+      .specimen { min-height: 220px; padding: 24px; }
+      .theme-grid,
+      .usage-grid,
+      .usage-grid.is-four { grid-template-columns: 1fr; }
+      .usage-block-head { display: block; }
+      .usage-block-head p { margin-top: 8px; }
+      .asset-sheet-copy { flex-direction: column; }
+      .manifest-row { grid-template-columns: 1fr; gap: 4px; padding-block: 16px; }
+      .manifest-row a { grid-column: 1; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        scroll-behavior: auto !important;
+        transition-duration: .01ms !important;
+        animation-duration: .01ms !important;
+        animation-iteration-count: 1 !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#main">跳到主要内容</a>
+
+  <header class="topbar" data-od-id="brand-review-header">
+    <div class="topbar-inner">
+      <div class="topbar-brand">
+        <img src="assets/brand/logo-symbol.svg" alt="">
+        <span>人样</span>
+      </div>
+      <span class="meta">品牌与图形规范 · 定稿</span>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="section" data-od-id="brand-review-hero">
+      <div class="container hero-grid">
+        <div>
+          <p class="meta">产品语义 · AI Agent</p>
+          <h1>让 Agent 有记忆，也有自己的样子。</h1>
+          <p class="lead">“人样”不是人物管理工具，而是让 AI Agent 在长期任务中保留经历、形成稳定个性，并以一致身份继续行动的工具。LOGO 需要同时表达持续存在的 Agent、可积累的记忆和独特人格。</p>
+        </div>
+        <div class="hero-mark">
+          <img src="assets/brand/logo-symbol.svg" alt="人样主标志：圆形头部和人字形身体">
+        </div>
+      </div>
+    </section>
+
+    <section class="section" data-od-id="brand-review-sizes">
+      <div class="container">
+        <div class="section-head">
+          <div>
+            <p class="meta">尺寸验证</p>
+            <h2>从 favicon 到品牌母版</h2>
+          </div>
+          <p>所有尺寸使用同一几何骨架；16px 场景优先保证头部、左右笔画和整体人形不粘连。</p>
+        </div>
+        <div class="size-strip" aria-label="人样主标志尺寸对比">
+          <div class="size-item" style="--mark-size: 16px;">
+            <img src="assets/brand/logo-symbol.svg" alt="16 像素人样标志">
+            <span class="size-label">16px</span>
+          </div>
+          <div class="size-item" style="--mark-size: 24px;">
+            <img src="assets/brand/logo-symbol.svg" alt="24 像素人样标志">
+            <span class="size-label">24px</span>
+          </div>
+          <div class="size-item" style="--mark-size: 34px;">
+            <img src="assets/brand/logo-symbol.svg" alt="34 像素人样标志">
+            <span class="size-label">34px</span>
+          </div>
+          <div class="size-item" style="--mark-size: 64px;">
+            <img src="assets/brand/logo-symbol.svg" alt="64 像素人样标志">
+            <span class="size-label">64px</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" data-od-id="brand-review-lockups">
+      <div class="container">
+        <div class="section-head">
+          <div>
+            <p class="meta">组合标</p>
+            <h2>主名称与正式副标题</h2>
+          </div>
+          <p>基础组合只保留“人样”；需要品牌说明的入口使用完整产品组合“人样／让它有个人样”。</p>
+        </div>
+        <div class="lockup-grid">
+          <article class="specimen">
+            <img src="assets/brand/logo-lockup-horizontal.svg" alt="人样横向主标">
+            <div class="specimen-copy">
+              <h3>横向主标</h3>
+              <p>用于帮助页、品牌板和低高度横向区域。</p>
+            </div>
+          </article>
+          <article class="specimen">
+            <img src="assets/brand/logo-lockup-product.svg" alt="人样，有自己的样子">
+            <div class="specimen-copy">
+              <h3>产品组合</h3>
+              <p>用于登录页、首次设置、展开侧栏和系统信息。</p>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" data-od-id="brand-review-contexts">
+      <div class="container">
+        <div class="section-head">
+          <div>
+            <p class="meta">应用场景</p>
+            <h2>图标与应用壳</h2>
+          </div>
+          <p>小尺寸应用图标统一身体颜色，只保留品牌色头部，避免 16px 下出现双色断裂。</p>
+        </div>
+        <div class="context-grid">
+          <div class="app-context is-light">
+            <img src="assets/brand/app-icon.svg" alt="人样应用图标">
+            <div class="context-copy">
+              <strong>人样</strong>
+              <span>桌面应用与 Web App</span>
+            </div>
+          </div>
+          <div class="app-context is-dark">
+            <img src="assets/brand/favicon.svg" alt="人样 favicon">
+            <div class="context-copy">
+              <strong>人样</strong>
+              <span>深色应用壳与浏览器标签</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" data-od-id="brand-review-themes">
+      <div class="container">
+        <div class="section-head">
+          <div>
+            <p class="meta">主题适配</p>
+            <h2>同一个人形，四种应用壳气质</h2>
+          </div>
+          <p>标志结构、留白和比例完全不变；主题只替换头部、右笔画与应用壳中性色，成功、警告和失败色不进入品牌标志。</p>
+        </div>
+        <div class="theme-grid">
+          <article class="theme-card is-mist">
+            <div class="theme-preview">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle class="is-accent" cx="12" cy="4.6" r="2.6" fill="currentColor"/><path d="M10.3 10 3.7 20.4" fill="none" stroke="currentColor" stroke-width="4.4" stroke-linecap="round"/><path class="is-accent" d="M13.7 10 20.3 20.4" fill="none" stroke="currentColor" stroke-width="4.4" stroke-linecap="round"/></svg>
+              <span><strong>人样</strong><span>有自己的样子</span></span>
+            </div>
+            <div class="theme-label"><span>雾白</span><span>mist</span></div>
+          </article>
+          <article class="theme-card is-sand">
+            <div class="theme-preview">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle class="is-accent" cx="12" cy="4.6" r="2.6" fill="currentColor"/><path d="M10.3 10 3.7 20.4" fill="none" stroke="currentColor" stroke-width="4.4" stroke-linecap="round"/><path class="is-accent" d="M13.7 10 20.3 20.4" fill="none" stroke="currentColor" stroke-width="4.4" stroke-linecap="round"/></svg>
+              <span><strong>人样</strong><span>有自己的样子</span></span>
+            </div>
+            <div class="theme-label"><span>暖砂</span><span>sand</span></div>
+          </article>
+          <article class="theme-card is-ocean">
+            <div class="theme-preview">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle class="is-accent" cx="12" cy="4.6" r="2.6" fill="currentColor"/><path d="M10.3 10 3.7 20.4" fill="none" stroke="currentColor" stroke-width="4.4" stroke-linecap="round"/><path class="is-accent" d="M13.7 10 20.3 20.4" fill="none" stroke="currentColor" stroke-width="4.4" stroke-linecap="round"/></svg>
+              <span><strong>人样</strong><span>有自己的样子</span></span>
+            </div>
+            <div class="theme-label"><span>海盐</span><span>ocean</span></div>
+          </article>
+          <article class="theme-card is-sage">
+            <div class="theme-preview">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle class="is-accent" cx="12" cy="4.6" r="2.6" fill="currentColor"/><path d="M10.3 10 3.7 20.4" fill="none" stroke="currentColor" stroke-width="4.4" stroke-linecap="round"/><path class="is-accent" d="M13.7 10 20.3 20.4" fill="none" stroke="currentColor" stroke-width="4.4" stroke-linecap="round"/></svg>
+              <span><strong>人样</strong><span>有自己的样子</span></span>
+            </div>
+            <div class="theme-label"><span>松岚</span><span>sage</span></div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="usage-rules" data-od-id="brand-review-usage-rules">
+      <div class="container">
+        <div class="section-head">
+          <div>
+            <p class="meta">使用规范</p>
+            <h2>颜色版本、留白与错误用法</h2>
+          </div>
+          <p>正式标志只允许等比缩放和语义颜色替换；几何、笔画粗细与头身关系保持不变。</p>
+        </div>
+        <div class="usage-stack">
+          <div class="usage-block">
+            <div class="usage-block-head">
+              <h3>三个正式颜色版本</h3>
+              <p>默认双色用于品牌主场景；单色用于打印和受限环境；反白用于深色侧栏与深色封面。</p>
+            </div>
+            <div class="usage-grid" aria-label="人样标志颜色版本">
+              <article class="usage-card">
+                <div class="usage-visual"><img src="assets/brand/logo-symbol.svg" alt="人样默认双色标志"></div>
+                <div class="usage-copy"><span class="usage-kicker">默认</span><strong>双色主版本</strong><p>浅色表面使用深色左笔画和品牌色头部／右笔画。</p></div>
+              </article>
+              <article class="usage-card">
+                <div class="usage-visual"><img src="assets/brand/logo-symbol-monochrome.svg" alt="人样深色单色标志"></div>
+                <div class="usage-copy"><span class="usage-kicker">单色</span><strong>深色统一版本</strong><p>打印或不可使用强调色时，全部几何统一为深色。</p></div>
+              </article>
+              <article class="usage-card">
+                <div class="usage-visual is-dark"><img src="assets/brand/logo-symbol-reverse.svg" alt="人样暖白色反白标志"></div>
+                <div class="usage-copy"><span class="usage-kicker">反白</span><strong>深色表面版本</strong><p>深色侧栏和封面使用统一暖白色，不叠加描边或发光。</p></div>
+              </article>
+            </div>
+          </div>
+
+          <div class="usage-block">
+            <div class="usage-block-head">
+              <h3>安全留白与禁止变形</h3>
+              <p>安全留白不小于符号宽度的 25%；不要拉伸、旋转，或把成功／警告／失败色当作品牌色。</p>
+            </div>
+            <div class="usage-grid is-four" aria-label="人样标志安全留白和错误用法">
+              <article class="usage-card">
+                <div class="usage-visual"><div class="clearspace-frame"><img src="assets/brand/logo-symbol.svg" alt="人样标志四周保留四分之一宽度留白"></div></div>
+                <div class="usage-copy"><span class="usage-kicker">正确</span><strong>四周保留 1/4 宽度</strong><p>64px 符号至少保留 16px 独立空间。</p></div>
+              </article>
+              <article class="usage-card">
+                <div class="usage-visual misuse-stretch"><img src="assets/brand/logo-symbol.svg" alt="被横向拉伸的错误人样标志示例"></div>
+                <div class="usage-copy"><span class="usage-kicker is-wrong">不要</span><strong>不要拉伸比例</strong><p>始终等比缩放，不压扁头部或改变身体张角。</p></div>
+              </article>
+              <article class="usage-card">
+                <div class="usage-visual misuse-rotate"><img src="assets/brand/logo-symbol.svg" alt="被旋转的错误人样标志示例"></div>
+                <div class="usage-copy"><span class="usage-kicker is-wrong">不要</span><strong>不要旋转标志</strong><p>保持头部朝上和稳定站立重心。</p></div>
+              </article>
+              <article class="usage-card">
+                <div class="usage-visual misuse-status">
+                  <svg viewBox="0 0 24 24" role="img" aria-label="使用状态色的错误人样标志示例"><circle cx="12" cy="4.6" r="2.6" fill="currentColor"/><path d="M10.3 10 3.7 20.4M13.7 10 20.3 20.4" fill="none" stroke="currentColor" stroke-width="4.4" stroke-linecap="round"/></svg>
+                </div>
+                <div class="usage-copy"><span class="usage-kicker is-wrong">不要</span><strong>不要替换为状态色</strong><p>失败、警告和成功色只表达系统状态。</p></div>
+              </article>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" data-od-id="brand-review-ui-graphics">
+      <div class="container">
+        <div class="section-head">
+          <div>
+            <p class="meta">相关 UI 图形</p>
+            <h2>对象、状态和空场景使用同一套视觉重量</h2>
+          </div>
+          <p>实体图形保持 24×24、1.6px 线性骨架；状态依靠不同形状而不是只靠颜色；空状态只描述业务缺口，不增加拟人装饰。</p>
+        </div>
+        <div class="graphic-stack">
+          <article class="asset-sheet">
+            <div class="asset-sheet-visual"><img src="assets/graphics/entity-glyphs.svg" width="1212" height="588" alt="人物、世界、资料、任务、反馈、评测、模板和生成设置八个实体图形"></div>
+            <div class="asset-sheet-copy"><div><h3>实体图形</h3><p>用于对象标题、选择器和空状态，不与普通按钮图标混用。</p></div><code>entity-glyphs.svg</code></div>
+          </article>
+          <article class="asset-sheet">
+            <div class="asset-sheet-visual"><img src="assets/graphics/status-symbols.svg" width="1482" height="312" alt="已完成、进行中、待确认、警告、失败、候选和已锁定七种状态符号"></div>
+            <div class="asset-sheet-copy"><div><h3>状态符号</h3><p>每种状态同时具备独立轮廓与中文标签，颜色只承担辅助语义。</p></div><code>status-symbols.svg</code></div>
+          </article>
+          <article class="asset-sheet">
+            <div class="asset-sheet-visual is-wide"><img src="assets/graphics/empty-states.svg" width="2136" height="522" alt="尚未建立人物、尚无任务结果、尚无资料关联和同步暂不可用四个空状态图形"></div>
+            <div class="asset-sheet-copy"><div><h3>空状态图形</h3><p>覆盖人物、任务结果、资料关系与同步四类缺口，每个场景最多使用一种强调色。</p></div><code>empty-states.svg</code></div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" data-od-id="brand-review-assets">
+      <div class="container">
+        <div class="section-head">
+          <div>
+            <p class="meta">交付资产</p>
+            <h2>正式品牌与 UI 图形资产</h2>
+          </div>
+          <p>最初的人形字标已锁定为唯一正式方向；全部图形均保存在项目内，不依赖外链图片。</p>
+        </div>
+        <div class="manifest">
+          <div class="manifest-row"><code>assets/brand/logo-symbol.svg</code><span>正式主符号</span><a href="assets/brand/logo-symbol.svg">打开</a></div>
+          <div class="manifest-row"><code>assets/brand/logo-symbol-monochrome.svg</code><span>正式深色单色版本</span><a href="assets/brand/logo-symbol-monochrome.svg">打开</a></div>
+          <div class="manifest-row"><code>assets/brand/logo-symbol-reverse.svg</code><span>正式暖白反白版本</span><a href="assets/brand/logo-symbol-reverse.svg">打开</a></div>
+          <div class="manifest-row"><code>assets/brand/logo-wordmark.svg</code><span>中文标准字</span><a href="assets/brand/logo-wordmark.svg">打开</a></div>
+          <div class="manifest-row"><code>assets/brand/logo-lockup-horizontal.svg</code><span>横向主标</span><a href="assets/brand/logo-lockup-horizontal.svg">打开</a></div>
+          <div class="manifest-row"><code>assets/brand/logo-lockup-product.svg</code><span>产品组合与正式副标题</span><a href="assets/brand/logo-lockup-product.svg">打开</a></div>
+          <div class="manifest-row"><code>assets/brand/favicon.svg</code><span>浏览器图标</span><a href="assets/brand/favicon.svg">打开</a></div>
+          <div class="manifest-row"><code>assets/brand/app-icon.svg</code><span>应用图标母版</span><a href="assets/brand/app-icon.svg">打开</a></div>
+          <div class="manifest-row"><code>assets/graphics/entity-glyphs.svg</code><span>八个实体图形</span><a href="assets/graphics/entity-glyphs.svg">打开</a></div>
+          <div class="manifest-row"><code>assets/graphics/status-symbols.svg</code><span>七个状态符号</span><a href="assets/graphics/status-symbols.svg">打开</a></div>
+          <div class="manifest-row"><code>assets/graphics/empty-states.svg</code><span>四个空状态图形</span><a href="assets/graphics/empty-states.svg">打开</a></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" data-od-id="brand-review-criteria">
+      <div class="container">
+        <div class="section-head">
+          <div>
+            <p class="meta">验收底线</p>
+            <h2>这次只保留三个判断</h2>
+          </div>
+        </div>
+        <div class="criteria">
+          <article class="criterion">
+            <span class="criterion-index">01</span>
+            <h3>像一个持续存在的 Agent</h3>
+            <p>不能只像普通用户头像；需要让人感受到它拥有稳定身份，并会跨任务继续存在。</p>
+          </article>
+          <article class="criterion">
+            <span class="criterion-index">02</span>
+            <h3>有记忆，也有个性</h3>
+            <p>不必把全部能力画出来，但应能联想到经历积累、身份核心或独特人格。</p>
+          </article>
+          <article class="criterion">
+            <span class="criterion-index">03</span>
+            <h3>仍然像一个品牌标志</h3>
+            <p>轮廓完整、重心稳定，在 favicon、侧栏和应用图标中保持同一识别骨架。</p>
+          </article>
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

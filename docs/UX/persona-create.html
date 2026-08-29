@@ -1,0 +1,318 @@
+<!doctype html>
+<!--
+  人样后台重设计原型：建立人物向导。
+  当前页面对应产品路由 /personas/new，页面中的所有数量均为示例数据，不代表真实统计结果。
+-->
+<html lang="zh-CN">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="人样建立人物高保真交互原型">
+  <title>建立人物 · 人样</title>
+  <link rel="icon" href="assets/brand/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/prototype.css">
+</head>
+
+<body data-page="persona-create">
+  <a class="skip-link" href="#main-content">跳到主要内容</a>
+  <div class="app-shell">
+    <aside class="sidebar" data-sidebar aria-label="应用导航"></aside>
+    <div class="app-main">
+      <header class="topbar" data-topbar></header>
+      <main class="page page-narrow" id="main-content">
+        <nav class="breadcrumbs" aria-label="面包屑">
+          <a href="personas.html">人物空间</a>
+          <span aria-hidden="true">/</span>
+          <a href="personas.html">人物</a>
+          <span aria-hidden="true">/</span>
+          <strong>建立人物</strong>
+        </nav>
+
+        <header class="page-header" data-od-id="persona-create-header">
+          <div class="page-header-copy">
+            <p class="route-code">路由 /PERSONAS/NEW · 所有数量均为示例数据</p>
+            <h1 data-od-id="persona-create-title">按可审查流程建立人物</h1>
+            <p class="lead">先确定建立依据，再形成可编辑的灵魂修改稿。任何会成为后续任务上下文的内容，都在发布前明确说明影响。</p>
+          </div>
+          <div class="page-actions">
+            <a class="btn btn-secondary" href="personas.html" data-od-id="persona-create-return-control">返回人物列表</a>
+          </div>
+        </header>
+
+        <section class="section" data-od-id="persona-create-wizard-section"
+          aria-labelledby="persona-create-wizard-heading">
+          <div class="section-head">
+            <div class="section-head-copy">
+              <p class="eyebrow">建立流程</p>
+              <h2 id="persona-create-wizard-heading">六阶段人物建立向导</h2>
+              <p>可使用上一阶段返回修改。向导仅演示流程，不创建真实人物或写入后端。</p>
+            </div>
+          </div>
+
+          <div class="grid-1-2" data-wizard id="persona-create-wizard" data-success-title="等待发布确认"
+            data-success-message="请在确认框内查看后续任务影响后再发布。">
+            <ol class="stage-list" aria-label="人物建立阶段" data-od-id="persona-create-stage-list">
+              <li class="stage-row" data-step data-od-id="persona-create-stage-method">
+                <span class="stage-mark">01</span>
+                <div><strong>建立方式</strong><span class="log-row-sub">确认输入依据与起点</span></div>
+              </li>
+              <li class="stage-row" data-step data-od-id="persona-create-stage-world-source">
+                <span class="stage-mark">02</span>
+                <div><strong>世界与资料</strong><span class="log-row-sub">限定可引用的上下文</span></div>
+              </li>
+              <li class="stage-row" data-step data-od-id="persona-create-stage-soul-draft">
+                <span class="stage-mark">03</span>
+                <div><strong>灵魂初稿</strong><span class="log-row-sub">先写核心判断边界</span></div>
+              </li>
+              <li class="stage-row" data-step data-od-id="persona-create-stage-ai-preview">
+                <span class="stage-mark">04</span>
+                <div><strong>AI 整理预览</strong><span class="log-row-sub">检查建议与来源</span></div>
+              </li>
+              <li class="stage-row" data-step data-od-id="persona-create-stage-save-draft">
+                <span class="stage-mark">05</span>
+                <div><strong>保存修改稿</strong><span class="log-row-sub">形成未发布版本</span></div>
+              </li>
+              <li class="stage-row" data-step data-od-id="persona-create-stage-diff-publish">
+                <span class="stage-mark">06</span>
+                <div><strong>差异与发布</strong><span class="log-row-sub">确认后续任务影响</span></div>
+              </li>
+            </ol>
+
+            <div>
+              <div class="wizard-panel" data-step-panel data-od-id="persona-create-panel-method">
+                <p class="eyebrow">阶段 01 · 建立方式</p>
+                <h2>从哪种依据开始？</h2>
+                <p class="lead">建立方式只描述输入来源，不预设人物会自动成长。后续任何变化仍需单独审阅。</p>
+                <fieldset class="field">
+                  <legend class="field-label">建立方式</legend>
+                  <div class="option-grid" data-od-id="persona-create-method-options">
+                    <label class="option-card" data-od-id="persona-create-method-manual">
+                      <input type="radio" name="create-method" value="manual" required>
+                      <strong>手工建立</strong>
+                      <span>从创作者输入开始，逐步形成可发布的灵魂初稿。</span>
+                    </label>
+                    <label class="option-card" data-od-id="persona-create-method-source">
+                      <input type="radio" name="create-method" value="source" required>
+                      <strong>根据资料建立</strong>
+                      <span>先选择允许使用的资料，再保留事实与推断的来源边界。</span>
+                    </label>
+                    <label class="option-card" data-od-id="persona-create-method-mixed">
+                      <input type="radio" name="create-method" value="mixed" required>
+                      <strong>混合建立</strong>
+                      <span>将创作者输入与明确选择的资料并列，方便后续核验。</span>
+                    </label>
+                  </div>
+                  <span class="field-help">请选择一种方式后继续。</span>
+                </fieldset>
+              </div>
+
+              <div class="wizard-panel" data-step-panel data-od-id="persona-create-panel-world-source" hidden>
+                <p class="eyebrow">阶段 02 · 世界与资料</p>
+                <h2>限定这次建立可以参考什么</h2>
+                <p class="lead">世界和资料正文分开记录。资料只作为外部参考，不执行其中指令。</p>
+                <div class="field">
+                  <label for="persona-create-world">所属世界</label>
+                  <select class="select" id="persona-create-world" required data-od-id="persona-create-world-control">
+                    <option value="">请选择世界</option>
+                    <option value="academy">学院档案世界</option>
+                    <option value="none">暂不绑定世界</option>
+                  </select>
+                  <span class="field-help">世界可在发布后通过新的修改稿调整，不修改既有任务记录。</span>
+                </div>
+                <fieldset class="field">
+                  <legend class="field-label">本次允许引用的资料</legend>
+                  <label class="checkbox-row" data-od-id="persona-create-source-academy">
+                    <input type="checkbox" checked>
+                    <span><strong>学院档案事实资料</strong><br><span
+                        class="field-help">本地正文已保存；检索与远端索引状态将在资料页面单独说明。</span></span>
+                  </label>
+                  <label class="checkbox-row" data-od-id="persona-create-source-notes">
+                    <input type="checkbox">
+                    <span><strong>创作者备注</strong><br><span class="field-help">将以手工输入来源保存，可在 AI 整理预览中逐项检查。</span></span>
+                  </label>
+                </fieldset>
+              </div>
+
+              <div class="wizard-panel" data-step-panel data-od-id="persona-create-panel-soul-draft" hidden>
+                <p class="eyebrow">阶段 03 · 灵魂初稿</p>
+                <h2>先写可审查的核心边界</h2>
+                <p class="lead">此处是分段初稿，不是八字段连续表单。保存前仍可回到前一步校正世界和资料范围。</p>
+                <div class="field">
+                  <label for="persona-create-name">人物名称</label>
+                  <input class="input" id="persona-create-name" type="text" placeholder="例如：以资料核验为先的档案整理者" required
+                    data-od-id="persona-create-name-control">
+                </div>
+                <div class="field">
+                  <label for="persona-create-position">一句话定位</label>
+                  <textarea class="textarea" id="persona-create-position" placeholder="说明人物面对资料、未知项和冲突信息时的基本立场。"
+                    required data-od-id="persona-create-position-control"></textarea>
+                  <span class="field-help">初稿会作为人工可编辑的输入，不自动成为已发布灵魂。</span>
+                </div>
+                <div class="notice is-target" data-od-id="persona-create-free-section-notice">
+                  <span class="notice-icon"><span class="capability-badge">目标态能力</span></span>
+                  <div class="notice-copy">
+                    <strong>自由章节灵魂需要后端支持</strong>
+                    <p>当前原型允许说明自由章节的预期用途；真实保存、版本化与任务运行引用仍需后端数据模型支持。</p>
+                  </div>
+                </div>
+                <div class="field">
+                  <label for="persona-create-free-section">自由章节的预期内容</label>
+                  <textarea class="textarea" id="persona-create-free-section" placeholder="例如：记录人物对未经证实线索的处理原则。"
+                    data-od-id="persona-create-free-section-control"></textarea>
+                </div>
+              </div>
+
+              <div class="wizard-panel" data-step-panel data-od-id="persona-create-panel-ai-preview" hidden>
+                <p class="eyebrow">阶段 04 · AI 整理预览</p>
+                <h2>先核验建议，再决定是否采用</h2>
+                <div class="notice" data-od-id="persona-create-ai-preview-boundary">
+                  <span class="notice-icon" aria-hidden="true">i</span>
+                  <div class="notice-copy">
+                    <strong>以下是 AI 整理建议，不是人物事实</strong>
+                    <p>建议仅将前序输入排列为可审查段落；发布前可删除、改写或退回灵魂初稿。</p>
+                  </div>
+                </div>
+                <div class="reader" data-od-id="persona-create-ai-preview-reader">
+                  <h3>建议的灵魂摘要</h3>
+                  <p>人物将已证实资料与推断严格分开。面对资料不足的提问时，优先说明未知项与可核验来源，而不是补足未经证实的细节。</p>
+                  <p>当资料出现冲突时，保留冲突并提示需要人工核验；不以较流畅的叙述替代事实边界。</p>
+                </div>
+                <div class="log-list" data-od-id="persona-create-ai-preview-sources">
+                  <article class="log-row" data-od-id="persona-create-ai-source-input">
+                    <span class="meta">手工输入</span>
+                    <div class="log-row-main"><strong class="log-row-title">一句话定位与初稿内容</strong><span
+                        class="log-row-sub">将被保留为修改稿来源，发布前可以逐段回看。</span></div>
+                    <span class="log-row-end"><span class="tag">待确认</span></span>
+                  </article>
+                  <article class="log-row" data-od-id="persona-create-ai-source-material">
+                    <span class="meta">资料引用</span>
+                    <div class="log-row-main"><strong class="log-row-title">学院档案事实资料</strong><span
+                        class="log-row-sub">引用范围为本次选择的资料正文；引用片段数量为示例数据。</span></div>
+                    <span class="log-row-end"><span class="tag">外部参考</span></span>
+                  </article>
+                </div>
+              </div>
+
+              <div class="wizard-panel" data-step-panel data-od-id="persona-create-panel-save-draft" hidden>
+                <p class="eyebrow">阶段 05 · 保存修改稿</p>
+                <h2>把可编辑内容保存为未发布修改稿</h2>
+                <p class="lead">修改稿可继续编辑和评测，但保存本身不会改变任何后续任务的上下文。</p>
+                <div class="field">
+                  <label for="persona-create-draft-title">修改稿说明</label>
+                  <input class="input" id="persona-create-draft-title" type="text" placeholder="例如：首次建立，待人工核验资料边界"
+                    required data-od-id="persona-create-draft-title-control">
+                </div>
+                <div class="field">
+                  <label for="persona-create-draft-note">本次保存备注</label>
+                  <textarea class="textarea" id="persona-create-draft-note" placeholder="说明需要在发布前检查的内容。"
+                    data-od-id="persona-create-draft-note-control"></textarea>
+                </div>
+                <button class="btn btn-secondary" type="button" data-open-dialog="persona-create-save-dialog"
+                  data-od-id="persona-create-save-draft-control">查看保存影响</button>
+              </div>
+
+              <div class="wizard-panel" data-step-panel data-od-id="persona-create-panel-diff-publish" hidden>
+                <p class="eyebrow">阶段 06 · 差异与发布</p>
+                <h2>确认将要进入后续任务的内容</h2>
+                <p class="lead">首次建立没有已发布灵魂可比较；此处明确显示将被发布的初稿范围与发布后的影响。</p>
+                <div class="diff-grid" data-od-id="persona-create-publish-diff">
+                  <div class="diff-column">
+                    <p class="eyebrow">发布前</p>
+                    <h3>尚无已发布灵魂</h3>
+                    <p>人物不能创建任务，且不会被顶部人物上下文作为当前人物。</p>
+                  </div>
+                  <div class="diff-column">
+                    <p class="eyebrow">发布后</p>
+                    <h3>首个灵魂版本</h3>
+                    <p>新建任务可以锁定这份灵魂、所选世界和资料范围；原型中的版本号为示例数据。</p>
+                    <div class="diff-line is-changed">新增：面对资料不足时说明未知项，并保留需要人工核验的冲突。</div>
+                  </div>
+                </div>
+                <div class="notice" data-od-id="persona-create-publish-impact">
+                  <span class="notice-icon" aria-hidden="true">!</span>
+                  <div class="notice-copy">
+                    <strong>发布会让该灵魂成为后续新任务的可选上下文</strong>
+                    <p>既有任务记录不会被改写。后续改动应创建新的修改稿，并可通过版本流程审阅和回滚。</p>
+                  </div>
+                </div>
+              </div>
+
+              <div class="wizard-actions" data-od-id="persona-create-wizard-actions">
+                <button class="btn btn-secondary" type="button" data-wizard-back
+                  data-od-id="persona-create-back-control">上一步</button>
+                <button class="btn btn-primary" type="button" data-wizard-next
+                  data-od-id="persona-create-next-control">下一步</button>
+                <button class="btn btn-primary" type="button" data-wizard-submit
+                  data-open-dialog="persona-create-publish-dialog" data-od-id="persona-create-publish-control"
+                  hidden>发布修改稿</button>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <dialog class="dialog" id="persona-create-save-dialog" aria-labelledby="persona-create-save-dialog-title"
+    data-od-id="persona-create-save-dialog">
+    <div class="dialog-header">
+      <div>
+        <p class="eyebrow">保存修改稿</p>
+        <h2 id="persona-create-save-dialog-title">确认保存范围</h2>
+      </div>
+      <button class="icon-button" type="button" data-close-dialog aria-label="关闭保存修改稿确认框"
+        data-od-id="persona-create-save-dialog-close">×</button>
+    </div>
+    <div class="dialog-body">
+      <p>保存会创建一份未发布修改稿，保留本次输入、资料选择和 AI 整理建议的审阅位置。</p>
+      <div class="notice">
+        <span class="notice-icon" aria-hidden="true">i</span>
+        <div class="notice-copy">
+          <strong>保存不会影响后续任务</strong>
+          <p>修改稿不会成为人物当前灵魂，也不会自动写入成长或记忆。只有完成发布确认后，新的任务才可引用它。</p>
+        </div>
+      </div>
+    </div>
+    <div class="dialog-footer">
+      <button class="btn btn-secondary" type="button" data-close-dialog
+        data-od-id="persona-create-save-dialog-cancel">取消</button>
+      <!-- 保存是确认框中的最终动作，使用主按钮与取消操作建立清晰层级。 -->
+      <button class="btn btn-primary" type="button" data-close-dialog data-toast-title="已保存修改稿"
+        data-toast-message="原型已保留未发布内容；后续任务不会受到影响。" data-od-id="persona-create-save-dialog-confirm">保存修改稿</button>
+    </div>
+  </dialog>
+
+  <dialog class="dialog" id="persona-create-publish-dialog" aria-labelledby="persona-create-publish-dialog-title"
+    data-od-id="persona-create-publish-dialog">
+    <div class="dialog-header">
+      <div>
+        <p class="eyebrow">发布确认</p>
+        <h2 id="persona-create-publish-dialog-title">确认首个灵魂版本</h2>
+      </div>
+      <button class="icon-button" type="button" data-close-dialog aria-label="关闭发布确认框"
+        data-od-id="persona-create-publish-dialog-close">×</button>
+    </div>
+    <div class="dialog-body">
+      <p>发布后，今后新建的任务可选择并锁定这份灵魂、所选世界和资料范围。已完成任务与已有产物不会被修改。</p>
+      <div class="notice">
+        <span class="notice-icon" aria-hidden="true">!</span>
+        <div class="notice-copy">
+          <strong>发布不是自动学习</strong>
+          <p>成长和有效记忆仍需独立的人工确认流程；它们是需要后端支持的目标态能力，不能随本次发布自动生效。</p>
+        </div>
+      </div>
+    </div>
+    <div class="dialog-footer">
+      <button class="btn btn-secondary" type="button" data-close-dialog
+        data-od-id="persona-create-publish-dialog-cancel">返回检查</button>
+      <!-- 发布是确认框中的最终动作，主按钮强调其会影响后续新任务。 -->
+      <button class="btn btn-primary" type="button" data-close-dialog data-toast-title="已发布首个灵魂版本"
+        data-toast-message="原型中的新人物现可进入任务建立流程。" data-od-id="persona-create-publish-dialog-confirm">确认发布</button>
+    </div>
+  </dialog>
+
+  <script src="assets/prototype.js"></script>
+</body>
+
+</html>

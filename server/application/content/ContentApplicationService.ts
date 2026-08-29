@@ -102,7 +102,7 @@ export class ContentApplicationService {
    * 创建内容应用服务。
    * @param dependencies 数据、标识、时间、正文处理和文件端口。
    */
-  constructor(private readonly dependencies: ContentApplicationServiceDependencies) {}
+  constructor(private readonly dependencies: ContentApplicationServiceDependencies) { }
 
   /**
    * 查询全部人物摘要。
@@ -275,7 +275,7 @@ export class ContentApplicationService {
   }
 
   /**
-   * 查询全部世界设定摘要。
+   * 查询全部世界摘要。
    * @returns 按更新时间倒序的世界列表。
    */
   async listWorlds(): Promise<WorldSummary[]> {
@@ -318,7 +318,7 @@ export class ContentApplicationService {
   }
 
   /**
-   * 创建世界设定和初始候选版本。
+   * 创建世界和初始候选版本。
    * @param input 已校验世界输入。
    * @returns 新世界详情。
    */
@@ -765,7 +765,7 @@ export class ContentApplicationService {
   private async requireWorld(id: string): Promise<WorldRecord> {
     const world = await this.dependencies.repository.findWorld(id)
     if (!world) {
-      throw new ApplicationError('RESOURCE_NOT_FOUND', '世界设定不存在', 404)
+      throw new ApplicationError('RESOURCE_NOT_FOUND', '世界不存在', 404)
     }
     return world
   }

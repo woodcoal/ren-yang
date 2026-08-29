@@ -1,0 +1,369 @@
+<!doctype html>
+<!-- 人样后台重设计原型：内容模板，对应路由 /templates。 -->
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="人样版本化内容模板库">
+  <title>内容模板 · 人样</title>
+  <link rel="icon" href="assets/brand/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/prototype.css">
+</head>
+<body data-page="templates">
+  <a class="skip-link" href="#main-content">跳到主要内容</a>
+  <div class="app-shell" data-od-id="templates-app-shell">
+    <aside class="sidebar" data-sidebar aria-label="应用导航"></aside>
+    <div class="app-main">
+      <header class="topbar" data-topbar></header>
+      <main class="page" id="main-content">
+        <nav class="breadcrumbs" aria-label="面包屑" data-od-id="templates-breadcrumbs">
+          <span>系统</span>
+          <span aria-hidden="true">/</span>
+          <strong>内容模板</strong>
+        </nav>
+
+        <header class="page-header" data-od-id="templates-header">
+          <div class="page-header-copy">
+            <p class="route-code">页面 /templates · 2026.08.29 · 以下为配置示例</p>
+            <h1 data-od-id="templates-title">让内容格式保持可追溯</h1>
+            <p class="lead">每个模板版本都是只读记录。需要调整结构、语气或导出格式时，建立新版本，再让后续任务明确使用它。</p>
+          </div>
+          <div class="page-actions" data-od-id="templates-header-actions">
+            <button class="btn btn-primary" type="button" data-open-dialog="templates-new-version-dialog" data-od-id="templates-new-version-cta">新建模板版本</button>
+          </div>
+        </header>
+
+        <div class="status-strip" data-od-id="templates-status-summary" aria-label="内容模板状态摘要">
+          <div class="status-cell" data-od-id="templates-status-current">
+            <span class="status-kicker">当前预览</span>
+            <span class="status-value" id="templates-current-preview-value" aria-live="polite">三步核验说明 v3</span>
+          </div>
+          <div class="status-cell" data-od-id="templates-status-enabled">
+            <span class="status-kicker">启用状态</span>
+            <span class="status-value">当前版本已启用</span>
+          </div>
+          <div class="status-cell" data-od-id="templates-status-versioning">
+            <span class="status-kicker">版本规则</span>
+            <span class="status-value">发布后保持只读</span>
+          </div>
+          <div class="status-cell" data-od-id="templates-status-history">
+            <span class="status-kicker">历史任务</span>
+            <span class="status-value">不受后续版本影响</span>
+          </div>
+        </div>
+
+        <section class="section" data-od-id="templates-library-section">
+          <div class="section-head">
+            <div class="section-head-copy">
+              <p class="eyebrow">01 · 配置库</p>
+              <h2>按名称、用途或内容查找模板</h2>
+              <p>模板用于规定任务产物的组织方式，不承载人物事实、灵魂或资料内容。</p>
+            </div>
+          </div>
+
+          <div class="toolbar" data-od-id="templates-toolbar">
+            <label class="field search-field" for="templates-search" data-od-id="templates-search-field">
+              <span class="field-label">搜索模板</span>
+              <input class="input" id="templates-search" type="search" placeholder="输入模板名称、用途或导出格式" autocomplete="off" data-search-target="templates-list" data-od-id="templates-search-control">
+            </label>
+          </div>
+
+          <div id="templates-list" data-od-id="templates-list">
+            <div class="table-wrap" data-od-id="templates-table-wrap">
+              <table class="table" data-od-id="templates-table">
+                <caption class="meta">模板列表，当前版本与历史版本均可追溯</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">模板</th>
+                    <th scope="col">当前版本</th>
+                    <th scope="col">启用状态</th>
+                    <th scope="col">使用影响</th>
+                    <th scope="col">操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr data-search-text="旧物传闻 三步核验 内容创作 HTML Markdown Txt" data-od-id="templates-row-three-step">
+                    <td data-label="模板"><span class="table-title">旧物传闻三步核验</span><span class="table-sub">内容创作 · 结构化说明</span></td>
+                    <td data-label="当前版本"><strong>v3</strong><span class="table-sub">当前预览版本</span></td>
+                    <td data-label="启用状态"><span class="badge">已启用</span></td>
+                    <td data-label="使用影响">后续使用该模板的新建内容任务会采用 v3；历史任务保持当时版本。</td>
+                    <td data-label="操作"><a class="text-link" href="#templates-preview" data-template-preview="three-step" data-od-id="templates-preview-three-step">查看预览</a></td>
+                  </tr>
+                  <tr data-search-text="兴趣判断 结论 依据 未知项 Markdown" data-od-id="templates-row-interest">
+                    <td data-label="模板"><span class="table-title">兴趣判断说明</span><span class="table-sub">兴趣判断 · 结论与依据</span></td>
+                    <td data-label="当前版本"><strong>v2</strong><span class="table-sub">当前可用版本</span></td>
+                    <td data-label="启用状态"><span class="badge">已启用</span></td>
+                    <td data-label="使用影响">后续兴趣判断任务会保留“未知项”和“依据”两个输出区段。</td>
+                    <td data-label="操作"><a class="text-link" href="#templates-preview" data-template-preview="interest" data-od-id="templates-preview-interest">查看预览</a></td>
+                  </tr>
+                  <tr data-search-text="资料摘录 档案 来源片段 引用" data-od-id="templates-row-source-excerpt">
+                    <td data-label="模板"><span class="table-title">资料摘录卡</span><span class="table-sub">资料整理 · 片段引用</span></td>
+                    <td data-label="当前版本"><strong>v1</strong><span class="table-sub">当前可用版本</span></td>
+                    <td data-label="启用状态"><span class="badge">已启用</span></td>
+                    <td data-label="使用影响">后续资料摘录会显示来源、原文范围和使用限制。</td>
+                    <td data-label="操作"><a class="text-link" href="#templates-preview" data-template-preview="source-excerpt" data-od-id="templates-preview-source-excerpt">查看预览</a></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p class="meta" data-filter-empty hidden data-od-id="templates-search-empty" aria-live="polite">没有找到匹配模板，请调整搜索内容。</p>
+          </div>
+        </section>
+
+        <section class="section" id="templates-preview" data-od-id="templates-preview-section">
+          <div class="section-head">
+            <div class="section-head-copy">
+              <p class="eyebrow">02 · 模板预览</p>
+              <h2 id="templates-preview-heading">旧物传闻三步核验 · v3</h2>
+              <p id="templates-preview-description">当前预览只读。需改变内容时，创建 v4 而不是在此处原地编辑。</p>
+            </div>
+          </div>
+
+          <div data-tabs data-default-tab="template-preview" data-od-id="templates-preview-tabs">
+            <div class="tabs" role="tablist" aria-label="模板详情" data-od-id="templates-preview-tab-list">
+              <button class="tab-button" type="button" role="tab" aria-controls="templates-preview-panel" id="templates-preview-tab" data-tab="template-preview" data-od-id="templates-tab-preview">模板预览</button>
+              <button class="tab-button" type="button" role="tab" aria-controls="templates-version-panel" id="templates-version-tab" data-tab="template-version" data-od-id="templates-tab-versions">版本记录</button>
+              <button class="tab-button" type="button" role="tab" aria-controls="templates-impact-panel" id="templates-impact-tab" data-tab="template-impact" data-od-id="templates-tab-impact">使用影响</button>
+            </div>
+
+            <div class="tab-panel" role="tabpanel" id="templates-preview-panel" aria-labelledby="templates-preview-tab" data-tab-panel="template-preview" data-od-id="templates-preview-content-panel">
+              <div class="grid-1-2">
+                <article class="panel" data-od-id="templates-preview-content">
+                  <p class="eyebrow">输出结构</p>
+                  <h3 id="templates-preview-content-title">三步核验说明</h3>
+                  <div class="code-block" id="templates-preview-code">标题：{任务主题}
+
+一、可核验事实
+仅列出资料明确支持的内容，并标注来源范围。
+
+二、待核验线索
+说明尚需补充的资料，不把线索写成结论。
+
+三、人物视角下的有限推断
+如有推断，明确其依据与不确定性。
+
+导出：HTML、Markdown、Txt</div>
+                </article>
+                <article class="panel" data-od-id="templates-preview-metadata">
+                  <p class="eyebrow">版本信息</p>
+                  <h3 id="templates-preview-metadata-title">v3 · 当前已启用</h3>
+                  <div class="stack">
+                    <p><strong>用途</strong><br><span class="muted" id="templates-preview-purpose">供“旧物传闻三步核验”内容任务组织结果。</span></p>
+                    <p><strong>版本策略</strong><br><span class="muted" id="templates-preview-version-policy">发布后的 v3 保持只读；任何结构调整都必须建立新版本。</span></p>
+                    <p><strong>历史边界</strong><br><span class="muted" id="templates-preview-history-boundary">已经完成的任务继续引用其运行时锁定的模板版本。</span></p>
+                  </div>
+                </article>
+              </div>
+            </div>
+
+            <div class="tab-panel" role="tabpanel" id="templates-version-panel" aria-labelledby="templates-version-tab" data-tab-panel="template-version" data-od-id="templates-version-panel" hidden>
+              <div class="timeline" data-od-id="templates-version-timeline">
+                <article class="timeline-item" id="templates-version-item-one" data-od-id="templates-version-v3"><p class="meta" id="templates-version-item-one-meta">当前版本 · v3</p><h3 id="templates-version-item-one-title">补充“待核验线索”区段</h3><p id="templates-version-item-one-detail">使资料不足时的线索与已核验事实分开呈现。当前版本已启用。</p></article>
+                <article class="timeline-item" id="templates-version-item-two" data-od-id="templates-version-v2"><p class="meta" id="templates-version-item-two-meta">历史版本 · v2</p><h3 id="templates-version-item-two-title">统一导出标题和段落顺序</h3><p id="templates-version-item-two-detail">保留为历史记录；已完成任务仍可追溯到该版本。</p></article>
+                <article class="timeline-item" id="templates-version-item-three" data-od-id="templates-version-v1"><p class="meta" id="templates-version-item-three-meta">初始版本 · v1</p><h3 id="templates-version-item-three-title">建立基础三段式结构</h3><p id="templates-version-item-three-detail">作为版本链起点，不可原地修改。</p></article>
+              </div>
+            </div>
+
+            <div class="tab-panel" role="tabpanel" id="templates-impact-panel" aria-labelledby="templates-impact-tab" data-tab-panel="template-impact" data-od-id="templates-impact-panel" hidden>
+              <div class="log-list" data-od-id="templates-impact-list">
+                <article class="log-row" data-od-id="templates-impact-future-tasks">
+                  <span class="meta">后续任务</span>
+                  <div class="log-row-main"><span class="log-row-title" id="templates-impact-future-title">新建内容任务可选择当前启用版本</span><span class="log-row-sub" id="templates-impact-future-detail">新版本建立后，用户可在任务规格中明确选择它；不会自动改写其他模板的使用关系。</span></div>
+                  <span class="log-row-end"><span class="badge">使用新版本</span></span>
+                </article>
+                <article class="log-row" data-od-id="templates-impact-history-tasks">
+                  <span class="meta">历史任务</span>
+                  <div class="log-row-main"><span class="log-row-title">历史任务不受影响</span><span class="log-row-sub" id="templates-impact-history-detail">任务结果保留提交时锁定的模板版本，便于回看输出结构和生成依据。</span></div>
+                  <span class="log-row-end"><span class="tag">版本已锁定</span></span>
+                </article>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <dialog class="dialog" id="templates-new-version-dialog" aria-labelledby="templates-new-version-title" data-od-id="templates-new-version-dialog">
+    <div class="dialog-header">
+      <div><p class="eyebrow">版本化配置</p><h2 id="templates-new-version-title">新建模板版本</h2></div>
+      <!-- 关闭控件统一使用 × 作为可见图形，完整语义由 aria-label 提供。 -->
+      <button class="icon-button" type="button" data-close-dialog aria-label="关闭新建模板版本对话框" data-od-id="templates-new-version-close">×</button>
+    </div>
+    <form data-demo-submit data-success-title="已建立模板修改稿" data-success-message="新版本需要在任务中明确选择，历史任务不会受到影响。" data-od-id="templates-new-version-form">
+      <div class="dialog-body">
+        <label class="field" for="templates-base-version" data-od-id="templates-base-version-field">
+          <span class="field-label">基于版本</span>
+          <select class="select" id="templates-base-version" required><option>旧物传闻三步核验 · v3</option><option>兴趣判断说明 · v2</option><option>资料摘录卡 · v1</option></select>
+          <span class="field-help">会复制所选版本作为新的只读版本起点。</span>
+        </label>
+        <label class="field" for="templates-version-name" data-od-id="templates-version-name-field">
+          <span class="field-label">版本说明</span>
+          <input class="input" id="templates-version-name" type="text" required placeholder="例如：补充未知项说明区段">
+        </label>
+        <label class="field" for="templates-version-content" data-od-id="templates-version-content-field">
+          <span class="field-label">模板内容</span>
+          <textarea class="textarea" id="templates-version-content" required>一、可核验事实
+二、待核验线索
+三、人物视角下的有限推断</textarea>
+        </label>
+      </div>
+      <div class="dialog-footer">
+        <button class="btn btn-secondary" type="button" data-close-dialog data-od-id="templates-new-version-cancel">取消</button>
+        <button class="btn btn-primary" type="submit" data-od-id="templates-new-version-submit">建立新版本</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="assets/prototype.js"></script>
+  <script>
+    'use strict';
+
+    const TEMPLATE_PREVIEWS = {
+      'three-step': {
+        status: '三步核验说明 v3',
+        heading: '旧物传闻三步核验 · v3',
+        description: '当前预览只读。需改变内容时，创建 v4 而不是在此处原地编辑。',
+        contentTitle: '三步核验说明',
+        code: '标题：{任务主题}\n\n一、可核验事实\n仅列出资料明确支持的内容，并标注来源范围。\n\n二、待核验线索\n说明尚需补充的资料，不把线索写成结论。\n\n三、人物视角下的有限推断\n如有推断，明确其依据与不确定性。\n\n导出：HTML、Markdown、Txt',
+        metadataTitle: 'v3 · 当前已启用',
+        purpose: '供“旧物传闻三步核验”内容任务组织结果。',
+        versionPolicy: '发布后的 v3 保持只读；任何结构调整都必须建立新版本。',
+        historyBoundary: '已经完成的任务继续引用其运行时锁定的模板版本。',
+        versions: [
+          ['当前版本 · v3', '补充“待核验线索”区段', '使资料不足时的线索与已核验事实分开呈现。当前版本已启用。'],
+          ['历史版本 · v2', '统一导出标题和段落顺序', '保留为历史记录；已完成任务仍可追溯到该版本。'],
+          ['初始版本 · v1', '建立基础三段式结构', '作为版本链起点，不可原地修改。']
+        ],
+        futureTitle: '新建内容任务可选择三步核验说明 v3',
+        futureDetail: '新版本建立后，用户可在任务规格中明确选择它；不会自动改写其他模板的使用关系。',
+        historyDetail: '任务结果保留提交时锁定的三步核验说明版本，便于回看输出结构和生成依据。',
+        baseVersion: '旧物传闻三步核验 · v3'
+      },
+      interest: {
+        status: '兴趣判断说明 v2',
+        heading: '兴趣判断说明 · v2',
+        description: '当前预览只读。需调整判断区段时，创建 v3，历史任务继续使用其锁定版本。',
+        contentTitle: '结论、依据与未知项',
+        code: '主题：{判断对象}\n\n一、模拟结论\n明确标记为模拟判断，不写成人物既定事实。\n\n二、资料依据\n列出能够追溯的资料片段与支持范围。\n\n三、未知项\n说明现有资料无法确认的偏好、经历或动机。\n\n导出：Markdown',
+        metadataTitle: 'v2 · 当前已启用',
+        purpose: '供兴趣判断任务区分模拟结论、资料依据与未知项。',
+        versionPolicy: '发布后的 v2 保持只读；任何区段调整都必须建立新版本。',
+        historyBoundary: '已经完成的兴趣判断继续引用运行时锁定的模板版本。',
+        versions: [
+          ['当前版本 · v2', '增加独立的“未知项”区段', '避免把资料无法确认的偏好或经历写成确定结论。当前版本已启用。'],
+          ['初始版本 · v1', '建立结论与依据结构', '保留为历史记录；已完成任务仍可追溯到该版本。']
+        ],
+        futureTitle: '后续兴趣判断任务可选择兴趣判断说明 v2',
+        futureDetail: '当前版本会要求结果明确显示模拟结论、资料依据和未知项。',
+        historyDetail: '历史兴趣判断保留提交时锁定的模板版本，不会因 v2 或后续版本而改写。',
+        baseVersion: '兴趣判断说明 · v2'
+      },
+      'source-excerpt': {
+        status: '资料摘录卡 v1',
+        heading: '资料摘录卡 · v1',
+        description: '当前预览只读。需改变摘录字段时，创建 v2，不原地修改已被任务引用的版本。',
+        contentTitle: '来源、原文范围与使用限制',
+        code: '资料：{资料名称}\n原文范围：{段落或行号}\n\n摘录：\n{保持原文，不补写缺失内容}\n\n使用限制：\n{说明可支持的判断范围与仍需核验的内容}',
+        metadataTitle: 'v1 · 当前已启用',
+        purpose: '供资料整理任务记录可追溯摘录、原文范围和使用限制。',
+        versionPolicy: '发布后的 v1 保持只读；新增字段必须建立新版本。',
+        historyBoundary: '已经完成的资料摘录继续引用运行时锁定的模板版本。',
+        versions: [
+          ['当前版本 · v1', '建立资料摘录基础结构', '同时记录资料名称、原文范围、摘录正文和使用限制。当前版本已启用。']
+        ],
+        futureTitle: '后续资料整理任务可选择资料摘录卡 v1',
+        futureDetail: '当前版本会保留来源与原文范围，使摘录内容能够回到本机资料正文核对。',
+        historyDetail: '历史摘录保留提交时锁定的模板版本，后续字段变化不会回写既有记录。',
+        baseVersion: '资料摘录卡 · v1'
+      }
+    };
+
+    /**
+     * 更新模板预览区域中的单个纯文本节点。
+     * @param {string} id 目标元素的唯一 ID。
+     * @param {string} value 需要显示的模板文本。
+     * @returns {void} 不返回值；目标不存在时不执行修改。
+     * 特殊业务逻辑：模板内容使用 textContent 写入，保留换行且不把占位符解释为 HTML。
+     */
+    function setTemplatePreviewText(id, value) {
+      const element = document.getElementById(id);
+      if (element) element.textContent = value;
+    }
+
+    /**
+     * 渲染当前模板的版本记录，并隐藏不存在的空版本位置。
+     * @param {Array<Array<string>>} versions 按当前到历史顺序排列的版本说明数组。
+     * @returns {void} 不返回值，直接更新最多三个版本记录位置。
+     * 特殊业务逻辑：版本数量少于三个时隐藏其余位置，避免把其他模板的历史版本混入当前预览。
+     */
+    function renderTemplatePreviewVersions(versions) {
+      const itemNames = ['one', 'two', 'three'];
+      for (let index = 0; index < itemNames.length; index += 1) {
+        const itemName = itemNames[index];
+        const item = document.getElementById('templates-version-item-' + itemName);
+        const version = versions[index];
+        if (!item) continue;
+        item.hidden = !version;
+        if (!version) continue;
+        setTemplatePreviewText('templates-version-item-' + itemName + '-meta', version[0]);
+        setTemplatePreviewText('templates-version-item-' + itemName + '-title', version[1]);
+        setTemplatePreviewText('templates-version-item-' + itemName + '-detail', version[2]);
+      }
+    }
+
+    /**
+     * 切换模板预览、版本记录、使用影响和新版本基准选择。
+     * @param {string} templateKey TEMPLATE_PREVIEWS 中的模板键名。
+     * @returns {void} 不返回值；键名不存在时保留当前预览。
+     * 特殊业务逻辑：只切换原型展示内容，不修改或发布任何模板版本。
+     */
+    function showTemplatePreview(templateKey) {
+      const preview = TEMPLATE_PREVIEWS[templateKey];
+      const tabs = document.querySelector('[data-od-id="templates-preview-tabs"]');
+      const baseVersion = document.getElementById('templates-base-version');
+      if (!preview) return;
+
+      setTemplatePreviewText('templates-current-preview-value', preview.status);
+      setTemplatePreviewText('templates-preview-heading', preview.heading);
+      setTemplatePreviewText('templates-preview-description', preview.description);
+      setTemplatePreviewText('templates-preview-content-title', preview.contentTitle);
+      setTemplatePreviewText('templates-preview-code', preview.code);
+      setTemplatePreviewText('templates-preview-metadata-title', preview.metadataTitle);
+      setTemplatePreviewText('templates-preview-purpose', preview.purpose);
+      setTemplatePreviewText('templates-preview-version-policy', preview.versionPolicy);
+      setTemplatePreviewText('templates-preview-history-boundary', preview.historyBoundary);
+      setTemplatePreviewText('templates-impact-future-title', preview.futureTitle);
+      setTemplatePreviewText('templates-impact-future-detail', preview.futureDetail);
+      setTemplatePreviewText('templates-impact-history-detail', preview.historyDetail);
+      renderTemplatePreviewVersions(preview.versions);
+      if (baseVersion) baseVersion.value = preview.baseVersion;
+      if (tabs) activateTab(tabs, 'template-preview', true);
+    }
+
+    /**
+     * 处理模板列表中的“查看预览”链接。
+     * @param {MouseEvent} event 模板预览链接的点击事件。
+     * @returns {void} 不返回值；保留原生锚点跳转，同时在跳转前更新预览内容。
+     * 特殊业务逻辑：不阻止默认跳转，以便键盘和辅助技术用户仍能定位到预览区。
+     */
+    function handleTemplatePreviewClick(event) {
+      showTemplatePreview(event.currentTarget.dataset.templatePreview);
+    }
+
+    /**
+     * 初始化三个模板入口的真实预览切换。
+     * @returns {void} 不返回值，绑定模板列表中的预览链接。
+     * 特殊业务逻辑：默认保留服务端静态 HTML 中的三步核验模板，只有用户选择时才切换。
+     */
+    function initializeTemplatePreviews() {
+      const controls = document.querySelectorAll('[data-template-preview]');
+      for (let index = 0; index < controls.length; index += 1) {
+        controls[index].addEventListener('click', handleTemplatePreviewClick);
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', initializeTemplatePreviews);
+  </script>
+</body>
+</html>

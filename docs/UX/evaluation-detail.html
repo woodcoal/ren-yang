@@ -1,0 +1,272 @@
+<!doctype html>
+<!-- 人样后台重设计原型：评测详情，对应路由 /evaluations/[id]。 -->
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="人样灵魂版本回归评测详情">
+  <title>评测详情 · 人样</title>
+  <link rel="icon" href="assets/brand/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/prototype.css">
+</head>
+<body data-page="evaluation-detail">
+  <a class="skip-link" href="#main-content">跳到主要内容</a>
+  <div class="app-shell" data-od-id="evaluation-app-shell">
+    <aside class="sidebar" data-sidebar aria-label="应用导航"></aside>
+    <div class="app-main">
+      <header class="topbar" data-topbar></header>
+      <main class="page" id="main-content">
+        <nav class="breadcrumbs" aria-label="面包屑" data-od-id="evaluation-breadcrumbs">
+          <span>学习与复盘</span>
+          <span aria-hidden="true">/</span>
+          <a href="learning-center.html">学习中心</a>
+          <span aria-hidden="true">/</span>
+          <strong>评测详情</strong>
+        </nav>
+
+        <header class="page-header" data-od-id="evaluation-header">
+          <div class="page-header-copy">
+            <p class="route-code">页面 /evaluations/[id] · 2026.08.29 · 以下为评测示例</p>
+            <h1 data-od-id="evaluation-title">候选版本还不能发布</h1>
+            <p class="lead">顾岚灵魂 v4 在“资料不足”回归用例中退化。先比较基础与候选输出，再决定拒绝候选或检查发布条件。</p>
+          </div>
+          <div class="page-actions" data-od-id="evaluation-header-actions">
+            <a class="btn btn-secondary" href="learning-center.html" data-od-id="evaluation-back-learning">返回学习中心</a>
+            <!-- 当前评测已失败，页头只突出此刻真正可执行的人工决定。 -->
+            <button class="btn btn-danger" type="button" data-open-dialog="evaluation-reject-dialog" data-od-id="evaluation-reject-header-action">拒绝候选</button>
+          </div>
+        </header>
+
+        <div class="status-strip" data-od-id="evaluation-status-summary" aria-label="评测状态摘要">
+          <div class="status-cell" data-od-id="evaluation-status-persona">
+            <span class="status-kicker">人物</span>
+            <span class="status-value">顾岚</span>
+          </div>
+          <div class="status-cell" data-od-id="evaluation-status-baseline">
+            <span class="status-kicker">基础版本</span>
+            <span class="status-value">灵魂 v3</span>
+          </div>
+          <div class="status-cell" data-od-id="evaluation-status-candidate">
+            <span class="status-kicker">候选版本</span>
+            <span class="status-value">灵魂 v4 · 未发布</span>
+          </div>
+          <div class="status-cell" data-od-id="evaluation-status-release">
+            <span class="status-kicker">发布条件</span>
+            <span class="status-value">不满足 · 不可发布</span>
+          </div>
+        </div>
+
+        <section class="section" data-od-id="evaluation-decision-boundary">
+          <div class="notice" data-od-id="evaluation-ai-score-notice">
+            <span class="notice-icon">i</span>
+            <div class="notice-copy">
+              <strong>AI 评分仅作辅助证据</strong>
+              <p>评分用于发现差异和复核重点，不替代对输入、输出、失败原因与退化风险的人工判断。</p>
+            </div>
+            <a class="btn btn-ghost" href="#evaluation-evidence" data-od-id="evaluation-evidence-anchor">查看运行依据</a>
+          </div>
+        </section>
+
+        <section class="section" data-od-id="evaluation-version-comparison">
+          <div class="section-head">
+            <div class="section-head-copy">
+              <p class="eyebrow">01 · 版本对照</p>
+              <h2>基础灵魂 v3 与候选 v4</h2>
+              <p>候选版本修改了“约束”章节，意图将资料不足时的处理方式写得更明确。</p>
+            </div>
+          </div>
+          <div class="diff-grid" data-od-id="evaluation-diff-grid">
+            <article class="diff-column" data-od-id="evaluation-baseline-diff">
+              <p class="eyebrow">基础灵魂 v3 · 当前版本</p>
+              <h3>约束</h3>
+              <div class="diff-line">区分档案事实与人物推断；没有足够依据时，不将推断写作确定经历。</div>
+              <p class="meta">当前已发布版本，作为本次回归比较基线。</p>
+            </article>
+            <article class="diff-column" data-od-id="evaluation-candidate-diff">
+              <p class="eyebrow">候选灵魂 v4 · 修改稿</p>
+              <h3>约束</h3>
+              <div class="diff-line is-changed">当资料无法支撑人物经历或结论时，避免把推断当作事实；如需继续回答，可提供有限推断。</div>
+              <p class="meta">候选文字未明确要求输出“资料不足”，导致本用例发生退化。</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="section" data-od-id="evaluation-results">
+          <div class="section-head">
+            <div class="section-head-copy">
+              <p class="eyebrow">02 · 回归结果</p>
+              <h2>“资料不足”说明在候选输出中缺失</h2>
+              <p>对照同一用例输入和同一资料范围，结果只在灵魂版本上不同。</p>
+            </div>
+          </div>
+
+          <div data-tabs data-default-tab="comparison" data-od-id="evaluation-result-tabs">
+            <div class="tabs" role="tablist" aria-label="评测结果内容" data-od-id="evaluation-result-tab-list">
+              <button class="tab-button" type="button" role="tab" aria-controls="evaluation-comparison-panel" id="evaluation-comparison-tab" data-tab="comparison" data-od-id="evaluation-tab-comparison">输入与输出</button>
+              <button class="tab-button" type="button" role="tab" aria-controls="evaluation-failure-panel" id="evaluation-failure-tab" data-tab="failure" data-od-id="evaluation-tab-failure">失败原因</button>
+              <button class="tab-button" type="button" role="tab" aria-controls="evaluation-evidence-panel" id="evaluation-evidence-tab" data-tab="evidence" data-od-id="evaluation-tab-evidence">运行依据</button>
+            </div>
+
+            <div class="tab-panel" role="tabpanel" id="evaluation-comparison-panel" aria-labelledby="evaluation-comparison-tab" data-tab-panel="comparison" data-od-id="evaluation-comparison-panel">
+              <div class="grid-2">
+                <article class="panel" data-od-id="evaluation-case-input">
+                  <p class="eyebrow">用例输入</p>
+                  <h3>顾岚是否见过学院旧信件？</h3>
+                  <p>提供的资料没有记载顾岚是否接触过该批旧信件。任务要求在不补写事实的前提下作答。</p>
+                  <details class="details" data-od-id="evaluation-case-context">
+                    <summary>查看可用资料范围</summary>
+                    <div class="details-content">
+                      <p>仅使用“学院档案事实资料”正文；资料中包含旧信件的馆藏记录，但没有顾岚接触该信件的经历。</p>
+                    </div>
+                  </details>
+                </article>
+                <article class="panel" data-od-id="evaluation-output-difference">
+                  <p class="eyebrow">输出差异</p>
+                  <h3>基础版明确未知项，候选版直接推断</h3>
+                  <p>基础输出先说明资料不足；候选输出使用“她会先核验”替代未知项说明，读者容易将其理解为事实前提。</p>
+                </article>
+              </div>
+
+              <div class="diff-grid" data-od-id="evaluation-output-diff-grid">
+                <article class="diff-column" data-od-id="evaluation-baseline-output">
+                  <p class="eyebrow">基础 v3 输出</p>
+                  <div class="reader">
+                    <p>“现有资料不足以确认顾岚是否见过这批旧信件。作为档案整理者，她可能会先核验馆藏与经手记录，但这只是基于人物倾向的有限推断。”</p>
+                  </div>
+                </article>
+                <article class="diff-column" data-od-id="evaluation-candidate-output">
+                  <p class="eyebrow">候选 v4 输出</p>
+                  <div class="reader">
+                    <p>“顾岚会先核验馆藏与经手记录，再判断旧信件是否与当前档案有关。”</p>
+                  </div>
+                </article>
+              </div>
+
+              <div class="table-wrap" data-od-id="evaluation-score-table-wrap">
+                <table class="table" data-od-id="evaluation-score-table">
+                  <caption class="meta">评测分数与判定，以文字和表格共同呈现</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">版本</th>
+                      <th scope="col">评分</th>
+                      <th scope="col">关键判定</th>
+                      <th scope="col">结果</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr data-od-id="evaluation-score-row-baseline">
+                      <td data-label="版本"><span class="table-title">基础灵魂 v3</span><span class="table-sub">当前已发布版本</span></td>
+                      <td data-label="评分"><strong>1.0</strong><span class="table-sub">完整满足本用例要求</span></td>
+                      <td data-label="关键判定">明确“资料不足”，并标注后续判断为有限推断。</td>
+                      <td data-label="结果"><span class="badge">通过</span></td>
+                    </tr>
+                    <tr data-od-id="evaluation-score-row-candidate">
+                      <td data-label="版本"><span class="table-title">候选灵魂 v4</span><span class="table-sub">未发布修改稿</span></td>
+                      <td data-label="评分"><strong>0.2</strong><span class="table-sub">只保留部分谨慎倾向</span></td>
+                      <td data-label="关键判定">缺少“资料不足”，把有限推断写成了直接回答。</td>
+                      <td data-label="结果"><span class="badge is-failed">失败</span></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <p class="meta" data-od-id="evaluation-score-text">文字结论：基础版本评分为 1.0 并通过；候选版本评分为 0.2 并失败，原因是缺少“资料不足”。</p>
+            </div>
+
+            <div class="tab-panel" role="tabpanel" id="evaluation-failure-panel" aria-labelledby="evaluation-failure-tab" data-tab-panel="failure" data-od-id="evaluation-failure-panel" hidden>
+              <div class="log-list" data-od-id="evaluation-failure-list">
+                <article class="log-row" data-od-id="evaluation-failure-missing-phrase">
+                  <span class="meta">失败原因</span>
+                  <div class="log-row-main"><span class="log-row-title">候选输出缺少“资料不足”</span><span class="log-row-sub">候选约束要求避免把推断当作事实，但没有规定先向读者呈现未知项。</span></div>
+                  <span class="log-row-end"><span class="badge is-failed">阻断发布</span></span>
+                </article>
+                <article class="log-row" data-od-id="evaluation-failure-regression-risk">
+                  <span class="meta">退化风险</span>
+                  <div class="log-row-main"><span class="log-row-title">缺失资料会被人物倾向补写为事实</span><span class="log-row-sub">若发布，后续任务可能在资料不足时直接陈述行为或经历，偏离顾岚已有的事实边界。</span></div>
+                  <span class="log-row-end"><span class="badge is-failed">高风险</span></span>
+                </article>
+                <article class="log-row" data-od-id="evaluation-failure-release-decision">
+                  <span class="meta">是否可发布</span>
+                  <div class="log-row-main"><span class="log-row-title">否，候选 v4 当前不可发布</span><span class="log-row-sub">需补全约束文字、重新生成候选输出并通过本回归用例后，才能进入发布确认。</span></div>
+                  <span class="log-row-end"><span class="tag">等待修订</span></span>
+                </article>
+              </div>
+            </div>
+
+            <div class="tab-panel" role="tabpanel" id="evaluation-evidence-panel" aria-labelledby="evaluation-evidence-tab" data-tab-panel="evidence" data-od-id="evaluation-evidence-panel" hidden>
+              <div class="grid-2" id="evaluation-evidence">
+                <article class="panel" data-od-id="evaluation-run-context">
+                  <p class="eyebrow">版本与上下文</p>
+                  <h3>同一输入，同一资料范围</h3>
+                  <p>基础 v3 与候选 v4 均使用“学院档案事实资料”正文。评测仅比较灵魂版本变化，不把额外资料或成长候选混入结果。</p>
+                </article>
+                <article class="panel" data-od-id="evaluation-technical-status">
+                  <p class="eyebrow">技术状态</p>
+                  <h3>评测失败</h3>
+                  <div class="code-block">状态：evaluation_failed
+失败用例：资料不足时必须明确未知项
+候选版本：灵魂 v4
+发布资格：不可发布</div>
+                </article>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" data-od-id="evaluation-actions-section">
+          <div class="section-head">
+            <div class="section-head-copy">
+              <p class="eyebrow">03 · 人工决定</p>
+              <h2>拒绝候选，或在修订后重新评测</h2>
+              <p>当前没有可发布路径。拒绝只处理候选 v4，不影响已发布的基础灵魂 v3。</p>
+            </div>
+          </div>
+          <div class="notice" data-od-id="evaluation-decision-notice">
+            <span class="notice-icon">!</span>
+            <div class="notice-copy">
+              <strong>发布确认会再次检查失败用例</strong>
+              <p>因为评测状态为 evaluation_failed，当前发布确认不会执行发布操作。</p>
+            </div>
+            <!-- 发布条件作为解释性次级入口，不再与已失败状态争夺主操作层级。 -->
+            <button class="btn btn-secondary" type="button" data-open-dialog="evaluation-release-dialog" data-od-id="evaluation-release-conditions">检查发布条件</button>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <dialog class="dialog" id="evaluation-release-dialog" aria-labelledby="evaluation-release-dialog-title" data-od-id="evaluation-release-dialog">
+    <div class="dialog-header">
+      <div><p class="eyebrow">发布确认</p><h2 id="evaluation-release-dialog-title">候选 v4 不满足发布条件</h2></div>
+      <!-- 关闭控件统一使用 × 作为可见图形，完整语义由 aria-label 提供。 -->
+      <button class="icon-button" type="button" data-close-dialog aria-label="关闭发布确认对话框" data-od-id="evaluation-release-close">×</button>
+    </div>
+    <div class="dialog-body">
+      <p>这次评测仍有失败用例：候选输出缺少“资料不足”。发布会让后续任务使用候选灵魂 v4，因此当前不能确认发布。</p>
+      <div class="code-block">发布前条件：全部必需回归用例通过
+当前状态：evaluation_failed
+本次结论：不可发布</div>
+    </div>
+    <div class="dialog-footer">
+      <button class="btn btn-secondary" type="button" data-close-dialog data-od-id="evaluation-release-return">返回评测</button>
+      <button class="btn btn-primary" type="button" disabled data-od-id="evaluation-release-disabled">确认发布</button>
+    </div>
+  </dialog>
+
+  <dialog class="dialog" id="evaluation-reject-dialog" aria-labelledby="evaluation-reject-dialog-title" data-od-id="evaluation-reject-dialog">
+    <div class="dialog-header">
+      <div><p class="eyebrow">不可撤销的审阅决定</p><h2 id="evaluation-reject-dialog-title">拒绝候选 v4</h2></div>
+      <button class="icon-button" type="button" data-close-dialog aria-label="关闭拒绝候选对话框" data-od-id="evaluation-reject-close">×</button>
+    </div>
+    <div class="dialog-body">
+      <p>拒绝后，候选灵魂 v4 不会发布；基础灵魂 v3 和历史任务保持不变。仍可基于失败原因建立新的修改稿。</p>
+      <label class="checkbox-row" for="evaluation-reject-ack" data-od-id="evaluation-reject-acknowledgement"><input id="evaluation-reject-ack" type="checkbox" data-enable-target="evaluation-reject-submit" aria-controls="evaluation-reject-submit"><span>我已核对失败原因和退化风险。</span></label>
+    </div>
+    <div class="dialog-footer">
+      <button class="btn btn-secondary" type="button" data-close-dialog data-od-id="evaluation-reject-cancel">取消</button>
+      <button class="btn btn-danger" id="evaluation-reject-submit" type="button" data-close-dialog data-toast-title="已拒绝候选 v4" data-toast-message="基础灵魂 v3 保持当前发布状态，候选 v4 不会影响后续任务。" data-od-id="evaluation-reject-submit" disabled>拒绝候选</button>
+    </div>
+  </dialog>
+
+  <script src="assets/prototype.js"></script>
+</body>
+</html>

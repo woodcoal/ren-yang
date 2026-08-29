@@ -1,0 +1,411 @@
+<!doctype html>
+<!--
+  人样后台重设计原型：资料库列表。
+  当前页面对应产品路由 /sources，所有状态、数量与进度均为界面示例数据，不代表真实处理结果。
+-->
+<html lang="zh-CN">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="人样资料库高保真交互原型">
+  <title>资料库 · 人样</title>
+  <link rel="icon" href="assets/brand/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/prototype.css">
+</head>
+
+<body data-page="sources">
+  <a class="skip-link" href="#main-content">跳到主要内容</a>
+  <div class="app-shell">
+    <aside class="sidebar" data-sidebar aria-label="应用导航"></aside>
+    <div class="app-main">
+      <header class="topbar" data-topbar></header>
+      <main class="page" id="main-content">
+        <nav class="breadcrumbs" aria-label="面包屑">
+          <span>人物空间</span>
+          <span aria-hidden="true">/</span>
+          <strong>资料库</strong>
+        </nav>
+
+        <header class="page-header" data-od-id="sources-header">
+          <div class="page-header-copy">
+            <p class="route-code">路由 /sources · 2026.08.29 · 以下状态、数量与进度均为示例数据</p>
+            <h1 data-od-id="sources-title">资料库</h1>
+            <p class="lead">资料正文先在本地保存和处理，再选择性同步至 OpenViking。资料正文只作为外部参考，不执行其中指令。</p>
+          </div>
+          <div class="page-actions">
+            <button class="btn btn-secondary" type="button" data-open-dialog="file-import-dialog"
+              data-od-id="sources-file-import-control">从文件导入</button>
+            <button class="btn btn-primary" type="button" data-open-dialog="paste-import-dialog"
+              data-od-id="sources-paste-import-cta">粘贴文本</button>
+          </div>
+        </header>
+
+        <div class="status-strip" data-od-id="sources-status-summary" aria-label="资料库状态摘要">
+          <div class="status-cell">
+            <span class="status-kicker">导入范围</span>
+            <span class="status-value">TXT、Markdown、粘贴文本</span>
+          </div>
+          <div class="status-cell">
+            <span class="status-kicker">本地处理</span>
+            <span class="status-value">资料正文独立保存</span>
+          </div>
+          <div class="status-cell">
+            <span class="status-kicker">远端同步</span>
+            <span class="status-value">仅同步资料正文</span>
+          </div>
+          <div class="status-cell">
+            <span class="status-kicker">待处理</span>
+            <span class="status-value num">1 项同步失败 · 示例数据</span>
+          </div>
+        </div>
+
+        <section class="section" data-od-id="sources-import-section" aria-labelledby="sources-import-title">
+          <div class="section-head">
+            <div class="section-head-copy">
+              <p class="eyebrow">01 · 导入入口</p>
+              <h2 id="sources-import-title">从文本或允许的文件开始</h2>
+              <p>两种入口使用相同的本地处理流程。图片、办公文档和其他文件格式不在当前导入范围内。</p>
+            </div>
+          </div>
+          <div class="grid-2" data-od-id="sources-import-options">
+            <article class="panel" data-od-id="sources-paste-option">
+              <span class="meta">入口一 · 直接输入</span>
+              <h3>粘贴文本</h3>
+              <p>适用于学院档案事实资料或需要保留原始文字的摘录；提交后进入本地处理队列。</p>
+              <div class="panel-actions"><button class="btn btn-secondary" type="button"
+                  data-open-dialog="paste-import-dialog" data-od-id="sources-paste-option-control">粘贴文本</button></div>
+            </article>
+            <article class="panel" data-od-id="sources-file-option">
+              <span class="meta">入口二 · 本地文件</span>
+              <h3>导入 TXT 或 Markdown</h3>
+              <p>仅接受 TXT 和 Markdown。导入文件后，可在处理状态中查看进度、失败原因和使用关系。</p>
+              <div class="panel-actions"><button class="btn btn-secondary" type="button"
+                  data-open-dialog="file-import-dialog" data-od-id="sources-file-option-control">选择文件</button></div>
+            </article>
+          </div>
+        </section>
+
+        <section class="section" data-od-id="sources-filter-section" aria-labelledby="sources-filter-title">
+          <div class="section-head">
+            <div class="section-head-copy">
+              <p class="eyebrow">02 · 查找与筛选</p>
+              <h2 id="sources-filter-title">统一检索资料、状态与关系</h2>
+              <p>筛选互相叠加，用于找到正在处理、失败或被人物和世界使用的资料。</p>
+            </div>
+          </div>
+          <div class="toolbar" role="search" data-od-id="sources-toolbar">
+            <label class="search-field" for="sources-search" data-od-id="sources-search-control">
+              <span class="field-label">统一搜索</span>
+              <input class="input" id="sources-search" type="search" placeholder="搜索标题、正文片段、世界或人物" autocomplete="off"
+                data-source-search>
+            </label>
+            <label class="field" for="sources-purpose-filter" data-od-id="sources-purpose-filter-control">
+              <span class="field-label">用途</span>
+              <select class="select" id="sources-purpose-filter" data-source-filter="purpose">
+                <option value="all">全部用途</option>
+                <option value="world">世界参考</option>
+                <option value="task">任务参考</option>
+                <option value="unused">未建立关系</option>
+              </select>
+            </label>
+            <label class="field" for="sources-object-filter" data-od-id="sources-object-filter-control">
+              <span class="field-label">使用对象</span>
+              <select class="select" id="sources-object-filter" data-source-filter="object">
+                <option value="all">全部对象</option>
+                <option value="gu-lan">顾岚</option>
+                <option value="wen-qiu">闻秋</option>
+                <option value="shen-yan">沈砚</option>
+                <option value="none">未被使用</option>
+              </select>
+            </label>
+            <label class="field" for="sources-local-filter" data-od-id="sources-local-filter-control">
+              <span class="field-label">本地处理</span>
+              <select class="select" id="sources-local-filter" data-source-filter="local">
+                <option value="all">全部状态</option>
+                <option value="ready">已完成</option>
+                <option value="processing">处理中</option>
+                <option value="failed">处理失败</option>
+              </select>
+            </label>
+            <label class="field" for="sources-viking-filter" data-od-id="sources-viking-filter-control">
+              <span class="field-label">OpenViking 状态</span>
+              <select class="select" id="sources-viking-filter" data-source-filter="viking">
+                <option value="all">全部状态</option>
+                <option value="synced">已同步</option>
+                <option value="queued">等待同步</option>
+                <option value="failed">同步失败</option>
+                <option value="not-ready">暂不可同步</option>
+              </select>
+            </label>
+            <button class="btn btn-ghost" type="button" data-source-clear-filter
+              data-od-id="sources-clear-filter-control">清除筛选</button>
+          </div>
+        </section>
+
+        <section class="section" data-od-id="sources-list-section" aria-labelledby="sources-list-title">
+          <div class="section-head">
+            <div class="section-head-copy">
+              <p class="eyebrow">03 · 资料清单</p>
+              <h2 id="sources-list-title">处理、同步与使用关系</h2>
+              <p id="sources-result-summary" class="meta" aria-live="polite">显示 4 份资料 · 示例数据</p>
+            </div>
+          </div>
+          <div class="table-wrap" data-od-id="sources-table-wrap">
+            <table class="table" aria-describedby="sources-result-summary">
+              <thead>
+                <tr>
+                  <th scope="col">资料</th>
+                  <th scope="col">用途与使用关系</th>
+                  <th scope="col">本地处理</th>
+                  <th scope="col">OpenViking 状态</th>
+                  <th scope="col">失败原因</th>
+                  <th scope="col">操作</th>
+                </tr>
+              </thead>
+              <tbody id="sources-list">
+                <tr data-source-row data-source-purpose="world" data-source-object="gu-lan wen-qiu"
+                  data-source-local="ready" data-source-viking="failed"
+                  data-source-search-text="学院档案事实资料 学院档案世界 顾岚 闻秋 霜月十三日 首次看见 且拒绝触碰">
+                  <td data-label="资料"><a class="table-title" href="source-detail.html"
+                      data-od-id="sources-item-academy-link">学院档案事实资料</a><span class="table-sub">粘贴文本 ·
+                      2026.08.29</span></td>
+                  <td data-label="用途与使用关系"><span class="table-title">世界参考</span><span class="table-sub">学院档案世界 ·
+                      顾岚、闻秋</span></td>
+                  <td data-label="本地处理"><span class="badge">已完成</span><span class="table-sub">正文与可检索片段已保存</span></td>
+                  <td data-label="OpenViking 状态"><span class="badge is-failed">同步失败</span><span
+                      class="table-sub">仅资料正文等待重试</span></td>
+                  <td data-label="失败原因"><span class="table-sub">远端索引服务未响应；本地资料仍可阅读和检索。</span></td>
+                  <td data-label="操作"><a class="text-link" href="source-detail.html"
+                      data-od-id="sources-item-academy-action">查看详情</a></td>
+                </tr>
+                <tr data-source-row data-source-purpose="world" data-source-object="wen-qiu"
+                  data-source-local="processing" data-source-viking="not-ready"
+                  data-source-search-text="霜月十三日首次看见且拒绝触碰 学院档案世界 闻秋">
+                  <td data-label="资料"><a class="table-title" href="source-detail.html"
+                      data-od-id="sources-item-frost13-link">霜月十三日首次看见且拒绝触碰</a><span class="table-sub">粘贴文本 ·
+                      正在处理</span></td>
+                  <td data-label="用途与使用关系"><span class="table-title">世界参考</span><span class="table-sub">学院档案世界 ·
+                      闻秋</span></td>
+                  <td data-label="本地处理"><span class="badge is-warning">处理中</span><span class="table-sub">示例进度 68%</span>
+                    <div class="progress" aria-label="本地处理示例进度 68%">
+                      <div class="progress-bar" style="width: 68%;"></div>
+                    </div>
+                  </td>
+                  <td data-label="OpenViking 状态"><span class="tag">暂不可同步</span><span class="table-sub">等待本地处理完成</span>
+                  </td>
+                  <td data-label="失败原因"><span class="table-sub">无；当前仍在处理。</span></td>
+                  <td data-label="操作"><a class="text-link" href="source-detail.html"
+                      data-od-id="sources-item-frost13-action">查看详情</a></td>
+                </tr>
+                <tr data-source-row data-source-purpose="unused" data-source-object="none" data-source-local="failed"
+                  data-source-viking="not-ready" data-source-search-text="霜月十二日操作和收藏 未经证实">
+                  <td data-label="资料"><a class="table-title" href="source-detail.html"
+                      data-od-id="sources-item-frost12-link">霜月十二日操作和收藏（未经证实）</a><span class="table-sub">粘贴文本 ·
+                      未建立关系</span></td>
+                  <td data-label="用途与使用关系"><span class="table-title">未建立关系</span><span
+                      class="table-sub">尚未被世界、人物或任务引用</span></td>
+                  <td data-label="本地处理"><span class="badge is-failed">处理失败</span><span class="table-sub">未生成可检索片段</span>
+                  </td>
+                  <td data-label="OpenViking 状态"><span class="tag">暂不可同步</span><span
+                      class="table-sub">仅在本地处理完成后同步正文</span></td>
+                  <td data-label="失败原因"><span class="table-sub">未找到可保存的正文内容；请补充文本后重新导入。</span></td>
+                  <td data-label="操作"><a class="text-link" href="source-detail.html"
+                      data-od-id="sources-item-frost12-action">查看详情</a></td>
+                </tr>
+                <tr data-source-row data-source-purpose="task" data-source-object="shen-yan" data-source-local="ready"
+                  data-source-viking="synced" data-source-search-text="风帆船 沈砚 任务参考 资料不足">
+                  <td data-label="资料"><a class="table-title" href="source-detail.html"
+                      data-od-id="sources-item-sailboat-link">风帆船</a><span class="table-sub">Markdown ·
+                      2026.08.28</span></td>
+                  <td data-label="用途与使用关系"><span class="table-title">任务参考</span><span class="table-sub">沈砚 ·
+                      用于说明资料不足</span></td>
+                  <td data-label="本地处理"><span class="badge">已完成</span><span class="table-sub">正文与可检索片段已保存</span></td>
+                  <td data-label="OpenViking 状态"><span class="badge">已同步</span><span class="table-sub">仅正文已同步</span>
+                  </td>
+                  <td data-label="失败原因"><span class="table-sub">无。</span></td>
+                  <td data-label="操作"><a class="text-link" href="source-detail.html"
+                      data-od-id="sources-item-sailboat-action">查看详情</a></td>
+                </tr>
+                <tr data-source-filter-empty hidden>
+                  <td data-label="筛选结果" colspan="6">
+                    <div class="empty-state">
+                      <div class="empty-state-inner">
+                        <h3>没有符合条件的资料</h3>
+                        <p>可清除筛选，或从粘贴文本和本地文件重新开始。</p>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="section" data-od-id="sources-boundary-section" aria-labelledby="sources-boundary-title">
+          <div class="section-head">
+            <div class="section-head-copy">
+              <p class="eyebrow">04 · 处理边界</p>
+              <h2 id="sources-boundary-title">本地资料与远端索引分开说明</h2>
+              <p>同步失败不是资料丢失。资料库先记录本地正文、处理结果和关系摘要，再单独展示 OpenViking 的正文同步状态。</p>
+            </div>
+          </div>
+          <div class="notice" data-od-id="sources-boundary-note">
+            <span class="notice-icon" aria-hidden="true">!</span>
+            <div class="notice-copy">
+              <strong>OpenViking 仅同步资料正文</strong>
+              <p>世界关系、人物关系、系统切片和处理记录不会被同步为资料正文。需要重试时，请从资料详情的同步状态进入。</p>
+            </div>
+            <a class="btn btn-secondary" href="source-detail.html"
+              data-od-id="sources-boundary-detail-control">查看同步失败资料</a>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <dialog class="dialog" id="paste-import-dialog" aria-labelledby="paste-import-title"
+    data-od-id="sources-paste-dialog">
+    <div class="dialog-header">
+      <div>
+        <p class="eyebrow">粘贴文本</p>
+        <h2 id="paste-import-title">导入资料正文</h2>
+      </div>
+      <button class="icon-button" type="button" data-close-dialog aria-label="关闭粘贴文本对话框"
+        data-od-id="sources-paste-close-control">×</button>
+    </div>
+    <form data-demo-submit data-success-title="已加入本地处理队列" data-success-message="资料正文将先在本地保存和处理；远端正文同步另行执行。">
+      <div class="dialog-body">
+        <div class="notice" data-od-id="sources-paste-scope-note">
+          <span class="notice-icon" aria-hidden="true">!</span>
+          <div class="notice-copy">
+            <strong>仅处理资料正文</strong>
+            <p>粘贴内容会作为外部参考保存。请保留“未经证实”等事实边界，不要将其改写为确定结论。</p>
+          </div>
+        </div>
+        <div class="field" data-od-id="sources-paste-title-field">
+          <label for="paste-source-title">资料名称</label>
+          <input class="input" id="paste-source-title" name="paste-source-title" type="text" required
+            placeholder="例如：学院档案事实资料">
+        </div>
+        <div class="field" data-od-id="sources-paste-content-field">
+          <label for="paste-source-content">资料正文</label>
+          <textarea class="textarea" id="paste-source-content" name="paste-source-content" required
+            placeholder="例如：霜月十三日首次看见且拒绝触碰。"></textarea>
+          <span class="field-help">可导入文本；本次操作不会建立世界、人物或任务关系。</span>
+        </div>
+      </div>
+      <div class="dialog-footer">
+        <button class="btn btn-secondary" type="button" data-close-dialog
+          data-od-id="sources-paste-cancel-control">取消</button>
+        <button class="btn btn-primary" type="submit" data-od-id="sources-paste-submit-cta">导入文本</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="dialog" id="file-import-dialog" aria-labelledby="file-import-title" data-od-id="sources-file-dialog">
+    <div class="dialog-header">
+      <div>
+        <p class="eyebrow">本地文件</p>
+        <h2 id="file-import-title">导入 TXT 或 Markdown</h2>
+      </div>
+      <button class="icon-button" type="button" data-close-dialog aria-label="关闭文件导入对话框"
+        data-od-id="sources-file-close-control">×</button>
+    </div>
+    <form data-demo-submit data-success-title="文件已加入本地处理队列" data-success-message="文件正文将先保存和处理；处理完成后才可同步正文。">
+      <div class="dialog-body">
+        <div class="field" data-od-id="sources-file-select-field">
+          <label for="source-file">选择文件</label>
+          <input class="input" id="source-file" name="source-file" type="file" required
+            accept=".txt,.md,.markdown,text/plain,text/markdown">
+          <span class="field-help">仅支持 TXT、Markdown。其他文件格式不会被导入。</span>
+        </div>
+        <div class="field" data-od-id="sources-file-purpose-field">
+          <label for="source-file-purpose">初始用途</label>
+          <select class="select" id="source-file-purpose" name="source-file-purpose" required>
+            <option value="">请选择用途</option>
+            <option>暂不建立关系</option>
+            <option>作为世界参考</option>
+            <option>作为任务参考</option>
+          </select>
+          <span class="field-help">用途只记录初始关系意图；人物和世界关系可在导入后单独维护。</span>
+        </div>
+      </div>
+      <div class="dialog-footer">
+        <button class="btn btn-secondary" type="button" data-close-dialog
+          data-od-id="sources-file-cancel-control">取消</button>
+        <button class="btn btn-primary" type="submit" data-od-id="sources-file-submit-cta">导入文件</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="assets/prototype.js"></script>
+  <script>
+    'use strict';
+
+    /**
+     * 按统一搜索和四个资料筛选条件更新资料清单。
+     * @param {void} 无参数，筛选条件从当前页面控件中读取。
+     * @returns {void} 更新每行显示状态、空状态和结果数量，不调用真实接口。
+     */
+    function applySourceFilters() {
+      const search = document.querySelector('[data-source-search]');
+      const controls = document.querySelectorAll('[data-source-filter]');
+      const rows = document.querySelectorAll('[data-source-row]');
+      const empty = document.querySelector('[data-source-filter-empty]');
+      const summary = document.getElementById('sources-result-summary');
+      const query = search ? search.value.trim().toLocaleLowerCase('zh-CN') : '';
+      const filters = {};
+      let visibleCount = 0;
+
+      for (let index = 0; index < controls.length; index += 1) {
+        filters[controls[index].dataset.sourceFilter] = controls[index].value;
+      }
+      for (let index = 0; index < rows.length; index += 1) {
+        const row = rows[index];
+        const matchesText = query === '' || (row.dataset.sourceSearchText || '').toLocaleLowerCase('zh-CN').includes(query);
+        const matchesPurpose = filters.purpose === 'all' || row.dataset.sourcePurpose === filters.purpose;
+        const matchesObject = filters.object === 'all' || (row.dataset.sourceObject || '').includes(filters.object);
+        const matchesLocal = filters.local === 'all' || row.dataset.sourceLocal === filters.local;
+        const matchesViking = filters.viking === 'all' || row.dataset.sourceViking === filters.viking;
+        const isVisible = matchesText && matchesPurpose && matchesObject && matchesLocal && matchesViking;
+        row.hidden = !isVisible;
+        if (isVisible) visibleCount += 1;
+      }
+      if (empty) empty.hidden = visibleCount !== 0;
+      if (summary) summary.textContent = '显示 ' + visibleCount + ' 份资料 · 示例数据';
+    }
+
+    /**
+     * 清空资料库的搜索词与全部下拉筛选条件。
+     * @param {Event} event 清除筛选按钮的点击事件。
+     * @returns {void} 恢复默认条件后重新渲染清单，并把焦点留在触发按钮上。
+     */
+    function clearSourceFilters(event) {
+      const search = document.querySelector('[data-source-search]');
+      const controls = document.querySelectorAll('[data-source-filter]');
+      if (search) search.value = '';
+      for (let index = 0; index < controls.length; index += 1) controls[index].value = 'all';
+      applySourceFilters();
+      event.currentTarget.focus();
+    }
+
+    /**
+     * 绑定资料库搜索与筛选事件。
+     * @param {void} 无参数，控件通过数据属性在当前页面查找。
+     * @returns {void} 为存在的输入框、选择框和清除按钮添加监听器。
+     */
+    function initializeSourceFilters() {
+      const search = document.querySelector('[data-source-search]');
+      const controls = document.querySelectorAll('[data-source-filter]');
+      const clear = document.querySelector('[data-source-clear-filter]');
+      if (search) search.addEventListener('input', applySourceFilters);
+      for (let index = 0; index < controls.length; index += 1) controls[index].addEventListener('change', applySourceFilters);
+      if (clear) clear.addEventListener('click', clearSourceFilters);
+    }
+
+    document.addEventListener('DOMContentLoaded', initializeSourceFilters);
+  </script>
+</body>
+
+</html>

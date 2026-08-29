@@ -6,7 +6,7 @@ import type { SourceSummary, WorldSummary } from '#shared/types/content'
 
 /** 人物草稿助手属性。 */
 interface Props {
-  /** 可选世界设定。 */
+  /** 可选世界。 */
   worlds: WorldSummary[]
   /** 可选参考资料。 */
   sources: SourceSummary[]
@@ -48,43 +48,34 @@ function handleSubmit(event: FormSubmitEvent<GeneratePersonaDraftInput>): void {
 
 <template>
   <section class="workflow-panel" aria-labelledby="persona-draft-heading">
-    <div class="section-heading"><div class="section-heading-copy"><p class="eyebrow">建立方式与参考</p><h2 id="persona-draft-heading">用自然语言整理人物初稿</h2><p>AI 只生成可编辑草稿，不会自动保存或发布；你的明确描述始终高于参考资料。</p></div></div>
+    <div class="section-heading">
+      <div class="section-heading-copy">
+        <p class="eyebrow">建立方式与参考</p>
+        <h2 id="persona-draft-heading">用自然语言整理人物初稿</h2>
+        <p>AI 只生成可编辑草稿，不会自动保存或发布；你的明确描述始终高于参考资料。</p>
+      </div>
+    </div>
 
-    <UAlert
-      v-if="!textModelConfigured"
-      class="mb-5"
-      color="warning"
-      title="文本模型未配置"
-      description="仍可在下方手工填写；配置 OpenAI-compatible 文本模型并重启后可使用 AI 整理。"
-    />
+    <UAlert v-if="!textModelConfigured" class="mb-5" color="warning" title="文本模型未配置"
+      description="仍可在下方手工填写；配置 OpenAI-compatible 文本模型并重启后可使用 AI 整理。" />
     <UAlert v-if="errorMessage" class="mb-5" color="error" title="草稿生成失败" :description="errorMessage" />
 
     <UForm :schema="generatePersonaDraftSchema" :state="state" class="space-y-5" @submit="handleSubmit">
       <UFormField name="prompt" label="自然语言人设" required>
-        <UTextarea
-          v-model="state.prompt"
-          class="w-full"
-          :rows="6"
-          :disabled="loading"
-          placeholder="例如：她是架空学院的年轻档案员，谨慎、重视证据，回答简短；遇到未知事实必须明确说明不知道。"
-        />
+        <UTextarea v-model="state.prompt" class="w-full" :rows="6" :disabled="loading"
+          placeholder="例如：她是架空学院的年轻档案员，谨慎、重视证据，回答简短；遇到未知事实必须明确说明不知道。" />
       </UFormField>
       <div class="grid gap-5 md:grid-cols-3">
         <UFormField name="origin" label="来源模式" required>
-          <USelect
-            v-model="state.origin"
-            class="w-full"
-            :items="[
-              { label: '原创', value: 'original' },
-              { label: '资料型', value: 'source_based' },
-              { label: '混合型', value: 'hybrid' },
-            ]"
-            :disabled="loading"
-          />
+          <USelect v-model="state.origin" class="w-full" :items="[
+            { label: '原创', value: 'original' },
+            { label: '资料型', value: 'source_based' },
+            { label: '混合型', value: 'hybrid' },
+          ]" :disabled="loading" />
         </UFormField>
-        <UFormField name="worldId" label="已发布世界设定（可选）">
+        <UFormField name="worldId" label="已发布世界（可选）">
           <select v-model="state.worldId" class="native-control" :disabled="loading">
-            <option :value="null">不使用世界设定</option>
+            <option :value="null">不使用世界</option>
             <option v-for="world in publishedWorlds" :key="world.id" :value="world.id">{{ world.name }}</option>
           </select>
         </UFormField>

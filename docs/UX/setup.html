@@ -1,0 +1,154 @@
+<!doctype html>
+<!--
+  人样首次本机设置页。
+  通过三步向导说明本地数据、唯一管理员和完成后的可用范围。
+-->
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="人样首次本机设置">
+  <title>首次设置 · 人样</title>
+  <link rel="icon" href="assets/brand/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/prototype.css">
+</head>
+<body data-page="setup">
+  <a class="skip-link" href="#main-content">跳到首次设置</a>
+
+  <div class="auth-page" data-od-id="setup-page">
+    <section class="auth-story" data-od-id="setup-introduction-section" aria-labelledby="setup-title">
+      <div class="auth-story-copy">
+        <div class="row" data-od-id="setup-brand">
+          <span class="brand-mark" aria-hidden="true">
+            <svg class="brand-symbol" viewBox="0 0 24 24" focusable="false">
+              <circle class="brand-symbol-accent" cx="12" cy="4.6" r="2.6" fill="currentColor"/>
+              <path d="M10.3 10 3.7 20.4" fill="none" stroke="currentColor" stroke-width="4.4" stroke-linecap="round"/>
+              <path class="brand-symbol-accent" d="M13.7 10 20.3 20.4" fill="none" stroke="currentColor" stroke-width="4.4" stroke-linecap="round"/>
+            </svg>
+          </span>
+          <span class="brand-copy">
+            <span class="brand-name">人样</span>
+            <span class="brand-sub">让它有个人样</span>
+          </span>
+        </div>
+        <p class="eyebrow">首次启动 · 本机设置</p>
+        <h1 id="setup-title" data-od-id="setup-title">在开始创作前，确认这台设备的边界</h1>
+        <p class="lead">设置只需要三步：确认本地数据范围，设置唯一管理员，然后进入可建立人物和发起任务的工作台。</p>
+      </div>
+
+      <div class="stack" data-od-id="setup-scope-list">
+        <div class="notice" data-od-id="setup-local-data-scope">
+          <span class="notice-icon" aria-hidden="true">01</span>
+          <div class="notice-copy">
+            <strong>资料和创作记录保留在本机</strong>
+            <p>本机数据是工作台的事实来源；远端索引只用于资料正文的检索增强。</p>
+          </div>
+        </div>
+        <div class="notice" data-od-id="setup-admin-scope">
+          <span class="notice-icon" aria-hidden="true">02</span>
+          <div class="notice-copy">
+            <strong>建立唯一管理员</strong>
+            <p>不会创建团队成员、邀请链接或其他账户。管理员负责配置与关键确认。</p>
+          </div>
+        </div>
+        <div class="notice" data-od-id="setup-completion-scope">
+          <span class="notice-icon" aria-hidden="true">03</span>
+          <div class="notice-copy">
+            <strong>完成后即可进入工作台</strong>
+            <p>你可以建立人物、整理资料并开始任务；任何会影响后续任务的内容仍需人工确认。</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <main class="auth-form-wrap" id="main-content" data-od-id="setup-wizard-section">
+      <div class="auth-form" id="setup-wizard" data-wizard data-current-step="0" data-success-title="首次设置已完成" data-success-message="本机唯一管理员已准备好进入工作台。" data-submit-href="dashboard.html">
+        <p class="eyebrow">首次设置</p>
+        <h2 data-od-id="setup-wizard-title">准备本机工作台</h2>
+        <p>所有步骤都可以使用键盘完成。设置过程不建立在线账户。</p>
+
+        <div class="steps steps-3" aria-label="首次设置进度" data-od-id="setup-progress">
+          <div class="step is-current" data-step="0" aria-current="step" data-od-id="setup-step-local-data">
+            <span class="step-index" aria-hidden="true">01</span>
+            <span>本地数据</span>
+          </div>
+          <div class="step" data-step="1" aria-current="false" data-od-id="setup-step-admin">
+            <span class="step-index" aria-hidden="true">02</span>
+            <span>唯一管理员</span>
+          </div>
+          <div class="step" data-step="2" aria-current="false" data-od-id="setup-step-complete">
+            <span class="step-index" aria-hidden="true">03</span>
+            <span>完成设置</span>
+          </div>
+        </div>
+
+        <section class="wizard-panel" data-step-panel data-od-id="setup-local-data-panel" aria-labelledby="setup-local-data-heading">
+          <p class="eyebrow">第一步</p>
+          <h3 id="setup-local-data-heading">确认资料与记录的保存范围</h3>
+          <p class="lead">人物、资料、任务和审阅记录以本机数据为准。启用检索服务后，只有资料正文会进入远端索引。</p>
+          <label class="option-card" data-od-id="setup-local-data-confirmation">
+            <input type="radio" name="localDataConfirmation" value="confirmed" required>
+            <strong>我理解本机数据是事实来源</strong>
+            <span>远端索引不可替代本机资料，也不会扩大数据的使用范围。</span>
+          </label>
+          <p class="field-help">后续可在系统中心查看检索状态、同步队列和备份说明。</p>
+        </section>
+
+        <section class="wizard-panel" data-step-panel data-od-id="setup-admin-panel" aria-labelledby="setup-admin-heading" hidden>
+          <p class="eyebrow">第二步</p>
+          <h3 id="setup-admin-heading">设置这台设备的唯一管理员</h3>
+          <p class="lead">此管理员用于进入本机工作台和执行受保护操作，不会创建多人账户体系。</p>
+          <div class="field" data-od-id="setup-admin-name-field">
+            <label for="setup-admin-name">管理员名称 <span aria-hidden="true">*</span></label>
+            <input class="input" id="setup-admin-name" name="setupAdminName" type="text" autocomplete="username" required aria-describedby="setup-admin-name-help">
+            <span class="field-help" id="setup-admin-name-help">例如：本机管理员。此名称仅在当前设备中使用。</span>
+          </div>
+          <div class="field" data-od-id="setup-admin-password-field">
+            <label for="setup-admin-password">管理员密码 <span aria-hidden="true">*</span></label>
+            <input class="input" id="setup-admin-password" name="setupAdminPassword" type="password" autocomplete="new-password" required aria-describedby="setup-admin-password-help">
+            <span class="field-help" id="setup-admin-password-help">可由密码管理器生成并保存。忘记密码时只能通过本机命令行（CLI）恢复。</span>
+          </div>
+        </section>
+
+        <section class="wizard-panel" data-step-panel data-od-id="setup-completion-panel" aria-labelledby="setup-completion-heading" hidden>
+          <p class="eyebrow">第三步</p>
+          <h3 id="setup-completion-heading">完成后，工作台已准备就绪</h3>
+          <div class="status-strip" data-od-id="setup-completion-summary" aria-label="完成设置后的结果">
+            <div class="status-cell" data-od-id="setup-result-data">
+              <span class="status-kicker">数据范围</span>
+              <span class="status-value">本机保存</span>
+            </div>
+            <div class="status-cell" data-od-id="setup-result-admin">
+              <span class="status-kicker">访问边界</span>
+              <span class="status-value">唯一管理员</span>
+            </div>
+            <div class="status-cell" data-od-id="setup-result-workspace">
+              <span class="status-kicker">下一步</span>
+              <span class="status-value">进入今日工作台</span>
+            </div>
+            <div class="status-cell" data-od-id="setup-result-confirmation">
+              <span class="status-kicker">重要变化</span>
+              <span class="status-value">仍需人工确认</span>
+            </div>
+          </div>
+          <div class="notice is-target" data-od-id="setup-completion-notice">
+            <span class="notice-icon" aria-hidden="true">!</span>
+            <div class="notice-copy">
+              <strong>成长与有效记忆需要后端支持</strong>
+              <p>当前原型会明确标记目标态能力，不会把候选内容描述为已经生效。</p>
+            </div>
+          </div>
+        </section>
+
+        <div class="wizard-actions" data-od-id="setup-wizard-actions">
+          <button class="btn btn-secondary" type="button" data-wizard-back data-od-id="setup-back-control">上一步</button>
+          <button class="btn btn-primary" type="button" data-wizard-next data-od-id="setup-next-control">继续</button>
+          <button class="btn btn-primary" type="button" data-wizard-submit data-od-id="setup-primary-cta" hidden>完成设置并进入工作台</button>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="assets/prototype.js"></script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "kind": "html",
+  "title": "evaluation-detail.html",
+  "entry": "evaluation-detail.html",
+  "renderer": "html",
+  "status": "complete",
+  "exports": [
+    "html",
+    "pdf",
+    "zip"
+  ],
+  "createdAt": "2026-08-29T12:05:03.059Z",
+  "updatedAt": "2026-08-29T12:05:03.059Z",
+  "metadata": {
+    "inferred": true,
+    "reconciled": true
+  }
+}

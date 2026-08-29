@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "kind": "html",
+  "title": "persona-create.html",
+  "entry": "persona-create.html",
+  "renderer": "html",
+  "status": "complete",
+  "exports": [
+    "html",
+    "pdf",
+    "zip"
+  ],
+  "createdAt": "2026-08-29T11:52:00.224Z",
+  "updatedAt": "2026-08-29T11:52:00.224Z",
+  "metadata": {
+    "inferred": true,
+    "reconciled": true
+  }
+}

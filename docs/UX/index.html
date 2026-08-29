@@ -1,0 +1,255 @@
+<!doctype html>
+<!--
+  人样后台多页面原型总览。
+  本页是多屏交付的固定入口，串联全部现有路由及其高保真 HTML 页面。
+-->
+<html lang="zh-CN">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="人样后台界面重设计多页面高保真交互原型总览">
+  <title>原型总览 · 人样后台重设计</title>
+  <link rel="icon" href="assets/brand/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/prototype.css">
+</head>
+
+<body>
+  <a class="skip-link" href="#route-directory">跳到页面目录</a>
+  <div class="launcher">
+    <header class="launcher-header" data-od-id="prototype-overview-header">
+      <div class="launcher-header-inner">
+        <div class="launcher-brand" data-od-id="prototype-overview-brand">
+          <span class="brand-mark" aria-hidden="true">
+            <svg class="brand-symbol" viewBox="0 0 24 24" focusable="false">
+              <circle class="brand-symbol-accent" cx="12" cy="4.6" r="2.6" fill="currentColor" />
+              <path d="M10.3 10 3.7 20.4" fill="none" stroke="currentColor" stroke-width="4.4" stroke-linecap="round" />
+              <path class="brand-symbol-accent" d="M13.7 10 20.3 20.4" fill="none" stroke="currentColor"
+                stroke-width="4.4" stroke-linecap="round" />
+            </svg>
+          </span>
+          <span class="brand-copy"><span class="brand-name">人样</span><span class="brand-sub">让它有个人样</span></span>
+        </div>
+        <p class="eyebrow">人样后台重设计 · 多页面高保真原型</p>
+        <h1 data-od-id="prototype-overview-title">人物工作室，而不是通用后台</h1>
+        <p class="lead">18 个现有路由统一使用“档案编辑室 + 安静控制台”语言，并明确区分当前可落地能力与需要后端支持的目标态能力。</p>
+        <div class="row wrap" style="margin-top: 28px;">
+          <a class="btn btn-primary" href="dashboard.html" data-od-id="prototype-overview-primary-cta">进入今日工作台</a>
+          <a class="btn btn-secondary" href="logo-ui-kit.html">查看品牌与图形体系</a>
+          <a class="btn btn-ghost" href="backend-redesign-plan.md">查看设计计划</a>
+        </div>
+        <div class="status-strip" style="max-width: 840px; margin-top: 44px;" aria-label="原型覆盖摘要">
+          <div class="status-cell"><span class="status-kicker">现有路由</span><span class="status-value num">18 个页面</span>
+          </div>
+          <div class="status-cell"><span class="status-kicker">核心闭环</span><span class="status-value">人物 → 任务 → 反馈</span>
+          </div>
+          <div class="status-cell"><span class="status-kicker">能力标记</span><span class="status-value">当前可落地 / 目标态</span>
+          </div>
+          <div class="status-cell"><span class="status-kicker">适配宽度</span><span
+              class="status-value num">375–1440px</span></div>
+        </div>
+      </div>
+    </header>
+
+    <main class="launcher-main" id="route-directory">
+      <section class="notice is-target" data-od-id="prototype-capability-legend">
+        <span class="notice-icon"><span class="capability-badge">目标态能力</span></span>
+        <div class="notice-copy">
+          <strong>标记不会等同于已上线</strong>
+          <p>灵魂自由章节、成长、有效记忆及运行中的相关引用需要新增后端模型和接口；当前候选记忆不会显示为已经生效。</p>
+        </div>
+        <a class="btn btn-ghost" href="persona-workspace.html">查看人物工作区</a>
+      </section>
+
+      <section class="route-group" data-od-id="route-group-auth" style="margin-top: 48px;">
+        <div class="route-group-head">
+          <p class="eyebrow">00 · 认证</p>
+          <div>
+            <h2>专注进入本地工作台</h2>
+            <p class="muted" style="margin-top: 8px;">唯一管理员、本地数据和恢复边界在操作前清楚说明。</p>
+          </div>
+        </div>
+        <div class="route-list">
+          <article class="route-item" data-od-id="route-login">
+            <code class="route-code">/login</code>
+            <div><a class="route-item-title" href="login.html">管理员登录</a>
+              <p>本地安全说明、字段错误和本机 CLI 恢复路径。</p>
+            </div>
+            <a class="btn btn-secondary" href="login.html">打开页面</a>
+          </article>
+          <article class="route-item" data-od-id="route-setup">
+            <code class="route-code">/setup</code>
+            <div><a class="route-item-title" href="setup.html">首次启动设置</a>
+              <p>本地数据、唯一管理员和完成结果三步引导。</p>
+            </div>
+            <a class="btn btn-secondary" href="setup.html">打开页面</a>
+          </article>
+        </div>
+      </section>
+
+      <section class="route-group" data-od-id="route-group-workbench">
+        <div class="route-group-head">
+          <p class="eyebrow">01 · 工作台</p>
+          <div>
+            <h2>从优先事项到结果反馈</h2>
+            <p class="muted" style="margin-top: 8px;">把新建任务、任务状态、结果依据和反馈学习连成一条可审查流程。</p>
+          </div>
+        </div>
+        <div class="route-list">
+          <article class="route-item" data-od-id="route-dashboard">
+            <code class="route-code">/</code>
+            <div><a class="route-item-title" href="dashboard.html">今日工作</a>
+              <p>待办、活动任务、最近人物与阻断异常按优先级排列。</p>
+            </div>
+            <a class="btn btn-secondary" href="dashboard.html">打开页面</a>
+          </article>
+          <article class="route-item" data-od-id="route-new-task">
+            <code class="route-code">/workbench</code>
+            <div><a class="route-item-title" href="new-task.html">新建任务</a>
+              <p>四步向导与提交前上下文摘要。</p>
+            </div>
+            <a class="btn btn-secondary" href="new-task.html">打开页面</a>
+          </article>
+          <article class="route-item" data-od-id="route-task-history">
+            <code class="route-code">/history</code>
+            <div><a class="route-item-title" href="task-history.html">任务记录</a>
+              <p>搜索筛选、状态、耗时、反馈与下一步操作。</p>
+            </div>
+            <a class="btn btn-secondary" href="task-history.html">打开页面</a>
+          </article>
+          <article class="route-item" data-od-id="route-task-detail">
+            <code class="route-code">/runs/[id]</code>
+            <div><a class="route-item-title" href="task-detail.html">任务详情</a>
+              <p>结果、创作内容、使用依据、反馈学习和运行设置。</p>
+            </div>
+            <a class="btn btn-secondary" href="task-detail.html">打开页面</a>
+          </article>
+        </div>
+      </section>
+
+      <section class="route-group" data-od-id="route-group-persona-space">
+        <div class="route-group-head">
+          <p class="eyebrow">02 · 人物空间</p>
+          <div>
+            <h2>人物、世界与资料的共同上下文</h2>
+            <p class="muted" style="margin-top: 8px;">关系、版本、同步和待审内容在详情页直接可见，不依赖多次跳转理解。</p>
+          </div>
+        </div>
+        <div class="route-list">
+          <article class="route-item" data-od-id="route-personas">
+            <code class="route-code">/personas</code>
+            <div><a class="route-item-title" href="personas.html">人物</a>
+              <p>人物可用状态、灵魂版本、待办、世界和最近任务。</p>
+            </div>
+            <a class="btn btn-secondary" href="personas.html">打开页面</a>
+          </article>
+          <article class="route-item" data-od-id="route-persona-create">
+            <code class="route-code">/personas/new</code>
+            <div><a class="route-item-title" href="persona-create.html">建立人物</a>
+              <p>来源、世界资料、灵魂初稿、AI 整理、差异和发布。</p>
+            </div>
+            <a class="btn btn-secondary" href="persona-create.html">打开页面</a>
+          </article>
+          <article class="route-item" data-od-id="route-persona-workspace">
+            <code class="route-code">/personas/[id]</code>
+            <div><a class="route-item-title" href="persona-workspace.html">人物工作区</a>
+              <p>概览、灵魂、成长、记忆、关系和版本六个区域。</p>
+            </div>
+            <a class="btn btn-secondary" href="persona-workspace.html">打开页面</a>
+          </article>
+          <article class="route-item" data-od-id="route-worlds">
+            <code class="route-code">/worlds</code>
+            <div><a class="route-item-title" href="worlds.html">世界</a>
+              <p>版本、使用人物、关联资料和待发布修改稿。</p>
+            </div>
+            <a class="btn btn-secondary" href="worlds.html">打开页面</a>
+          </article>
+          <article class="route-item" data-od-id="route-world-detail">
+            <code class="route-code">/worlds/[id]</code>
+            <div><a class="route-item-title" href="world-detail.html">世界详情</a>
+              <p>当前设定、资料、人物、修改记录和发布影响。</p>
+            </div>
+            <a class="btn btn-secondary" href="world-detail.html">打开页面</a>
+          </article>
+          <article class="route-item" data-od-id="route-sources">
+            <code class="route-code">/sources</code>
+            <div><a class="route-item-title" href="sources.html">资料库</a>
+              <p>搜索、导入、处理进度、同步状态和关系摘要。</p>
+            </div>
+            <a class="btn btn-secondary" href="sources.html">打开页面</a>
+          </article>
+          <article class="route-item" data-od-id="route-source-detail">
+            <code class="route-code">/sources/[id]</code>
+            <div><a class="route-item-title" href="source-detail.html">资料详情</a>
+              <p>正文、可检索片段、使用关系、同步和危险操作。</p>
+            </div>
+            <a class="btn btn-secondary" href="source-detail.html">打开页面</a>
+          </article>
+        </div>
+      </section>
+
+      <section class="route-group" data-od-id="route-group-learning">
+        <div class="route-group-head">
+          <p class="eyebrow">03 · 学习与复盘</p>
+          <div>
+            <h2>让每次人物变化都可追溯</h2>
+            <p class="muted" style="margin-top: 8px;">AI 只给建议和辅助证据，长期变化与发布决策保留明确人工确认点。</p>
+          </div>
+        </div>
+        <div class="route-list">
+          <article class="route-item" data-od-id="route-learning-center">
+            <code class="route-code">/feedback</code>
+            <div><a class="route-item-title" href="learning-center.html">学习中心</a>
+              <p>反馈、成长、记忆、灵魂修订和回归用例待办队列。</p>
+            </div>
+            <a class="btn btn-secondary" href="learning-center.html">打开页面</a>
+          </article>
+          <article class="route-item" data-od-id="route-evaluation-detail">
+            <code class="route-code">/evaluations/[id]</code>
+            <div><a class="route-item-title" href="evaluation-detail.html">评测详情</a>
+              <p>基础与候选对照、退化风险、依据和发布决策。</p>
+            </div>
+            <a class="btn btn-secondary" href="evaluation-detail.html">打开页面</a>
+          </article>
+        </div>
+      </section>
+
+      <section class="route-group" data-od-id="route-group-system">
+        <div class="route-group-head">
+          <p class="eyebrow">04 · 系统</p>
+          <div>
+            <h2>版本化配置与隔离的危险操作</h2>
+            <p class="muted" style="margin-top: 8px;">技术信息默认收起，备份、重建和永久删除不会与普通状态混排。</p>
+          </div>
+        </div>
+        <div class="route-list">
+          <article class="route-item" data-od-id="route-templates">
+            <code class="route-code">/templates</code>
+            <div><a class="route-item-title" href="templates.html">内容模板</a>
+              <p>模板预览、不可变版本、启用状态和使用影响。</p>
+            </div>
+            <a class="btn btn-secondary" href="templates.html">打开页面</a>
+          </article>
+          <article class="route-item" data-od-id="route-generation-settings">
+            <code class="route-code">/parameter-profiles</code>
+            <div><a class="route-item-title" href="generation-settings.html">生成设置</a>
+              <p>常用输出、检索范围、资源限制和失败重试分组。</p>
+            </div>
+            <a class="btn btn-secondary" href="generation-settings.html">打开页面</a>
+          </article>
+          <article class="route-item" data-od-id="route-system-center">
+            <code class="route-code">/settings</code>
+            <div><a class="route-item-title" href="system-center.html">系统中心</a>
+              <p>模型、检索同步、备份、审计与账户安全。</p>
+            </div>
+            <a class="btn btn-secondary" href="system-center.html">打开页面</a>
+          </article>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="assets/prototype.js"></script>
+</body>
+
+</html>

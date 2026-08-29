@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 人样应用图标：512px 母版，图形保持在系统图标安全区内，允许圆角裁切。 -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="renyang-app-icon-title renyang-app-icon-desc">
+  <title id="renyang-app-icon-title">人样应用图标</title>
+  <desc id="renyang-app-icon-desc">深色圆角方形中的简洁人物标志。</desc>
+  <rect width="512" height="512" rx="112" fill="#20262c"/>
+  <!-- 使用与 favicon 相同的 32px 母网格等比放大，确保不同平台上的比例一致。 -->
+  <g transform="scale(16)">
+    <circle cx="16" cy="8" r="3" fill="#c9695e"/>
+    <path d="M14 14 7.5 24.5M18 14l6.5 10.5" fill="none" stroke="#f7f4ee" stroke-width="5.2" stroke-linecap="round"/>
+  </g>
+</svg>

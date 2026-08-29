@@ -1,0 +1,426 @@
+<!doctype html>
+<!-- 人样后台重设计原型：学习中心，对应路由 /feedback。 -->
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="人样学习中心，集中审阅反馈、成长、记忆与灵魂修订提案">
+  <title>学习中心 · 人样</title>
+  <link rel="icon" href="assets/brand/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/prototype.css">
+</head>
+<body data-page="learning-center">
+  <a class="skip-link" href="#main-content">跳到主要内容</a>
+  <div class="app-shell" data-od-id="learning-app-shell">
+    <aside class="sidebar" data-sidebar aria-label="应用导航"></aside>
+    <div class="app-main">
+      <header class="topbar" data-topbar></header>
+      <main class="page" id="main-content">
+        <nav class="breadcrumbs" aria-label="面包屑" data-od-id="learning-breadcrumbs">
+          <span>学习与复盘</span>
+          <span aria-hidden="true">/</span>
+          <strong>学习中心</strong>
+        </nav>
+
+        <header class="page-header" data-od-id="learning-header">
+          <div class="page-header-copy">
+            <p class="route-code">页面 /feedback · 2026.08.29 · 以下为审阅示例</p>
+            <h1 data-od-id="learning-title">所有后续变化，都先经过你的判断</h1>
+            <p class="lead">在这里核对人物、任务和资料依据，再决定反馈只影响本次结果，还是进入成长、有效记忆或灵魂修订流程。</p>
+          </div>
+          <div class="page-actions" data-od-id="learning-header-actions">
+            <a class="btn btn-secondary" href="task-history.html" data-od-id="learning-task-history-link">查看来源任务</a>
+          </div>
+        </header>
+
+        <div class="status-strip" data-od-id="learning-status-summary" aria-label="学习待办摘要">
+          <div class="status-cell" data-od-id="learning-status-pending">
+            <span class="status-kicker">待审工作</span>
+            <span class="status-value num">6 项待处理</span>
+          </div>
+          <div class="status-cell" data-od-id="learning-status-focus">
+            <span class="status-kicker">当前审阅</span>
+            <span class="status-value">顾岚 · 成长候选</span>
+          </div>
+          <div class="status-cell" data-od-id="learning-status-impact">
+            <span class="status-kicker">确认后的影响</span>
+            <span class="status-value">仅影响后续任务</span>
+          </div>
+          <div class="status-cell" data-od-id="learning-status-blocker">
+            <span class="status-kicker">发布阻断</span>
+            <span class="status-value">1 项回归用例失败</span>
+          </div>
+        </div>
+
+        <section class="section" data-od-id="learning-capability-boundary">
+          <div class="notice is-target" data-od-id="learning-target-notice">
+            <span class="notice-icon"><span class="capability-badge">目标态能力</span></span>
+            <div class="notice-copy">
+              <strong>成长与有效记忆需要后端支持</strong>
+              <p>本页展示人工审阅与确认路径；记忆候选在确认前仍是候选，不会参与后续任务检索。</p>
+            </div>
+            <a class="btn btn-ghost" href="persona-workspace.html" data-od-id="learning-persona-context-link">查看人物上下文</a>
+          </div>
+        </section>
+
+        <section class="section" data-od-id="learning-review-workspace">
+          <div class="section-head">
+            <div class="section-head-copy">
+              <p class="eyebrow">01 · 审阅队列</p>
+              <h2>一次只处理一项会改变后续表现的内容</h2>
+              <p>左侧定位待办，右侧查看完整上下文。AI 分类和评分均为建议，最终由你确认。</p>
+            </div>
+          </div>
+
+          <div class="toolbar" data-od-id="learning-queue-toolbar">
+            <label class="search-field" for="learning-search">
+              <span class="field-label">搜索待办</span>
+              <input class="input" id="learning-search" type="search" placeholder="搜索人物、任务或反馈内容" autocomplete="off" data-learning-search data-od-id="learning-search-control">
+            </label>
+            <a class="btn btn-secondary" href="evaluation-detail.html" data-od-id="learning-evaluation-link">查看失败评测</a>
+          </div>
+
+          <div id="learning-searchable" data-tabs data-default-tab="growth" data-od-id="learning-queue-tabs">
+            <div class="tabs" role="tablist" aria-label="学习待办分类" data-od-id="learning-tab-list">
+              <button class="tab-button" type="button" role="tab" aria-controls="learning-feedback-panel" id="learning-feedback-tab" data-tab="feedback" data-od-id="learning-tab-feedback">待分类反馈</button>
+              <button class="tab-button" type="button" role="tab" aria-controls="learning-growth-panel" id="learning-growth-tab" data-tab="growth" data-od-id="learning-tab-growth">成长候选</button>
+              <button class="tab-button" type="button" role="tab" aria-controls="learning-memory-panel" id="learning-memory-tab" data-tab="memory" data-od-id="learning-tab-memory">记忆候选</button>
+              <button class="tab-button" type="button" role="tab" aria-controls="learning-soul-panel" id="learning-soul-tab" data-tab="soul" data-od-id="learning-tab-soul">灵魂修订提案</button>
+              <button class="tab-button" type="button" role="tab" aria-controls="learning-regression-panel" id="learning-regression-tab" data-tab="regression" data-od-id="learning-tab-regression">回归用例</button>
+            </div>
+
+            <div class="tab-panel" role="tabpanel" id="learning-feedback-panel" aria-labelledby="learning-feedback-tab" data-tab-panel="feedback" data-od-id="learning-feedback-panel" hidden>
+              <div class="grid-1-2">
+                <div class="stack" data-od-id="learning-feedback-queue">
+                  <p class="meta">2 项待分类</p>
+                  <article class="panel-soft" data-search-text="顾岚 学院旧信件 兴趣判断 资料不足" data-od-id="learning-feedback-item-gu-lan">
+                    <div class="row-between wrap"><span class="badge is-warning">待分类</span><span class="meta">8 分钟前</span></div>
+                    <h3>顾岚在资料不足时没有说明未知项</h3>
+                    <p>来源：顾岚对学院旧信件的兴趣判断</p>
+                  </article>
+                  <article class="panel-soft" data-search-text="闻秋 风帆船 适用范围 反馈" data-od-id="learning-feedback-item-wen-qiu">
+                    <div class="row-between wrap"><span class="badge is-warning">待分类</span><span class="meta">今天 10:26</span></div>
+                    <h3>风帆船结论需要限定适用范围</h3>
+                    <p>来源：是否愿意接触风帆船</p>
+                  </article>
+                </div>
+                <article class="panel" data-od-id="learning-feedback-review">
+                  <div class="row-between wrap"><span class="meta">正在审阅 · 顾岚</span><span class="badge is-warning">等待人工分类</span></div>
+                  <h3>确认这条反馈应该影响哪里</h3>
+                  <p>AI 建议归类为人物变化，用户可以纠正。</p>
+                  <div class="stack">
+                    <div data-od-id="learning-feedback-source">
+                      <p class="eyebrow">来源任务</p>
+                      <p><a class="text-link" href="task-detail.html">顾岚对学院旧信件的兴趣判断</a></p>
+                      <p class="meta">AI 模拟推断，不是人物事实</p>
+                    </div>
+                    <div data-od-id="learning-feedback-original">
+                      <p class="eyebrow">原始反馈</p>
+                      <p class="reader">“当资料没有说明顾岚是否见过旧信件时，回答直接给出了肯定判断。应先明确资料不足，而不是用人物倾向补全事实。”</p>
+                    </div>
+                    <div data-od-id="learning-feedback-suggestion">
+                      <p class="eyebrow">AI 建议</p>
+                      <p>归为成长候选：在事实依据不足时，顾岚应先说明未知项，再给出有限推断。</p>
+                    </div>
+                    <div data-od-id="learning-feedback-evidence">
+                      <p class="eyebrow">依据</p>
+                      <p>任务输出未出现“资料不足”；现有灵魂 v3 的约束章节要求区分档案事实与推断。</p>
+                    </div>
+                  </div>
+                  <div class="panel-actions" data-od-id="learning-feedback-actions">
+                    <button class="btn btn-primary" type="button" data-open-dialog="learning-grow-dialog" data-od-id="learning-feedback-confirm-growth">确认成长</button>
+                    <button class="btn btn-secondary" type="button" data-open-dialog="learning-soul-dialog" data-od-id="learning-feedback-modify-soul">修改灵魂</button>
+                    <button class="btn btn-ghost" type="button" data-toast-title="已保留本次处理" data-toast-message="此操作仅处理当前任务结果，不会改变人物后续表现。" data-od-id="learning-feedback-once-only">仅处理本次结果</button>
+                  </div>
+                </article>
+              </div>
+            </div>
+
+            <div class="tab-panel" role="tabpanel" id="learning-growth-panel" aria-labelledby="learning-growth-tab" data-tab-panel="growth" data-od-id="learning-growth-panel">
+              <div class="grid-1-2">
+                <div class="stack" data-od-id="learning-growth-queue">
+                  <p class="meta">2 项成长候选</p>
+                  <article class="panel-soft" data-search-text="顾岚 成长候选 资料不足 学院旧信件" data-od-id="learning-growth-item-gu-lan">
+                    <div class="row-between wrap"><span class="badge is-warning">需要确认</span><span class="meta">关联 1 项反馈</span></div>
+                    <h3>先说明未知项，再给出有限推断</h3>
+                    <p>顾岚 · 来源：学院旧信件兴趣判断</p>
+                  </article>
+                  <article class="panel-soft" data-search-text="沈砚 成长候选 事实边界 观察者" data-od-id="learning-growth-item-shen-yan">
+                    <div class="row-between wrap"><span class="badge is-warning">需要确认</span><span class="meta">昨天 16:48</span></div>
+                    <h3>说明推断与观察记录的边界</h3>
+                    <p>沈砚 · 来源：旧物传闻三步核验</p>
+                  </article>
+                </div>
+                <article class="panel" data-od-id="learning-growth-review">
+                  <div class="row-between wrap"><span class="meta">正在审阅 · 顾岚 · 候选</span><span class="badge is-warning">会影响后续任务</span></div>
+                  <h3>把“资料不足”作为明确的回答边界</h3>
+                  <p>这是建议中的成长候选，不是已生效的人物变化；确认后才会进入后续任务的上下文。</p>
+                  <div class="stack">
+                    <div data-od-id="learning-growth-character">
+                      <p class="eyebrow">人物</p>
+                      <p><strong>顾岚</strong> · 谨慎核验资料的档案整理者 · 当前灵魂 v3</p>
+                    </div>
+                    <div data-od-id="learning-growth-source">
+                      <p class="eyebrow">来源任务</p>
+                      <p><a class="text-link" href="task-detail.html">顾岚对学院旧信件的兴趣判断</a></p>
+                      <p class="meta">输入中未提供顾岚是否接触过旧信件的事实资料。</p>
+                    </div>
+                    <div data-od-id="learning-growth-original-feedback">
+                      <p class="eyebrow">原始反馈</p>
+                      <p class="reader">“回答应先说明资料不足，再说明顾岚可能会如何核验，而不是把未提供的经历写成既有事实。”</p>
+                    </div>
+                    <div data-od-id="learning-growth-ai-suggestion">
+                      <p class="eyebrow">AI 建议</p>
+                      <p>建议确认成长：当任务资料不足以支撑人物经历或结论时，先明确未知项；如需推断，标明其为有限推断。</p>
+                    </div>
+                    <div data-od-id="learning-growth-evidence">
+                      <p class="eyebrow">依据</p>
+                      <p>灵魂 v3 的“约束”章节已要求区分事实与推断；本次反馈与该约束一致，未发现冲突资料。</p>
+                    </div>
+                    <div data-od-id="learning-growth-impact">
+                      <p class="eyebrow">确认后的影响</p>
+                      <p>后续由顾岚执行的任务将优先呈现未知项说明；历史任务、已锁定输出和当前评测记录不受影响。</p>
+                    </div>
+                  </div>
+                  <div class="panel-actions" data-od-id="learning-growth-actions">
+                    <button class="btn btn-primary" type="button" data-open-dialog="learning-grow-dialog" data-od-id="learning-growth-confirm">确认成长</button>
+                    <button class="btn btn-secondary" type="button" data-open-dialog="learning-soul-dialog" data-od-id="learning-growth-modify-soul">修改灵魂</button>
+                    <button class="btn btn-ghost" type="button" data-toast-title="已保留本次处理" data-toast-message="该反馈将只用于标记当前结果，不会写入成长候选。" data-od-id="learning-growth-once-only">仅处理本次结果</button>
+                  </div>
+                </article>
+              </div>
+            </div>
+
+            <div class="tab-panel" role="tabpanel" id="learning-memory-panel" aria-labelledby="learning-memory-tab" data-tab-panel="memory" data-od-id="learning-memory-panel" hidden>
+              <div class="grid-1-2">
+                <div class="stack" data-od-id="learning-memory-queue">
+                  <p class="meta">1 项记忆候选</p>
+                  <article class="panel-soft" data-search-text="闻秋 风帆船 记忆候选 未生效" data-od-id="learning-memory-item-wen-qiu">
+                    <div class="row-between wrap"><span class="badge is-warning">候选，尚未生效</span><span class="meta">今天 09:42</span></div>
+                    <h3>风帆船结论需要限定适用范围</h3>
+                    <p>闻秋 · 来源：是否愿意接触风帆船</p>
+                  </article>
+                </div>
+                <article class="panel" data-od-id="learning-memory-review">
+                  <div class="row-between wrap"><span class="meta">正在审阅 · 闻秋</span><span class="badge is-warning">候选，尚未生效</span></div>
+                  <h3>保留“拒绝触碰”的事实范围</h3>
+                  <p>这项记忆候选目前不会进入检索，也不会影响任何后续任务。</p>
+                  <div class="stack">
+                    <div data-od-id="learning-memory-source">
+                      <p class="eyebrow">来源任务</p>
+                      <p><a class="text-link" href="task-detail.html">是否愿意接触风帆船</a></p>
+                    </div>
+                    <div data-od-id="learning-memory-original-feedback">
+                      <p class="eyebrow">原始反馈</p>
+                      <p class="reader">“闻秋在霜月十三日首次看见风帆船且拒绝触碰，不足以说明她永远排斥所有航海活动。”</p>
+                    </div>
+                    <div data-od-id="learning-memory-suggestion">
+                      <p class="eyebrow">AI 建议</p>
+                      <p>保留为候选记忆：仅记录“霜月十三日首次看见风帆船并拒绝触碰”，适用范围限于该事件与当时条件。</p>
+                    </div>
+                    <div data-od-id="learning-memory-evidence">
+                      <p class="eyebrow">依据</p>
+                      <p>学院档案事实资料包含该日期记录；“闻秋操作和收藏风帆船”的冲突片段未经证实，不能作为确认依据。</p>
+                    </div>
+                    <div data-od-id="learning-memory-status">
+                      <p class="eyebrow">当前状态</p>
+                      <p>候选，尚未生效。若未来支持有效记忆，仍需人工确认后才会在限定任务中参与检索。</p>
+                    </div>
+                  </div>
+                  <div class="panel-actions" data-od-id="learning-memory-actions">
+                    <button class="btn btn-primary" type="button" data-open-dialog="learning-memory-dialog" data-od-id="learning-memory-confirm">确认审阅结论</button>
+                    <button class="btn btn-secondary" type="button" data-toast-title="已请求更多依据" data-toast-message="该候选会保留为未生效状态，等待补充可核验资料。" data-od-id="learning-memory-request-evidence">需要更多依据</button>
+                    <button class="btn btn-ghost" type="button" data-toast-title="已保留本次处理" data-toast-message="此操作不会改变候选记忆的状态。" data-od-id="learning-memory-once-only">仅处理本次结果</button>
+                  </div>
+                </article>
+              </div>
+            </div>
+
+            <div class="tab-panel" role="tabpanel" id="learning-soul-panel" aria-labelledby="learning-soul-tab" data-tab-panel="soul" data-od-id="learning-soul-panel" hidden>
+              <div class="grid-1-2">
+                <div class="stack" data-od-id="learning-soul-queue">
+                  <p class="meta">1 项灵魂修订提案</p>
+                  <article class="panel-soft" data-search-text="顾岚 灵魂 修订提案 约束 资料不足 v4" data-od-id="learning-soul-item-gu-lan">
+                    <div class="row-between wrap"><span class="badge is-warning">评测未通过</span><span class="meta">修改稿 v4</span></div>
+                    <h3>将“资料不足”加入回答约束</h3>
+                    <p>顾岚 · 触及约束章节</p>
+                  </article>
+                </div>
+                <article class="panel" data-od-id="learning-soul-review">
+                  <div class="row-between wrap"><span class="meta">正在审阅 · 顾岚</span><span class="badge is-failed">发布受阻</span></div>
+                  <h3>灵魂修改稿需要先通过回归评测</h3>
+                  <p>候选 v4 已把本次建议写入“约束”章节，但回归用例未通过，当前不能发布。</p>
+                  <div class="stack">
+                    <div data-od-id="learning-soul-source"><p class="eyebrow">来源</p><p>成长候选“先说明未知项，再给出有限推断”。</p></div>
+                    <div data-od-id="learning-soul-change"><p class="eyebrow">修改内容</p><p>在资料无法支撑人物经历或结论时，必须明确“资料不足”，并避免用推断补足事实。</p></div>
+                    <div data-od-id="learning-soul-evidence"><p class="eyebrow">评测依据</p><p>候选输出没有出现“资料不足”；基础版本评分为 1.0，候选版本评分为 0.2。</p></div>
+                  </div>
+                  <div class="panel-actions" data-od-id="learning-soul-actions">
+                    <a class="btn btn-primary" href="evaluation-detail.html" data-od-id="learning-soul-open-evaluation">查看评测并修改灵魂</a>
+                    <button class="btn btn-secondary" type="button" data-toast-title="已保留为修改稿" data-toast-message="候选 v4 保持未发布状态，不会影响当前人物版本。" data-od-id="learning-soul-keep-draft">保留修改稿</button>
+                  </div>
+                </article>
+              </div>
+            </div>
+
+            <div class="tab-panel" role="tabpanel" id="learning-regression-panel" aria-labelledby="learning-regression-tab" data-tab-panel="regression" data-od-id="learning-regression-panel" hidden>
+              <div class="grid-1-2">
+                <div class="stack" data-od-id="learning-regression-queue">
+                  <p class="meta">1 项待处理回归用例</p>
+                  <article class="panel-soft" data-search-text="顾岚 回归用例 资料不足 evaluation failed 候选 v4" data-od-id="learning-regression-item-gu-lan">
+                    <div class="row-between wrap"><span class="badge is-failed">评测失败</span><span class="meta">候选 v4</span></div>
+                    <h3>资料不足时必须明确未知项</h3>
+                    <p>顾岚 · 基础 v3 与候选 v4 对照</p>
+                  </article>
+                </div>
+                <article class="panel" data-od-id="learning-regression-review">
+                  <div class="row-between wrap"><span class="meta">正在审阅 · 顾岚</span><span class="badge is-failed">不可发布</span></div>
+                  <h3>候选版本遗漏了关键边界说明</h3>
+                  <p>这条用例用于防止新版本在资料不足时给出无依据的肯定结论。</p>
+                  <div class="stack">
+                    <div data-od-id="learning-regression-input"><p class="eyebrow">用例输入</p><p>“顾岚是否见过学院旧信件？”资料未提供相关经历。</p></div>
+                    <div data-od-id="learning-regression-result"><p class="eyebrow">结果</p><p>基础 v3 评分 1.0；候选 v4 评分 0.2。候选输出缺少“资料不足”，状态为评测失败。</p></div>
+                    <div data-od-id="learning-regression-risk"><p class="eyebrow">退化风险</p><p>发布后会让后续任务把缺失资料补写为人物事实，违反顾岚的事实边界。</p></div>
+                  </div>
+                  <div class="panel-actions" data-od-id="learning-regression-actions">
+                    <a class="btn btn-primary" href="evaluation-detail.html" data-od-id="learning-regression-evaluation-link">进入评测详情</a>
+                    <button class="btn btn-secondary" type="button" data-toast-title="已标记为待修订" data-toast-message="候选 v4 保持不可发布，等待完成修改和重新评测。" data-od-id="learning-regression-mark-revision">标记为待修订</button>
+                  </div>
+                </article>
+              </div>
+            </div>
+          </div>
+          <p class="meta" data-filter-empty hidden data-od-id="learning-search-empty" aria-live="polite">没有找到匹配的待办，请调整搜索内容。</p>
+        </section>
+
+        <section class="section" data-od-id="learning-review-principles">
+          <div class="section-head">
+            <div class="section-head-copy">
+              <p class="eyebrow">02 · 审阅边界</p>
+              <h2>确认前，先看清它会影响什么</h2>
+            </div>
+          </div>
+          <div class="log-list" data-od-id="learning-principles-list">
+            <article class="log-row" data-od-id="learning-principle-human-confirmation">
+              <span class="meta">人工确认</span>
+              <div class="log-row-main"><span class="log-row-title">会影响后续任务的内容必须明确确认</span><span class="log-row-sub">AI 只能提供分类、归纳和评分建议，不能替代人物变化的确认。</span></div>
+              <span class="log-row-end"><span class="tag">必经步骤</span></span>
+            </article>
+            <article class="log-row" data-od-id="learning-principle-history-immutable">
+              <span class="meta">历史隔离</span>
+              <div class="log-row-main"><span class="log-row-title">历史任务保留当时使用的版本与上下文</span><span class="log-row-sub">确认后的成长、有效记忆或灵魂版本不会改写已完成任务的结果。</span></div>
+              <span class="log-row-end"><span class="tag">不可变记录</span></span>
+            </article>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <dialog class="dialog" id="learning-grow-dialog" aria-labelledby="learning-grow-dialog-title" data-od-id="learning-grow-dialog">
+    <div class="dialog-header">
+      <div><p class="eyebrow">确认前检查</p><h2 id="learning-grow-dialog-title">确认成长</h2></div>
+      <!-- 关闭控件统一使用 × 作为可见图形，完整语义由 aria-label 提供。 -->
+      <button class="icon-button" type="button" data-close-dialog aria-label="关闭确认成长对话框" data-od-id="learning-grow-close">×</button>
+    </div>
+    <div class="dialog-body">
+      <p>确认后，“资料不足时先说明未知项”的成长将用于顾岚后续任务。它不会改写历史任务、当前灵魂 v3 或候选记忆。</p>
+      <label class="checkbox-row" for="learning-grow-ack" data-od-id="learning-grow-acknowledgement"><input id="learning-grow-ack" type="checkbox" data-enable-target="learning-grow-submit" aria-controls="learning-grow-submit"><span>我已核对来源任务、原始反馈和现有灵魂约束。</span></label>
+    </div>
+    <div class="dialog-footer">
+      <button class="btn btn-secondary" type="button" data-close-dialog data-od-id="learning-grow-cancel">取消</button>
+      <button class="btn btn-primary" id="learning-grow-submit" type="button" data-close-dialog data-toast-title="已确认成长" data-toast-message="原型已记录确认；该目标态能力需后端支持后才会影响后续任务。" data-od-id="learning-grow-submit" disabled>确认成长</button>
+    </div>
+  </dialog>
+
+  <dialog class="dialog" id="learning-soul-dialog" aria-labelledby="learning-soul-dialog-title" data-od-id="learning-soul-dialog">
+    <div class="dialog-header">
+      <div><p class="eyebrow">建立修改稿</p><h2 id="learning-soul-dialog-title">修改灵魂</h2></div>
+      <button class="icon-button" type="button" data-close-dialog aria-label="关闭修改灵魂对话框" data-od-id="learning-soul-close">×</button>
+    </div>
+    <form data-demo-submit data-success-title="已建立灵魂修改稿" data-success-message="修改稿需通过回归评测后才能发布。" data-od-id="learning-soul-form">
+      <div class="dialog-body">
+        <label class="field" for="learning-soul-section" data-od-id="learning-soul-section-control">
+          <span class="field-label">修改章节</span>
+          <select class="select" id="learning-soul-section" required><option>约束</option><option>行为倾向</option><option>表达方式</option></select>
+        </label>
+        <label class="field" for="learning-soul-note" data-od-id="learning-soul-note-control">
+          <span class="field-label">修改说明</span>
+          <textarea class="textarea" id="learning-soul-note" required>资料无法支撑人物经历或结论时，必须明确资料不足，并将后续判断标为有限推断。</textarea>
+          <span class="field-help">将建立新的候选版本，不会原地修改当前灵魂 v3。</span>
+        </label>
+      </div>
+      <div class="dialog-footer">
+        <button class="btn btn-secondary" type="button" data-close-dialog data-od-id="learning-soul-cancel">取消</button>
+        <button class="btn btn-primary" type="submit" data-od-id="learning-soul-submit">建立修改稿</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="dialog" id="learning-memory-dialog" aria-labelledby="learning-memory-dialog-title" data-od-id="learning-memory-dialog">
+    <div class="dialog-header">
+      <div><p class="eyebrow">审阅结果</p><h2 id="learning-memory-dialog-title">确认候选范围</h2></div>
+      <button class="icon-button" type="button" data-close-dialog aria-label="关闭候选范围对话框" data-od-id="learning-memory-close">×</button>
+    </div>
+    <div class="dialog-body">
+      <p>确认后，该条目仍会显示为候选，尚未生效。它只记录“霜月十三日首次看见风帆船并拒绝触碰”，不会扩展为对所有航海活动的结论。</p>
+    </div>
+    <div class="dialog-footer">
+      <button class="btn btn-secondary" type="button" data-close-dialog data-od-id="learning-memory-cancel">取消</button>
+      <button class="btn btn-primary" type="button" data-close-dialog data-toast-title="已确认候选范围" data-toast-message="该候选仍未生效，也不会参与后续任务检索。" data-od-id="learning-memory-submit">确认审阅结论</button>
+    </div>
+  </dialog>
+
+  <script src="assets/prototype.js"></script>
+  <script>
+    'use strict';
+
+    /**
+     * 搜索全部学习待办，并在当前分类无匹配项时切换到首个有结果的分类。
+     * @returns {void} 不返回值，直接更新待办显隐、标签页和空状态。
+     * 特殊业务逻辑：搜索只定位原型示例，不改变反馈、成长、记忆或灵魂提案的审阅状态。
+     */
+    function applyLearningSearch() {
+      const input = document.querySelector('[data-learning-search]');
+      const tabs = document.getElementById('learning-searchable');
+      const rows = tabs.querySelectorAll('[data-search-text]');
+      const empty = document.querySelector('[data-filter-empty]');
+      const query = input.value.trim().toLocaleLowerCase('zh-CN');
+      const selectedButton = tabs.querySelector('[data-tab][aria-selected="true"]');
+      const selectedTab = selectedButton ? selectedButton.dataset.tab : tabs.dataset.defaultTab;
+      let visibleCount = 0;
+      let selectedTabHasMatch = false;
+      let firstMatchedPanel = null;
+
+      for (let index = 0; index < rows.length; index += 1) {
+        const row = rows[index];
+        const text = (row.dataset.searchText || '').toLocaleLowerCase('zh-CN');
+        const visible = query === '' || text.includes(query);
+        const panel = row.closest('[data-tab-panel]');
+        row.hidden = !visible;
+        if (visible) {
+          visibleCount += 1;
+          if (!firstMatchedPanel) firstMatchedPanel = panel;
+          if (panel && panel.dataset.tabPanel === selectedTab) selectedTabHasMatch = true;
+        }
+      }
+
+      empty.hidden = visibleCount !== 0;
+      if (query !== '' && !selectedTabHasMatch && firstMatchedPanel) {
+        activateTab(tabs, firstMatchedPanel.dataset.tabPanel, true);
+      }
+    }
+
+    /**
+     * 绑定学习中心的跨分类待办搜索。
+     * @returns {void} 不返回值，完成页面加载后的搜索初始化。
+     */
+    function initializeLearningSearch() {
+      const input = document.querySelector('[data-learning-search]');
+      input.addEventListener('input', applyLearningSearch);
+    }
+
+    document.addEventListener('DOMContentLoaded', initializeLearningSearch);
+  </script>
+</body>
+</html>

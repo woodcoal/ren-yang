@@ -1,0 +1,438 @@
+<!doctype html>
+<!--
+  人样后台重设计原型：世界详情。
+  当前页面对应产品路由 /worlds/[id]，所有数量均为界面示例数据，不代表真实统计结果。
+-->
+<html lang="zh-CN">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="人样世界详情高保真交互原型">
+  <title>学院档案世界 · 世界 · 人样</title>
+  <link rel="icon" href="assets/brand/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="assets/prototype.css">
+</head>
+
+<body data-page="world-detail">
+  <a class="skip-link" href="#main-content">跳到主要内容</a>
+  <div class="app-shell">
+    <aside class="sidebar" data-sidebar aria-label="应用导航"></aside>
+    <div class="app-main">
+      <header class="topbar" data-topbar></header>
+      <main class="page" id="main-content">
+        <nav class="breadcrumbs" aria-label="面包屑">
+          <a href="worlds.html">人物空间</a>
+          <span aria-hidden="true">/</span>
+          <a href="worlds.html">世界</a>
+          <span aria-hidden="true">/</span>
+          <strong>学院档案世界</strong>
+        </nav>
+
+        <header class="page-header" data-od-id="world-detail-header">
+          <div class="page-header-copy">
+            <p class="route-code">路由 /worlds/[id] · 当前版本 2 · 以下数量为示例数据</p>
+            <div class="row wrap">
+              <h1 data-od-id="world-detail-title">学院档案世界</h1>
+              <span class="badge is-warning">版本 3 待发布</span>
+            </div>
+            <p class="lead">学院档案事实资料构成可引用基础；“霜月十二日操作和收藏”仍为未经证实记录，不能作为已确认设定使用。</p>
+          </div>
+          <div class="page-actions">
+            <a class="btn btn-secondary" href="worlds.html" data-od-id="world-detail-back-control">返回世界列表</a>
+            <button class="btn btn-secondary" type="button" data-toast-title="已打开修改稿"
+              data-toast-message="可在当前设定中继续编辑版本 3。" data-od-id="world-detail-new-draft-control">继续编辑修改稿</button>
+            <button class="btn btn-primary" type="button" data-open-dialog="publish-world-dialog"
+              data-od-id="world-detail-publish-cta">发布版本 3</button>
+          </div>
+        </header>
+
+        <div class="status-strip" data-od-id="world-detail-status-summary" aria-label="学院档案世界状态摘要">
+          <div class="status-cell">
+            <span class="status-kicker">当前已发布</span>
+            <span class="status-value num">版本 2 · 2026.08.18</span>
+          </div>
+          <div class="status-cell">
+            <span class="status-kicker">待发布修改</span>
+            <span class="status-value">版本 3 · 1 处设定调整</span>
+          </div>
+          <div class="status-cell">
+            <span class="status-kicker">使用人物</span>
+            <span class="status-value">顾岚、闻秋</span>
+          </div>
+          <div class="status-cell">
+            <span class="status-kicker">参考资料</span>
+            <span class="status-value">1 份 · 本地已保存</span>
+          </div>
+        </div>
+
+        <div id="world-detail-tab-group" data-tabs data-default-tab="overview" data-od-id="world-detail-tab-group">
+          <div class="tabs" id="world-detail-tabs" role="tablist" aria-label="学院档案世界详情标签页"
+            data-od-id="world-detail-tabs">
+            <button class="tab-button" id="world-tab-overview" type="button" role="tab"
+              aria-controls="world-panel-overview" data-tab="overview"
+              data-od-id="world-detail-tab-overview">概览</button>
+            <button class="tab-button" id="world-tab-setting" type="button" role="tab"
+              aria-controls="world-panel-setting" data-tab="setting" data-od-id="world-detail-tab-setting">当前设定</button>
+            <button class="tab-button" id="world-tab-sources" type="button" role="tab"
+              aria-controls="world-panel-sources" data-tab="sources" data-od-id="world-detail-tab-sources">参考资料</button>
+            <button class="tab-button" id="world-tab-personas" type="button" role="tab"
+              aria-controls="world-panel-personas" data-tab="personas"
+              data-od-id="world-detail-tab-personas">使用人物</button>
+            <button class="tab-button" id="world-tab-history" type="button" role="tab"
+              aria-controls="world-panel-history" data-tab="history" data-od-id="world-detail-tab-history">修改记录</button>
+          </div>
+
+          <section class="tab-panel" id="world-panel-overview" role="tabpanel" aria-labelledby="world-tab-overview"
+            data-tab-panel="overview" data-od-id="world-detail-overview-section">
+            <div class="grid-2-1">
+              <div class="stack">
+                <section class="section" data-od-id="world-overview-setting-section"
+                  aria-labelledby="world-overview-setting-title">
+                  <div class="section-head">
+                    <div class="section-head-copy">
+                      <p class="eyebrow">设定状态</p>
+                      <h2 id="world-overview-setting-title">当前可被新任务使用的内容</h2>
+                    </div>
+                  </div>
+                  <div class="notice" data-od-id="world-current-setting-impact-note">
+                    <span class="notice-icon" aria-hidden="true">!</span>
+                    <div class="notice-copy">
+                      <strong>当前设定只影响之后创建的新任务</strong>
+                      <p>既有任务已锁定当时使用的世界版本；发布版本 3 不会回写历史任务、结果或证据。</p>
+                    </div>
+                  </div>
+                  <div class="reader" data-od-id="world-overview-reader">
+                    <p>学院档案事实资料可作为背景参考。已确认记录为“霜月十三日首次看见且拒绝触碰”。</p>
+                    <p>“霜月十二日操作和收藏”保留为未经证实记录，需要在输出中明确事实边界，不能改写为确定事件。</p>
+                  </div>
+                </section>
+
+                <section class="section" data-od-id="world-overview-draft-section"
+                  aria-labelledby="world-overview-draft-title">
+                  <div class="section-head">
+                    <div class="section-head-copy">
+                      <p class="eyebrow">待发布修改</p>
+                      <h2 id="world-overview-draft-title">版本 3 已保存，尚未生效</h2>
+                      <p>修改稿只增加对未经证实记录的显式标记，不会改变已发布版本 2。</p>
+                    </div>
+                    <a class="btn btn-secondary" href="#world-panel-setting"
+                      data-od-id="world-overview-view-diff-control">查看差异</a>
+                  </div>
+                  <div class="log-list" data-od-id="world-overview-draft-list">
+                    <article class="log-row" data-od-id="world-overview-draft-item">
+                      <span class="meta">版本 3</span>
+                      <div class="log-row-main">
+                        <strong class="log-row-title">补充“未经证实”使用限制</strong>
+                        <span class="log-row-sub">要求后续新任务在引用“操作和收藏”时说明证据不足。</span>
+                      </div>
+                      <span class="log-row-end"><span class="badge is-warning">待发布</span></span>
+                    </article>
+                  </div>
+                </section>
+              </div>
+
+              <aside class="stack" aria-label="学院档案世界关系摘要" data-od-id="world-overview-relations">
+                <section class="panel-soft" data-od-id="world-overview-personas-summary">
+                  <p class="eyebrow">使用人物</p>
+                  <h3>2 人将在新任务中引用</h3>
+                  <p>顾岚、闻秋。人物的历史任务仍保留任务创建时锁定的版本。</p>
+                  <div class="panel-actions"><a class="text-link" href="#world-panel-personas">查看使用关系</a></div>
+                </section>
+                <section class="panel-soft" data-od-id="world-overview-source-summary">
+                  <p class="eyebrow">参考资料</p>
+                  <h3>学院档案事实资料</h3>
+                  <p>资料正文已本地保存；远端索引状态在资料详情中单独查看。</p>
+                  <div class="panel-actions"><a class="text-link" href="source-detail.html">打开资料详情</a></div>
+                </section>
+                <section class="panel-soft" data-od-id="world-overview-danger-summary">
+                  <p class="eyebrow">危险操作</p>
+                  <h3>永久删除世界</h3>
+                  <p>删除不会恢复，且会影响之后创建的新任务的世界选择。</p>
+                  <div class="panel-actions"><button class="btn btn-secondary" type="button"
+                      data-open-dialog="delete-world-dialog" data-od-id="world-overview-delete-control">删除世界</button>
+                  </div>
+                </section>
+              </aside>
+            </div>
+          </section>
+
+          <section class="tab-panel" id="world-panel-setting" role="tabpanel" aria-labelledby="world-tab-setting"
+            data-tab-panel="setting" data-od-id="world-detail-setting-section" hidden>
+            <div class="section-head">
+              <div class="section-head-copy">
+                <p class="eyebrow">当前设定 · 版本差异</p>
+                <h2>已发布版本与修改稿分开阅读</h2>
+                <p>版本 2 是当前设定。版本 3 是待发布修改稿，只有通过发布确认后才会影响之后创建的新任务。</p>
+              </div>
+              <button class="btn btn-secondary" type="button" data-toast-title="修改稿已保存"
+                data-toast-message="版本 3 仍未发布，当前设定保持版本 2。" data-od-id="world-setting-save-draft-control">保存修改稿</button>
+            </div>
+            <div class="notice" data-od-id="world-setting-boundary-note">
+              <span class="notice-icon" aria-hidden="true">!</span>
+              <div class="notice-copy">
+                <strong>不会重新执行或改写既有任务</strong>
+                <p>任务创建时保存世界版本。若需要新的上下文，应在发布后重新创建任务。</p>
+              </div>
+            </div>
+            <div class="diff-grid" data-od-id="world-setting-diff">
+              <article class="diff-column" data-od-id="world-setting-published-column">
+                <p class="eyebrow">当前设定 · 版本 2</p>
+                <h3>已发布</h3>
+                <p class="diff-line">学院档案事实资料可作为背景参考。</p>
+                <p class="diff-line">霜月十三日首次看见且拒绝触碰。</p>
+                <p class="diff-line">未经证实记录：霜月十二日操作和收藏。</p>
+              </article>
+              <article class="diff-column" data-od-id="world-setting-draft-column">
+                <p class="eyebrow">修改稿 · 版本 3</p>
+                <h3>待发布</h3>
+                <p class="diff-line">学院档案事实资料可作为背景参考。</p>
+                <p class="diff-line">霜月十三日首次看见且拒绝触碰。</p>
+                <p class="diff-line is-changed">霜月十二日操作和收藏（未经证实）。引用时应说明资料不足。</p>
+              </article>
+            </div>
+          </section>
+
+          <section class="tab-panel" id="world-panel-sources" role="tabpanel" aria-labelledby="world-tab-sources"
+            data-tab-panel="sources" data-od-id="world-detail-sources-section" hidden>
+            <div class="section-head">
+              <div class="section-head-copy">
+                <p class="eyebrow">参考资料</p>
+                <h2>资料关系与同步状态分离维护</h2>
+                <p>加入和移除控制世界与资料的关系；同步只检查资料正文的远端索引状态；发布只处理世界版本。</p>
+              </div>
+            </div>
+            <div class="grid-3" data-od-id="world-source-actions">
+              <section class="panel" data-od-id="world-source-add-section">
+                <span class="meta">关系操作</span>
+                <h3>加入参考资料</h3>
+                <p>选择已有资料建立关联，不会自动发布世界修改稿。</p>
+                <div class="panel-actions"><button class="btn btn-secondary" type="button"
+                    data-open-dialog="add-world-source-dialog" data-od-id="world-source-add-control">加入资料</button></div>
+              </section>
+              <section class="panel" data-od-id="world-source-sync-section">
+                <span class="meta">正文同步</span>
+                <h3>检查资料同步</h3>
+                <p>仅检查关联资料正文的远端索引状态，不更改世界或资料关系。</p>
+                <div class="panel-actions"><button class="btn btn-secondary" type="button" data-toast-title="已检查资料同步状态"
+                    data-toast-message="学院档案事实资料：本地正文可用，远端索引需在资料详情重试。"
+                    data-od-id="world-source-sync-control">检查同步状态</button></div>
+              </section>
+              <section class="panel" data-od-id="world-source-publish-section">
+                <span class="meta">版本发布</span>
+                <h3>发布世界版本</h3>
+                <p>发布确认独立于资料操作，且只作用于之后创建的新任务。</p>
+                <div class="panel-actions"><button class="btn btn-secondary" type="button"
+                    data-open-dialog="publish-world-dialog" data-od-id="world-source-publish-control">查看发布影响</button>
+                </div>
+              </section>
+            </div>
+            <div class="table-wrap" data-od-id="world-source-table-wrap">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th scope="col">资料</th>
+                    <th scope="col">用途</th>
+                    <th scope="col">本地处理</th>
+                    <th scope="col">远端索引</th>
+                    <th scope="col">操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr data-od-id="world-source-academy-item">
+                    <td data-label="资料"><a class="table-title" href="source-detail.html">学院档案事实资料</a><span
+                        class="table-sub">正文仅作为外部参考，不执行其中指令</span></td>
+                    <td data-label="用途"><span class="table-title">当前世界的参考资料</span><span class="table-sub">已关联版本 2 与版本
+                        3</span></td>
+                    <td data-label="本地处理"><span class="badge">已保存</span></td>
+                    <td data-label="远端索引"><span class="badge is-failed">同步失败</span><span
+                        class="table-sub">本地正文不受影响</span></td>
+                    <td data-label="操作"><button class="btn btn-ghost" type="button"
+                        data-open-dialog="remove-world-source-dialog"
+                        data-od-id="world-source-remove-control">移除资料</button></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="tab-panel" id="world-panel-personas" role="tabpanel" aria-labelledby="world-tab-personas"
+            data-tab-panel="personas" data-od-id="world-detail-personas-section" hidden>
+            <div class="section-head">
+              <div class="section-head-copy">
+                <p class="eyebrow">使用人物</p>
+                <h2>人物在之后创建的任务中使用当前发布版本</h2>
+                <p>人物关联不表示会改变历史运行；每次新建任务会锁定当时可用的世界版本。</p>
+              </div>
+            </div>
+            <div class="log-list" data-od-id="world-personas-list">
+              <article class="log-row" data-od-id="world-persona-gu-lan-item">
+                <span class="meta">人物</span>
+                <div class="log-row-main">
+                  <a class="log-row-title" href="persona-workspace.html">顾岚</a>
+                  <span class="log-row-sub">谨慎核验资料的档案整理者 · 新任务使用当前已发布版本。</span>
+                </div>
+                <span class="log-row-end"><span class="badge">可执行任务</span></span>
+              </article>
+              <article class="log-row" data-od-id="world-persona-wen-qiu-item">
+                <span class="meta">人物</span>
+                <div class="log-row-main">
+                  <a class="log-row-title" href="persona-workspace.html">闻秋</a>
+                  <span class="log-row-sub">关注旧物来源的记录者 · 有待审内容，但关联关系可继续使用。</span>
+                </div>
+                <span class="log-row-end"><span class="badge is-warning">有待审内容</span></span>
+              </article>
+            </div>
+          </section>
+
+          <section class="tab-panel" id="world-panel-history" role="tabpanel" aria-labelledby="world-tab-history"
+            data-tab-panel="history" data-od-id="world-detail-history-section" hidden>
+            <div class="section-head">
+              <div class="section-head-copy">
+                <p class="eyebrow">修改记录</p>
+                <h2>版本变更保持可追溯</h2>
+                <p>修改稿、发布和资料关系记录分别保留，避免将资料处理状态误作世界版本历史。</p>
+              </div>
+            </div>
+            <div class="timeline" data-od-id="world-history-timeline">
+              <article class="timeline-item" data-od-id="world-history-draft-item">
+                <span class="meta">今天 10:24 · 修改稿</span>
+                <h3>保存版本 3</h3>
+                <p>为“霜月十二日操作和收藏”补充未经证实标记；当前尚未发布。</p>
+              </article>
+              <article class="timeline-item" data-od-id="world-history-source-item">
+                <span class="meta">今天 10:06 · 资料关系</span>
+                <h3>确认关联学院档案事实资料</h3>
+                <p>资料正文的本地保存与远端索引状态在资料库单独记录。</p>
+              </article>
+              <article class="timeline-item" data-od-id="world-history-publish-item">
+                <span class="meta">2026.08.18 · 已发布</span>
+                <h3>发布版本 2</h3>
+                <p>版本 2 开始供之后创建的新任务选择；既有任务仍保留自己的锁定版本。</p>
+              </article>
+            </div>
+            <div class="notice" data-od-id="world-history-danger-note">
+              <span class="notice-icon" aria-hidden="true">!</span>
+              <div class="notice-copy">
+                <strong>永久删除不等于撤回历史版本</strong>
+                <p>删除会移除后续新任务的选择入口；已有任务的版本记录不会被改写。</p>
+              </div>
+              <button class="btn btn-secondary" type="button" data-open-dialog="delete-world-dialog"
+                data-od-id="world-history-delete-control">删除世界</button>
+            </div>
+          </section>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <dialog class="dialog" id="add-world-source-dialog" aria-labelledby="add-world-source-title"
+    data-od-id="world-add-source-dialog">
+    <div class="dialog-header">
+      <div>
+        <p class="eyebrow">资料关系</p>
+        <h2 id="add-world-source-title">加入参考资料</h2>
+      </div>
+      <button class="icon-button" type="button" data-close-dialog aria-label="关闭加入参考资料对话框"
+        data-od-id="world-add-source-close-control">×</button>
+    </div>
+    <form data-demo-submit data-success-title="已加入参考资料" data-success-message="关系已保存，不会自动同步正文或发布世界版本。">
+      <div class="dialog-body">
+        <div class="field" data-od-id="world-add-source-select-field">
+          <label for="world-source-select">选择已有资料</label>
+          <select class="select" id="world-source-select" name="world-source-select" required>
+            <option value="">请选择资料</option>
+            <option>学院档案事实资料</option>
+            <option>风帆船</option>
+          </select>
+          <span class="field-help">只建立世界与资料关系。资料正文同步仍需在资料详情单独执行。</span>
+        </div>
+      </div>
+      <div class="dialog-footer">
+        <button class="btn btn-secondary" type="button" data-close-dialog
+          data-od-id="world-add-source-cancel-control">取消</button>
+        <button class="btn btn-primary" type="submit" data-od-id="world-add-source-submit-cta">加入资料</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="dialog" id="remove-world-source-dialog" aria-labelledby="remove-world-source-title"
+    data-od-id="world-remove-source-dialog">
+    <div class="dialog-header">
+      <div>
+        <p class="eyebrow">移除关系</p>
+        <h2 id="remove-world-source-title">移除参考资料？</h2>
+      </div>
+      <button class="icon-button" type="button" data-close-dialog aria-label="关闭移除参考资料对话框"
+        data-od-id="world-remove-source-close-control">×</button>
+    </div>
+    <div class="dialog-body">
+      <p>这只移除“学院档案事实资料”与当前世界的关联，不会删除资料正文，也不会撤回已经发布的历史版本。</p>
+    </div>
+    <div class="dialog-footer">
+      <button class="btn btn-secondary" type="button" data-close-dialog
+        data-od-id="world-remove-source-cancel-control">保留关联</button>
+      <button class="btn btn-primary" type="button" data-close-dialog data-toast-title="已移除资料关系"
+        data-toast-message="资料正文与世界历史版本仍被分别保留。" data-od-id="world-remove-source-submit-cta">确认移除</button>
+    </div>
+  </dialog>
+
+  <dialog class="dialog" id="publish-world-dialog" aria-labelledby="publish-world-title"
+    data-od-id="world-publish-dialog">
+    <div class="dialog-header">
+      <div>
+        <p class="eyebrow">发布确认</p>
+        <h2 id="publish-world-title">发布版本 3？</h2>
+      </div>
+      <button class="icon-button" type="button" data-close-dialog aria-label="关闭发布确认对话框"
+        data-od-id="world-publish-close-control">×</button>
+    </div>
+    <div class="dialog-body">
+      <div class="notice" data-od-id="world-publish-impact-note">
+        <span class="notice-icon" aria-hidden="true">!</span>
+        <div class="notice-copy">
+          <strong>发布只影响之后创建的新任务</strong>
+          <p>顾岚和闻秋的新任务将可引用版本 3。既有任务、结果和引用证据继续保留创建时锁定的版本。</p>
+        </div>
+      </div>
+      <p>本次发布会将“霜月十二日操作和收藏”为未经证实的限制设为当前设定。资料正文同步状态不会因发布而改变。</p>
+    </div>
+    <div class="dialog-footer">
+      <button class="btn btn-secondary" type="button" data-close-dialog
+        data-od-id="world-publish-cancel-control">返回修改稿</button>
+      <button class="btn btn-primary" type="button" data-close-dialog data-toast-title="版本 3 已发布"
+        data-toast-message="之后创建的新任务将使用新版本；历史任务保持原版本。" data-od-id="world-publish-submit-cta">确认发布版本 3</button>
+    </div>
+  </dialog>
+
+  <dialog class="dialog" id="delete-world-dialog" aria-labelledby="delete-world-title" data-od-id="world-delete-dialog">
+    <div class="dialog-header">
+      <div>
+        <p class="eyebrow">危险操作</p>
+        <h2 id="delete-world-title">永久删除学院档案世界？</h2>
+      </div>
+      <button class="icon-button" type="button" data-close-dialog aria-label="关闭删除世界对话框"
+        data-od-id="world-delete-close-control">×</button>
+    </div>
+    <div class="dialog-body">
+      <div class="notice" data-od-id="world-delete-impact-note">
+        <span class="notice-icon" aria-hidden="true">!</span>
+        <div class="notice-copy">
+          <strong>此操作无法恢复</strong>
+          <p>顾岚和闻秋之后创建的新任务将不能再选择此世界。资料正文不会一并删除；既有任务保留锁定版本以便追溯。</p>
+        </div>
+      </div>
+      <p>请确认已不再需要此世界及其待发布修改稿。</p>
+    </div>
+    <div class="dialog-footer">
+      <button class="btn btn-secondary" type="button" data-close-dialog
+        data-od-id="world-delete-cancel-control">取消删除</button>
+      <button class="btn btn-danger" type="button" data-close-dialog data-toast-title="已记录删除请求"
+        data-toast-message="原型仅展示影响确认，不调用真实删除接口。" data-od-id="world-delete-submit-cta">永久删除</button>
+    </div>
+  </dialog>
+
+  <script src="assets/prototype.js"></script>
+</body>
+
+</html>

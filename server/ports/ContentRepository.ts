@@ -105,7 +105,7 @@ export interface CreateSourceRecord extends SourceWriteRecord {
 }
 
 /** 替换资料正文与切片的持久化命令，不改动现有关系。 */
-export interface ReplaceSourceRecord extends SourceWriteRecord {}
+export interface ReplaceSourceRecord extends SourceWriteRecord { }
 
 /** 仓储返回的人物分页记录。 */
 export interface PersonaPageRecord {
@@ -169,7 +169,7 @@ export interface PersonaRunHistoryStatistics {
 export interface WorldVersionDeletionReferences {
   /** 直接从该版本继续修改形成的后续版本数。 */
   childVersions: number
-  /** 已把该版本世界设定复制为运行证据的历史任务数。 */
+  /** 已把该版本世界复制为运行证据的历史任务数。 */
   runs: number
 }
 
@@ -202,11 +202,11 @@ export interface ContentRepository {
   /** @param personaId 人物标识。 @param timestamp 删除时间。 @returns 永久删除的人物行数。 */
   deletePersona(personaId: string, timestamp: number): Promise<number>
 
-  /** @returns 按更新时间倒序的世界设定。 */
+  /** @returns 按更新时间倒序的世界。 */
   listWorlds(): Promise<WorldRecord[]>
   /** @param page 从 1 开始的页码。 @param pageSize 每页数量。 @returns 已按总数修正的世界分页记录。 */
   listWorldsPage(page: number, pageSize: 5 | 10 | 20 | 50 | 100): Promise<WorldPageRecord>
-  /** @param id 世界标识。 @returns 世界设定或 null。 */
+  /** @param id 世界标识。 @returns 世界或 null。 */
   findWorld(id: string): Promise<WorldRecord | null>
   /** @param record 完整创建命令。 @returns 无返回值。 */
   createWorld(record: CreateWorldRecord): Promise<void>
