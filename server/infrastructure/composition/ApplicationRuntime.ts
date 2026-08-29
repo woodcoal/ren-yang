@@ -5,6 +5,7 @@ import { ContentApplicationService } from '../../application/content/ContentAppl
 import { GenerationApplicationService } from '../../application/generation/GenerationApplicationService'
 import { FeedbackApplicationService } from '../../application/feedback/FeedbackApplicationService'
 import { ContextSynchronizationApplicationService } from '../../application/context/ContextSynchronizationApplicationService'
+import { BackupApplicationService } from '../../application/backup/BackupApplicationService'
 import type { RequestApplicationServices } from '../../application/RequestApplicationServices'
 import { SystemApplicationService } from '../../application/system/SystemApplicationService'
 import { WorkerApplicationService } from '../../application/tasks/WorkerApplicationService'
@@ -25,12 +26,16 @@ import { SqliteContextIndexRepository } from '../database/SqliteContextIndexRepo
 import { SqliteContextSyncTaskQueue } from '../database/SqliteContextSyncTaskQueue'
 import { SqliteDatabase } from '../database/SqliteDatabase'
 import { SqliteTaskJobRepository } from '../database/SqliteTaskJobRepository'
+import { SqliteAuditRepository } from '../database/SqliteAuditRepository'
 import { SystemClock } from '../system/SystemClock'
 import { SystemIdentifierGenerator } from '../system/SystemIdentifierGenerator'
+import { ApplicationInstanceLock } from '../system/ApplicationInstanceLock'
+import { NodeStorageCapacityGuard } from '../system/NodeStorageCapacityGuard'
 import { OpenAiCompatibleTextModel } from '../models/OpenAiCompatibleTextModel'
 import { OpenAiCompatibleImageModel } from '../models/OpenAiCompatibleImageModel'
 import { OpenVikingHttpContextProvider } from '../context/OpenVikingHttpContextProvider'
 import { SwitchableContextProvider } from '../context/SwitchableContextProvider'
+import { LocalBackupManager } from '../backup/LocalBackupManager'
 
 /** 应用运行时组合配置。 */
 export interface ApplicationRuntimeOptions {
@@ -42,6 +47,8 @@ export interface ApplicationRuntimeOptions {
   workerPollIntervalMs?: number
   /** Worker 单任务租约长度。 */
   workerLeaseDurationMs?: number
+  /** 每次创建新文件后必须保留的磁盘字节数。 */
+  minimumFreeDiskBytes?: number
   /** OpenAI-compatible 文本模型配置。 */
   textModel?: {
     /** Chat Completions 完整接口 URL。 */
@@ -80,6 +87,8 @@ export interface ApplicationRuntimeOptions {
 
 /** 唯一组合根，负责连接基础设施适配器与应用服务。 */
 export class ApplicationRuntime {
+  /** 数据目录单实例锁。 */
+  private readonly instanceLock: ApplicationInstanceLock
   /** SQLite 连接与健康检查。 */
   private readonly sqlite: SqliteDatabase
   /** 管理员数据适配器。 */
@@ -96,6 +105,8 @@ export class ApplicationRuntime {
   private readonly feedbackService: FeedbackApplicationService
   /** OpenViking 检测与重建应用服务。 */
   private readonly contextSynchronizationService: ContextSynchronizationApplicationService
+  /** 在线一致性备份应用服务。 */
+  private readonly backupService: BackupApplicationService
   /** 进程内 Worker。 */
   private readonly worker: InternalWorker
   /** 请求间可安全共享的系统应用服务。 */
@@ -106,15 +117,23 @@ export class ApplicationRuntime {
    * @param options 数据目录、迁移目录和 Worker 时序配置。
    */
   constructor(options: ApplicationRuntimeOptions) {
-    this.sqlite = new SqliteDatabase({
-      dataDirectory: options.dataDirectory,
-      migrationsDirectory: options.migrationsDirectory,
-    })
+    this.instanceLock = new ApplicationInstanceLock(options.dataDirectory)
+    try {
+      this.sqlite = new SqliteDatabase({
+        dataDirectory: options.dataDirectory,
+        migrationsDirectory: options.migrationsDirectory,
+      })
+    }
+    catch (error: unknown) {
+      this.instanceLock.release()
+      throw error
+    }
     this.administratorRepository = new DrizzleAdministratorRepository(this.sqlite.db)
     const identifiers = new SystemIdentifierGenerator()
     const contentRepository = new SqliteContentRepository(this.sqlite.getClient())
     const sourceProcessor = new NodeSourceContentProcessor(identifiers)
-    const imageAssets = new LocalImageAssetStorage(options.dataDirectory)
+    const storageCapacity = new NodeStorageCapacityGuard(options.minimumFreeDiskBytes)
+    const imageAssets = new LocalImageAssetStorage(options.dataDirectory, storageCapacity)
     const textModel = new OpenAiCompatibleTextModel(options.textModel ?? { endpoint: '', apiKey: '', model: '' })
     const contextRepository = new SqliteContextIndexRepository(this.sqlite.getClient())
     const openVikingOptions = options.openViking ?? { enabled: false, endpoint: '', apiKey: '', timeoutMs: 60_000 }
@@ -129,7 +148,7 @@ export class ApplicationRuntime {
       identifiers,
       clock: this.clock,
       sourceProcessor,
-      sourceFiles: new LocalSourceFileStorage(options.dataDirectory),
+      sourceFiles: new LocalSourceFileStorage(options.dataDirectory, storageCapacity),
       imageAssets,
       contextSyncQueue: openVikingOptions.enabled ? new SqliteContextSyncTaskQueue(this.sqlite.getClient()) : undefined,
     })
@@ -157,6 +176,10 @@ export class ApplicationRuntime {
       identifiers,
       clock: this.clock,
     })
+    this.backupService = new BackupApplicationService(new LocalBackupManager(
+      options.dataDirectory,
+      options.migrationsDirectory,
+    ))
 
     const workerService = new WorkerApplicationService({
       taskJobRepository: new SqliteTaskJobRepository(this.sqlite.getClient()),
@@ -173,6 +196,7 @@ export class ApplicationRuntime {
       administratorRepository: this.administratorRepository,
       databaseHealth: this.sqlite,
       workerStatus: this.worker,
+      audit: new SqliteAuditRepository(this.sqlite.getClient()),
     })
   }
 
@@ -202,6 +226,7 @@ export class ApplicationRuntime {
       generation: this.generationService,
       feedback: this.feedbackService,
       contextSynchronization: this.contextSynchronizationService,
+      backup: this.backupService,
       system: this.systemService,
     }
   }
@@ -223,7 +248,16 @@ export class ApplicationRuntime {
    * @returns 无返回值。
    */
   async close(): Promise<void> {
-    await this.worker.stop()
-    this.sqlite.close()
+    try {
+      await this.worker.stop()
+    }
+    finally {
+      try {
+        this.sqlite.close()
+      }
+      finally {
+        this.instanceLock.release()
+      }
+    }
   }
 }

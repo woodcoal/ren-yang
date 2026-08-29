@@ -15,6 +15,14 @@ export class H3RequestSecurity implements RequestSecurity {
    */
   isLoopbackRequest(): boolean {
     const address = this.event.node.req.socket.remoteAddress
-    return address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1'
+    if (!isLoopbackAddress(address)) return false
+    const forwarded = this.event.node.req.headers['x-forwarded-for']?.split(',')[0]?.trim()
+    const realIp = this.event.node.req.headers['x-real-ip']?.trim()
+    return (!forwarded || isLoopbackAddress(forwarded)) && (!realIp || isLoopbackAddress(realIp))
   }
+}
+
+/** @param address IPv4、IPv6 或映射地址。 @returns 是否是严格回环地址。 */
+function isLoopbackAddress(address: string | undefined): boolean {
+  return address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1'
 }

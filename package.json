@@ -17,7 +17,10 @@
     "test:watch": "vitest",
     "check": "pnpm typecheck && pnpm test && pnpm build",
     "migrate": "tsx scripts/migrate.ts",
-    "admin:reset-password": "tsx scripts/reset-administrator-password.ts"
+    "admin:reset-password": "tsx scripts/reset-administrator-password.ts",
+    "backup": "tsx scripts/backup.ts",
+    "restore:validate": "tsx scripts/restore-validate.ts",
+    "restore": "tsx scripts/restore.ts"
   },
   "dependencies": {
     "@adonisjs/hash": "^9.1.1",

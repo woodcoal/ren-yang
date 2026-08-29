@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { eq, sql } from 'drizzle-orm'
 import type { Administrator } from '../../domain/authentication/Administrator'
 import type {
@@ -5,7 +6,7 @@ import type {
   CreateAdministratorRecord,
 } from '../../ports/AdministratorRepository'
 import type { ApplicationDatabase } from './SqliteDatabase'
-import { administrators } from './schema'
+import { administrators, auditEvents } from './schema'
 
 /** 使用 Drizzle 和 SQLite 实现管理员数据访问端口。 */
 export class DrizzleAdministratorRepository implements AdministratorRepository {
@@ -48,19 +49,27 @@ export class DrizzleAdministratorRepository implements AdministratorRepository {
    * @returns 成功插入时返回 true，冲突时返回 false。
    */
   async createIfAbsent(record: CreateAdministratorRecord): Promise<boolean> {
-    const result = this.db
-      .insert(administrators)
-      .values({
-        id: record.id,
-        username: record.username,
-        passwordHash: record.passwordHash,
-        credentialVersion: record.credentialVersion,
-        createdAt: record.timestamp,
-        updatedAt: record.timestamp,
-      })
-      .onConflictDoNothing()
-      .run()
-    return result.changes === 1
+    return this.db.transaction((transaction) => {
+      const result = transaction
+        .insert(administrators)
+        .values({
+          id: record.id,
+          username: record.username,
+          passwordHash: record.passwordHash,
+          credentialVersion: record.credentialVersion,
+          createdAt: record.timestamp,
+          updatedAt: record.timestamp,
+        })
+        .onConflictDoNothing()
+        .run()
+      if (result.changes === 1) {
+        transaction.insert(auditEvents).values({
+          id: randomUUID(), actor: 'system', action: 'administrator_created', targetType: 'administrator',
+          targetId: record.id, detailsJson: '{}', createdAt: record.timestamp,
+        }).run()
+      }
+      return result.changes === 1
+    })
   }
 
   /**
@@ -71,15 +80,24 @@ export class DrizzleAdministratorRepository implements AdministratorRepository {
    * @returns 更新后的管理员或 null。
    */
   async updatePassword(id: string, passwordHash: string, timestamp: number): Promise<Administrator | null> {
-    return this.db
-      .update(administrators)
-      .set({
-        passwordHash,
-        credentialVersion: sql`${administrators.credentialVersion} + 1`,
-        updatedAt: timestamp,
-      })
-      .where(eq(administrators.id, id))
-      .returning()
-      .get() ?? null
+    return this.db.transaction((transaction) => {
+      const administrator = transaction
+        .update(administrators)
+        .set({
+          passwordHash,
+          credentialVersion: sql`${administrators.credentialVersion} + 1`,
+          updatedAt: timestamp,
+        })
+        .where(eq(administrators.id, id))
+        .returning()
+        .get() ?? null
+      if (administrator) {
+        transaction.insert(auditEvents).values({
+          id: randomUUID(), actor: 'maintenance', action: 'administrator_password_reset', targetType: 'administrator',
+          targetId: id, detailsJson: '{}', createdAt: timestamp,
+        }).run()
+      }
+      return administrator
+    })
   }
 }

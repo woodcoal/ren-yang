@@ -2,6 +2,7 @@
 import { computed, shallowRef } from 'vue'
 import type { ApiResponse } from '#shared/types/api'
 import type { ContextReindexResult, ContextSyncRecordView, OpenVikingCapabilityView } from '#shared/types/context'
+import type { AuditEventView } from '#shared/types/system'
 import { getApiErrorMessage } from '../utils/apiError'
 
 /** 系统能力响应中本页面使用的上下文部分。 */
@@ -16,13 +17,19 @@ interface ContextStatusResponse {
   records: ContextSyncRecordView[]
 }
 
-const [{ data: capabilityData, error: capabilityError, refresh: refreshCapabilities }, { data: statusData, error: statusError, refresh: refreshStatus }] = await Promise.all([
+const [
+  { data: capabilityData, error: capabilityError, refresh: refreshCapabilities },
+  { data: statusData, error: statusError, refresh: refreshStatus },
+  { data: auditData, error: auditError, refresh: refreshAudit },
+] = await Promise.all([
   useFetch<ApiResponse<CapabilityResponse>>('/api/v1/system/capabilities'),
   useFetch<ApiResponse<ContextStatusResponse>>('/api/v1/system/context/status'),
+  useFetch<ApiResponse<AuditEventView[]>>('/api/v1/system/audit?limit=50'),
 ])
 const capability = computed(() => capabilityData.value?.data.openViking ?? statusData.value?.data.capability ?? null)
 const contextProvider = computed(() => capabilityData.value?.data.contextProvider ?? 'sqlite_fts5')
 const records = computed(() => statusData.value?.data.records ?? [])
+const auditEvents = computed(() => auditData.value?.data ?? [])
 const actionLoading = shallowRef(false)
 const actionError = shallowRef<string | null>(null)
 const actionMessage = shallowRef<string | null>(null)
@@ -61,7 +68,7 @@ async function executeAction(action: () => Promise<void>): Promise<void> {
   actionMessage.value = null
   try {
     await action()
-    await Promise.all([refreshCapabilities(), refreshStatus()])
+    await Promise.all([refreshCapabilities(), refreshStatus(), refreshAudit()])
   }
   catch (error: unknown) {
     actionError.value = getApiErrorMessage(error, '上下文提供器操作失败')
@@ -82,7 +89,7 @@ function formatTime(timestamp: number): string {
     <ContentPageHeader title="系统设置" description="能力开关和凭据由部署环境提供；浏览器只显示非敏感状态并执行显式检测或重建。" />
     <UAlert v-if="actionError" class="mb-5" color="error" title="操作失败" :description="actionError" />
     <UAlert v-if="actionMessage" class="mb-5" color="success" title="操作完成" :description="actionMessage" />
-    <UAlert v-if="capabilityError || statusError" class="mb-5" color="error" title="系统能力加载失败" />
+    <UAlert v-if="capabilityError || statusError || auditError" class="mb-5" color="error" title="系统数据加载失败" />
 
     <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_24rem]">
       <UCard>
@@ -115,6 +122,10 @@ function formatTime(timestamp: number): string {
         </div>
         <p v-else class="py-6 text-center text-sm text-muted">尚无同步记录。</p>
       </UCard>
+    </div>
+    <div class="mt-6 grid gap-6 xl:grid-cols-2">
+      <SystemBackupPanel />
+      <SystemAuditEventList :events="auditEvents" />
     </div>
   </div>
 </template>

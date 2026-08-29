@@ -1,6 +1,9 @@
 import { mkdir, rm, writeFile } from 'node:fs/promises'
 import { resolve, sep } from 'node:path'
 import type { SourceFileStorage } from '../../ports/SourceContentPorts'
+import type { StorageCapacityGuard } from '../../ports/StorageCapacity'
+import { StorageCapacityError } from '../../ports/StorageCapacity'
+import { NodeStorageCapacityGuard } from '../system/NodeStorageCapacityGuard'
 
 /** 把已验证的资料文件限制保存在数据目录 sources 子目录。 */
 export class LocalSourceFileStorage implements SourceFileStorage {
@@ -10,8 +13,12 @@ export class LocalSourceFileStorage implements SourceFileStorage {
   /**
    * 创建本地资料存储。
    * @param dataDirectory 应用数据目录绝对或相对路径。
+   * @param capacity 文件写入前的磁盘余量门禁。
    */
-  constructor(dataDirectory: string) {
+  constructor(
+    dataDirectory: string,
+    private readonly capacity: StorageCapacityGuard = new NodeStorageCapacityGuard(),
+  ) {
     this.sourceDirectory = resolve(process.cwd(), dataDirectory, 'sources')
   }
 
@@ -25,7 +32,14 @@ export class LocalSourceFileStorage implements SourceFileStorage {
   async save(sourceId: string, extension: '.txt' | '.md', bytes: Uint8Array): Promise<string> {
     await mkdir(this.sourceDirectory, { recursive: true })
     const fileName = `${sourceId}${extension}`
-    await writeFile(resolve(this.sourceDirectory, fileName), bytes, { flag: 'wx' })
+    await this.capacity.assertCanWrite(this.sourceDirectory, bytes.byteLength)
+    try {
+      await writeFile(resolve(this.sourceDirectory, fileName), bytes, { flag: 'wx' })
+    }
+    catch (error: unknown) {
+      if (isNoSpaceError(error)) throw new StorageCapacityError()
+      throw error
+    }
     return `sources/${fileName}`
   }
 
@@ -45,4 +59,9 @@ export class LocalSourceFileStorage implements SourceFileStorage {
     }
     await rm(absolutePath, { force: true })
   }
+}
+
+/** @param error 未知文件系统错误。 @returns 是否为操作系统磁盘空间不足。 */
+function isNoSpaceError(error: unknown): boolean {
+  return error instanceof Error && 'code' in error && error.code === 'ENOSPC'
 }

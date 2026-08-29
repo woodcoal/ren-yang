@@ -84,8 +84,8 @@ export interface FeedbackRepository {
   failEvaluationRun(runId: string, code: string, message: string, timestamp: number): Promise<void>
   /** @param runId 评测运行 UUID。 @returns 运行与逐用例结果或 null。 */
   findEvaluationRun(runId: string): Promise<{ run: EvaluationRunRecord, results: EvaluationResultRecord[] } | null>
-  /** @param proposalId 提案 UUID。 @param reason 发布原因。 @param timestamp 发布时间。 @returns 原子发布结果。 */
-  publishProposal(proposalId: string, reason: string, timestamp: number): Promise<PublishProposalResult>
+  /** @param proposalId 提案 UUID。 @param reason 发布原因。 @param timestamp 发布时间。 @param actor 人工或自动发布主体。 @returns 原子发布结果。 */
+  publishProposal(proposalId: string, reason: string, timestamp: number, actor: 'administrator' | 'system'): Promise<PublishProposalResult>
   /** @param proposalId 提案 UUID。 @param reason 拒绝原因。 @param timestamp 拒绝时间。 @returns 是否拒绝。 */
   rejectProposal(proposalId: string, reason: string, timestamp: number): Promise<boolean>
   /** @param personaId 人物 UUID。 @returns 人物是否存在。 */

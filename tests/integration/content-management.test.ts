@@ -8,6 +8,7 @@ import { LocalSourceFileStorage } from '../../server/infrastructure/content/Loca
 import { NodeSourceContentProcessor } from '../../server/infrastructure/content/NodeSourceContentProcessor'
 import { SqliteContentRepository } from '../../server/infrastructure/database/SqliteContentRepository'
 import { SqliteDatabase } from '../../server/infrastructure/database/SqliteDatabase'
+import { SqliteAuditRepository } from '../../server/infrastructure/database/SqliteAuditRepository'
 import type { Clock } from '../../server/ports/Clock'
 import type { IdentifierGenerator } from '../../server/ports/IdentifierGenerator'
 import type { PersonaSnapshot } from '../../shared/types/content'
@@ -280,5 +281,33 @@ describe('人物、世界与资料管理闭环', () => {
       })).rejects.toMatchObject<ApplicationError>({ code: 'VALIDATION_FAILED', statusCode: 400 })
     }
     await expect(service.listSources()).resolves.toEqual([])
+  })
+
+  it('发布、回滚和永久删除与对应审计记录在同一 SQLite 事务中完成', async () => {
+    const source = await service.createPastedSource({ name: '临时资料', role: 'reference', content: '临时正文。' })
+    const world = await service.createWorld({
+      name: '临时世界', summary: '', snapshot: { content: '临时世界设定。' }, changeSummary: '建立世界',
+    })
+    const persona = await service.createPersona({
+      name: '临时人物', origin: 'original', worldId: null, sourceIds: [],
+      snapshot: BASE_PERSONA_SNAPSHOT, changeSummary: '建立人物',
+    })
+    await service.publishWorldVersion(world.versions[0]!.id)
+    await service.publishPersonaVersion(persona.versions[0]!.id)
+    await service.rollbackPersona(persona.persona.id, persona.versions[0]!.id)
+    await service.deleteSource(source.source.id)
+    await service.deleteWorld(world.world.id)
+    await service.deletePersona(persona.persona.id)
+
+    const audit = await new SqliteAuditRepository(database.getClient()).list(20)
+    expect(audit.map(event => event.action)).toEqual(expect.arrayContaining([
+      'world_version_published',
+      'persona_version_published',
+      'persona_rolled_back',
+      'source_deleted',
+      'world_deleted',
+      'persona_deleted',
+    ]))
+    expect(audit.every(event => !JSON.stringify(event.details).includes('临时正文'))).toBe(true)
   })
 })

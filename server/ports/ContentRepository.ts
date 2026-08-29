@@ -130,8 +130,8 @@ export interface ContentRepository {
   getPersonaRunHistoryStatistics(personaId: string): Promise<PersonaRunHistoryStatistics>
   /** @param personaId 人物标识。 @returns 将随人物删除的运行 UUID。 */
   listPersonaRunIds(personaId: string): Promise<string[]>
-  /** @param personaId 人物标识。 @returns 永久删除的人物行数。 */
-  deletePersona(personaId: string): Promise<number>
+  /** @param personaId 人物标识。 @param timestamp 删除时间。 @returns 永久删除的人物行数。 */
+  deletePersona(personaId: string, timestamp: number): Promise<number>
 
   /** @returns 按更新时间倒序的世界设定。 */
   listWorlds(): Promise<WorldRecord[]>
@@ -155,8 +155,8 @@ export interface ContentRepository {
   listWorldPersonas(worldId: string): Promise<PersonaRecord[]>
   /** @param worldId 世界标识。 @returns 关联资料。 */
   listWorldSources(worldId: string): Promise<SourceMaterialRecord[]>
-  /** @param worldId 世界标识。 @returns 永久删除的世界行数。 */
-  deleteWorld(worldId: string): Promise<number>
+  /** @param worldId 世界标识。 @param timestamp 删除时间。 @returns 永久删除的世界行数。 */
+  deleteWorld(worldId: string, timestamp: number): Promise<number>
 
   /** @returns 按更新时间倒序的全部资料。 */
   listSources(): Promise<SourceMaterialRecord[]>
@@ -174,8 +174,8 @@ export interface ContentRepository {
   linkSource(sourceId: string, targetType: 'persona' | 'world', targetId: string, priority: number): Promise<void>
   /** @param sourceId 资料标识。 @param linkId 复合关联标识。 @returns 删除的关联数。 */
   unlinkSource(sourceId: string, linkId: string): Promise<number>
-  /** @param sourceId 资料标识。 @returns 删除的资料数。 */
-  deleteSource(sourceId: string): Promise<number>
+  /** @param sourceId 资料标识。 @param timestamp 删除时间。 @returns 删除的资料数。 */
+  deleteSource(sourceId: string, timestamp: number): Promise<number>
   /** @param query FTS5 检索词。 @param limit 最大结果数。 @returns 已复制正文与哈希的证据候选。 */
   searchSourceChunks(query: string, limit: number): Promise<SourceChunkRecord[]>
 }

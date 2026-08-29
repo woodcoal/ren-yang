@@ -33,3 +33,21 @@ export interface SystemHealthResult {
   /** 当前进程内 Worker 状态。 */
   worker: PublicWorkerStatus
 }
+
+/** 管理界面可见的关键动作审计记录。 */
+export interface AuditEventView {
+  /** 审计 UUID。 */
+  id: string
+  /** 动作发起主体。 */
+  actor: 'administrator' | 'maintenance' | 'system'
+  /** 稳定动作名称。 */
+  action: string
+  /** 被操作资源类型。 */
+  targetType: string
+  /** 被操作资源标识；全局动作可以为空。 */
+  targetId: string | null
+  /** 不含正文或凭据的结构化摘要。 */
+  details: Record<string, unknown>
+  /** UTC Unix 毫秒。 */
+  createdAt: number
+}

@@ -4,6 +4,7 @@ import type { GenerationApplicationService } from './generation/GenerationApplic
 import type { FeedbackApplicationService } from './feedback/FeedbackApplicationService'
 import type { SystemApplicationService } from './system/SystemApplicationService'
 import type { ContextSynchronizationApplicationService } from './context/ContextSynchronizationApplicationService'
+import type { BackupApplicationService } from './backup/BackupApplicationService'
 
 /** 每个 HTTP 请求能够访问的应用服务集合。 */
 export interface RequestApplicationServices {
@@ -17,6 +18,8 @@ export interface RequestApplicationServices {
   feedback: FeedbackApplicationService
   /** OpenViking 检测、同步状态和全量重建用例。 */
   contextSynchronization: ContextSynchronizationApplicationService
+  /** 在线创建和只读验证一致性备份的用例。 */
+  backup: BackupApplicationService
   /** 非敏感系统状态用例。 */
   system: SystemApplicationService
 }

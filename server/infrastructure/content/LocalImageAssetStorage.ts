@@ -3,6 +3,9 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { isAbsolute, resolve, sep } from 'node:path'
 import { ImageAssetError } from '../../domain/generation/ImageAssetError'
 import type { ImageAssetStorage, StoredImageAsset } from '../../ports/ImageAssetStorage'
+import type { StorageCapacityGuard } from '../../ports/StorageCapacity'
+import { StorageCapacityError } from '../../ports/StorageCapacity'
+import { NodeStorageCapacityGuard } from '../system/NodeStorageCapacityGuard'
 
 /** 单张本地图片最大 10 MiB。 */
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024
@@ -16,8 +19,11 @@ export class LocalImageAssetStorage implements ImageAssetStorage {
   /** 绝对资产根目录。 */
   private readonly artifactsDirectory: string
 
-  /** @param dataDirectory 应用数据目录。 */
-  constructor(dataDirectory: string) {
+  /** @param dataDirectory 应用数据目录。 @param capacity 文件写入前的磁盘余量门禁。 */
+  constructor(
+    dataDirectory: string,
+    private readonly capacity: StorageCapacityGuard = new NodeStorageCapacityGuard(),
+  ) {
     this.artifactsDirectory = resolve(isAbsolute(dataDirectory) ? dataDirectory : resolve(process.cwd(), dataDirectory), 'artifacts')
   }
 
@@ -49,11 +55,13 @@ export class LocalImageAssetStorage implements ImageAssetStorage {
     const target = resolve(runDirectory, relativePath)
     const temporary = resolve(assetsDirectory, `.${fileId}.${randomUUID()}.tmp`)
     try {
+      await this.capacity.assertCanWrite(assetsDirectory, bytes.byteLength)
       await writeFile(temporary, bytes, { flag: 'wx' })
       await rename(temporary, target)
     }
     catch (error: unknown) {
       await rm(temporary, { force: true })
+      if (isNoSpaceError(error)) throw new StorageCapacityError()
       throw error
     }
     return {
@@ -102,6 +110,11 @@ export class LocalImageAssetStorage implements ImageAssetStorage {
     assertIdentifier(runId)
     return resolve(this.artifactsDirectory, runId)
   }
+}
+
+/** @param error 未知文件系统错误。 @returns 是否为操作系统磁盘空间不足。 */
+function isNoSpaceError(error: unknown): boolean {
+  return error instanceof Error && 'code' in error && error.code === 'ENOSPC'
 }
 
 /** @param value 待验证标识。 @returns 标识合法时无返回值。 */

@@ -191,6 +191,9 @@ describe('反馈、提案、评测与发布闭环', () => {
 
     await service.publishProposal(proposalId)
     expect(await service.getRevisionProposal(proposalId)).toMatchObject({ status: 'published' })
+    expect(database.getClient().prepare(`
+      SELECT action, target_id FROM audit_events WHERE action = 'revision_proposal_published'
+    `).get()).toEqual({ action: 'revision_proposal_published', target_id: proposalId })
   })
 
   it('评测硬规则失败时不发布候选版本，并保存逐用例失败依据', async () => {

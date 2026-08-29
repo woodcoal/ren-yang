@@ -9,32 +9,43 @@ import { ApplicationRuntime } from '../infrastructure/composition/ApplicationRun
  */
 async function initializeApplicationRuntime(nitroApp: NitroApp): Promise<void> {
   const config = useRuntimeConfig()
-  validateSessionPassword(config.session.password)
-
-  const runtime = new ApplicationRuntime({
-    dataDirectory: config.dataDirectory,
-    migrationsDirectory: './drizzle',
-    textModel: {
-      endpoint: config.textModel.endpoint,
-      apiKey: config.textModel.apiKey,
-      model: config.textModel.model,
-    },
-    imageModel: {
-      endpoint: config.imageModel.endpoint,
-      apiKey: config.imageModel.apiKey,
-      model: config.imageModel.model,
-    },
-    feedback: {
-      autoPublishLowRisk: config.feedback.autoPublishLowRisk,
-    },
-    openViking: {
-      enabled: config.openViking.enabled,
-      endpoint: config.openViking.endpoint,
-      apiKey: config.openViking.apiKey,
-      timeoutMs: config.openViking.timeoutMs,
-    },
-  })
-  await runtime.start()
+  let runtime: ApplicationRuntime | undefined
+  try {
+    validateSessionPassword(config.session.password)
+    validatePositiveInteger(config.limits.requestBodyBytes, 'NUXT_LIMITS_REQUEST_BODY_BYTES')
+    validateNonNegativeInteger(config.limits.minimumFreeDiskBytes, 'NUXT_LIMITS_MINIMUM_FREE_DISK_BYTES')
+    validateMinimumInteger(config.logging.maximumFileBytes, 'NUXT_LOGGING_MAXIMUM_FILE_BYTES', 256)
+    validateMinimumInteger(config.logging.retentionDays, 'NUXT_LOGGING_RETENTION_DAYS', 1)
+    runtime = new ApplicationRuntime({
+      dataDirectory: config.dataDirectory,
+      migrationsDirectory: './drizzle',
+      minimumFreeDiskBytes: Number(config.limits.minimumFreeDiskBytes),
+      textModel: {
+        endpoint: config.textModel.endpoint,
+        apiKey: config.textModel.apiKey,
+        model: config.textModel.model,
+      },
+      imageModel: {
+        endpoint: config.imageModel.endpoint,
+        apiKey: config.imageModel.apiKey,
+        model: config.imageModel.model,
+      },
+      feedback: {
+        autoPublishLowRisk: config.feedback.autoPublishLowRisk,
+      },
+      openViking: {
+        enabled: config.openViking.enabled,
+        endpoint: config.openViking.endpoint,
+        apiKey: config.openViking.apiKey,
+        timeoutMs: config.openViking.timeoutMs,
+      },
+    })
+    await runtime.start()
+  }
+  catch (error: unknown) {
+    if (runtime) await runtime.close()
+    terminateFailedStartup()
+  }
 
   /**
    * 为每个请求附加只包含应用服务的上下文。
@@ -55,6 +66,31 @@ async function initializeApplicationRuntime(nitroApp: NitroApp): Promise<void> {
 
   nitroApp.hooks.hook('request', attachRequestServices)
   nitroApp.hooks.hook('close', closeApplicationRuntime)
+}
+
+/** @returns 立即以非零状态终止已开始监听但初始化失败的 Nitro 进程。 */
+function terminateFailedStartup(): never {
+  // Nitro 先建立监听再异步运行插件；单纯抛错只会形成 unhandledRejection，必须主动终止进程。
+  console.error('应用运行时初始化失败，进程已终止')
+  process.exit(1)
+}
+
+/** @param value 未知配置值。 @param name 环境变量名。 @returns 校验为正安全整数后结束。 */
+function validatePositiveInteger(value: unknown, name: string): void {
+  const parsed = Number(value)
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) throw new Error(`${name} 必须是正安全整数`)
+}
+
+/** @param value 未知配置值。 @param name 环境变量名。 @returns 校验为非负安全整数后结束。 */
+function validateNonNegativeInteger(value: unknown, name: string): void {
+  const parsed = Number(value)
+  if (!Number.isSafeInteger(parsed) || parsed < 0) throw new Error(`${name} 必须是非负安全整数`)
+}
+
+/** @param value 未知配置值。 @param name 环境变量名。 @param minimum 允许的最小整数。 @returns 校验通过时结束。 */
+function validateMinimumInteger(value: unknown, name: string, minimum: number): void {
+  const parsed = Number(value)
+  if (!Number.isSafeInteger(parsed) || parsed < minimum) throw new Error(`${name} 不能小于 ${minimum}`)
 }
 
 /**

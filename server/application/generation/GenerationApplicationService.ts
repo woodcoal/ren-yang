@@ -32,6 +32,7 @@ import type { IdentifierGenerator } from '../../ports/IdentifierGenerator'
 import type { ImageAssetStorage } from '../../ports/ImageAssetStorage'
 import type { ImageModelPort } from '../../ports/ImageModelPort'
 import { ImageModelError } from '../../ports/ImageModelPort'
+import { StorageCapacityError } from '../../ports/StorageCapacity'
 import type { RunListFilter, RunRepository } from '../../ports/RunRepository'
 import type { SourceContentProcessor } from '../../ports/SourceContentPorts'
 import type { TaskHandler } from '../../ports/TaskPorts'
@@ -728,6 +729,7 @@ function normalizeExecutionError(error: unknown): { code: string, message: strin
   if (error instanceof TextModelError) return { code: error.code, message: error.message, retryable: error.retryable }
   if (error instanceof ImageModelError) return { code: error.code, message: error.message, retryable: error.retryable }
   if (error instanceof ImageAssetError) return { code: error.code, message: error.message, retryable: error.code === 'IMAGE_OUTPUT_INVALID' }
+  if (error instanceof StorageCapacityError) return { code: 'INSUFFICIENT_STORAGE', message: error.message, retryable: false }
   if (error instanceof ApplicationError) return { code: error.code, message: error.message, retryable: false }
   if (error instanceof ZodError) return { code: 'MODEL_OUTPUT_INVALID', message: '模型结构化输出未通过校验', retryable: true }
   return { code: 'RUN_EXECUTION_FAILED', message: error instanceof Error ? error.message.slice(0, 500) : '运行执行失败', retryable: true }

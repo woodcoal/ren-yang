@@ -2,6 +2,8 @@ import type { AdministratorRepository } from '../../ports/AdministratorRepositor
 import type { DatabaseHealthReader } from '../../ports/DatabaseHealth'
 import type { WorkerStatusReader } from '../../ports/TaskPorts'
 import type { SystemHealthResult } from '../../../shared/types/system'
+import type { AuditRepository } from '../../ports/AuditRepository'
+import type { AuditEventView } from '../../../shared/types/system'
 
 /** 系统状态应用服务的依赖。 */
 export interface SystemApplicationServiceDependencies {
@@ -11,6 +13,8 @@ export interface SystemApplicationServiceDependencies {
   databaseHealth: DatabaseHealthReader
   /** Worker 状态读取端口。 */
   workerStatus: WorkerStatusReader
+  /** 关键动作审计历史端口。 */
+  audit: AuditRepository
 }
 
 /** 聚合管理界面需要的非敏感系统状态。 */
@@ -43,5 +47,10 @@ export class SystemApplicationService {
       },
       worker,
     }
+  }
+
+  /** @param limit 最大返回数量。 @returns 新记录在前的关键动作审计历史。 */
+  async listAuditEvents(limit: number): Promise<AuditEventView[]> {
+    return await this.dependencies.audit.list(limit)
   }
 }

@@ -16,6 +16,7 @@ import type {
   PersonaRunHistoryStatistics,
   SourceLinkRecord,
 } from '../../ports/ContentRepository'
+import { insertAuditEvent } from './AuditSql'
 
 /** 使用 SQLite 短事务实现人物、世界、版本、资料和 FTS5 数据访问。 */
 export class SqliteContentRepository implements ContentRepository {
@@ -111,21 +112,32 @@ export class SqliteContentRepository implements ContentRepository {
       this.client.prepare(`
         UPDATE personas SET active_version_id = ?, updated_at = ? WHERE id = ?
       `).run(versionId, timestamp, personaId)
+      insertAuditEvent(this.client, {
+        actor: 'administrator', action: 'persona_version_published', targetType: 'persona_version',
+        targetId: versionId, details: { personaId }, timestamp,
+      })
       return true
     })()
   }
 
   /** @param personaId 人物 UUID。 @param versionId 历史已发布版本 UUID。 @param timestamp 更新时间。 @returns 目标有效时为 true。 */
   async rollbackPersona(personaId: string, versionId: string, timestamp: number): Promise<boolean> {
-    const result = this.client.prepare(`
-      UPDATE personas
-      SET active_version_id = ?, updated_at = ?
-      WHERE id = ? AND EXISTS (
-        SELECT 1 FROM persona_versions
-        WHERE id = ? AND persona_id = personas.id AND status = 'published'
-      )
-    `).run(versionId, timestamp, personaId, versionId)
-    return result.changes === 1
+    return this.client.transaction(() => {
+      const result = this.client.prepare(`
+        UPDATE personas
+        SET active_version_id = ?, updated_at = ?
+        WHERE id = ? AND EXISTS (
+          SELECT 1 FROM persona_versions
+          WHERE id = ? AND persona_id = personas.id AND status = 'published'
+        )
+      `).run(versionId, timestamp, personaId, versionId)
+      if (result.changes !== 1) return false
+      insertAuditEvent(this.client, {
+        actor: 'administrator', action: 'persona_rolled_back', targetType: 'persona',
+        targetId: personaId, details: { versionId }, timestamp,
+      })
+      return true
+    })()
   }
 
   /** @param personaId 人物 UUID。 @returns 关联资料。 */
@@ -179,8 +191,8 @@ export class SqliteContentRepository implements ContentRepository {
     `).all(personaId) as Array<{ id: string }>).map(item => item.id)
   }
 
-  /** @param personaId 人物 UUID。 @returns 删除的人物行数；运行和私有产物先在同一事务中删除。 */
-  async deletePersona(personaId: string): Promise<number> {
+  /** @param personaId 人物 UUID。 @param timestamp 删除时间。 @returns 删除的人物行数；运行和私有产物先在同一事务中删除。 */
+  async deletePersona(personaId: string, timestamp: number): Promise<number> {
     return this.client.transaction(() => {
       this.client.prepare(`
         DELETE FROM artifact_documents WHERE run_id IN (
@@ -194,7 +206,11 @@ export class SqliteContentRepository implements ContentRepository {
           SELECT id FROM persona_versions WHERE persona_id = ?
         )
       `).run(personaId)
-      return this.client.prepare('DELETE FROM personas WHERE id = ?').run(personaId).changes
+      const changes = this.client.prepare('DELETE FROM personas WHERE id = ?').run(personaId).changes
+      if (changes === 1) insertAuditEvent(this.client, {
+        actor: 'administrator', action: 'persona_deleted', targetType: 'persona', targetId: personaId, timestamp,
+      })
+      return changes
     }).immediate()
   }
 
@@ -277,21 +293,32 @@ export class SqliteContentRepository implements ContentRepository {
       this.client.prepare(`
         UPDATE worlds SET active_version_id = ?, updated_at = ? WHERE id = ?
       `).run(versionId, timestamp, worldId)
+      insertAuditEvent(this.client, {
+        actor: 'administrator', action: 'world_version_published', targetType: 'world_version',
+        targetId: versionId, details: { worldId }, timestamp,
+      })
       return true
     })()
   }
 
   /** @param worldId 世界 UUID。 @param versionId 已发布版本 UUID。 @param timestamp 更新时间。 @returns 目标有效时为 true。 */
   async rollbackWorld(worldId: string, versionId: string, timestamp: number): Promise<boolean> {
-    const result = this.client.prepare(`
-      UPDATE worlds
-      SET active_version_id = ?, updated_at = ?
-      WHERE id = ? AND EXISTS (
-        SELECT 1 FROM world_versions
-        WHERE id = ? AND world_id = worlds.id AND status = 'published'
-      )
-    `).run(versionId, timestamp, worldId, versionId)
-    return result.changes === 1
+    return this.client.transaction(() => {
+      const result = this.client.prepare(`
+        UPDATE worlds
+        SET active_version_id = ?, updated_at = ?
+        WHERE id = ? AND EXISTS (
+          SELECT 1 FROM world_versions
+          WHERE id = ? AND world_id = worlds.id AND status = 'published'
+        )
+      `).run(versionId, timestamp, worldId, versionId)
+      if (result.changes !== 1) return false
+      insertAuditEvent(this.client, {
+        actor: 'administrator', action: 'world_rolled_back', targetType: 'world',
+        targetId: worldId, details: { versionId }, timestamp,
+      })
+      return true
+    })()
   }
 
   /** @param worldId 世界 UUID。 @returns 直接关联该世界的人物。 */
@@ -311,9 +338,15 @@ export class SqliteContentRepository implements ContentRepository {
     `).all(worldId).map(toSource)
   }
 
-  /** @param worldId 世界 UUID。 @returns 删除的世界行数；人物外键仍会阻止错误级联。 */
-  async deleteWorld(worldId: string): Promise<number> {
-    return this.client.prepare('DELETE FROM worlds WHERE id = ?').run(worldId).changes
+  /** @param worldId 世界 UUID。 @param timestamp 删除时间。 @returns 删除的世界行数；人物外键仍会阻止错误级联。 */
+  async deleteWorld(worldId: string, timestamp: number): Promise<number> {
+    return this.client.transaction(() => {
+      const changes = this.client.prepare('DELETE FROM worlds WHERE id = ?').run(worldId).changes
+      if (changes === 1) insertAuditEvent(this.client, {
+        actor: 'administrator', action: 'world_deleted', targetType: 'world', targetId: worldId, timestamp,
+      })
+      return changes
+    })()
   }
 
   /** @returns 按更新时间倒序的资料记录。 */
@@ -458,9 +491,15 @@ export class SqliteContentRepository implements ContentRepository {
     `).run(sourceId, targetId).changes
   }
 
-  /** @param sourceId 资料 UUID。 @returns 删除的资料行数；外键会阻止删除仍有关联的资料。 */
-  async deleteSource(sourceId: string): Promise<number> {
-    return this.client.prepare('DELETE FROM source_materials WHERE id = ?').run(sourceId).changes
+  /** @param sourceId 资料 UUID。 @param timestamp 删除时间。 @returns 删除的资料行数；外键会阻止删除仍有关联的资料。 */
+  async deleteSource(sourceId: string, timestamp: number): Promise<number> {
+    return this.client.transaction(() => {
+      const changes = this.client.prepare('DELETE FROM source_materials WHERE id = ?').run(sourceId).changes
+      if (changes === 1) insertAuditEvent(this.client, {
+        actor: 'administrator', action: 'source_deleted', targetType: 'source', targetId: sourceId, timestamp,
+      })
+      return changes
+    })()
   }
 
   /**

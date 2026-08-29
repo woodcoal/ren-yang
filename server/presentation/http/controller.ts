@@ -86,7 +86,8 @@ export function writeErrorResponse(event: H3Event, error: unknown): ApiErrorResp
     }
   }
 
-  console.error('未处理的服务器错误', error)
+  // 原始异常可能携带供应商响应或路径，只由脱敏日志钩子记录异常分类。
+  console.error('未处理的服务器错误')
   setResponseStatus(event, 500)
   return {
     error: {

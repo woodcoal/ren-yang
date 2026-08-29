@@ -25,6 +25,14 @@ export default defineNuxtConfig({
     feedback: {
       autoPublishLowRisk: false,
     },
+    limits: {
+      requestBodyBytes: 2_200_000,
+      minimumFreeDiskBytes: 100 * 1024 * 1024,
+    },
+    logging: {
+      maximumFileBytes: 5 * 1024 * 1024,
+      retentionDays: 14,
+    },
     openViking: {
       enabled: false,
       endpoint: '',

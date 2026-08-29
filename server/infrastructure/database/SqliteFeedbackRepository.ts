@@ -20,6 +20,7 @@ import type {
   FeedbackRepository,
   PublishProposalResult,
 } from '../../ports/FeedbackRepository'
+import { insertAuditEvent } from './AuditSql'
 
 /** 使用 SQLite 短事务保存反馈、人物候选版本、提案和评测事实。 */
 export class SqliteFeedbackRepository implements FeedbackRepository {
@@ -385,8 +386,8 @@ export class SqliteFeedbackRepository implements FeedbackRepository {
     return { run: toEvaluationRun(runValue), results }
   }
 
-  /** @param proposalId 提案 UUID。 @param reason 发布原因。 @param timestamp 发布时间。 @returns 原子发布结果。 */
-  async publishProposal(proposalId: string, reason: string, timestamp: number): Promise<PublishProposalResult> {
+  /** @param proposalId 提案 UUID。 @param reason 发布原因。 @param timestamp 发布时间。 @param actor 人工或自动发布主体。 @returns 原子发布结果。 */
+  async publishProposal(proposalId: string, reason: string, timestamp: number, actor: 'administrator' | 'system'): Promise<PublishProposalResult> {
     return this.client.transaction(() => {
       const value = this.client.prepare(`
         SELECT revision_proposals.*, personas.active_version_id, persona_versions.status AS candidate_status,
@@ -413,6 +414,10 @@ export class SqliteFeedbackRepository implements FeedbackRepository {
         UPDATE revision_proposals SET status = 'published', decision_reason = ?, updated_at = ? WHERE id = ?
       `).run(reason, timestamp, proposalId)
       this.client.prepare(`UPDATE candidate_memories SET status = 'promoted' WHERE proposal_id = ?`).run(proposalId)
+      insertAuditEvent(this.client, {
+        actor, action: 'revision_proposal_published', targetType: 'revision_proposal',
+        targetId: proposalId, details: { personaId: String(data.persona_id), candidateVersionId: String(data.candidate_version_id) }, timestamp,
+      })
       return 'published'
     }).immediate()
   }
@@ -431,6 +436,10 @@ export class SqliteFeedbackRepository implements FeedbackRepository {
         UPDATE revision_proposals SET status = 'rejected', decision_reason = ?, updated_at = ? WHERE id = ?
       `).run(reason, timestamp, proposalId)
       this.client.prepare(`UPDATE candidate_memories SET status = 'rejected' WHERE proposal_id = ?`).run(proposalId)
+      insertAuditEvent(this.client, {
+        actor: 'administrator', action: 'revision_proposal_rejected', targetType: 'revision_proposal',
+        targetId: proposalId, details: { candidateVersionId }, timestamp,
+      })
       return true
     }).immediate()
   }

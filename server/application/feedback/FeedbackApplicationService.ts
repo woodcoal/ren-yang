@@ -395,7 +395,7 @@ export class FeedbackApplicationService implements TaskHandler {
     })
     if (decision.action === 'blocked') throw new ApplicationError('REVISION_PUBLICATION_BLOCKED', decision.reason, 409)
     if (decision.action !== 'manual_publish') throw new ApplicationError('REVISION_PUBLICATION_BLOCKED', decision.reason, 409)
-    const result = await this.dependencies.repository.publishProposal(proposalId, decision.reason, this.dependencies.clock.now())
+    const result = await this.dependencies.repository.publishProposal(proposalId, decision.reason, this.dependencies.clock.now(), 'administrator')
     if (result !== 'published') throw publicationResultError(result)
     return toProposalView(await this.requireProposal(proposalId))
   }
@@ -497,7 +497,7 @@ export class FeedbackApplicationService implements TaskHandler {
       manualConfirmation: false,
     })
     if (decision.action === 'auto_publish') {
-      await this.dependencies.repository.publishProposal(proposal.id, decision.reason, this.dependencies.clock.now())
+      await this.dependencies.repository.publishProposal(proposal.id, decision.reason, this.dependencies.clock.now(), 'system')
     }
   }
 }

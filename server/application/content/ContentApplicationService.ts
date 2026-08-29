@@ -38,6 +38,7 @@ import type { ContextSyncTaskQueue } from '../../ports/ContextSyncTaskQueue'
 import type { IdentifierGenerator } from '../../ports/IdentifierGenerator'
 import type { ImageAssetStorage } from '../../ports/ImageAssetStorage'
 import type { DecodedSourceFile, SourceContentProcessor, SourceFileStorage } from '../../ports/SourceContentPorts'
+import { StorageCapacityError } from '../../ports/StorageCapacity'
 import { ApplicationError } from '../errors/ApplicationError'
 
 /** 文件资料导入命令。 */
@@ -254,7 +255,7 @@ export class ContentApplicationService {
   async deletePersona(personaId: string): Promise<void> {
     await this.requirePersona(personaId)
     const runIds = await this.dependencies.repository.listPersonaRunIds(personaId)
-    await this.dependencies.repository.deletePersona(personaId)
+    await this.dependencies.repository.deletePersona(personaId, this.dependencies.clock.now())
     if (this.dependencies.imageAssets) await this.dependencies.imageAssets.deleteRunAssets(runIds)
   }
 
@@ -429,7 +430,7 @@ export class ContentApplicationService {
     if (!impact.canDelete) {
       throw new ApplicationError('RESOURCE_IN_USE', impact.blockers[0]!, 409, { impact })
     }
-    await this.dependencies.repository.deleteWorld(worldId)
+    await this.dependencies.repository.deleteWorld(worldId, this.dependencies.clock.now())
   }
 
   /**
@@ -491,7 +492,14 @@ export class ContentApplicationService {
   async importSourceFile(input: ImportSourceFileInput): Promise<SourceDetails> {
     const sourceId = this.dependencies.identifiers.create()
     const decoded = this.decodeSourceFile(input)
-    const relativePath = await this.dependencies.sourceFiles.save(sourceId, decoded.extension, input.bytes)
+    let relativePath: string
+    try {
+      relativePath = await this.dependencies.sourceFiles.save(sourceId, decoded.extension, input.bytes)
+    }
+    catch (error: unknown) {
+      if (error instanceof StorageCapacityError) throw new ApplicationError('INSUFFICIENT_STORAGE', error.message, 507)
+      throw error
+    }
     try {
       await this.dependencies.repository.createSource({
         id: sourceId,
@@ -627,7 +635,7 @@ export class ContentApplicationService {
     if (!impact.canDelete) {
       throw new ApplicationError('RESOURCE_IN_USE', impact.blockers[0]!, 409, { impact })
     }
-    await this.dependencies.repository.deleteSource(sourceId)
+    await this.dependencies.repository.deleteSource(sourceId, this.dependencies.clock.now())
     if (source.originalFilePath) {
       await this.dependencies.sourceFiles.delete(source.originalFilePath)
     }

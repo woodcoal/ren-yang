@@ -20,6 +20,28 @@ export const administrators = sqliteTable(
   ],
 )
 
+/** 管理员关键变更与维护动作的不可变审计记录。 */
+export const auditEvents = sqliteTable(
+  'audit_events',
+  {
+    id: text('id').primaryKey(),
+    actor: text('actor').notNull(),
+    action: text('action').notNull(),
+    targetType: text('target_type').notNull(),
+    targetId: text('target_id'),
+    detailsJson: text('details_json').notNull().default('{}'),
+    createdAt: integer('created_at').notNull(),
+  },
+  table => [
+    index('audit_events_created_at_index').on(table.createdAt),
+    index('audit_events_action_created_at_index').on(table.action, table.createdAt),
+    check('audit_events_actor_check', sql`${table.actor} IN ('administrator', 'maintenance', 'system')`),
+    check('audit_events_action_check', sql`length(trim(${table.action})) > 0`),
+    check('audit_events_target_type_check', sql`length(trim(${table.targetType})) > 0`),
+    check('audit_events_details_json_check', sql`json_valid(${table.detailsJson})`),
+  ],
+)
+
 /** 同进程 Worker 使用的持久化任务表。 */
 export const taskJobs = sqliteTable(
   'task_jobs',
@@ -602,6 +624,7 @@ export const contextSyncRecords = sqliteTable(
 /** 数据库 Schema 的统一导出，供 Drizzle 查询和迁移使用。 */
 export const databaseSchema = {
   administrators,
+  auditEvents,
   taskJobs,
   worlds,
   worldVersions,
