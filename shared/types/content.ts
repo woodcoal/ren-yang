@@ -1,22 +1,27 @@
-/** 人物档案的完整不可变快照。 */
-export interface PersonaSnapshot {
-  /** 人物的一句话定位。 */
-  summary: string
-  /** 身份、背景、经历与关系事实。 */
-  identityFacts: string
-  /** 主题与内容偏好。 */
-  interests: string
-  /** 决策依据、目标与动机。 */
-  valuesAndMotivations: string
-  /** 用词、语气与结构习惯。 */
-  expressionStyle: string
-  /** 外貌与服饰描述。 */
-  appearance: string
-  /** 构图、色彩与质感偏好。 */
-  visualStyle: string
-  /** 事实边界、禁用项与安全要求。 */
-  constraints: string
+/** 灵魂中的一段可自由编排内容。 */
+export interface SoulChapter {
+  /** 跨草稿与版本保持稳定的章节 UUID。 */
+  id: string
+  /** 供用户辨认的章节标题。 */
+  title: string
+  /** 章节完整正文。 */
+  content: string
+  /** 从零开始且连续的展示顺序。 */
+  order: number
+  /** 是否属于运行摘要不得遗漏的核心内容。 */
+  required: boolean
 }
+
+/** 世界与人物共用的完整灵魂内容。 */
+export interface SoulSnapshot {
+  /** 用于管理、编辑和追溯的有序自由章节。 */
+  chapters: SoulChapter[]
+  /** 受预算约束且实际进入模型提示词的稳定摘要。 */
+  runtimeSummary: string
+}
+
+/** 人物灵魂的完整不可变快照。 */
+export type PersonaSnapshot = SoulSnapshot
 
 /** 自然语言生成但尚未保存的人物候选草稿。 */
 export interface PersonaDraftView {
@@ -28,10 +33,67 @@ export interface PersonaDraftView {
   warnings: string[]
 }
 
-/** 世界设定的完整不可变快照。 */
-export interface WorldSnapshot {
-  /** 世界规则与背景正文。 */
-  content: string
+/** 世界灵魂的完整不可变快照。 */
+export type WorldSnapshot = SoulSnapshot
+
+/** 世界或人物当前唯一可编辑的灵魂草稿。 */
+export interface SoulDraftView {
+  /** 草稿 UUID。 */
+  id: string
+  /** 草稿所属对象类型。 */
+  subjectType: 'world' | 'persona'
+  /** 所属对象 UUID。 */
+  subjectId: string
+  /** 草稿基于的已发布灵魂版本；首次建立时为 null。 */
+  baseVersionId: string | null
+  /** 当前可编辑灵魂内容。 */
+  snapshot: SoulSnapshot
+  /** 用户可见的本次修改说明。 */
+  changeSummary: string
+  /** 创建时间，UTC Unix 毫秒。 */
+  createdAt: number
+  /** 最后更新时间，UTC Unix 毫秒。 */
+  updatedAt: number
+}
+
+/** 世界与人物共用的不可变灵魂版本视图。 */
+export interface SoulVersionView {
+  /** 版本 UUID。 */
+  id: string
+  /** 版本所属对象类型。 */
+  subjectType: 'world' | 'persona'
+  /** 所属对象 UUID。 */
+  subjectId: string
+  /** 父版本 UUID。 */
+  parentVersionId: string | null
+  /** 已发布版本生命周期状态。 */
+  status: 'published' | 'archived' | 'rejected'
+  /** 发布时完整灵魂快照。 */
+  snapshot: SoulSnapshot
+  /** 运行摘要发布时 Token 数。 */
+  runtimeTokenCount: number
+  /** 发布时使用的计数器说明。 */
+  tokenCounter: string
+  /** 本次变化摘要。 */
+  changeSummary: string
+  /** 发布时间，UTC Unix 毫秒。 */
+  publishedAt: number
+  /** 创建时间，UTC Unix 毫秒。 */
+  createdAt: number
+}
+
+/** 灵魂管理工作区所需的完整数据。 */
+export interface SoulWorkspaceView {
+  /** 所属对象类型。 */
+  subjectType: 'world' | 'persona'
+  /** 所属对象 UUID。 */
+  subjectId: string
+  /** 当前正在用于新任务的已发布灵魂版本。 */
+  activeVersion: SoulVersionView | null
+  /** 当前唯一可编辑草稿。 */
+  draft: SoulDraftView | null
+  /** 新版本在前的完整发布历史。 */
+  versions: SoulVersionView[]
 }
 
 /** 人物列表项。 */
@@ -48,7 +110,7 @@ export interface PersonaSummary {
   origin: 'original' | 'source_based' | 'hybrid'
   /** 当前已发布版本 UUID。 */
   activeVersionId: string | null
-  /** 当前已发布版本的人物定位。 */
+  /** 当前已发布灵魂的运行摘要。 */
   currentSummary: string | null
   /** 保留版本总数。 */
   versionCount: number
@@ -69,13 +131,13 @@ export interface PersonaVersionView {
   /** 父版本 UUID。 */
   parentVersionId: string | null
   /** 版本生命周期状态。 */
-  status: 'candidate' | 'published' | 'rejected'
+  status: 'published' | 'archived' | 'rejected'
   /** 不可变人物档案快照。 */
   snapshot: PersonaSnapshot
   /** 人工填写的变化摘要。 */
   changeSummary: string
-  /** 发布时间，未发布时为 null。 */
-  publishedAt: number | null
+  /** 发布时间。 */
+  publishedAt: number
   /** 创建时间，UTC Unix 毫秒。 */
   createdAt: number
 }
@@ -90,7 +152,7 @@ export interface WorldSummary {
   summary: string
   /** 当前已发布版本 UUID。 */
   activeVersionId: string | null
-  /** 当前已发布世界正文。 */
+  /** 当前已发布世界灵魂的运行摘要。 */
   currentContent: string | null
   /** 保留版本总数。 */
   versionCount: number
@@ -113,13 +175,13 @@ export interface WorldVersionView {
   /** 父版本 UUID。 */
   parentVersionId: string | null
   /** 版本生命周期状态。 */
-  status: 'candidate' | 'published' | 'rejected'
+  status: 'published' | 'archived' | 'rejected'
   /** 不可变世界正文快照。 */
   snapshot: WorldSnapshot
   /** 人工填写的变化摘要。 */
   changeSummary: string
-  /** 发布时间，未发布时为 null。 */
-  publishedAt: number | null
+  /** 发布时间。 */
+  publishedAt: number
   /** 创建时间，UTC Unix 毫秒。 */
   createdAt: number
 }
@@ -186,6 +248,8 @@ export interface PersonaDetails {
   persona: PersonaSummary
   /** 新版本在前的完整版本历史。 */
   versions: PersonaVersionView[]
+  /** 当前唯一可编辑的灵魂草稿。 */
+  draft: SoulDraftView | null
   /** 当前直接关联资料。 */
   sources: SourceSummary[]
 }
@@ -196,6 +260,8 @@ export interface WorldDetails {
   world: WorldSummary
   /** 新版本在前的完整版本历史。 */
   versions: WorldVersionView[]
+  /** 当前唯一可编辑的灵魂草稿。 */
+  draft: SoulDraftView | null
   /** 当前直接关联人物。 */
   personas: PersonaSummary[]
   /** 当前直接关联资料。 */

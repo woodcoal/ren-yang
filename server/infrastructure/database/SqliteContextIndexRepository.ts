@@ -177,8 +177,8 @@ export class SqliteContextIndexRepository implements ContextIndexRepository {
             personas.id AS persona_id, personas.world_id,
             GROUP_CONCAT(block_attempts.output_text, '\n\n') AS block_output
           FROM generation_runs
-          INNER JOIN persona_versions ON persona_versions.id = generation_runs.persona_version_id
-          INNER JOIN personas ON personas.id = persona_versions.persona_id
+          INNER JOIN soul_versions ON soul_versions.id = generation_runs.persona_version_id
+          INNER JOIN personas ON personas.id = soul_versions.persona_id
           LEFT JOIN artifact_documents ON artifact_documents.run_id = generation_runs.id
           LEFT JOIN artifact_blocks ON artifact_blocks.document_id = artifact_documents.id
           LEFT JOIN block_attempts ON block_attempts.id = artifact_blocks.selected_attempt_id
@@ -190,8 +190,8 @@ export class SqliteContextIndexRepository implements ContextIndexRepository {
             personas.id AS persona_id, personas.world_id
           FROM feedback_events
           INNER JOIN generation_runs ON generation_runs.id = feedback_events.run_id
-          INNER JOIN persona_versions ON persona_versions.id = generation_runs.persona_version_id
-          INNER JOIN personas ON personas.id = persona_versions.persona_id
+          INNER JOIN soul_versions ON soul_versions.id = generation_runs.persona_version_id
+          INNER JOIN personas ON personas.id = soul_versions.persona_id
           WHERE feedback_events.id = ?
         `).get(sourceId)
     if (!value) return null

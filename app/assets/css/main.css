@@ -3,6 +3,7 @@
 @import './theme/tokens.css';
 @import './theme/shell.css';
 @import './theme/content.css';
+@import './theme/mind.css';
 @import './theme/authentication.css';
 
 @layer components {

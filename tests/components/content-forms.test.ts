@@ -6,7 +6,7 @@ import PersonaForm from '../../app/components/content/PersonaForm.vue'
 import SourceImportForm from '../../app/components/content/SourceImportForm.vue'
 import WorldForm from '../../app/components/content/WorldForm.vue'
 import WorldSourceManager from '../../app/components/content/WorldSourceManager.vue'
-import WorldVersionHistory from '../../app/components/content/WorldVersionHistory.vue'
+import SoulWorkspace from '../../app/components/content/SoulWorkspace.vue'
 
 describe('阶段二内容表单', () => {
   it('原创人物在没有世界和资料时仍可提交初始候选档案', async () => {
@@ -17,6 +17,7 @@ describe('阶段二内容表单', () => {
     const textareas = wrapper.findAll('textarea')
     await inputs[0]!.setValue('林默')
     await textareas[0]!.setValue('谨慎的档案管理员')
+    await textareas[1]!.setValue('谨慎的档案管理员，资料不足时说明未知。')
     await wrapper.get('form').trigger('submit')
     await flushPromises()
 
@@ -26,7 +27,10 @@ describe('阶段二内容表单', () => {
         origin: 'original',
         worldId: null,
         sourceIds: [],
-        snapshot: expect.objectContaining({ summary: '谨慎的档案管理员' }),
+        snapshot: expect.objectContaining({
+          chapters: [expect.objectContaining({ title: '核心人设', content: '谨慎的档案管理员' })],
+          runtimeSummary: '谨慎的档案管理员，资料不足时说明未知。',
+        }),
       }),
     ]])
   })
@@ -63,8 +67,11 @@ describe('阶段二内容表单', () => {
       worldId: null,
       sourceIds: [],
       snapshot: {
-        summary: '谨慎的档案管理员', identityFacts: '', interests: '古代文献', valuesAndMotivations: '重视证据',
-        expressionStyle: '冷静简洁', appearance: '', visualStyle: '', constraints: '未知事实必须说明不知道',
+        chapters: [{
+          id: '00000000-0000-4000-8000-000000000001', title: '核心人设',
+          content: '谨慎的档案管理员，喜欢古代文献并重视证据。', order: 0, required: true,
+        }],
+        runtimeSummary: '谨慎的档案管理员，冷静简洁，未知事实必须说明不知道。',
       },
       changeSummary: '根据自然语言生成初始候选档案',
     }
@@ -75,7 +82,7 @@ describe('阶段二内容表单', () => {
 
     expect(wrapper.emitted('submit')).toBeUndefined()
     expect((wrapper.findAll('input')[0]!.element as HTMLInputElement).value).toBe('林默')
-    expect((wrapper.findAll('textarea')[7]!.element as HTMLTextAreaElement).value).toBe('未知事实必须说明不知道')
+    expect((wrapper.findAll('textarea')[1]!.element as HTMLTextAreaElement).value).toBe(initialValue.snapshot.runtimeSummary)
     await wrapper.get('form').trigger('submit')
     await flushPromises()
     expect(wrapper.emitted('submit')?.[0]?.[0]).toEqual(initialValue)
@@ -90,38 +97,42 @@ describe('阶段二内容表单', () => {
     await flushPromises()
 
     expect(wrapper.emitted('submit')).toBeUndefined()
-    expect(wrapper.text()).toContain('世界设定正文不能为空')
+    expect(wrapper.text()).toContain('章节正文不能为空')
+    expect(wrapper.text()).toContain('运行摘要不能为空')
     expect(wrapper.text()).toContain('简短说明')
-    expect(wrapper.text()).toContain('这部分会提供给关联人物的新任务')
+    expect(wrapper.text()).toContain('只有这里会进入新任务提示词')
   })
 
-  it('世界修改记录要求二次确认后才提交版本删除', async () => {
-    const wrapper = await mountSuspended(WorldVersionHistory, {
+  it('灵魂历史版本只能复制为修改稿，发布动作与保存动作分开', async () => {
+    const snapshot = {
+      chapters: [{ id: '00000000-0000-4000-8000-000000000001', title: '规则', content: '当前正文', order: 0, required: true }],
+      runtimeSummary: '当前摘要',
+    }
+    const wrapper = await mountSuspended(SoulWorkspace, {
       props: {
-        activeVersionId: '00000000-0000-4000-8000-000000000001',
         loading: false,
-        versions: [
-          {
-            id: '00000000-0000-4000-8000-000000000002', worldId: '00000000-0000-4000-8000-000000000010',
-            parentVersionId: '00000000-0000-4000-8000-000000000001', status: 'candidate', snapshot: { content: '错误正文' },
-            changeSummary: '错误修改稿', publishedAt: null, createdAt: 2_000,
-          },
-          {
-            id: '00000000-0000-4000-8000-000000000001', worldId: '00000000-0000-4000-8000-000000000010',
-            parentVersionId: null, status: 'published', snapshot: { content: '当前正文' },
+        workspace: {
+          subjectType: 'world', subjectId: '00000000-0000-4000-8000-000000000010', draft: null,
+          activeVersion: {
+            id: '00000000-0000-4000-8000-000000000001', subjectType: 'world',
+            subjectId: '00000000-0000-4000-8000-000000000010', parentVersionId: null,
+            status: 'published', snapshot, runtimeTokenCount: 10, tokenCounter: 'test',
             changeSummary: '初始版本', publishedAt: 1_000, createdAt: 1_000,
           },
-        ],
+          versions: [{
+            id: '00000000-0000-4000-8000-000000000001', subjectType: 'world',
+            subjectId: '00000000-0000-4000-8000-000000000010', parentVersionId: null,
+            status: 'published', snapshot, runtimeTokenCount: 10, tokenCounter: 'test',
+            changeSummary: '初始版本', publishedAt: 1_000, createdAt: 1_000,
+          }],
+        },
       },
     })
 
-    expect(wrapper.text()).toContain('只有标记为“正在使用”的版本会用于人物的新任务')
-    await wrapper.get('button[aria-label="删除"]').trigger('click')
-    expect(wrapper.emitted('delete')).toBeUndefined()
-    await wrapper.get('button[role="checkbox"]').trigger('click')
-    await wrapper.findAll('button').find(button => button.text() === '永久删除')!.trigger('click')
-
-    expect(wrapper.emitted('delete')).toEqual([['00000000-0000-4000-8000-000000000002']])
+    expect(wrapper.text()).toContain('历史版本只读')
+    await wrapper.findAll('button').find(button => button.text() === '复制为修改稿')!.trigger('click')
+    expect(wrapper.emitted('from-version')).toEqual([['00000000-0000-4000-8000-000000000001']])
+    expect(wrapper.emitted('publish')).toBeUndefined()
   })
 
   it('世界资料区可直接加入已有资料或解除关联', async () => {

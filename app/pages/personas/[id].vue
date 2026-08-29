@@ -1,75 +1,55 @@
 <script setup lang="ts">
 import type { FormSubmitEvent } from '@nuxt/ui'
 import { computed, reactive, shallowRef } from 'vue'
-import {
-  createPersonaVersionSchema,
-  type CreatePersonaVersionInput,
-  updatePersonaSchema,
-  type UpdatePersonaInput,
-} from '#shared/schemas/content'
+import type { SaveSoulDraftInput, UpdatePersonaInput } from '#shared/schemas/content'
+import { updatePersonaSchema } from '#shared/schemas/content'
 import type { ApiResponse } from '#shared/types/api'
-import type { PersonaMemoryView } from '#shared/types/feedback'
-import type {
-  DeletionImpact,
-  PersonaDetails,
-  PersonaSnapshot,
-  VersionFieldDiff,
-  WorldSummary,
-} from '#shared/types/content'
+import type { DeletionImpact, PersonaDetails, SoulWorkspaceView, WorldSummary } from '#shared/types/content'
 import { getApiErrorMessage } from '../../utils/apiError'
 
-const route = useRoute()
-const personaId = String(route.params.id)
-const [{ data, error, refresh }, { data: worldData }] = await Promise.all([
+type PersonaTab = 'overview' | 'soul' | 'growth' | 'memory' | 'relations'
+
+const personaId = String(useRoute().params.id)
+const [{ data, error, refresh }, { data: soulData, refresh: refreshSoul }, { data: worldData }] = await Promise.all([
   useFetch<ApiResponse<PersonaDetails>>(`/api/v1/personas/${personaId}`),
+  useFetch<ApiResponse<SoulWorkspaceView>>(`/api/v1/personas/${personaId}/soul`),
   useFetch<ApiResponse<WorldSummary[]>>('/api/v1/worlds'),
 ])
-const { data: memoryData, refresh: refreshMemories } = await useFetch<ApiResponse<PersonaMemoryView[]>>(
-  `/api/v1/personas/${personaId}/memories`,
-)
+
 const details = computed(() => data.value?.data ?? null)
+const soul = computed(() => soulData.value?.data ?? null)
 const worlds = computed(() => worldData.value?.data ?? [])
-const memories = computed(() => memoryData.value?.data ?? [])
+const tabs: Array<{ id: PersonaTab, label: string }> = [
+  { id: 'overview', label: '概览' },
+  { id: 'soul', label: '灵魂' },
+  { id: 'growth', label: '成长' },
+  { id: 'memory', label: '记忆' },
+  { id: 'relations', label: '世界与资料' },
+]
+const selectedTab = shallowRef<PersonaTab>('overview')
+const metadata = reactive<UpdatePersonaInput>({
+  name: details.value?.persona.name ?? '',
+  worldId: details.value?.persona.worldId ?? null,
+})
+const deletionImpact = shallowRef<DeletionImpact | null>(null)
+const deletionConfirmed = shallowRef(false)
 const actionLoading = shallowRef(false)
 const actionError = shallowRef<string | null>(null)
 const actionMessage = shallowRef<string | null>(null)
-const deletionImpact = shallowRef<DeletionImpact | null>(null)
-const deletionConfirmed = shallowRef(false)
-const differences = shallowRef<VersionFieldDiff[] | null>(null)
-
-const initialPersona = data.value?.data.persona
-const initialVersion = data.value?.data.versions.find(version => version.id === initialPersona?.activeVersionId)
-  ?? data.value?.data.versions[0]
-const metadata = reactive<UpdatePersonaInput>({
-  name: initialPersona?.name ?? '',
-  worldId: initialPersona?.worldId ?? null,
-})
-const candidate = reactive<CreatePersonaVersionInput>({
-  baseVersionId: initialVersion?.id ?? null,
-  snapshot: cloneSnapshot(initialVersion?.snapshot),
-  changeSummary: '',
-})
-const comparison = reactive({
-  base: initialVersion?.id ?? '',
-  target: data.value?.data.versions[0]?.id ?? '',
-})
-
-/** 人物档案编辑字段。 */
-const snapshotFields: Array<{ key: keyof PersonaSnapshot, label: string }> = [
-  { key: 'summary', label: '人物定位' },
-  { key: 'identityFacts', label: '身份事实' },
-  { key: 'interests', label: '兴趣偏好' },
-  { key: 'valuesAndMotivations', label: '价值与动机' },
-  { key: 'expressionStyle', label: '表达风格' },
-  { key: 'appearance', label: '外观描述' },
-  { key: 'visualStyle', label: '视觉风格' },
-  { key: 'constraints', label: '约束' },
-]
 
 /**
- * 修改人物名称和世界关联，不触碰版本内容。
- * @param event 已通过共享 Schema 校验的表单事件。
- * @returns 请求完成时结束。
+ * 切换人物工作区标签。
+ * @param tab 目标标签。
+ * @returns 无返回值。
+ */
+function selectTab(tab: PersonaTab): void {
+  selectedTab.value = tab
+}
+
+/**
+ * 保存人物名称和所属世界。
+ * @param event 已通过共享 Schema 校验的基本信息。
+ * @returns 请求和详情刷新完成时结束。
  */
 async function saveMetadata(event: FormSubmitEvent<UpdatePersonaInput>): Promise<void> {
   await runAction('人物基本信息已保存', async () => {
@@ -79,58 +59,57 @@ async function saveMetadata(event: FormSubmitEvent<UpdatePersonaInput>): Promise
 }
 
 /**
- * 从用户明确选择的基础版本创建新候选版本。
- * @param event 已通过共享 Schema 校验的表单事件。
- * @returns 请求完成时结束。
+ * 保存人物当前灵魂草稿。
+ * @param input 完整草稿输入。
+ * @returns 保存和工作区刷新完成时结束。
  */
-async function createCandidate(event: FormSubmitEvent<CreatePersonaVersionInput>): Promise<void> {
-  await runAction('修改稿已保存，确认使用前不会影响当前人物', async () => {
-    await $fetch(`/api/v1/personas/${personaId}/versions`, { method: 'POST', body: event.data })
-    candidate.changeSummary = ''
-    await refresh()
+async function saveSoulDraft(input: SaveSoulDraftInput): Promise<void> {
+  await runAction('灵魂修改稿已保存，尚未影响新任务', async () => {
+    await $fetch(`/api/v1/personas/${personaId}/soul/draft`, { method: 'PUT', body: input })
+    await Promise.all([refresh(), refreshSoul()])
   })
 }
 
 /**
- * 发布指定候选版本并切换当前版本。
- * @param versionId 候选版本 UUID。
- * @returns 请求完成时结束。
+ * 发布人物当前灵魂草稿。
+ * @returns 发布和页面刷新完成时结束。
  */
-async function publishVersion(versionId: string): Promise<void> {
-  await runAction('修改稿已确认，之后的新任务将使用这一版', async () => {
-    await $fetch(`/api/v1/persona-versions/${versionId}/publish`, { method: 'POST' })
-    await refresh()
+async function publishSoul(): Promise<void> {
+  await runAction('灵魂已发布，之后创建的新任务将使用这一版', async () => {
+    await $fetch(`/api/v1/personas/${personaId}/soul/publish`, { method: 'POST' })
+    await Promise.all([refresh(), refreshSoul()])
   })
 }
 
 /**
- * 把当前指针切回指定历史已发布版本。
- * @param versionId 已发布版本 UUID。
- * @returns 请求完成时结束。
+ * 删除人物当前未发布灵魂草稿。
+ * @returns 删除和页面刷新完成时结束。
  */
-async function rollbackVersion(versionId: string): Promise<void> {
-  await runAction('已恢复使用所选版本，之后的修改记录仍完整保留', async () => {
-    await $fetch(`/api/v1/personas/${personaId}/rollback`, { method: 'POST', body: { versionId } })
-    await refresh()
+async function deleteSoulDraft(): Promise<void> {
+  await runAction('未发布的灵魂修改稿已删除', async () => {
+    await $fetch(`/api/v1/personas/${personaId}/soul/draft`, { method: 'DELETE' })
+    await Promise.all([refresh(), refreshSoul()])
   })
 }
 
 /**
- * 查询所选两版的字段级差异。
- * @returns 请求完成时结束。
+ * 从历史版本建立新的当前灵魂草稿。
+ * @param versionId 历史灵魂版本 UUID。
+ * @returns 创建和页面刷新完成时结束。
  */
-async function compareVersions(): Promise<void> {
-  await runAction(null, async () => {
-    const response = await $fetch<ApiResponse<VersionFieldDiff[]>>('/api/v1/persona-versions/compare', {
-      query: comparison,
+async function createDraftFromVersion(versionId: string): Promise<void> {
+  await runAction('历史版本已复制为修改稿，发布前不会影响任务', async () => {
+    await $fetch(`/api/v1/personas/${personaId}/soul/draft-from-version`, {
+      method: 'POST',
+      body: { versionId },
     })
-    differences.value = response.data
+    await refreshSoul()
   })
 }
 
 /**
- * 读取永久删除人物前的版本与共享资料影响。
- * @returns 请求完成时结束。
+ * 查询永久删除人物的影响范围。
+ * @returns 查询完成时结束。
  */
 async function inspectDeletion(): Promise<void> {
   await runAction(null, async () => {
@@ -141,11 +120,11 @@ async function inspectDeletion(): Promise<void> {
 }
 
 /**
- * 在用户查看影响并再次确认后永久删除人物。
- * @returns 请求和导航完成时结束。
+ * 在用户明确确认后永久删除人物。
+ * @returns 删除和导航完成时结束。
  */
 async function deletePersona(): Promise<void> {
-  if (!deletionConfirmed.value) return
+  if (!deletionConfirmed.value || !deletionImpact.value?.canDelete) return
   await runAction(null, async () => {
     await $fetch(`/api/v1/personas/${personaId}`, { method: 'DELETE' })
     await navigateTo('/personas')
@@ -153,27 +132,10 @@ async function deletePersona(): Promise<void> {
 }
 
 /**
- * 人工确认、停用、恢复或拒绝一条人物记忆。
- * @param memoryId 本地或 OpenViking 派生记忆标识。
- * @param status 目标审核状态。
- * @returns 请求完成时结束。
- */
-async function updateMemoryStatus(
-  memoryId: string,
-  status: 'active' | 'deprecated' | 'rejected',
-): Promise<void> {
-  const message = status === 'active' ? '这条记忆已用于之后的新任务' : status === 'deprecated' ? '这条记忆已停用' : '这条候选记忆已拒绝'
-  await runAction(message, async () => {
-    await $fetch(`/api/v1/personas/${personaId}/memories`, { method: 'PATCH', body: { memoryId, status } })
-    await refreshMemories()
-  })
-}
-
-/**
- * 统一执行页面写操作并呈现安全结果。
- * @param successMessage 成功后消息；null 表示不显示。
- * @param action 具体异步操作。
- * @returns 操作结束时完成。
+ * 统一管理页面动作状态和通俗反馈。
+ * @param successMessage 成功提示；不需要时为 null。
+ * @param action 当前异步动作。
+ * @returns 动作结束且等待状态恢复时完成。
  */
 async function runAction(successMessage: string | null, action: () => Promise<void>): Promise<void> {
   actionLoading.value = true
@@ -190,160 +152,99 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
     actionLoading.value = false
   }
 }
-
-/**
- * 深复制人物快照，避免编辑候选时修改接口返回对象。
- * @param snapshot 可选基础快照。
- * @returns 独立可编辑快照。
- */
-function cloneSnapshot(snapshot?: PersonaSnapshot): PersonaSnapshot {
-  return snapshot ? { ...snapshot } : {
-    summary: '', identityFacts: '', interests: '', valuesAndMotivations: '',
-    expressionStyle: '', appearance: '', visualStyle: '', constraints: '',
-  }
-}
-
-/**
- * 格式化 UTC 毫秒时间供本地管理界面阅读。
- * @param timestamp UTC Unix 毫秒。
- * @returns 本地日期时间文本。
- */
-function formatTime(timestamp: number): string {
-  return new Date(timestamp).toLocaleString('zh-CN')
-}
 </script>
 
 <template>
   <div>
     <ContentPageHeader
-      :title="details?.persona.name || '人物详情'"
-      description="正在使用的设定不会被直接覆盖；新内容先保存为修改稿，再由你确认使用。"
+      :title="details?.persona.name || '人物工作区'"
+      :description="details?.persona.currentSummary || '灵魂、成长和记忆的长期内容都需要人工确认后才会影响新任务。'"
     >
-      <UButton to="/personas" color="neutral" variant="ghost">返回列表</UButton>
+      <UButton to="/personas" color="neutral" variant="ghost">返回人物列表</UButton>
+      <UButton v-if="details?.persona.activeVersionId" to="/workbench">新建任务</UButton>
     </ContentPageHeader>
 
-    <UAlert v-if="error || !details" color="error" title="人物详情加载失败" :actions="[{ label: '重试', onClick: () => refresh() }]" />
+    <UAlert v-if="error || !details || !soul" color="error" title="人物工作区加载失败" :actions="[{ label: '重试', onClick: () => Promise.all([refresh(), refreshSoul()]) }]" />
     <template v-else>
       <UAlert v-if="actionError" class="mb-5" color="error" title="操作失败" :description="actionError" />
       <UAlert v-if="actionMessage" class="mb-5" color="success" title="操作完成" :description="actionMessage" />
 
-      <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
+      <div class="mb-6 grid gap-px overflow-hidden rounded-lg border border-default bg-default sm:grid-cols-4">
+        <div class="bg-default p-4"><p class="text-xs text-muted">所属世界</p><p class="mt-1 font-medium text-highlighted">{{ details.persona.worldName || '未关联世界' }}</p></div>
+        <div class="bg-default p-4"><p class="text-xs text-muted">当前灵魂</p><p class="mt-1 font-medium text-highlighted">{{ soul.activeVersion ? '已发布，可用于任务' : '尚未发布' }}</p></div>
+        <div class="bg-default p-4"><p class="text-xs text-muted">参考资料</p><p class="mt-1 font-medium text-highlighted">{{ details.sources.length }} 项</p></div>
+        <div class="bg-default p-4"><p class="text-xs text-muted">待确认修改</p><p class="mt-1 font-medium text-highlighted">{{ soul.draft ? '1 份灵魂修改稿' : '没有灵魂修改稿' }}</p></div>
+      </div>
+
+      <nav class="mind-tabs mb-6" aria-label="人物工作区标签">
+        <button v-for="tab in tabs" :key="tab.id" class="mind-tab" :aria-selected="selectedTab === tab.id" @click="selectTab(tab.id)">{{ tab.label }}</button>
+      </nav>
+
+      <div v-if="selectedTab === 'overview'" class="grid gap-6 xl:grid-cols-2">
+        <UCard>
+          <template #header><h2 class="font-semibold text-highlighted">当前人物状态</h2></template>
+          <p class="whitespace-pre-wrap text-sm leading-6 text-muted">{{ soul.activeVersion?.snapshot.runtimeSummary || '人物还没有发布灵魂。完善并发布灵魂后，才能稳定模拟这个人物。' }}</p>
+          <UButton class="mt-4" color="neutral" variant="soft" @click="selectTab('soul')">查看和编辑灵魂</UButton>
+        </UCard>
+        <UCard>
+          <template #header><h2 class="font-semibold text-highlighted">变化边界</h2></template>
+          <div class="space-y-3 text-sm text-muted">
+            <p>成长来自你明确提供的人物反馈资料，确认前不会生效。</p>
+            <p>记忆来自人物多次有效处理记录，单次输出不会直接形成稳定记忆。</p>
+            <p>成长和记忆不会自动改写灵魂；吸收后仍需发布新灵魂。</p>
+          </div>
+        </UCard>
+      </div>
+
+      <ContentSoulWorkspace
+        v-else-if="selectedTab === 'soul'"
+        :workspace="soul"
+        :loading="actionLoading"
+        @save="saveSoulDraft"
+        @publish="publishSoul"
+        @delete="deleteSoulDraft"
+        @from-version="createDraftFromVersion"
+      />
+
+      <div v-else-if="selectedTab === 'growth'" class="grid gap-6 xl:grid-cols-2">
+        <UCard><template #header><h2 class="font-semibold text-highlighted">人物反馈资料</h2></template><p class="text-sm text-muted">人物只从你明确加入的反馈资料中成长。反馈按条管理，可批量启用、禁用、分析或删除。</p></UCard>
+        <UCard><template #header><h2 class="font-semibold text-highlighted">成长记录</h2></template><p class="text-sm text-muted">候选、已确认、已停用和已取代记录保持独立；只有已确认成长会进入新任务。</p></UCard>
+      </div>
+
+      <div v-else-if="selectedTab === 'memory'" class="grid gap-6 xl:grid-cols-2">
+        <UCard><template #header><h2 class="font-semibold text-highlighted">人物处理记录</h2></template><p class="text-sm text-muted">写作、兴趣判断和内容分析形成原始处理记录。记录可以批量启用、禁用或加入记忆分析。</p></UCard>
+        <UCard><template #header><h2 class="font-semibold text-highlighted">有效记忆</h2></template><p class="text-sm text-muted">多条独立证据分析出的候选仍需人工确认。记忆转成长时会先生成反馈资料。</p></UCard>
+      </div>
+
+      <div v-else class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
         <div class="space-y-6">
           <UCard>
-            <template #header><div><h2 class="font-semibold text-highlighted">基本信息</h2><p class="mt-1 text-sm text-muted">世界设定会作为这个人物执行新任务时的共同背景。</p></div></template>
+            <template #header><div><h2 class="font-semibold text-highlighted">基本信息</h2><p class="mt-1 text-sm text-muted">名称用于后台辨认；所属世界的已发布灵魂会进入人物的新任务。</p></div></template>
             <UForm :schema="updatePersonaSchema" :state="metadata" class="grid gap-4 md:grid-cols-2" @submit="saveMetadata">
               <UFormField name="name" label="人物名称" required><UInput v-model="metadata.name" class="w-full" /></UFormField>
-              <UFormField name="worldId" label="世界设定">
-                <select v-model="metadata.worldId" class="native-control">
-                  <option :value="null">不关联世界</option>
-                  <option v-for="world in worlds" :key="world.id" :value="world.id">{{ world.name }}</option>
-                </select>
+              <UFormField name="worldId" label="所属世界">
+                <select v-model="metadata.worldId" class="native-control"><option :value="null">不关联世界</option><option v-for="world in worlds" :key="world.id" :value="world.id">{{ world.name }}</option></select>
               </UFormField>
               <div class="md:col-span-2"><UButton type="submit" :loading="actionLoading">保存基本信息</UButton></div>
             </UForm>
           </UCard>
-
           <UCard>
-            <template #header>
-              <div><h2 class="font-semibold text-highlighted">修改记录</h2><p class="mt-1 text-sm text-muted">标记为“正在使用”的设定会用于之后创建的新任务。</p></div>
-            </template>
-            <div class="space-y-4">
-              <div v-for="version in details.versions" :key="version.id" class="rounded-md border border-default p-4">
-                <div class="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <div class="flex items-center gap-2">
-                      <UBadge :color="version.status === 'published' ? 'success' : 'warning'" variant="subtle">{{ version.status === 'published' ? '已确认' : '待确认修改稿' }}</UBadge>
-                      <UBadge v-if="version.id === details.persona.activeVersionId" color="primary">正在使用</UBadge>
-                    </div>
-                    <p class="mt-2 font-medium text-highlighted">{{ version.changeSummary }}</p>
-                    <p class="mt-1 text-xs text-muted">{{ formatTime(version.createdAt) }} · {{ version.id }}</p>
-                  </div>
-                  <div class="flex gap-2">
-                    <UButton v-if="version.status === 'candidate'" size="sm" :loading="actionLoading" @click="publishVersion(version.id)">确认并使用</UButton>
-                    <UButton v-else-if="version.id !== details.persona.activeVersionId" size="sm" color="neutral" variant="soft" :loading="actionLoading" @click="rollbackVersion(version.id)">恢复使用此版</UButton>
-                  </div>
-                </div>
-                <p class="mt-3 whitespace-pre-wrap text-sm text-muted">{{ version.snapshot.summary }}</p>
-              </div>
+            <template #header><div><h2 class="font-semibold text-highlighted">参考资料</h2><p class="mt-1 text-sm text-muted">普通参考资料帮助当前任务取证，不会自动变成人物成长。</p></div></template>
+            <div v-if="details.sources.length" class="grid gap-3 sm:grid-cols-2">
+              <NuxtLink v-for="source in details.sources" :key="source.id" :to="`/sources/${source.id}`" class="rounded-lg border border-default p-3"><p class="font-medium text-highlighted">{{ source.name }}</p><p class="mt-1 line-clamp-2 text-sm text-muted">{{ source.contentText }}</p></NuxtLink>
             </div>
-          </UCard>
-
-          <UCard>
-            <template #header><div><h2 class="font-semibold text-highlighted">修改人物设定</h2><p class="mt-1 text-sm text-muted">先保存为修改稿，确认无误后再启用，不会直接影响当前人物。</p></div></template>
-            <UForm :schema="createPersonaVersionSchema" :state="candidate" class="space-y-5" @submit="createCandidate">
-              <UFormField name="baseVersionId" label="从哪一版开始修改" required>
-                <select v-model="candidate.baseVersionId" class="native-control">
-                  <option v-for="version in details.versions.filter(item => item.status !== 'rejected')" :key="version.id" :value="version.id">{{ version.changeSummary }}（{{ version.status === 'published' ? '已确认' : '修改稿' }}）</option>
-                </select>
-              </UFormField>
-              <div class="grid gap-4 md:grid-cols-2">
-                <UFormField v-for="field in snapshotFields" :key="field.key" :name="`snapshot.${field.key}`" :label="field.label" :class="field.key === 'summary' || field.key === 'constraints' ? 'md:col-span-2' : ''">
-                  <UTextarea v-model="candidate.snapshot[field.key]" class="w-full" autoresize />
-                </UFormField>
-              </div>
-              <UFormField name="changeSummary" label="这次改了什么" required><UInput v-model="candidate.changeSummary" class="w-full" /></UFormField>
-              <UButton type="submit" :loading="actionLoading">保存修改稿</UButton>
-            </UForm>
-          </UCard>
-
-          <UCard>
-            <template #header><h2 class="font-semibold text-highlighted">比较两个版本</h2></template>
-            <div class="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
-              <select v-model="comparison.base" class="native-control" aria-label="基础版本">
-                <option v-for="version in details.versions" :key="version.id" :value="version.id">{{ version.changeSummary }}</option>
-              </select>
-              <select v-model="comparison.target" class="native-control" aria-label="目标版本">
-                <option v-for="version in details.versions" :key="version.id" :value="version.id">{{ version.changeSummary }}</option>
-              </select>
-              <UButton color="neutral" variant="soft" :loading="actionLoading" @click="compareVersions">比较</UButton>
-            </div>
-            <ContentPersonaVersionDiff v-if="differences" class="mt-5" :differences="differences" />
+            <p v-else class="text-sm text-muted">当前没有直接关联的参考资料。</p>
           </UCard>
         </div>
-
-        <div class="space-y-6">
-          <UCard>
-            <template #header><h2 class="font-semibold text-highlighted">关联资料</h2></template>
-            <div v-if="details.sources.length" class="space-y-2">
-              <UButton v-for="source in details.sources" :key="source.id" :to="`/sources/${source.id}`" color="neutral" variant="soft" block class="justify-start">{{ source.name }}</UButton>
-            </div>
-            <p v-else class="text-sm text-muted">未关联资料。可在资料详情中建立关联。</p>
-          </UCard>
-
-          <UCard>
-            <template #header>
-              <div><h2 class="font-semibold text-highlighted">人物记忆</h2><p class="mt-1 text-sm text-muted">系统整理出的内容先等待确认，只有“正在使用”的记忆会影响新任务。</p></div>
-            </template>
-            <div v-if="memories.length" class="space-y-3">
-              <div v-for="memory in memories" :key="memory.id" class="rounded-md border border-default p-3">
-                <div class="flex items-center justify-between gap-2">
-                  <UBadge :color="memory.status === 'active' ? 'success' : memory.status === 'candidate' ? 'warning' : 'neutral'" variant="subtle">
-                    {{ memory.status === 'active' ? '正在使用' : memory.status === 'candidate' ? '等待确认' : memory.status === 'deprecated' ? '已停用' : '已拒绝' }}
-                  </UBadge>
-                  <span class="text-xs text-muted">{{ memory.sourceType === 'openviking_session' ? '交流整理' : memory.sourceType === 'feedback' ? '长期反馈' : '手动记录' }}</span>
-                </div>
-                <p class="mt-2 whitespace-pre-wrap text-sm text-muted">{{ memory.content }}</p>
-                <div class="mt-3 flex flex-wrap gap-2">
-                  <UButton v-if="memory.status === 'candidate'" size="xs" :loading="actionLoading" @click="updateMemoryStatus(memory.id, 'active')">确认使用</UButton>
-                  <UButton v-if="memory.status === 'candidate'" size="xs" color="neutral" variant="soft" :loading="actionLoading" @click="updateMemoryStatus(memory.id, 'rejected')">拒绝</UButton>
-                  <UButton v-if="memory.status === 'active'" size="xs" color="neutral" variant="soft" :loading="actionLoading" @click="updateMemoryStatus(memory.id, 'deprecated')">停用</UButton>
-                  <UButton v-if="memory.status === 'deprecated'" size="xs" :loading="actionLoading" @click="updateMemoryStatus(memory.id, 'active')">恢复使用</UButton>
-                </div>
-              </div>
-            </div>
-            <p v-else class="text-sm text-muted">还没有人物记忆。明确提交的长期反馈或交流整理结果会显示在这里。</p>
-          </UCard>
-
-          <UCard>
-            <template #header><h2 class="font-semibold text-error">永久删除</h2></template>
-            <UButton v-if="!deletionImpact" color="error" variant="soft" :loading="actionLoading" @click="inspectDeletion">查看删除影响</UButton>
-            <div v-else class="space-y-3 text-sm">
-              <p>将删除 {{ deletionImpact.versionCount }} 条人物修改记录、{{ deletionImpact.runHistory.runs }} 次任务记录、{{ deletionImpact.runHistory.tasks }} 个后台任务、{{ deletionImpact.runHistory.documentSpecs }} 份内容规划、{{ deletionImpact.runHistory.artifactBlocks }} 个内容块及 {{ deletionImpact.runHistory.blockAttempts }} 次尝试，并解除 {{ deletionImpact.relatedSources.length }} 项资料关系。共享资料和世界不会删除。</p>
-              <label class="flex items-start gap-2"><input v-model="deletionConfirmed" type="checkbox" class="mt-1"><span>我确认永久删除此人物，恢复只能依赖事先备份。</span></label>
-              <UButton color="error" :disabled="!deletionConfirmed" :loading="actionLoading" @click="deletePersona">永久删除人物</UButton>
-            </div>
-          </UCard>
-        </div>
+        <UCard>
+          <template #header><h2 class="font-semibold text-error">删除人物</h2></template>
+          <UButton v-if="!deletionImpact" color="error" variant="soft" :loading="actionLoading" @click="inspectDeletion">先查看会删除什么</UButton>
+          <div v-else class="space-y-3 text-sm">
+            <p>将删除 {{ deletionImpact.versionCount }} 个灵魂版本和 {{ deletionImpact.runHistory.runs }} 次历史任务。</p>
+            <UCheckbox v-model="deletionConfirmed" label="我确认永久删除这个人物" />
+            <UButton color="error" :disabled="!deletionConfirmed" :loading="actionLoading" @click="deletePersona">永久删除人物</UButton>
+          </div>
+        </UCard>
       </div>
     </template>
   </div>

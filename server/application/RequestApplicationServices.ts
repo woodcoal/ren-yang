@@ -1,5 +1,6 @@
 import type { AuthenticationApplicationService } from './authentication/AuthenticationApplicationService'
 import type { ContentApplicationService } from './content/ContentApplicationService'
+import type { SoulApplicationService } from './content/SoulApplicationService'
 import type { GenerationApplicationService } from './generation/GenerationApplicationService'
 import type { FeedbackApplicationService } from './feedback/FeedbackApplicationService'
 import type { SystemApplicationService } from './system/SystemApplicationService'
@@ -12,6 +13,8 @@ export interface RequestApplicationServices {
   authentication: AuthenticationApplicationService
   /** 人物、世界、版本和资料用例。 */
   content: ContentApplicationService
+  /** 世界与人物灵魂草稿及发布用例。 */
+  soul: SoulApplicationService
   /** 兴趣判断、文档规划、生成和运行历史用例。 */
   generation: GenerationApplicationService
   /** 反馈归因、修订提案、评测和发布用例。 */

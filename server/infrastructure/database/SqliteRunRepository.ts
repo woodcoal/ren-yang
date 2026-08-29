@@ -148,7 +148,7 @@ export class SqliteRunRepository implements RunRepository {
     const clauses: string[] = []
     const parameters: unknown[] = []
     if (filter.personaId) {
-      clauses.push('persona_versions.persona_id = ?')
+      clauses.push('soul_versions.persona_id = ?')
       parameters.push(filter.personaId)
     }
     if (filter.kind) {
@@ -162,7 +162,7 @@ export class SqliteRunRepository implements RunRepository {
     parameters.push(filter.limit)
     return this.client.prepare(`
       SELECT generation_runs.* FROM generation_runs
-      INNER JOIN persona_versions ON persona_versions.id = generation_runs.persona_version_id
+      INNER JOIN soul_versions ON soul_versions.id = generation_runs.persona_version_id
       ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''}
       ORDER BY generation_runs.created_at DESC, generation_runs.id DESC LIMIT ?
     `).all(...parameters).map(toRun)
@@ -179,8 +179,8 @@ export class SqliteRunRepository implements RunRepository {
     const row = this.client.prepare(`
       SELECT personas.id AS persona_id, personas.name AS persona_name
       FROM generation_runs
-      INNER JOIN persona_versions ON persona_versions.id = generation_runs.persona_version_id
-      INNER JOIN personas ON personas.id = persona_versions.persona_id
+      INNER JOIN soul_versions ON soul_versions.id = generation_runs.persona_version_id
+      INNER JOIN personas ON personas.id = soul_versions.persona_id
       WHERE generation_runs.id = ?
     `).get(runId) as Record<string, unknown> | undefined
     return row ? { personaId: String(row.persona_id), personaName: String(row.persona_name) } : null

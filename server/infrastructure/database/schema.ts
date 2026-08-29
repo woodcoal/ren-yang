@@ -79,33 +79,14 @@ export const worlds = sqliteTable(
     id: text('id').primaryKey(),
     name: text('name').notNull(),
     summary: text('summary').notNull().default(''),
-    activeVersionId: text('active_version_id'),
+    activeSoulVersionId: text('active_soul_version_id'),
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull(),
   },
   table => [check('worlds_name_not_empty_check', sql`length(trim(${table.name})) > 0`)],
 )
 
-/** 世界设定的不可变内容版本。 */
-export const worldVersions = sqliteTable(
-  'world_versions',
-  {
-    id: text('id').primaryKey(),
-    worldId: text('world_id').notNull().references(() => worlds.id, { onDelete: 'cascade' }),
-    parentVersionId: text('parent_version_id'),
-    status: text('status').notNull().default('candidate'),
-    snapshotJson: text('snapshot_json').notNull(),
-    changeSummary: text('change_summary').notNull(),
-    publishedAt: integer('published_at'),
-    createdAt: integer('created_at').notNull(),
-  },
-  table => [
-    index('world_versions_world_created_at_index').on(table.worldId, table.createdAt),
-    check('world_versions_status_check', sql`${table.status} IN ('candidate', 'published', 'rejected')`),
-  ],
-)
-
-/** 人物聚合根，世界和当前版本均为可选指针。 */
+/** 人物聚合根，世界和当前灵魂版本均为可选指针。 */
 export const personas = sqliteTable(
   'personas',
   {
@@ -113,7 +94,7 @@ export const personas = sqliteTable(
     worldId: text('world_id').references(() => worlds.id, { onDelete: 'restrict' }),
     name: text('name').notNull(),
     origin: text('origin').notNull(),
-    activeVersionId: text('active_version_id'),
+    activeSoulVersionId: text('active_soul_version_id'),
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull(),
   },
@@ -124,22 +105,62 @@ export const personas = sqliteTable(
   ],
 )
 
-/** 人物档案的不可变内容版本。 */
-export const personaVersions = sqliteTable(
-  'persona_versions',
+/** 世界或人物当前唯一可编辑的灵魂草稿。 */
+export const soulDrafts = sqliteTable(
+  'soul_drafts',
   {
     id: text('id').primaryKey(),
-    personaId: text('persona_id').notNull().references(() => personas.id, { onDelete: 'cascade' }),
-    parentVersionId: text('parent_version_id'),
-    status: text('status').notNull().default('candidate'),
-    snapshotJson: text('snapshot_json').notNull(),
+    subjectType: text('subject_type').notNull(),
+    worldId: text('world_id').references(() => worlds.id, { onDelete: 'cascade' }),
+    personaId: text('persona_id').references(() => personas.id, { onDelete: 'cascade' }),
+    baseVersionId: text('base_version_id'),
+    chaptersJson: text('chapters_json').notNull(),
+    runtimeSummary: text('runtime_summary').notNull(),
     changeSummary: text('change_summary').notNull(),
-    publishedAt: integer('published_at'),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  table => [
+    uniqueIndex('soul_drafts_world_unique').on(table.worldId),
+    uniqueIndex('soul_drafts_persona_unique').on(table.personaId),
+    check('soul_drafts_subject_type_check', sql`${table.subjectType} IN ('world', 'persona')`),
+    check('soul_drafts_subject_check', sql`(
+      (${table.subjectType} = 'world' AND ${table.worldId} IS NOT NULL AND ${table.personaId} IS NULL)
+      OR (${table.subjectType} = 'persona' AND ${table.personaId} IS NOT NULL AND ${table.worldId} IS NULL)
+    )`),
+    check('soul_drafts_runtime_summary_not_empty_check', sql`length(trim(${table.runtimeSummary})) > 0`),
+  ],
+)
+
+/** 世界与人物共用的不可变灵魂版本。 */
+export const soulVersions = sqliteTable(
+  'soul_versions',
+  {
+    id: text('id').primaryKey(),
+    subjectType: text('subject_type').notNull(),
+    worldId: text('world_id').references(() => worlds.id, { onDelete: 'cascade' }),
+    personaId: text('persona_id').references(() => personas.id, { onDelete: 'cascade' }),
+    parentVersionId: text('parent_version_id'),
+    chaptersJson: text('chapters_json').notNull(),
+    runtimeSummary: text('runtime_summary').notNull(),
+    runtimeTokenCount: integer('runtime_token_count').notNull(),
+    tokenCounter: text('token_counter').notNull(),
+    changeSummary: text('change_summary').notNull(),
+    status: text('status').notNull().default('published'),
+    publishedAt: integer('published_at').notNull(),
     createdAt: integer('created_at').notNull(),
   },
   table => [
-    index('persona_versions_persona_created_at_index').on(table.personaId, table.createdAt),
-    check('persona_versions_status_check', sql`${table.status} IN ('candidate', 'published', 'rejected')`),
+    index('soul_versions_world_created_at_index').on(table.worldId, table.createdAt),
+    index('soul_versions_persona_created_at_index').on(table.personaId, table.createdAt),
+    check('soul_versions_subject_type_check', sql`${table.subjectType} IN ('world', 'persona')`),
+    check('soul_versions_subject_check', sql`(
+      (${table.subjectType} = 'world' AND ${table.worldId} IS NOT NULL AND ${table.personaId} IS NULL)
+      OR (${table.subjectType} = 'persona' AND ${table.personaId} IS NOT NULL AND ${table.worldId} IS NULL)
+    )`),
+    check('soul_versions_status_check', sql`${table.status} IN ('published', 'archived', 'rejected')`),
+    check('soul_versions_runtime_summary_not_empty_check', sql`length(trim(${table.runtimeSummary})) > 0`),
+    check('soul_versions_runtime_token_count_check', sql`${table.runtimeTokenCount} >= 0`),
   ],
 )
 
@@ -262,7 +283,7 @@ export const generationRuns = sqliteTable(
   {
     id: text('id').primaryKey(),
     kind: text('kind').notNull(),
-    personaVersionId: text('persona_version_id').notNull().references(() => personaVersions.id, { onDelete: 'restrict' }),
+    personaVersionId: text('persona_version_id').notNull().references(() => soulVersions.id, { onDelete: 'restrict' }),
     formatTemplateId: text('format_template_id').references(() => formatTemplates.id, { onDelete: 'restrict' }),
     parameterProfileId: text('parameter_profile_id').references(() => parameterProfiles.id, { onDelete: 'restrict' }),
     status: text('status').notNull(),
@@ -484,8 +505,8 @@ export const revisionProposals = sqliteTable(
     id: text('id').primaryKey(),
     feedbackId: text('feedback_id').notNull().references(() => feedbackEvents.id, { onDelete: 'cascade' }),
     personaId: text('persona_id').notNull().references(() => personas.id, { onDelete: 'cascade' }),
-    baseVersionId: text('base_version_id').notNull().references(() => personaVersions.id, { onDelete: 'cascade' }),
-    candidateVersionId: text('candidate_version_id').notNull().references(() => personaVersions.id, { onDelete: 'cascade' }),
+    baseVersionId: text('base_version_id').notNull().references(() => soulVersions.id, { onDelete: 'cascade' }),
+    candidateVersionId: text('candidate_version_id').notNull().references(() => soulVersions.id, { onDelete: 'cascade' }),
     riskLevel: text('risk_level').notNull(),
     status: text('status').notNull().default('awaiting_evaluation'),
     patchesJson: text('patches_json').notNull(),
@@ -628,7 +649,7 @@ export const evaluationRuns = sqliteTable(
   {
     id: text('id').primaryKey(),
     proposalId: text('proposal_id').notNull().references(() => revisionProposals.id, { onDelete: 'cascade' }),
-    candidateVersionId: text('candidate_version_id').notNull().references(() => personaVersions.id, { onDelete: 'cascade' }),
+    candidateVersionId: text('candidate_version_id').notNull().references(() => soulVersions.id, { onDelete: 'cascade' }),
     status: text('status').notNull().default('queued'),
     modelSnapshotJson: text('model_snapshot_json').notNull(),
     parameterSnapshotJson: text('parameter_snapshot_json').notNull(),
@@ -705,9 +726,9 @@ export const databaseSchema = {
   auditEvents,
   taskJobs,
   worlds,
-  worldVersions,
   personas,
-  personaVersions,
+  soulDrafts,
+  soulVersions,
   sourceMaterials,
   sourceChunks,
   personaSources,

@@ -30,8 +30,8 @@ export interface SourceLinkRecord {
 export interface CreatePersonaRecord {
   /** 人物标识。 */
   id: string
-  /** 初始候选版本标识。 */
-  versionId: string
+  /** 初始灵魂草稿标识。 */
+  draftId: string
   /** 可选世界标识。 */
   worldId: string | null
   /** 人物名称。 */
@@ -52,8 +52,8 @@ export interface CreatePersonaRecord {
 export interface CreateWorldRecord {
   /** 世界标识。 */
   id: string
-  /** 初始候选版本标识。 */
-  versionId: string
+  /** 初始灵魂草稿标识。 */
+  draftId: string
   /** 世界名称。 */
   name: string
   /** 世界摘要。 */
@@ -126,12 +126,6 @@ export interface ContentRepository {
   listPersonaVersions(personaId: string): Promise<PersonaVersionRecord[]>
   /** @param id 版本标识。 @returns 版本或 null。 */
   findPersonaVersion(id: string): Promise<PersonaVersionRecord | null>
-  /** @param version 新候选版本。 @returns 无返回值。 */
-  createPersonaVersion(version: PersonaVersionRecord): Promise<void>
-  /** @param personaId 人物标识。 @param versionId 候选版本标识。 @param timestamp 发布时间。 @returns 发布是否成功。 */
-  publishPersonaVersion(personaId: string, versionId: string, timestamp: number): Promise<boolean>
-  /** @param personaId 人物标识。 @param versionId 已发布版本标识。 @param timestamp 更新时间。 @returns 回滚是否成功。 */
-  rollbackPersona(personaId: string, versionId: string, timestamp: number): Promise<boolean>
   /** @param personaId 人物标识。 @returns 关联资料。 */
   listPersonaSources(personaId: string): Promise<SourceMaterialRecord[]>
   /** @param personaId 人物标识。 @returns 将随人物删除的运行历史统计。 */
@@ -153,12 +147,6 @@ export interface ContentRepository {
   listWorldVersions(worldId: string): Promise<WorldVersionRecord[]>
   /** @param id 版本标识。 @returns 版本或 null。 */
   findWorldVersion(id: string): Promise<WorldVersionRecord | null>
-  /** @param version 新候选版本。 @returns 无返回值。 */
-  createWorldVersion(version: WorldVersionRecord): Promise<void>
-  /** @param worldId 世界标识。 @param versionId 候选版本标识。 @param timestamp 发布时间。 @returns 发布是否成功。 */
-  publishWorldVersion(worldId: string, versionId: string, timestamp: number): Promise<boolean>
-  /** @param worldId 世界标识。 @param versionId 已发布版本标识。 @param timestamp 更新时间。 @returns 回滚是否成功。 */
-  rollbackWorld(worldId: string, versionId: string, timestamp: number): Promise<boolean>
   /** @param versionId 世界版本标识。 @returns 后续版本与历史任务的引用数量。 */
   getWorldVersionDeletionReferences(versionId: string): Promise<WorldVersionDeletionReferences>
   /** @param versionId 世界版本标识。 @param timestamp 删除时间。 @returns 满足安全条件时删除的版本数。 */

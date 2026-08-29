@@ -32,14 +32,14 @@ const state = reactive<CreatePersonaInput>({
   worldId: null,
   sourceIds: [],
   snapshot: {
-    summary: '',
-    identityFacts: '',
-    interests: '',
-    valuesAndMotivations: '',
-    expressionStyle: '',
-    appearance: '',
-    visualStyle: '',
-    constraints: '',
+    chapters: [{
+      id: '00000000-0000-4000-8000-000000000001',
+      title: '核心人设',
+      content: '',
+      order: 0,
+      required: true,
+    }],
+    runtimeSummary: '',
   },
   changeSummary: '建立初始人物档案',
 })
@@ -59,7 +59,10 @@ function applyInitialValue(value: CreatePersonaInput): void {
   state.origin = value.origin
   state.worldId = value.worldId ?? null
   state.sourceIds = [...value.sourceIds]
-  state.snapshot = { ...value.snapshot }
+  state.snapshot = {
+    chapters: value.snapshot.chapters.map(chapter => ({ ...chapter })),
+    runtimeSummary: value.snapshot.runtimeSummary,
+  }
   state.changeSummary = value.changeSummary
 }
 
@@ -104,41 +107,16 @@ function handleSubmit(event: FormSubmitEvent<CreatePersonaInput>): void {
       </UFormField>
     </div>
 
-    <USeparator label="人物详细设定" />
-    <div class="grid gap-5 md:grid-cols-2">
-      <UFormField name="snapshot.summary" label="人物定位" required class="md:col-span-2">
-        <UTextarea v-model="state.snapshot.summary" class="w-full" autoresize :disabled="loading" />
-      </UFormField>
-      <UFormField name="snapshot.identityFacts" label="身份事实">
-        <UTextarea v-model="state.snapshot.identityFacts" class="w-full" autoresize :disabled="loading" />
-      </UFormField>
-      <UFormField name="snapshot.interests" label="兴趣偏好">
-        <UTextarea v-model="state.snapshot.interests" class="w-full" autoresize :disabled="loading" />
-      </UFormField>
-      <UFormField name="snapshot.valuesAndMotivations" label="价值与动机">
-        <UTextarea v-model="state.snapshot.valuesAndMotivations" class="w-full" autoresize :disabled="loading" />
-      </UFormField>
-      <UFormField name="snapshot.expressionStyle" label="表达风格">
-        <UTextarea v-model="state.snapshot.expressionStyle" class="w-full" autoresize :disabled="loading" />
-      </UFormField>
-      <UFormField name="snapshot.appearance" label="外观描述">
-        <UTextarea v-model="state.snapshot.appearance" class="w-full" autoresize :disabled="loading" />
-      </UFormField>
-      <UFormField name="snapshot.visualStyle" label="视觉风格">
-        <UTextarea v-model="state.snapshot.visualStyle" class="w-full" autoresize :disabled="loading" />
-      </UFormField>
-      <UFormField name="snapshot.constraints" label="约束" class="md:col-span-2">
-        <UTextarea v-model="state.snapshot.constraints" class="w-full" autoresize :disabled="loading" />
-      </UFormField>
-      <UFormField name="changeSummary" label="版本变化摘要" required class="md:col-span-2">
-        <UInput v-model="state.changeSummary" class="w-full" :disabled="loading" />
-      </UFormField>
-    </div>
+    <USeparator label="人物灵魂" />
+    <ContentSoulChapterEditor v-model="state.snapshot" subject-type="persona" :disabled="loading" />
+    <UFormField name="changeSummary" label="这次建立了什么" description="方便以后在灵魂版本记录中辨认。" required>
+      <UInput v-model="state.changeSummary" class="w-full" :disabled="loading" />
+    </UFormField>
 
     <p v-if="errorMessage" class="text-sm text-error" role="alert">{{ errorMessage }}</p>
     <div class="flex justify-end gap-2">
       <UButton to="/personas" color="neutral" variant="ghost">取消</UButton>
-      <UButton type="submit" :loading="loading">保存人物修改稿</UButton>
+      <UButton type="submit" :loading="loading">创建人物并保存灵魂草稿</UButton>
     </div>
   </UForm>
 </template>

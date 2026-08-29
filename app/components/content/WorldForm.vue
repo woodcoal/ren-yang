@@ -22,7 +22,16 @@ const emit = defineEmits<{
 const state = reactive<CreateWorldInput>({
   name: '',
   summary: '',
-  snapshot: { content: '' },
+  snapshot: {
+    chapters: [{
+      id: '00000000-0000-4000-8000-000000000002',
+      title: '基本规则与背景',
+      content: '',
+      order: 0,
+      required: true,
+    }],
+    runtimeSummary: '',
+  },
   changeSummary: '建立初始世界设定',
 })
 
@@ -42,13 +51,11 @@ function handleSubmit(event: FormSubmitEvent<CreateWorldInput>): void {
       <UFormField name="name" label="世界名称" required><UInput v-model="state.name" class="w-full" :disabled="loading" /></UFormField>
       <UFormField name="summary" label="简短说明" description="只方便后台辨认，不会提供给人物。"><UInput v-model="state.summary" class="w-full" :disabled="loading" /></UFormField>
     </div>
-    <UFormField name="snapshot.content" label="详细规则与背景" description="这部分会提供给关联人物的新任务。" required>
-      <UTextarea v-model="state.snapshot.content" class="w-full" :rows="10" autoresize :disabled="loading" />
-    </UFormField>
+    <ContentSoulChapterEditor v-model="state.snapshot" subject-type="world" :disabled="loading" />
     <UFormField name="changeSummary" label="这次写了什么" description="方便以后在修改记录中辨认。" required>
       <UInput v-model="state.changeSummary" class="w-full" :disabled="loading" />
     </UFormField>
     <p v-if="errorMessage" class="text-sm text-error" role="alert">{{ errorMessage }}</p>
-    <UButton type="submit" :loading="loading">保存初始修改稿</UButton>
+    <UButton type="submit" :loading="loading">创建世界并保存灵魂草稿</UButton>
   </UForm>
 </template>

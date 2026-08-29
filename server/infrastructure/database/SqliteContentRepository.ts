@@ -1,8 +1,11 @@
 import type { Database as BetterSqliteDatabase } from 'better-sqlite3'
-import { personaSnapshotSchema, worldSnapshotSchema } from '../../../shared/schemas/content'
+import { soulSnapshotSchema } from '../../../shared/schemas/content'
 import type {
   PersonaRecord,
   PersonaVersionRecord,
+  SoulDraftRecord,
+  SoulSubjectType,
+  SoulVersionRecord,
   SourceChunkRecord,
   SourceMaterialRecord,
   WorldRecord,
@@ -17,10 +20,11 @@ import type {
   SourceLinkRecord,
   WorldVersionDeletionReferences,
 } from '../../ports/ContentRepository'
+import type { PublishSoulDraftRecord, SoulRepository } from '../../ports/SoulRepository'
 import { insertAuditEvent } from './AuditSql'
 
 /** 使用 SQLite 短事务实现人物、世界、版本、资料和 FTS5 数据访问。 */
-export class SqliteContentRepository implements ContentRepository {
+export class SqliteContentRepository implements ContentRepository, SoulRepository {
   /**
    * 创建内容仓储。
    * @param client 已启用外键和迁移的 SQLite 客户端。
@@ -39,7 +43,7 @@ export class SqliteContentRepository implements ContentRepository {
   }
 
   /**
-   * 原子创建人物、初始候选版本和资料关联。
+   * 原子创建人物、初始灵魂草稿和资料关联。
    * @param record 已验证的创建命令。
    * @returns 无返回值。
    */
@@ -50,10 +54,19 @@ export class SqliteContentRepository implements ContentRepository {
         VALUES (?, ?, ?, ?, ?, ?)
       `).run(record.id, record.worldId, record.name, record.origin, record.timestamp, record.timestamp)
       this.client.prepare(`
-        INSERT INTO persona_versions (
-          id, persona_id, parent_version_id, status, snapshot_json, change_summary, created_at
-        ) VALUES (?, ?, NULL, 'candidate', ?, ?, ?)
-      `).run(record.versionId, record.id, JSON.stringify(record.snapshot), record.changeSummary, record.timestamp)
+        INSERT INTO soul_drafts (
+          id, subject_type, persona_id, base_version_id, chapters_json, runtime_summary,
+          change_summary, created_at, updated_at
+        ) VALUES (?, 'persona', ?, NULL, ?, ?, ?, ?, ?)
+      `).run(
+        record.draftId,
+        record.id,
+        JSON.stringify(record.snapshot.chapters),
+        record.snapshot.runtimeSummary,
+        record.changeSummary,
+        record.timestamp,
+        record.timestamp,
+      )
       const link = this.client.prepare(`
         INSERT INTO persona_sources (persona_id, source_id, priority) VALUES (?, ?, 100)
       `)
@@ -73,72 +86,18 @@ export class SqliteContentRepository implements ContentRepository {
   /** @param personaId 人物 UUID。 @returns 新版本在前的版本记录。 */
   async listPersonaVersions(personaId: string): Promise<PersonaVersionRecord[]> {
     return this.client.prepare(`
-      SELECT * FROM persona_versions WHERE persona_id = ? ORDER BY created_at DESC, id DESC
+      SELECT * FROM soul_versions
+      WHERE subject_type = 'persona' AND persona_id = ?
+      ORDER BY created_at DESC, id DESC
     `).all(personaId).map(toPersonaVersion)
   }
 
   /** @param id 版本 UUID。 @returns 找到的版本或 null。 */
   async findPersonaVersion(id: string): Promise<PersonaVersionRecord | null> {
-    const row = this.client.prepare('SELECT * FROM persona_versions WHERE id = ?').get(id)
+    const row = this.client.prepare(`
+      SELECT * FROM soul_versions WHERE id = ? AND subject_type = 'persona'
+    `).get(id)
     return row ? toPersonaVersion(row) : null
-  }
-
-  /** @param version 完整候选版本。 @returns 无返回值。 */
-  async createPersonaVersion(version: PersonaVersionRecord): Promise<void> {
-    this.client.prepare(`
-      INSERT INTO persona_versions (
-        id, persona_id, parent_version_id, status, snapshot_json, change_summary, published_at, created_at
-      ) VALUES (?, ?, ?, 'candidate', ?, ?, NULL, ?)
-    `).run(
-      version.id,
-      version.personaId,
-      version.parentVersionId,
-      JSON.stringify(version.snapshot),
-      version.changeSummary,
-      version.createdAt,
-    )
-  }
-
-  /** @param personaId 人物 UUID。 @param versionId 候选版本 UUID。 @param timestamp 发布时间。 @returns 仅当候选发布成功时为 true。 */
-  async publishPersonaVersion(personaId: string, versionId: string, timestamp: number): Promise<boolean> {
-    return this.client.transaction(() => {
-      const published = this.client.prepare(`
-        UPDATE persona_versions
-        SET status = 'published', published_at = ?
-        WHERE id = ? AND persona_id = ? AND status = 'candidate'
-      `).run(timestamp, versionId, personaId)
-      if (published.changes !== 1) {
-        return false
-      }
-      this.client.prepare(`
-        UPDATE personas SET active_version_id = ?, updated_at = ? WHERE id = ?
-      `).run(versionId, timestamp, personaId)
-      insertAuditEvent(this.client, {
-        actor: 'administrator', action: 'persona_version_published', targetType: 'persona_version',
-        targetId: versionId, details: { personaId }, timestamp,
-      })
-      return true
-    })()
-  }
-
-  /** @param personaId 人物 UUID。 @param versionId 历史已发布版本 UUID。 @param timestamp 更新时间。 @returns 目标有效时为 true。 */
-  async rollbackPersona(personaId: string, versionId: string, timestamp: number): Promise<boolean> {
-    return this.client.transaction(() => {
-      const result = this.client.prepare(`
-        UPDATE personas
-        SET active_version_id = ?, updated_at = ?
-        WHERE id = ? AND EXISTS (
-          SELECT 1 FROM persona_versions
-          WHERE id = ? AND persona_id = personas.id AND status = 'published'
-        )
-      `).run(versionId, timestamp, personaId, versionId)
-      if (result.changes !== 1) return false
-      insertAuditEvent(this.client, {
-        actor: 'administrator', action: 'persona_rolled_back', targetType: 'persona',
-        targetId: personaId, details: { versionId }, timestamp,
-      })
-      return true
-    })()
   }
 
   /** @param personaId 人物 UUID。 @returns 关联资料。 */
@@ -156,8 +115,8 @@ export class SqliteContentRepository implements ContentRepository {
     const value = this.client.prepare(`
       WITH persona_runs AS (
         SELECT generation_runs.id FROM generation_runs
-        INNER JOIN persona_versions ON persona_versions.id = generation_runs.persona_version_id
-        WHERE persona_versions.persona_id = ?
+        INNER JOIN soul_versions ON soul_versions.id = generation_runs.persona_version_id
+        WHERE soul_versions.persona_id = ?
       ), persona_documents AS (
         SELECT artifact_documents.id FROM artifact_documents
         INNER JOIN persona_runs ON persona_runs.id = artifact_documents.run_id
@@ -187,8 +146,8 @@ export class SqliteContentRepository implements ContentRepository {
   async listPersonaRunIds(personaId: string): Promise<string[]> {
     return (this.client.prepare(`
       SELECT generation_runs.id FROM generation_runs
-      INNER JOIN persona_versions ON persona_versions.id = generation_runs.persona_version_id
-      WHERE persona_versions.persona_id = ? ORDER BY generation_runs.created_at, generation_runs.id
+      INNER JOIN soul_versions ON soul_versions.id = generation_runs.persona_version_id
+      WHERE soul_versions.persona_id = ? ORDER BY generation_runs.created_at, generation_runs.id
     `).all(personaId) as Array<{ id: string }>).map(item => item.id)
   }
 
@@ -198,13 +157,13 @@ export class SqliteContentRepository implements ContentRepository {
       this.client.prepare(`
         DELETE FROM artifact_documents WHERE run_id IN (
           SELECT generation_runs.id FROM generation_runs
-          INNER JOIN persona_versions ON persona_versions.id = generation_runs.persona_version_id
-          WHERE persona_versions.persona_id = ?
+          INNER JOIN soul_versions ON soul_versions.id = generation_runs.persona_version_id
+          WHERE soul_versions.persona_id = ?
         )
       `).run(personaId)
       this.client.prepare(`
         DELETE FROM generation_runs WHERE persona_version_id IN (
-          SELECT id FROM persona_versions WHERE persona_id = ?
+          SELECT id FROM soul_versions WHERE subject_type = 'persona' AND persona_id = ?
         )
       `).run(personaId)
       const changes = this.client.prepare('DELETE FROM personas WHERE id = ?').run(personaId).changes
@@ -227,7 +186,7 @@ export class SqliteContentRepository implements ContentRepository {
   }
 
   /**
-   * 原子创建世界和初始候选版本。
+   * 原子创建世界和初始灵魂草稿。
    * @param record 已验证的创建命令。
    * @returns 无返回值。
    */
@@ -237,10 +196,19 @@ export class SqliteContentRepository implements ContentRepository {
         INSERT INTO worlds (id, name, summary, created_at, updated_at) VALUES (?, ?, ?, ?, ?)
       `).run(record.id, record.name, record.summary, record.timestamp, record.timestamp)
       this.client.prepare(`
-        INSERT INTO world_versions (
-          id, world_id, parent_version_id, status, snapshot_json, change_summary, created_at
-        ) VALUES (?, ?, NULL, 'candidate', ?, ?, ?)
-      `).run(record.versionId, record.id, JSON.stringify(record.snapshot), record.changeSummary, record.timestamp)
+        INSERT INTO soul_drafts (
+          id, subject_type, world_id, base_version_id, chapters_json, runtime_summary,
+          change_summary, created_at, updated_at
+        ) VALUES (?, 'world', ?, NULL, ?, ?, ?, ?, ?)
+      `).run(
+        record.draftId,
+        record.id,
+        JSON.stringify(record.snapshot.chapters),
+        record.snapshot.runtimeSummary,
+        record.changeSummary,
+        record.timestamp,
+        record.timestamp,
+      )
     })()
   }
 
@@ -254,72 +222,18 @@ export class SqliteContentRepository implements ContentRepository {
   /** @param worldId 世界 UUID。 @returns 新版本在前的版本记录。 */
   async listWorldVersions(worldId: string): Promise<WorldVersionRecord[]> {
     return this.client.prepare(`
-      SELECT * FROM world_versions WHERE world_id = ? ORDER BY created_at DESC, id DESC
+      SELECT * FROM soul_versions
+      WHERE subject_type = 'world' AND world_id = ?
+      ORDER BY created_at DESC, id DESC
     `).all(worldId).map(toWorldVersion)
   }
 
   /** @param id 版本 UUID。 @returns 找到的世界版本或 null。 */
   async findWorldVersion(id: string): Promise<WorldVersionRecord | null> {
-    const row = this.client.prepare('SELECT * FROM world_versions WHERE id = ?').get(id)
+    const row = this.client.prepare(`
+      SELECT * FROM soul_versions WHERE id = ? AND subject_type = 'world'
+    `).get(id)
     return row ? toWorldVersion(row) : null
-  }
-
-  /** @param version 完整候选版本。 @returns 无返回值。 */
-  async createWorldVersion(version: WorldVersionRecord): Promise<void> {
-    this.client.prepare(`
-      INSERT INTO world_versions (
-        id, world_id, parent_version_id, status, snapshot_json, change_summary, published_at, created_at
-      ) VALUES (?, ?, ?, 'candidate', ?, ?, NULL, ?)
-    `).run(
-      version.id,
-      version.worldId,
-      version.parentVersionId,
-      JSON.stringify(version.snapshot),
-      version.changeSummary,
-      version.createdAt,
-    )
-  }
-
-  /** @param worldId 世界 UUID。 @param versionId 候选版本 UUID。 @param timestamp 发布时间。 @returns 仅当候选发布成功时为 true。 */
-  async publishWorldVersion(worldId: string, versionId: string, timestamp: number): Promise<boolean> {
-    return this.client.transaction(() => {
-      const published = this.client.prepare(`
-        UPDATE world_versions
-        SET status = 'published', published_at = ?
-        WHERE id = ? AND world_id = ? AND status = 'candidate'
-      `).run(timestamp, versionId, worldId)
-      if (published.changes !== 1) {
-        return false
-      }
-      this.client.prepare(`
-        UPDATE worlds SET active_version_id = ?, updated_at = ? WHERE id = ?
-      `).run(versionId, timestamp, worldId)
-      insertAuditEvent(this.client, {
-        actor: 'administrator', action: 'world_version_published', targetType: 'world_version',
-        targetId: versionId, details: { worldId }, timestamp,
-      })
-      return true
-    })()
-  }
-
-  /** @param worldId 世界 UUID。 @param versionId 已发布版本 UUID。 @param timestamp 更新时间。 @returns 目标有效时为 true。 */
-  async rollbackWorld(worldId: string, versionId: string, timestamp: number): Promise<boolean> {
-    return this.client.transaction(() => {
-      const result = this.client.prepare(`
-        UPDATE worlds
-        SET active_version_id = ?, updated_at = ?
-        WHERE id = ? AND EXISTS (
-          SELECT 1 FROM world_versions
-          WHERE id = ? AND world_id = worlds.id AND status = 'published'
-        )
-      `).run(versionId, timestamp, worldId, versionId)
-      if (result.changes !== 1) return false
-      insertAuditEvent(this.client, {
-        actor: 'administrator', action: 'world_rolled_back', targetType: 'world',
-        targetId: worldId, details: { versionId }, timestamp,
-      })
-      return true
-    })()
   }
 
   /**
@@ -330,7 +244,7 @@ export class SqliteContentRepository implements ContentRepository {
   async getWorldVersionDeletionReferences(versionId: string): Promise<WorldVersionDeletionReferences> {
     const row = asRow(this.client.prepare(`
       SELECT
-        (SELECT COUNT(*) FROM world_versions WHERE parent_version_id = ?) AS child_versions,
+        (SELECT COUNT(*) FROM soul_versions WHERE subject_type = 'world' AND parent_version_id = ?) AS child_versions,
         (SELECT COUNT(DISTINCT run_id) FROM evidence_snapshots
           WHERE json_valid(metadata_json) = 1
             AND json_extract(metadata_json, '$.worldVersionId') = ?) AS runs
@@ -351,14 +265,15 @@ export class SqliteContentRepository implements ContentRepository {
     return this.client.transaction(() => {
       // 条件写入删除语句，避免检查完成后版本被发布或产生新引用的竞态。
       const changes = this.client.prepare(`
-        DELETE FROM world_versions
+        DELETE FROM soul_versions
         WHERE id = ?
-          AND NOT EXISTS (SELECT 1 FROM worlds WHERE active_version_id = world_versions.id)
-          AND NOT EXISTS (SELECT 1 FROM world_versions AS child WHERE child.parent_version_id = world_versions.id)
+          AND subject_type = 'world'
+          AND NOT EXISTS (SELECT 1 FROM worlds WHERE active_soul_version_id = soul_versions.id)
+          AND NOT EXISTS (SELECT 1 FROM soul_versions AS child WHERE child.parent_version_id = soul_versions.id)
           AND NOT EXISTS (
             SELECT 1 FROM evidence_snapshots
             WHERE json_valid(metadata_json) = 1
-              AND json_extract(metadata_json, '$.worldVersionId') = world_versions.id
+              AND json_extract(metadata_json, '$.worldVersionId') = soul_versions.id
           )
       `).run(versionId).changes
       if (changes === 1) insertAuditEvent(this.client, {
@@ -395,6 +310,151 @@ export class SqliteContentRepository implements ContentRepository {
       })
       return changes
     })()
+  }
+
+  /**
+   * 查询指定模拟对象的唯一灵魂草稿。
+   * @param subjectType 对象类型。
+   * @param subjectId 对象 UUID。
+   * @returns 当前草稿或 null。
+   */
+  async findSoulDraft(subjectType: SoulSubjectType, subjectId: string): Promise<SoulDraftRecord | null> {
+    const subjectColumn = subjectType === 'world' ? 'world_id' : 'persona_id'
+    const row = this.client.prepare(`
+      SELECT * FROM soul_drafts WHERE subject_type = ? AND ${subjectColumn} = ?
+    `).get(subjectType, subjectId)
+    return row ? toSoulDraft(row) : null
+  }
+
+  /**
+   * 原子替换指定对象的唯一灵魂草稿。
+   * @param draft 已规范化草稿。
+   * @returns 保存后的草稿。
+   */
+  async saveSoulDraft(draft: SoulDraftRecord): Promise<SoulDraftRecord> {
+    return this.client.transaction(() => {
+      const subjectColumn = draft.subjectType === 'world' ? 'world_id' : 'persona_id'
+      this.client.prepare(`
+        DELETE FROM soul_drafts WHERE subject_type = ? AND ${subjectColumn} = ?
+      `).run(draft.subjectType, draft.subjectId)
+      this.client.prepare(`
+        INSERT INTO soul_drafts (
+          id, subject_type, world_id, persona_id, base_version_id, chapters_json,
+          runtime_summary, change_summary, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        draft.id,
+        draft.subjectType,
+        draft.subjectType === 'world' ? draft.subjectId : null,
+        draft.subjectType === 'persona' ? draft.subjectId : null,
+        draft.baseVersionId,
+        JSON.stringify(draft.snapshot.chapters),
+        draft.snapshot.runtimeSummary,
+        draft.changeSummary,
+        draft.createdAt,
+        draft.updatedAt,
+      )
+      return draft
+    }).immediate()
+  }
+
+  /**
+   * 删除指定对象的当前灵魂草稿。
+   * @param subjectType 对象类型。
+   * @param subjectId 对象 UUID。
+   * @returns 删除行数。
+   */
+  async deleteSoulDraft(subjectType: SoulSubjectType, subjectId: string): Promise<number> {
+    const subjectColumn = subjectType === 'world' ? 'world_id' : 'persona_id'
+    return this.client.prepare(`
+      DELETE FROM soul_drafts WHERE subject_type = ? AND ${subjectColumn} = ?
+    `).run(subjectType, subjectId).changes
+  }
+
+  /**
+   * 查询指定对象的全部不可变灵魂版本。
+   * @param subjectType 对象类型。
+   * @param subjectId 对象 UUID。
+   * @returns 新版本在前的版本记录。
+   */
+  async listSoulVersions(subjectType: SoulSubjectType, subjectId: string): Promise<SoulVersionRecord[]> {
+    const subjectColumn = subjectType === 'world' ? 'world_id' : 'persona_id'
+    return this.client.prepare(`
+      SELECT * FROM soul_versions
+      WHERE subject_type = ? AND ${subjectColumn} = ?
+      ORDER BY created_at DESC, id DESC
+    `).all(subjectType, subjectId).map(toSoulVersion)
+  }
+
+  /**
+   * 查询单个不可变灵魂版本。
+   * @param versionId 版本 UUID。
+   * @returns 版本或 null。
+   */
+  async findSoulVersion(versionId: string): Promise<SoulVersionRecord | null> {
+    const row = this.client.prepare('SELECT * FROM soul_versions WHERE id = ?').get(versionId)
+    return row ? toSoulVersion(row) : null
+  }
+
+  /**
+   * 原子发布草稿、更新当前版本指针并删除草稿。
+   * @param record 发布命令。
+   * @returns 新版本；草稿状态变化时返回 null。
+   */
+  async publishSoulDraft(record: PublishSoulDraftRecord): Promise<SoulVersionRecord | null> {
+    return this.client.transaction(() => {
+      const rawDraft = this.client.prepare('SELECT * FROM soul_drafts WHERE id = ?').get(record.draftId)
+      if (!rawDraft) return null
+      const draft = toSoulDraft(rawDraft)
+      const version: SoulVersionRecord = {
+        id: record.versionId,
+        subjectType: draft.subjectType,
+        subjectId: draft.subjectId,
+        parentVersionId: draft.baseVersionId,
+        status: 'published',
+        snapshot: draft.snapshot,
+        runtimeTokenCount: record.runtimeTokenCount,
+        tokenCounter: record.tokenCounter,
+        changeSummary: draft.changeSummary,
+        publishedAt: record.timestamp,
+        createdAt: record.timestamp,
+      }
+      this.client.prepare(`
+        INSERT INTO soul_versions (
+          id, subject_type, world_id, persona_id, parent_version_id, chapters_json,
+          runtime_summary, runtime_token_count, token_counter, change_summary,
+          status, published_at, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'published', ?, ?)
+      `).run(
+        version.id,
+        version.subjectType,
+        version.subjectType === 'world' ? version.subjectId : null,
+        version.subjectType === 'persona' ? version.subjectId : null,
+        version.parentVersionId,
+        JSON.stringify(version.snapshot.chapters),
+        version.snapshot.runtimeSummary,
+        version.runtimeTokenCount,
+        version.tokenCounter,
+        version.changeSummary,
+        version.publishedAt,
+        version.createdAt,
+      )
+      const subjectTable = version.subjectType === 'world' ? 'worlds' : 'personas'
+      this.client.prepare(`
+        UPDATE ${subjectTable} SET active_soul_version_id = ?, updated_at = ? WHERE id = ?
+      `).run(version.id, record.timestamp, version.subjectId)
+      const deleted = this.client.prepare('DELETE FROM soul_drafts WHERE id = ?').run(record.draftId)
+      if (deleted.changes !== 1) return null
+      insertAuditEvent(this.client, {
+        actor: 'administrator',
+        action: 'soul_version_published',
+        targetType: 'soul_version',
+        targetId: version.id,
+        details: { subjectType: version.subjectType, subjectId: version.subjectId },
+        timestamp: record.timestamp,
+      })
+      return version
+    }).immediate()
   }
 
   /** @returns 按更新时间倒序的资料记录。 */
@@ -614,7 +674,7 @@ function toPersona(value: unknown): PersonaRecord {
     worldId: row.world_id === null ? null : String(row.world_id),
     name: String(row.name),
     origin: row.origin as PersonaRecord['origin'],
-    activeVersionId: row.active_version_id === null ? null : String(row.active_version_id),
+    activeVersionId: row.active_soul_version_id === null ? null : String(row.active_soul_version_id),
     createdAt: Number(row.created_at),
     updatedAt: Number(row.updated_at),
   }
@@ -628,9 +688,14 @@ function toPersonaVersion(value: unknown): PersonaVersionRecord {
     personaId: String(row.persona_id),
     parentVersionId: row.parent_version_id === null ? null : String(row.parent_version_id),
     status: row.status as PersonaVersionRecord['status'],
-    snapshot: personaSnapshotSchema.parse(JSON.parse(String(row.snapshot_json))),
+    snapshot: soulSnapshotSchema.parse({
+      chapters: JSON.parse(String(row.chapters_json)),
+      runtimeSummary: String(row.runtime_summary),
+    }),
+    runtimeTokenCount: Number(row.runtime_token_count),
+    tokenCounter: String(row.token_counter),
     changeSummary: String(row.change_summary),
-    publishedAt: row.published_at === null ? null : Number(row.published_at),
+    publishedAt: Number(row.published_at),
     createdAt: Number(row.created_at),
   }
 }
@@ -642,7 +707,7 @@ function toWorld(value: unknown): WorldRecord {
     id: String(row.id),
     name: String(row.name),
     summary: String(row.summary),
-    activeVersionId: row.active_version_id === null ? null : String(row.active_version_id),
+    activeVersionId: row.active_soul_version_id === null ? null : String(row.active_soul_version_id),
     createdAt: Number(row.created_at),
     updatedAt: Number(row.updated_at),
   }
@@ -656,9 +721,63 @@ function toWorldVersion(value: unknown): WorldVersionRecord {
     worldId: String(row.world_id),
     parentVersionId: row.parent_version_id === null ? null : String(row.parent_version_id),
     status: row.status as WorldVersionRecord['status'],
-    snapshot: worldSnapshotSchema.parse(JSON.parse(String(row.snapshot_json))),
+    snapshot: soulSnapshotSchema.parse({
+      chapters: JSON.parse(String(row.chapters_json)),
+      runtimeSummary: String(row.runtime_summary),
+    }),
+    runtimeTokenCount: Number(row.runtime_token_count),
+    tokenCounter: String(row.token_counter),
     changeSummary: String(row.change_summary),
-    publishedAt: row.published_at === null ? null : Number(row.published_at),
+    publishedAt: Number(row.published_at),
+    createdAt: Number(row.created_at),
+  }
+}
+
+/**
+ * 把 SQLite 灵魂草稿行转换为已校验领域记录。
+ * @param value SQLite 草稿行。
+ * @returns 灵魂草稿领域记录。
+ */
+function toSoulDraft(value: unknown): SoulDraftRecord {
+  const row = asRow(value)
+  const subjectType = row.subject_type as SoulSubjectType
+  return {
+    id: String(row.id),
+    subjectType,
+    subjectId: String(subjectType === 'world' ? row.world_id : row.persona_id),
+    baseVersionId: row.base_version_id === null ? null : String(row.base_version_id),
+    snapshot: soulSnapshotSchema.parse({
+      chapters: JSON.parse(String(row.chapters_json)),
+      runtimeSummary: String(row.runtime_summary),
+    }),
+    changeSummary: String(row.change_summary),
+    createdAt: Number(row.created_at),
+    updatedAt: Number(row.updated_at),
+  }
+}
+
+/**
+ * 把 SQLite 灵魂版本行转换为已校验领域记录。
+ * @param value SQLite 版本行。
+ * @returns 灵魂版本领域记录。
+ */
+function toSoulVersion(value: unknown): SoulVersionRecord {
+  const row = asRow(value)
+  const subjectType = row.subject_type as SoulSubjectType
+  return {
+    id: String(row.id),
+    subjectType,
+    subjectId: String(subjectType === 'world' ? row.world_id : row.persona_id),
+    parentVersionId: row.parent_version_id === null ? null : String(row.parent_version_id),
+    status: row.status as SoulVersionRecord['status'],
+    snapshot: soulSnapshotSchema.parse({
+      chapters: JSON.parse(String(row.chapters_json)),
+      runtimeSummary: String(row.runtime_summary),
+    }),
+    runtimeTokenCount: Number(row.runtime_token_count),
+    tokenCounter: String(row.token_counter),
+    changeSummary: String(row.change_summary),
+    publishedAt: Number(row.published_at),
     createdAt: Number(row.created_at),
   }
 }

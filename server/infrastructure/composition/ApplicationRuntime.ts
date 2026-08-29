@@ -2,6 +2,7 @@ import type { H3Event } from 'h3'
 import { AuthenticationApplicationService } from '../../application/authentication/AuthenticationApplicationService'
 import { AdministratorMaintenanceApplicationService } from '../../application/authentication/AdministratorMaintenanceApplicationService'
 import { ContentApplicationService } from '../../application/content/ContentApplicationService'
+import { SoulApplicationService } from '../../application/content/SoulApplicationService'
 import { GenerationApplicationService } from '../../application/generation/GenerationApplicationService'
 import { FeedbackApplicationService } from '../../application/feedback/FeedbackApplicationService'
 import { ContextSynchronizationApplicationService } from '../../application/context/ContextSynchronizationApplicationService'
@@ -36,6 +37,7 @@ import { OpenAiCompatibleImageModel } from '../models/OpenAiCompatibleImageModel
 import { OpenVikingHttpContextProvider } from '../context/OpenVikingHttpContextProvider'
 import { SwitchableContextProvider } from '../context/SwitchableContextProvider'
 import { LocalBackupManager } from '../backup/LocalBackupManager'
+import { ConservativeTokenCounter } from '../model/ConservativeTokenCounter'
 
 /** 应用运行时组合配置。 */
 export interface ApplicationRuntimeOptions {
@@ -99,6 +101,8 @@ export class ApplicationRuntime {
   private readonly clock = new SystemClock()
   /** 请求间可安全共享的内容应用服务。 */
   private readonly contentService: ContentApplicationService
+  /** 请求间可安全共享的灵魂应用服务。 */
+  private readonly soulService: SoulApplicationService
   /** 请求与 Worker 共用的生成应用服务。 */
   private readonly generationService: GenerationApplicationService
   /** 请求与 Worker 共用的反馈和评测应用服务。 */
@@ -148,12 +152,21 @@ export class ApplicationRuntime {
     )
     this.contentService = new ContentApplicationService({
       repository: contentRepository,
+      souls: contentRepository,
       identifiers,
       clock: this.clock,
       sourceProcessor,
       sourceFiles: new LocalSourceFileStorage(options.dataDirectory, storageCapacity),
       imageAssets,
       contextSyncQueue,
+    })
+    this.soulService = new SoulApplicationService({
+      content: contentRepository,
+      souls: contentRepository,
+      identifiers,
+      clock: this.clock,
+      tokenCounter: new ConservativeTokenCounter(),
+      tokenBudgets: { world: 2_500, persona: 3_500 },
     })
     this.generationService = new GenerationApplicationService({
       runs: new SqliteRunRepository(this.sqlite.getClient()),
@@ -232,6 +245,7 @@ export class ApplicationRuntime {
         clock: this.clock,
       }),
       content: this.contentService,
+      soul: this.soulService,
       generation: this.generationService,
       feedback: this.feedbackService,
       contextSynchronization: this.contextSynchronizationService,

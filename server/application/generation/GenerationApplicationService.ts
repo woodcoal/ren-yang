@@ -154,9 +154,11 @@ export class GenerationApplicationService implements TaskHandler {
       if (!version || version.status !== 'published') {
         throw new ApplicationError('WORLD_VERSION_NOT_ACTIVE', '所选世界设定当前版本不可用', 409)
       }
-      const content = version.snapshot.content.slice(0, PERSONA_DRAFT_WORLD_CHARACTER_LIMIT)
-      world = { content }
-      if (content.length < version.snapshot.content.length) warnings.push('世界设定较长，生成人物草稿时仅使用前 10000 字')
+      const runtimeSummary = version.snapshot.runtimeSummary.slice(0, PERSONA_DRAFT_WORLD_CHARACTER_LIMIT)
+      world = { chapters: version.snapshot.chapters, runtimeSummary }
+      if (runtimeSummary.length < version.snapshot.runtimeSummary.length) {
+        warnings.push('世界运行摘要较长，生成人物草稿时仅使用前 10000 字')
+      }
     }
 
     const sources = await Promise.all(sourceIds.map(async (sourceId) => {

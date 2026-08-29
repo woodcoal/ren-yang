@@ -6,17 +6,23 @@ export const personaOriginSchema = z.enum(['original', 'source_based', 'hybrid']
 /** 资料角色校验。 */
 export const sourceRoleSchema = z.enum(['canon_fact', 'reference', 'style_sample'], { error: '资料角色无效' })
 
-/** 人物档案快照校验。 */
-export const personaSnapshotSchema = z.object({
-  summary: z.string().trim().min(1, '人物定位不能为空').max(2_000, '人物定位不能超过 2000 字'),
-  identityFacts: z.string().trim().max(20_000, '身份事实不能超过 20000 字'),
-  interests: z.string().trim().max(20_000, '兴趣偏好不能超过 20000 字'),
-  valuesAndMotivations: z.string().trim().max(20_000, '价值与动机不能超过 20000 字'),
-  expressionStyle: z.string().trim().max(20_000, '表达风格不能超过 20000 字'),
-  appearance: z.string().trim().max(20_000, '外观描述不能超过 20000 字'),
-  visualStyle: z.string().trim().max(20_000, '视觉风格不能超过 20000 字'),
-  constraints: z.string().trim().max(20_000, '约束不能超过 20000 字'),
+/** 单个自由灵魂章节校验。 */
+export const soulChapterSchema = z.object({
+  id: z.string().uuid('章节标识无效'),
+  title: z.string().trim().min(1, '章节标题不能为空').max(100, '章节标题不能超过 100 字'),
+  content: z.string().trim().min(1, '章节正文不能为空').max(50_000, '单个章节不能超过 50000 字'),
+  order: z.number().int('章节顺序必须是整数').min(0, '章节顺序不能小于 0'),
+  required: z.boolean(),
 })
+
+/** 世界与人物共用的灵魂快照校验。 */
+export const soulSnapshotSchema = z.object({
+  chapters: z.array(soulChapterSchema).min(1, '至少需要一个灵魂章节').max(50, '灵魂章节不能超过 50 个'),
+  runtimeSummary: z.string().trim().min(1, '运行摘要不能为空').max(50_000, '运行摘要不能超过 50000 字'),
+})
+
+/** 人物灵魂快照校验。 */
+export const personaSnapshotSchema = soulSnapshotSchema
 
 /** 从自然语言生成人物候选草稿的输入。 */
 export const generatePersonaDraftSchema = z.object({
@@ -32,10 +38,8 @@ export const personaDraftSchema = z.object({
   snapshot: personaSnapshotSchema,
 })
 
-/** 世界设定快照校验。 */
-export const worldSnapshotSchema = z.object({
-  content: z.string().trim().min(1, '世界设定正文不能为空').max(100_000, '世界设定正文不能超过 100000 字'),
-})
+/** 世界灵魂快照校验。 */
+export const worldSnapshotSchema = soulSnapshotSchema
 
 /** 创建人物及其初始候选版本的输入。 */
 export const createPersonaSchema = z.object({
@@ -53,7 +57,7 @@ export const updatePersonaSchema = z.object({
   worldId: z.string().uuid('世界标识无效').nullable(),
 })
 
-/** 创建人物候选版本的输入。 */
+/** 保存人物灵魂草稿的兼容输入。 */
 export const createPersonaVersionSchema = z.object({
   baseVersionId: z.string().uuid('基础版本标识无效').nullable(),
   snapshot: personaSnapshotSchema,
@@ -79,7 +83,7 @@ export const updateWorldSchema = z.object({
   summary: z.string().trim().max(2_000, '世界摘要不能超过 2000 字'),
 })
 
-/** 创建世界候选版本的输入。 */
+/** 保存世界灵魂草稿的兼容输入。 */
 export const createWorldVersionSchema = z.object({
   baseVersionId: z.string().uuid('基础版本标识无效').nullable(),
   snapshot: worldSnapshotSchema,
@@ -89,6 +93,18 @@ export const createWorldVersionSchema = z.object({
 /** 回滚世界当前版本的输入。 */
 export const rollbackWorldSchema = z.object({
   versionId: z.string().uuid('版本标识无效'),
+})
+
+/** 创建或覆盖当前对象唯一灵魂草稿的输入。 */
+export const saveSoulDraftSchema = z.object({
+  baseVersionId: z.string().uuid('基础版本标识无效').nullable(),
+  snapshot: soulSnapshotSchema,
+  changeSummary: z.string().trim().min(1, '修改说明不能为空').max(500, '修改说明不能超过 500 字'),
+})
+
+/** 从历史版本建立可编辑灵魂草稿的输入。 */
+export const createSoulDraftFromVersionSchema = z.object({
+  versionId: z.string().uuid('历史版本标识无效'),
 })
 
 /** 创建粘贴文本资料的输入。 */
@@ -143,6 +159,8 @@ export type CreatePersonaVersionInput = z.infer<typeof createPersonaVersionSchem
 export type CreateWorldInput = z.infer<typeof createWorldSchema>
 export type UpdateWorldInput = z.infer<typeof updateWorldSchema>
 export type CreateWorldVersionInput = z.infer<typeof createWorldVersionSchema>
+export type SaveSoulDraftInput = z.infer<typeof saveSoulDraftSchema>
+export type CreateSoulDraftFromVersionInput = z.infer<typeof createSoulDraftFromVersionSchema>
 export type CreateSourceInput = z.infer<typeof createSourceSchema>
 export type UpdateSourceInput = z.infer<typeof updateSourceSchema>
 export type CreateSourceLinkInput = z.infer<typeof createSourceLinkSchema>

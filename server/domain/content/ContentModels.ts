@@ -1,8 +1,11 @@
 /** 人物建立时的事实来源模式。 */
 export type PersonaOrigin = 'original' | 'source_based' | 'hybrid'
 
-/** 不可变版本的生命周期状态。 */
-export type VersionStatus = 'candidate' | 'published' | 'rejected'
+/** 已发布灵魂版本的生命周期状态。 */
+export type VersionStatus = 'published' | 'archived' | 'rejected'
+
+/** 灵魂所属模拟对象类型。 */
+export type SoulSubjectType = 'world' | 'persona'
 
 /** 资料在证据优先级中的业务角色。 */
 export type SourceRole = 'canon_fact' | 'reference' | 'style_sample'
@@ -10,9 +13,55 @@ export type SourceRole = 'canon_fact' | 'reference' | 'style_sample'
 /** MVP 支持的资料输入方式。 */
 export type SourceInputType = 'paste' | 'txt' | 'markdown'
 
-import type { PersonaSnapshot, WorldSnapshot } from '../../../shared/types/content'
+import type { PersonaSnapshot, SoulSnapshot, WorldSnapshot } from '../../../shared/types/content'
 
-export type { PersonaSnapshot, WorldSnapshot }
+export type { PersonaSnapshot, SoulSnapshot, WorldSnapshot }
+
+/** 世界或人物当前唯一可编辑的灵魂草稿。 */
+export interface SoulDraftRecord {
+  /** 草稿标识。 */
+  id: string
+  /** 所属对象类型。 */
+  subjectType: SoulSubjectType
+  /** 所属对象标识。 */
+  subjectId: string
+  /** 草稿基于的已发布版本。 */
+  baseVersionId: string | null
+  /** 当前可编辑灵魂快照。 */
+  snapshot: SoulSnapshot
+  /** 本次修改说明。 */
+  changeSummary: string
+  /** 创建时间。 */
+  createdAt: number
+  /** 更新时间。 */
+  updatedAt: number
+}
+
+/** 世界与人物共用的不可变灵魂版本。 */
+export interface SoulVersionRecord {
+  /** 灵魂版本标识。 */
+  id: string
+  /** 所属对象类型。 */
+  subjectType: SoulSubjectType
+  /** 所属对象标识。 */
+  subjectId: string
+  /** 父灵魂版本标识。 */
+  parentVersionId: string | null
+  /** 版本生命周期状态。 */
+  status: VersionStatus
+  /** 发布时的完整灵魂快照。 */
+  snapshot: SoulSnapshot
+  /** 运行摘要的发布时 Token 数。 */
+  runtimeTokenCount: number
+  /** 发布时使用的计数器和模型说明。 */
+  tokenCounter: string
+  /** 人工填写的变化摘要。 */
+  changeSummary: string
+  /** 发布时间。 */
+  publishedAt: number
+  /** 创建时间。 */
+  createdAt: number
+}
 
 /** 人物元数据。 */
 export interface PersonaRecord {
@@ -32,24 +81,12 @@ export interface PersonaRecord {
   updatedAt: number
 }
 
-/** 人物不可变版本。 */
-export interface PersonaVersionRecord {
-  /** 版本标识。 */
-  id: string
+/** 面向人物用例的灵魂版本视图。 */
+export type PersonaVersionRecord = Omit<SoulVersionRecord, 'subjectType' | 'subjectId' | 'snapshot'> & {
   /** 所属人物标识。 */
   personaId: string
-  /** 父版本标识。 */
-  parentVersionId: string | null
-  /** 生命周期状态。 */
-  status: VersionStatus
-  /** 人物档案快照。 */
+  /** 人物灵魂快照。 */
   snapshot: PersonaSnapshot
-  /** 人工填写的变化摘要。 */
-  changeSummary: string
-  /** 发布时间。 */
-  publishedAt: number | null
-  /** 创建时间。 */
-  createdAt: number
 }
 
 /** 世界设定元数据。 */
@@ -68,24 +105,12 @@ export interface WorldRecord {
   updatedAt: number
 }
 
-/** 世界设定不可变版本。 */
-export interface WorldVersionRecord {
-  /** 版本标识。 */
-  id: string
+/** 面向世界用例的灵魂版本视图。 */
+export type WorldVersionRecord = Omit<SoulVersionRecord, 'subjectType' | 'subjectId' | 'snapshot'> & {
   /** 所属世界标识。 */
   worldId: string
-  /** 父版本标识。 */
-  parentVersionId: string | null
-  /** 生命周期状态。 */
-  status: VersionStatus
-  /** 世界设定快照。 */
+  /** 世界灵魂快照。 */
   snapshot: WorldSnapshot
-  /** 人工填写的变化摘要。 */
-  changeSummary: string
-  /** 发布时间。 */
-  publishedAt: number | null
-  /** 创建时间。 */
-  createdAt: number
 }
 
 /** 资料元数据与正文。 */

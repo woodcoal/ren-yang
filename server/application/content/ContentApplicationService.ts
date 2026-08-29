@@ -1,10 +1,8 @@
 import type {
   CreatePersonaInput,
-  CreatePersonaVersionInput,
   CreateSourceInput,
   CreateSourceLinkInput,
   CreateWorldInput,
-  CreateWorldVersionInput,
   UpdatePersonaInput,
   UpdateSourceInput,
   UpdateWorldInput,
@@ -13,14 +11,12 @@ import type {
   DeletionImpact,
   PersonaDetails,
   PersonaSummary,
-  PersonaVersionView,
   SourceChunkView,
   SourceDetails,
   SourceSummary,
   VersionFieldDiff,
   WorldDetails,
   WorldSummary,
-  WorldVersionView,
 } from '../../../shared/types/content'
 import type {
   PersonaRecord,
@@ -31,7 +27,9 @@ import type {
   WorldSnapshot,
   WorldVersionRecord,
 } from '../../domain/content/ContentModels'
+import type { SoulRepository } from '../../ports/SoulRepository'
 import { SourceContentError } from '../../domain/content/SourceContentError'
+import { normalizeSoulSnapshot } from '../../domain/content/SoulRules'
 import type { Clock } from '../../ports/Clock'
 import type { ContentRepository } from '../../ports/ContentRepository'
 import type { ContextSyncTaskQueue } from '../../ports/ContextSyncTaskQueue'
@@ -59,6 +57,8 @@ export interface ImportSourceFileInput {
 export interface ContentApplicationServiceDependencies {
   /** 内容事实源端口。 */
   repository: ContentRepository
+  /** 灵魂草稿与版本事实源，只供内容详情聚合读取。 */
+  souls: SoulRepository
   /** UUID 生成端口。 */
   identifiers: IdentifierGenerator
   /** 可测试时钟。 */
@@ -102,6 +102,7 @@ export class ContentApplicationService {
     return {
       persona: await this.toPersonaSummary(persona, versions, sources),
       versions,
+      draft: await this.dependencies.souls.findSoulDraft('persona', personaId),
       sources: await Promise.all(sources.map(source => this.toSourceSummary(source))),
     }
   }
@@ -122,11 +123,11 @@ export class ContentApplicationService {
     const personaId = this.dependencies.identifiers.create()
     await this.dependencies.repository.createPersona({
       id: personaId,
-      versionId: this.dependencies.identifiers.create(),
+      draftId: this.dependencies.identifiers.create(),
       worldId: input.worldId ?? null,
       name: input.name,
       origin: input.origin,
-      snapshot: input.snapshot,
+      snapshot: normalizeSoulSnapshot(input.snapshot),
       changeSummary: input.changeSummary,
       sourceIds,
       timestamp: this.dependencies.clock.now(),
@@ -153,62 +154,6 @@ export class ContentApplicationService {
   }
 
   /**
-   * 从明确基础版本派生新的不可变候选版本。
-   * @param personaId 人物 UUID。
-   * @param input 基础版本、快照和变化摘要。
-   * @returns 新候选版本。
-   */
-  async createPersonaVersion(personaId: string, input: CreatePersonaVersionInput): Promise<PersonaVersionView> {
-    const persona = await this.requirePersona(personaId)
-    const baseVersion = await this.requirePersonaBaseVersion(persona, input.baseVersionId)
-    const version: PersonaVersionRecord = {
-      id: this.dependencies.identifiers.create(),
-      personaId,
-      parentVersionId: baseVersion.id,
-      status: 'candidate',
-      snapshot: input.snapshot,
-      changeSummary: input.changeSummary,
-      publishedAt: null,
-      createdAt: this.dependencies.clock.now(),
-    }
-    await this.dependencies.repository.createPersonaVersion(version)
-    return version
-  }
-
-  /**
-   * 发布候选人物版本并原子切换当前版本指针。
-   * @param versionId 候选版本 UUID。
-   * @returns 发布后版本。
-   */
-  async publishPersonaVersion(versionId: string): Promise<PersonaVersionView> {
-    const version = await this.requirePersonaVersion(versionId)
-    if (version.status !== 'candidate') {
-      throw new ApplicationError('VERSION_CONFLICT', '只有候选版本可以发布', 409)
-    }
-    const timestamp = this.dependencies.clock.now()
-    const published = await this.dependencies.repository.publishPersonaVersion(version.personaId, version.id, timestamp)
-    if (!published) {
-      throw new ApplicationError('VERSION_CONFLICT', '版本状态已经变化，请刷新后重试', 409)
-    }
-    return { ...version, status: 'published', publishedAt: timestamp }
-  }
-
-  /**
-   * 把人物当前指针切回指定历史已发布版本，不修改任何版本内容。
-   * @param personaId 人物 UUID。
-   * @param versionId 已发布版本 UUID。
-   * @returns 回滚后人物详情。
-   */
-  async rollbackPersona(personaId: string, versionId: string): Promise<PersonaDetails> {
-    await this.requirePersona(personaId)
-    const changed = await this.dependencies.repository.rollbackPersona(personaId, versionId, this.dependencies.clock.now())
-    if (!changed) {
-      throw new ApplicationError('VERSION_CONFLICT', '目标版本不属于该人物或尚未发布', 409)
-    }
-    return await this.getPersona(personaId)
-  }
-
-  /**
    * 比较两个同人物版本的档案字段。
    * @param baseVersionId 基础版本 UUID。
    * @param targetVersionId 目标版本 UUID。
@@ -222,7 +167,7 @@ export class ContentApplicationService {
     if (base.personaId !== target.personaId) {
       throw new ApplicationError('VERSION_CONFLICT', '只能比较同一人物的版本', 409)
     }
-    return diffPersonaSnapshots(base.snapshot, target.snapshot)
+    return diffSoulSnapshots(base.snapshot, target.snapshot)
   }
 
   /**
@@ -292,6 +237,7 @@ export class ContentApplicationService {
     return {
       world: await this.toWorldSummary(world, versions, personas, sources),
       versions,
+      draft: await this.dependencies.souls.findSoulDraft('world', worldId),
       personas: await Promise.all(personas.map(persona => this.toPersonaSummary(persona))),
       sources: await Promise.all(sources.map(source => this.toSourceSummary(source))),
     }
@@ -306,10 +252,10 @@ export class ContentApplicationService {
     const worldId = this.dependencies.identifiers.create()
     await this.dependencies.repository.createWorld({
       id: worldId,
-      versionId: this.dependencies.identifiers.create(),
+      draftId: this.dependencies.identifiers.create(),
       name: input.name,
       summary: input.summary,
-      snapshot: input.snapshot,
+      snapshot: normalizeSoulSnapshot(input.snapshot),
       changeSummary: input.changeSummary,
       timestamp: this.dependencies.clock.now(),
     })
@@ -325,62 +271,6 @@ export class ContentApplicationService {
   async updateWorld(worldId: string, input: UpdateWorldInput): Promise<WorldDetails> {
     await this.requireWorld(worldId)
     await this.dependencies.repository.updateWorld(worldId, input.name, input.summary, this.dependencies.clock.now())
-    return await this.getWorld(worldId)
-  }
-
-  /**
-   * 从明确基础版本派生世界候选版本。
-   * @param worldId 世界 UUID。
-   * @param input 基础版本、正文快照和变化摘要。
-   * @returns 新候选版本。
-   */
-  async createWorldVersion(worldId: string, input: CreateWorldVersionInput): Promise<WorldVersionView> {
-    const world = await this.requireWorld(worldId)
-    const baseVersion = await this.requireWorldBaseVersion(world, input.baseVersionId)
-    const version: WorldVersionRecord = {
-      id: this.dependencies.identifiers.create(),
-      worldId,
-      parentVersionId: baseVersion.id,
-      status: 'candidate',
-      snapshot: input.snapshot,
-      changeSummary: input.changeSummary,
-      publishedAt: null,
-      createdAt: this.dependencies.clock.now(),
-    }
-    await this.dependencies.repository.createWorldVersion(version)
-    return version
-  }
-
-  /**
-   * 发布世界候选版本并原子切换当前指针。
-   * @param versionId 候选版本 UUID。
-   * @returns 发布后的版本。
-   */
-  async publishWorldVersion(versionId: string): Promise<WorldVersionView> {
-    const version = await this.requireWorldVersion(versionId)
-    if (version.status !== 'candidate') {
-      throw new ApplicationError('VERSION_CONFLICT', '只有候选版本可以发布', 409)
-    }
-    const timestamp = this.dependencies.clock.now()
-    const published = await this.dependencies.repository.publishWorldVersion(version.worldId, version.id, timestamp)
-    if (!published) {
-      throw new ApplicationError('VERSION_CONFLICT', '版本状态已经变化，请刷新后重试', 409)
-    }
-    return { ...version, status: 'published', publishedAt: timestamp }
-  }
-
-  /**
-   * 把世界当前指针切回历史已发布版本。
-   * @param worldId 世界 UUID。
-   * @param versionId 已发布版本 UUID。
-   * @returns 回滚后的世界详情。
-   */
-  async rollbackWorld(worldId: string, versionId: string): Promise<WorldDetails> {
-    await this.requireWorld(worldId)
-    const changed = await this.dependencies.repository.rollbackWorld(worldId, versionId, this.dependencies.clock.now())
-    if (!changed) {
-      throw new ApplicationError('VERSION_CONFLICT', '目标版本不属于该世界或尚未发布', 409)
-    }
     return await this.getWorld(worldId)
   }
 
@@ -422,9 +312,7 @@ export class ContentApplicationService {
     if (base.worldId !== target.worldId) {
       throw new ApplicationError('VERSION_CONFLICT', '只能比较同一世界的版本', 409)
     }
-    return base.snapshot.content === target.snapshot.content
-      ? []
-      : [{ field: 'content', label: '世界正文', before: base.snapshot.content, after: target.snapshot.content }]
+    return diffSoulSnapshots(base.snapshot, target.snapshot)
   }
 
   /**
@@ -755,40 +643,6 @@ export class ContentApplicationService {
   }
 
   /**
-   * 验证基础版本明确存在且属于目标人物。
-   * @param persona 目标人物。
-   * @param baseVersionId 用户明确选择的基础版本 UUID 或 null。
-   * @returns 合法基础版本。
-   */
-  private async requirePersonaBaseVersion(persona: PersonaRecord, baseVersionId: string | null): Promise<PersonaVersionRecord> {
-    if (!baseVersionId) {
-      throw new ApplicationError('VERSION_CONFLICT', '创建候选版本必须明确选择基础版本', 409)
-    }
-    const version = await this.requirePersonaVersion(baseVersionId)
-    if (version.personaId !== persona.id || version.status === 'rejected') {
-      throw new ApplicationError('VERSION_CONFLICT', '基础版本不属于该人物或已被拒绝', 409)
-    }
-    return version
-  }
-
-  /**
-   * 验证基础版本明确存在且属于目标世界。
-   * @param world 目标世界。
-   * @param baseVersionId 用户明确选择的基础版本 UUID 或 null。
-   * @returns 合法基础版本。
-   */
-  private async requireWorldBaseVersion(world: WorldRecord, baseVersionId: string | null): Promise<WorldVersionRecord> {
-    if (!baseVersionId) {
-      throw new ApplicationError('VERSION_CONFLICT', '创建候选版本必须明确选择基础版本', 409)
-    }
-    const version = await this.requireWorldVersion(baseVersionId)
-    if (version.worldId !== world.id || version.status === 'rejected') {
-      throw new ApplicationError('VERSION_CONFLICT', '基础版本不属于该世界或已被拒绝', 409)
-    }
-    return version
-  }
-
-  /**
    * 组装人物列表摘要，并复用调用方已经读取的数据避免重复查询。
    * @param persona 人物记录。
    * @param knownVersions 可选版本集合。
@@ -807,7 +661,7 @@ export class ContentApplicationService {
     return {
       ...persona,
       worldName: world?.name ?? null,
-      currentSummary: active?.snapshot.summary ?? null,
+      currentSummary: active?.snapshot.runtimeSummary ?? null,
       versionCount: versions.length,
       sourceCount: sources.length,
     }
@@ -833,7 +687,7 @@ export class ContentApplicationService {
     const active = versions.find(version => version.id === world.activeVersionId)
     return {
       ...world,
-      currentContent: active?.snapshot.content ?? null,
+      currentContent: active?.snapshot.runtimeSummary ?? null,
       versionCount: versions.length,
       personaCount: personas.length,
       sourceCount: sources.length,
@@ -884,31 +738,26 @@ export class ContentApplicationService {
   }
 }
 
-/** 人物快照字段的中文标签。 */
-const PERSONA_FIELD_LABELS: Record<keyof PersonaSnapshot, string> = {
-  summary: '人物定位',
-  identityFacts: '身份事实',
-  interests: '兴趣偏好',
-  valuesAndMotivations: '价值与动机',
-  expressionStyle: '表达风格',
-  appearance: '外观描述',
-  visualStyle: '视觉风格',
-  constraints: '约束',
-}
-
 /**
- * 生成两个人物快照的字段级差异。
+ * 生成两个灵魂快照的章节和运行摘要差异。
  * @param before 基础快照。
  * @param after 目标快照。
  * @returns 仅含变化字段的稳定顺序列表。
  */
-function diffPersonaSnapshots(before: PersonaSnapshot, after: PersonaSnapshot): VersionFieldDiff[] {
-  return (Object.keys(PERSONA_FIELD_LABELS) as Array<keyof PersonaSnapshot>)
-    .filter(field => before[field] !== after[field])
-    .map(field => ({
-      field,
-      label: PERSONA_FIELD_LABELS[field],
-      before: before[field],
-      after: after[field],
-    }))
+function diffSoulSnapshots(before: PersonaSnapshot, after: PersonaSnapshot): VersionFieldDiff[] {
+  const differences: VersionFieldDiff[] = []
+  const beforeChapters = JSON.stringify(before.chapters)
+  const afterChapters = JSON.stringify(after.chapters)
+  if (beforeChapters !== afterChapters) {
+    differences.push({ field: 'chapters', label: '灵魂章节', before: beforeChapters, after: afterChapters })
+  }
+  if (before.runtimeSummary !== after.runtimeSummary) {
+    differences.push({
+      field: 'runtimeSummary',
+      label: '运行摘要',
+      before: before.runtimeSummary,
+      after: after.runtimeSummary,
+    })
+  }
+  return differences
 }
