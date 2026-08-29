@@ -47,6 +47,10 @@ export default defineNuxtConfig({
     session: {
       password: process.env.NUXT_SESSION_PASSWORD || '',
       maxAge: 60 * 60 * 24 * 7,
+      cookie: {
+        // 开发环境允许通过 HTTP 进行远程联调；生产环境始终要求 HTTPS 回传会话 Cookie。
+        secure: process.env.NODE_ENV === 'production',
+      },
     },
     public: {
       applicationName: '人样',

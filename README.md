@@ -23,6 +23,7 @@
 9. 首次访问 `/setup` 创建唯一管理员。
 
 运行数据默认保存在 `./data`，该目录不会进入 Git。可通过 `NUXT_DATA_DIRECTORY` 指向其他本地目录。
+开发服务允许 HTTP 远程联调；生产环境必须设置 `NODE_ENV=production` 并通过 HTTPS 访问，以启用 Secure 会话 Cookie。
 
 ## 常用命令
 
