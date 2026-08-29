@@ -9,6 +9,10 @@ export interface WorldGrowthSourceView {
   name: string
   /** 资料正文摘要。 */
   summary: string
+  /** 分析时使用的完整资料正文。 */
+  content: string
+  /** 完整正文 SHA-256。 */
+  contentHash: string
   /** 是否参加后续世界成长分析。 */
   isEnabled: boolean
   /** 关联更新时间。 */

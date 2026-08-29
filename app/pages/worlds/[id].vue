@@ -6,6 +6,7 @@ import { updateWorldSchema } from '#shared/schemas/content'
 import type { ApiResponse } from '#shared/types/api'
 import type { DeletionImpact, SoulWorkspaceView, SourceDetails, SourceSummary, WorldDetails } from '#shared/types/content'
 import type { WorldGrowthWorkspaceView } from '#shared/types/learning'
+import type { AnalysisBatchView, ProposedLearningContentView } from '#shared/types/analysis'
 import type { SourceFileSubmission } from '../../components/content/SourceImportForm.vue'
 import { getApiErrorMessage } from '../../utils/apiError'
 
@@ -17,17 +18,20 @@ const [
   { data: soulData, refresh: refreshSoul },
   { data: sourceData, refresh: refreshSources },
   { data: growthData, refresh: refreshGrowth },
+  { data: analysisData, refresh: refreshAnalysis },
 ] = await Promise.all([
   useFetch<ApiResponse<WorldDetails>>(`/api/v1/worlds/${worldId}`),
   useFetch<ApiResponse<SoulWorkspaceView>>(`/api/v1/worlds/${worldId}/soul`),
   useFetch<ApiResponse<SourceSummary[]>>('/api/v1/sources'),
   useFetch<ApiResponse<WorldGrowthWorkspaceView>>(`/api/v1/worlds/${worldId}/growth`),
+  useFetch<ApiResponse<AnalysisBatchView | null>>('/api/v1/analysis-batches/latest', { query: { analysisType: 'world_growth', subjectId: worldId } }),
 ])
 
 const details = computed(() => data.value?.data ?? null)
 const soul = computed(() => soulData.value?.data ?? null)
 const allSources = computed(() => sourceData.value?.data ?? [])
 const growthWorkspace = computed(() => growthData.value?.data ?? { sources: [], growth: [] })
+const growthAnalysis = computed(() => analysisData.value?.data ?? null)
 const tabs: Array<{ id: WorldTab, label: string }> = [
   { id: 'overview', label: '概览' },
   { id: 'soul', label: '灵魂' },
@@ -137,6 +141,27 @@ async function updateWorldGrowthStatus(input: { ids: string[], status: 'active' 
   await runAction('世界成长状态已更新', async () => {
     await $fetch(`/api/v1/worlds/${worldId}/growth/status`, { method: 'PATCH', body: input })
     await refreshGrowth()
+  })
+}
+
+/** @param mode 增量或完整重建。 @returns 批次创建和状态刷新完成时结束。 */
+async function analyzeWorldGrowth(mode: 'incremental' | 'full_rebuild'): Promise<void> {
+  await runAction('世界成长分析已排队；稍后刷新状态查看 AI 提案', async () => {
+    await $fetch(`/api/v1/worlds/${worldId}/growth/analyze`, { method: 'POST', body: { mode } })
+    await refreshAnalysis()
+  })
+}
+
+/** @param decision 单项人工审核。 @returns 应用和成长工作区刷新完成时结束。 */
+async function reviewWorldGrowthProposal(decision: {
+  proposalId: string
+  action: 'accept' | 'reject'
+  reviewed?: ProposedLearningContentView | null
+}): Promise<void> {
+  if (!growthAnalysis.value) return
+  await runAction(decision.action === 'accept' ? '世界成长提案已确认并应用' : '世界成长提案已拒绝', async () => {
+    await $fetch(`/api/v1/analysis-batches/${growthAnalysis.value!.id}/review`, { method: 'POST', body: { decisions: [decision] } })
+    await Promise.all([refreshAnalysis(), refreshGrowth()])
   })
 }
 
@@ -303,16 +328,26 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
         @from-version="createDraftFromVersion"
       />
 
-      <div v-else-if="selectedTab === 'growth'" class="grid items-start gap-6 xl:grid-cols-2">
-        <LearningWorldGrowthSourcePanel :items="growthWorkspace.sources" :loading="actionLoading" @status="updateWorldSourceStatus" />
-        <LearningGrowthRecordPanel
+      <div v-else-if="selectedTab === 'growth'" class="space-y-6">
+        <AnalysisAnalysisPanel
+          title="世界成长"
+          :batch="growthAnalysis"
+          :loading="actionLoading"
+          @analyze="analyzeWorldGrowth"
+          @refresh="refreshAnalysis"
+          @review="reviewWorldGrowthProposal"
+        />
+        <div class="grid items-start gap-6 xl:grid-cols-2">
+          <LearningWorldGrowthSourcePanel :items="growthWorkspace.sources" :loading="actionLoading" @status="updateWorldSourceStatus" />
+          <LearningGrowthRecordPanel
           subject-label="世界"
           :items="growthWorkspace.growth"
           :sources="growthWorkspace.sources.map(item => ({ id: item.id, label: item.name }))"
           :loading="actionLoading"
           @create="createWorldGrowth"
           @status="updateWorldGrowthStatus"
-        />
+          />
+        </div>
       </div>
 
       <ContentWorldSourceManager

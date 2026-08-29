@@ -6,6 +6,7 @@ import { updatePersonaSchema } from '#shared/schemas/content'
 import type { ApiResponse } from '#shared/types/api'
 import type { DeletionImpact, PersonaDetails, SoulWorkspaceView, WorldSummary } from '#shared/types/content'
 import type { PersonaGrowthWorkspaceView, PersonaMemoryWorkspaceView } from '#shared/types/learning'
+import type { AnalysisBatchView, ProposedLearningContentView } from '#shared/types/analysis'
 import { getApiErrorMessage } from '../../utils/apiError'
 
 type PersonaTab = 'overview' | 'soul' | 'growth' | 'memory' | 'relations'
@@ -17,12 +18,16 @@ const [
   { data: worldData },
   { data: growthData, refresh: refreshGrowth },
   { data: memoryData, refresh: refreshMemory },
+  { data: growthAnalysisData, refresh: refreshGrowthAnalysis },
+  { data: memoryAnalysisData, refresh: refreshMemoryAnalysis },
 ] = await Promise.all([
   useFetch<ApiResponse<PersonaDetails>>(`/api/v1/personas/${personaId}`),
   useFetch<ApiResponse<SoulWorkspaceView>>(`/api/v1/personas/${personaId}/soul`),
   useFetch<ApiResponse<WorldSummary[]>>('/api/v1/worlds'),
   useFetch<ApiResponse<PersonaGrowthWorkspaceView>>(`/api/v1/personas/${personaId}/growth`),
   useFetch<ApiResponse<PersonaMemoryWorkspaceView>>(`/api/v1/personas/${personaId}/memories`),
+  useFetch<ApiResponse<AnalysisBatchView | null>>('/api/v1/analysis-batches/latest', { query: { analysisType: 'persona_growth', subjectId: personaId } }),
+  useFetch<ApiResponse<AnalysisBatchView | null>>('/api/v1/analysis-batches/latest', { query: { analysisType: 'persona_memory', subjectId: personaId } }),
 ])
 
 const details = computed(() => data.value?.data ?? null)
@@ -30,6 +35,8 @@ const soul = computed(() => soulData.value?.data ?? null)
 const worlds = computed(() => worldData.value?.data ?? [])
 const growthWorkspace = computed(() => growthData.value?.data ?? { feedbackSources: [], growth: [] })
 const memoryWorkspace = computed(() => memoryData.value?.data ?? { operationRecords: [], memories: [] })
+const growthAnalysis = computed(() => growthAnalysisData.value?.data ?? null)
+const memoryAnalysis = computed(() => memoryAnalysisData.value?.data ?? null)
 const tabs: Array<{ id: PersonaTab, label: string }> = [
   { id: 'overview', label: '概览' },
   { id: 'soul', label: '灵魂' },
@@ -182,6 +189,30 @@ async function convertMemoryToFeedbackSource(memoryId: string): Promise<void> {
   })
 }
 
+/** @param target 成长或记忆。 @param mode 增量或完整重建。 @returns 批次创建和状态刷新完成时结束。 */
+async function analyzeLearning(target: 'growth' | 'memory', mode: 'incremental' | 'full_rebuild'): Promise<void> {
+  await runAction('分析任务已排队；稍后刷新状态查看 AI 提案', async () => {
+    const path = target === 'growth' ? 'growth' : 'memories'
+    await $fetch(`/api/v1/personas/${personaId}/${path}/analyze`, { method: 'POST', body: { mode } })
+    await (target === 'growth' ? refreshGrowthAnalysis() : refreshMemoryAnalysis())
+  })
+}
+
+/** @param target 成长或记忆。 @param decision 单项人工审核。 @returns 应用和相关工作区刷新完成时结束。 */
+async function reviewAnalysisProposal(target: 'growth' | 'memory', decision: {
+  proposalId: string
+  action: 'accept' | 'reject'
+  reviewed?: ProposedLearningContentView | null
+}): Promise<void> {
+  const batch = target === 'growth' ? growthAnalysis.value : memoryAnalysis.value
+  if (!batch) return
+  await runAction(decision.action === 'accept' ? '提案已人工确认并应用' : '提案已拒绝', async () => {
+    await $fetch(`/api/v1/analysis-batches/${batch.id}/review`, { method: 'POST', body: { decisions: [decision] } })
+    if (target === 'growth') await Promise.all([refreshGrowthAnalysis(), refreshGrowth()])
+    else await Promise.all([refreshMemoryAnalysis(), refreshMemory()])
+  })
+}
+
 /**
  * 查询永久删除人物的影响范围。
  * @returns 查询完成时结束。
@@ -281,27 +312,47 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
         @from-version="createDraftFromVersion"
       />
 
-      <div v-else-if="selectedTab === 'growth'" class="grid items-start gap-6 xl:grid-cols-2">
-        <LearningPersonaFeedbackSourcePanel
+      <div v-else-if="selectedTab === 'growth'" class="space-y-6">
+        <AnalysisAnalysisPanel
+          title="人物成长"
+          :batch="growthAnalysis"
+          :loading="actionLoading"
+          @analyze="analyzeLearning('growth', $event)"
+          @refresh="refreshGrowthAnalysis"
+          @review="reviewAnalysisProposal('growth', $event)"
+        />
+        <div class="grid items-start gap-6 xl:grid-cols-2">
+          <LearningPersonaFeedbackSourcePanel
           :items="growthWorkspace.feedbackSources"
           :loading="actionLoading"
           @create="createFeedbackSource"
           @status="updateFeedbackSourceStatus"
           @delete="deleteFeedbackSources"
         />
-        <LearningGrowthRecordPanel
+          <LearningGrowthRecordPanel
           subject-label="人物"
           :items="growthWorkspace.growth"
           :sources="growthWorkspace.feedbackSources.map(item => ({ id: item.id, label: item.title }))"
           :loading="actionLoading"
           @create="createGrowth"
           @status="updateGrowthStatus"
-        />
+          />
+        </div>
       </div>
 
-      <div v-else-if="selectedTab === 'memory'" class="grid items-start gap-6 xl:grid-cols-2">
-        <LearningOperationRecordPanel :items="memoryWorkspace.operationRecords" :loading="actionLoading" @status="updateOperationRecordStatus" />
-        <LearningMemoryRecordPanel :items="memoryWorkspace.memories" :loading="actionLoading" @status="updateMemoryStatus" @convert="convertMemoryToFeedbackSource" />
+      <div v-else-if="selectedTab === 'memory'" class="space-y-6">
+        <AnalysisAnalysisPanel
+          title="人物记忆"
+          :batch="memoryAnalysis"
+          :loading="actionLoading"
+          @analyze="analyzeLearning('memory', $event)"
+          @refresh="refreshMemoryAnalysis"
+          @review="reviewAnalysisProposal('memory', $event)"
+        />
+        <div class="grid items-start gap-6 xl:grid-cols-2">
+          <LearningOperationRecordPanel :items="memoryWorkspace.operationRecords" :loading="actionLoading" @status="updateOperationRecordStatus" />
+          <LearningMemoryRecordPanel :items="memoryWorkspace.memories" :loading="actionLoading" @status="updateMemoryStatus" @convert="convertMemoryToFeedbackSource" />
+        </div>
       </div>
 
       <div v-else class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">

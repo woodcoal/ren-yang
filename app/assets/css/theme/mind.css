@@ -137,6 +137,13 @@
     margin-top: 0.2rem;
   }
 
+  .analysis-proposal {
+    border: 1px solid var(--ui-border);
+    border-radius: calc(var(--ui-radius) * 1.25);
+    background: var(--ui-bg-elevated);
+    padding: 1rem;
+  }
+
   @media (max-width: 640px) {
     .soul-editor__heading {
       flex-direction: column;

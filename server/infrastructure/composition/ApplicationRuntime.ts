@@ -40,6 +40,8 @@ import { LocalBackupManager } from '../backup/LocalBackupManager'
 import { ConservativeTokenCounter } from '../model/ConservativeTokenCounter'
 import { LearningApplicationService } from '../../application/learning/LearningApplicationService'
 import { SqliteLearningRepository } from '../database/SqliteLearningRepository'
+import { AnalysisApplicationService } from '../../application/analysis/AnalysisApplicationService'
+import { SqliteAnalysisRepository } from '../database/SqliteAnalysisRepository'
 
 /** 应用运行时组合配置。 */
 export interface ApplicationRuntimeOptions {
@@ -107,6 +109,8 @@ export class ApplicationRuntime {
   private readonly soulService: SoulApplicationService
   /** 请求间可安全共享的成长与记忆应用服务。 */
   private readonly learningService: LearningApplicationService
+  /** 请求与 Worker 共用的成长与记忆 AI 分析应用服务。 */
+  private readonly analysisService: AnalysisApplicationService
   /** 请求与 Worker 共用的生成应用服务。 */
   private readonly generationService: GenerationApplicationService
   /** 请求与 Worker 共用的反馈和评测应用服务。 */
@@ -179,6 +183,15 @@ export class ApplicationRuntime {
       identifiers,
       clock: this.clock,
     })
+    this.analysisService = new AnalysisApplicationService({
+      content: contentRepository,
+      souls: contentRepository,
+      learning: learningRepository,
+      analysis: new SqliteAnalysisRepository(this.sqlite.getClient()),
+      model: textModel,
+      identifiers,
+      clock: this.clock,
+    })
     this.generationService = new GenerationApplicationService({
       runs: new SqliteRunRepository(this.sqlite.getClient()),
       content: contentRepository,
@@ -219,6 +232,7 @@ export class ApplicationRuntime {
         this.generationService,
         this.feedbackService,
         this.contextSynchronizationService,
+        this.analysisService,
       ),
       clock: this.clock,
       leaseDurationMs: options.workerLeaseDurationMs ?? 60_000,
@@ -259,6 +273,7 @@ export class ApplicationRuntime {
       content: this.contentService,
       soul: this.soulService,
       learning: this.learningService,
+      analysis: this.analysisService,
       generation: this.generationService,
       feedback: this.feedbackService,
       contextSynchronization: this.contextSynchronizationService,

@@ -26,7 +26,7 @@ export class SqliteLearningRepository implements LearningRepository {
   /** @param worldId 世界 UUID。 @returns 世界资料及成长启用状态。 */
   async listWorldGrowthSources(worldId: string): Promise<WorldGrowthSourceView[]> {
     return this.client.prepare(`
-      SELECT source_materials.id, source_materials.name, source_materials.content_text,
+      SELECT source_materials.id, source_materials.name, source_materials.content_text, source_materials.content_hash,
         world_sources.is_enabled, world_sources.updated_at
       FROM world_sources
       INNER JOIN source_materials ON source_materials.id = world_sources.source_id
@@ -91,6 +91,10 @@ export class SqliteLearningRepository implements LearningRepository {
       this.client.prepare(`
         UPDATE growth_revision_evidence SET source_available = 0
         WHERE source_type = 'persona_feedback_source' AND source_id IN (${placeholders})
+      `).run(...ids)
+      this.client.prepare(`
+        UPDATE analysis_batch_inputs SET content_snapshot = NULL, source_available = 0
+        WHERE input_type = 'persona_feedback_source' AND input_id IN (${placeholders})
       `).run(...ids)
       const changes = this.client.prepare(`
         DELETE FROM persona_feedback_sources WHERE persona_id = ? AND id IN (${placeholders})
@@ -346,7 +350,8 @@ function toWorldGrowthSource(value: unknown): WorldGrowthSourceView {
   const row = value as Record<string, unknown>
   const content = String(row.content_text)
   return {
-    id: String(row.id), name: String(row.name), summary: content.slice(0, 240),
+    id: String(row.id), name: String(row.name), summary: content.slice(0, 240), content,
+    contentHash: String(row.content_hash),
     isEnabled: Number(row.is_enabled) === 1, updatedAt: Number(row.updated_at),
   }
 }

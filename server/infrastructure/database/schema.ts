@@ -516,6 +516,104 @@ export const memoryRevisionEvidence = sqliteTable(
   ],
 )
 
+/** 一次世界成长、人物成长或人物记忆分析的固定输入与执行状态。 */
+export const analysisBatches = sqliteTable(
+  'analysis_batches',
+  {
+    id: text('id').primaryKey(),
+    analysisType: text('analysis_type').notNull(),
+    worldId: text('world_id').references(() => worlds.id, { onDelete: 'cascade' }),
+    personaId: text('persona_id').references(() => personas.id, { onDelete: 'cascade' }),
+    mode: text('mode').notNull(),
+    baselineSoulVersionId: text('baseline_soul_version_id').notNull().references(() => soulVersions.id, { onDelete: 'restrict' }),
+    baselineJson: text('baseline_json').notNull(),
+    modelSnapshotJson: text('model_snapshot_json').notNull(),
+    parameterSnapshotJson: text('parameter_snapshot_json').notNull(),
+    promptVersion: text('prompt_version').notNull(),
+    rawResultJson: text('raw_result_json'),
+    status: text('status').notNull().default('queued'),
+    errorCode: text('error_code'),
+    errorMessage: text('error_message'),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+    completedAt: integer('completed_at'),
+  },
+  table => [
+    index('analysis_batches_world_type_created_index').on(table.worldId, table.analysisType, table.createdAt),
+    index('analysis_batches_persona_type_created_index').on(table.personaId, table.analysisType, table.createdAt),
+    check('analysis_batches_type_check', sql`${table.analysisType} IN ('world_growth', 'persona_growth', 'persona_memory')`),
+    check('analysis_batches_subject_check', sql`(
+      (${table.analysisType} = 'world_growth' AND ${table.worldId} IS NOT NULL AND ${table.personaId} IS NULL)
+      OR (${table.analysisType} IN ('persona_growth', 'persona_memory') AND ${table.personaId} IS NOT NULL AND ${table.worldId} IS NULL)
+    )`),
+    check('analysis_batches_mode_check', sql`${table.mode} IN ('incremental', 'full_rebuild')`),
+    check('analysis_batches_status_check', sql`${table.status} IN ('queued', 'running', 'awaiting_review', 'completed', 'failed')`),
+    check('analysis_batches_baseline_json_check', sql`json_valid(${table.baselineJson})`),
+    check('analysis_batches_model_json_check', sql`json_valid(${table.modelSnapshotJson})`),
+    check('analysis_batches_parameter_json_check', sql`json_valid(${table.parameterSnapshotJson})`),
+    check('analysis_batches_raw_json_check', sql`${table.rawResultJson} IS NULL OR json_valid(${table.rawResultJson})`),
+  ],
+)
+
+/** 分析批次实际使用的不可变原始输入快照。 */
+export const analysisBatchInputs = sqliteTable(
+  'analysis_batch_inputs',
+  {
+    id: text('id').primaryKey(),
+    batchId: text('batch_id').notNull().references(() => analysisBatches.id, { onDelete: 'cascade' }),
+    inputType: text('input_type').notNull(),
+    inputId: text('input_id').notNull(),
+    contentHash: text('content_hash').notNull(),
+    title: text('title').notNull(),
+    contentSnapshot: text('content_snapshot'),
+    isNew: integer('is_new').notNull().default(1),
+    sourceAvailable: integer('source_available').notNull().default(1),
+    createdAt: integer('created_at').notNull(),
+  },
+  table => [
+    uniqueIndex('analysis_batch_inputs_unique').on(table.batchId, table.inputType, table.inputId),
+    index('analysis_batch_inputs_source_index').on(table.inputType, table.inputId),
+    check('analysis_batch_inputs_type_check', sql`${table.inputType} IN ('world_source', 'persona_feedback_source', 'persona_operation_record', 'openviking_memory')`),
+    check('analysis_batch_inputs_hash_check', sql`length(${table.contentHash}) = 64`),
+    check('analysis_batch_inputs_new_check', sql`${table.isNew} IN (0, 1)`),
+    check('analysis_batch_inputs_available_check', sql`${table.sourceAvailable} IN (0, 1)`),
+  ],
+)
+
+/** AI 生成且必须人工审核的成长或记忆迭代提案。 */
+export const iterationProposals = sqliteTable(
+  'iteration_proposals',
+  {
+    id: text('id').primaryKey(),
+    analysisBatchId: text('analysis_batch_id').notNull().references(() => analysisBatches.id, { onDelete: 'cascade' }),
+    operation: text('operation').notNull(),
+    targetType: text('target_type').notNull(),
+    targetIdsJson: text('target_ids_json').notNull(),
+    beforeJson: text('before_json').notNull(),
+    proposedJson: text('proposed_json'),
+    reviewedJson: text('reviewed_json'),
+    evidenceInputIdsJson: text('evidence_input_ids_json').notNull(),
+    conflictsJson: text('conflicts_json').notNull(),
+    rationale: text('rationale').notNull(),
+    status: text('status').notNull().default('pending'),
+    reviewReason: text('review_reason'),
+    reviewedAt: integer('reviewed_at'),
+    createdAt: integer('created_at').notNull(),
+  },
+  table => [
+    index('iteration_proposals_batch_status_index').on(table.analysisBatchId, table.status, table.createdAt),
+    check('iteration_proposals_operation_check', sql`${table.operation} IN ('add', 'revise', 'merge', 'supersede', 'archive', 'no_change')`),
+    check('iteration_proposals_target_type_check', sql`${table.targetType} IN ('growth', 'memory')`),
+    check('iteration_proposals_status_check', sql`${table.status} IN ('pending', 'accepted', 'rejected', 'applied')`),
+    check('iteration_proposals_target_json_check', sql`json_valid(${table.targetIdsJson})`),
+    check('iteration_proposals_before_json_check', sql`json_valid(${table.beforeJson})`),
+    check('iteration_proposals_proposed_json_check', sql`${table.proposedJson} IS NULL OR json_valid(${table.proposedJson})`),
+    check('iteration_proposals_reviewed_json_check', sql`${table.reviewedJson} IS NULL OR json_valid(${table.reviewedJson})`),
+    check('iteration_proposals_evidence_json_check', sql`json_valid(${table.evidenceInputIdsJson})`),
+    check('iteration_proposals_conflicts_json_check', sql`json_valid(${table.conflictsJson})`),
+  ],
+)
+
 /** 运行实际使用的不可变证据正文副本。 */
 export const evidenceSnapshots = sqliteTable(
   'evidence_snapshots',
@@ -946,6 +1044,9 @@ export const databaseSchema = {
   memoryRecords,
   memoryRevisions,
   memoryRevisionEvidence,
+  analysisBatches,
+  analysisBatchInputs,
+  iterationProposals,
   evidenceSnapshots,
   documentSpecs,
   artifactDocuments,
