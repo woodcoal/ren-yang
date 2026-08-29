@@ -122,6 +122,8 @@ export interface PersonaSummary {
   activeVersionId: string | null
   /** 当前已发布灵魂的运行摘要。 */
   currentSummary: string | null
+  /** 是否允许人物参与后续新任务。 */
+  isEnabled: boolean
   /** 保留版本总数。 */
   versionCount: number
   /** 直接关联资料数。 */
@@ -130,6 +132,28 @@ export interface PersonaSummary {
   createdAt: number
   /** 更新时间，UTC Unix 毫秒。 */
   updatedAt: number
+}
+
+/** 服务端分页后的人物列表。 */
+export interface PersonaPageView {
+  /** 当前页人物摘要。 */
+  items: PersonaSummary[]
+  /** 全部人物数量。 */
+  total: number
+  /** 服务端确认后的当前页码，从 1 开始。 */
+  page: number
+  /** 当前每页数量。 */
+  pageSize: 5 | 10 | 20 | 50 | 100
+  /** 总页数；空列表时仍为 1。 */
+  totalPages: number
+}
+
+/** 批量修改人物状态的结果。 */
+export interface PersonaStatusUpdateResult {
+  /** 去重后实际处理的人物 UUID。 */
+  personaIds: string[]
+  /** 本次写入的统一状态。 */
+  isEnabled: boolean
 }
 
 /** 人物版本公开视图。 */
@@ -164,6 +188,8 @@ export interface WorldSummary {
   activeVersionId: string | null
   /** 当前已发布世界灵魂的运行摘要。 */
   currentContent: string | null
+  /** 是否允许世界参与后续新任务。 */
+  isEnabled: boolean
   /** 保留版本总数。 */
   versionCount: number
   /** 直接关联人物数。 */
@@ -174,6 +200,28 @@ export interface WorldSummary {
   createdAt: number
   /** 更新时间，UTC Unix 毫秒。 */
   updatedAt: number
+}
+
+/** 服务端分页后的世界列表。 */
+export interface WorldPageView {
+  /** 当前页世界摘要。 */
+  items: WorldSummary[]
+  /** 全部世界数量。 */
+  total: number
+  /** 服务端确认后的当前页码，从 1 开始。 */
+  page: number
+  /** 当前每页数量。 */
+  pageSize: 5 | 10 | 20 | 50 | 100
+  /** 总页数；空列表时仍为 1。 */
+  totalPages: number
+}
+
+/** 批量修改世界状态的结果。 */
+export interface WorldStatusUpdateResult {
+  /** 去重后实际处理的世界 UUID。 */
+  worldIds: string[]
+  /** 本次写入的统一状态。 */
+  isEnabled: boolean
 }
 
 /** 世界版本公开视图。 */

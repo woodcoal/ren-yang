@@ -75,6 +75,8 @@ export interface PersonaRecord {
   origin: PersonaOrigin
   /** 当前已发布版本标识。 */
   activeVersionId: string | null
+  /** 是否允许人物参与后续新任务。 */
+  isEnabled: boolean
   /** 创建时间。 */
   createdAt: number
   /** 更新时间。 */
@@ -99,6 +101,8 @@ export interface WorldRecord {
   summary: string
   /** 当前已发布版本标识。 */
   activeVersionId: string | null
+  /** 是否允许世界参与后续新任务。 */
+  isEnabled: boolean
   /** 创建时间。 */
   createdAt: number
   /** 更新时间。 */

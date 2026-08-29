@@ -50,8 +50,14 @@ describe('SqliteDatabase', () => {
       ORDER BY name
     `).all()
     expect(tables).toEqual([{ name: 'administrators' }, { name: 'task_jobs' }])
-    expect(current.getClient().prepare(`SELECT COUNT(*) AS count FROM __drizzle_migrations`).get()).toEqual({ count: 2 })
+    expect(current.getClient().prepare(`SELECT COUNT(*) AS count FROM __drizzle_migrations`).get()).toEqual({ count: 3 })
     expect(current.getClient().prepare(`PRAGMA table_info(source_materials)`).all()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'is_enabled', notnull: 1, dflt_value: '1' }),
+    ]))
+    expect(current.getClient().prepare(`PRAGMA table_info(personas)`).all()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'is_enabled', notnull: 1, dflt_value: '1' }),
+    ]))
+    expect(current.getClient().prepare(`PRAGMA table_info(worlds)`).all()).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'is_enabled', notnull: 1, dflt_value: '1' }),
     ]))
     expect(current.getClient().prepare(`
@@ -99,6 +105,40 @@ describe('SqliteDatabase', () => {
     expect(database.getClient().prepare(`
       SELECT name, content_text, is_enabled FROM source_materials WHERE id = 'source-1'
     `).get()).toEqual({ name: '旧资料', content_text: '迁移前正文。', is_enabled: 1 })
+    expect(database.getClient().prepare('PRAGMA foreign_key_check').all()).toEqual([])
+  })
+
+  it('人物与世界状态迁移保留旧对象和关联并默认启用', () => {
+    temporaryDirectory = mkdtempSync(resolve(tmpdir(), 'ren-yang-subject-status-upgrade-test-'))
+    const oldMigrationsDirectory = resolve(temporaryDirectory, 'old-drizzle')
+    mkdirSync(resolve(oldMigrationsDirectory, 'meta'), { recursive: true })
+    copyFileSync(resolve(process.cwd(), 'drizzle/0000_baseline.sql'), resolve(oldMigrationsDirectory, '0000_baseline.sql'))
+    copyFileSync(resolve(process.cwd(), 'drizzle/0001_source_material_status.sql'), resolve(oldMigrationsDirectory, '0001_source_material_status.sql'))
+    writeFileSync(resolve(oldMigrationsDirectory, 'meta/_journal.json'), JSON.stringify({
+      version: '7', dialect: 'sqlite', entries: [
+        { idx: 0, version: '6', when: 1788028900254, tag: '0000_baseline', breakpoints: true },
+        { idx: 1, version: '6', when: 1788036380272, tag: '0001_source_material_status', breakpoints: true },
+      ],
+    }))
+
+    database = new SqliteDatabase({ dataDirectory: temporaryDirectory, migrationsDirectory: oldMigrationsDirectory })
+    database.getClient().prepare(`
+      INSERT INTO worlds (id, name, summary, created_at, updated_at)
+      VALUES ('world-1', '旧世界', '迁移前世界', 1000, 1000)
+    `).run()
+    database.getClient().prepare(`
+      INSERT INTO personas (id, world_id, name, origin, created_at, updated_at)
+      VALUES ('persona-1', 'world-1', '旧人物', 'original', 1000, 1000)
+    `).run()
+    database.close()
+
+    database = new SqliteDatabase({ dataDirectory: temporaryDirectory, migrationsDirectory: resolve(process.cwd(), 'drizzle') })
+    expect(database.getClient().prepare('SELECT name, world_id, is_enabled FROM personas').get()).toEqual({
+      name: '旧人物', world_id: 'world-1', is_enabled: 1,
+    })
+    expect(database.getClient().prepare('SELECT name, is_enabled FROM worlds').get()).toEqual({
+      name: '旧世界', is_enabled: 1,
+    })
     expect(database.getClient().prepare('PRAGMA foreign_key_check').all()).toEqual([])
   })
 

@@ -332,6 +332,46 @@ describe('阶段三纯文本运行', () => {
     })
   })
 
+  it('禁用人物后拒绝创建新任务且不影响既有人物数据', async () => {
+    await contentService.updatePersonaStatus(personaId, { isEnabled: false })
+
+    await expect(generation.createInterestRun({
+      personaId, content: '禁用后不应创建任务',
+    })).rejects.toMatchObject({ code: 'RESOURCE_DISABLED', statusCode: 409 })
+    await expect(contentService.getPersona(personaId)).resolves.toMatchObject({
+      persona: { id: personaId, isEnabled: false, activeVersionId: expect.any(String) },
+      sources: [expect.objectContaining({ id: sourceId })],
+    })
+    expect(database.getClient().prepare('SELECT COUNT(*) AS count FROM generation_runs').get()).toEqual({ count: 0 })
+  })
+
+  it('禁用世界后关联人物仍可创建任务但新任务不再使用该世界', async () => {
+    const world = await contentService.createWorld({
+      name: '暂时停用的世界', summary: '',
+      snapshot: {
+        chapters: [{ id: '60000000-0000-4000-8000-000000000099', title: '世界规则', content: '所有课程必须在浮岛进行。', order: 0, required: true }],
+        runtimeSummary: '所有课程必须在浮岛进行。',
+      },
+      changeSummary: '建立世界',
+    })
+    const repository = new SqliteContentRepository(database.getClient())
+    await new SoulApplicationService({
+      content: repository, souls: repository, identifiers: new SystemIdentifierGenerator(), clock: testClock,
+      tokenCounter: new ConservativeTokenCounter(), tokenBudgets: { world: 2_500, persona: 3_500 },
+    }).publishDraft('world', world.world.id)
+    await contentService.updatePersona(personaId, { name: '林默', worldId: world.world.id })
+    await contentService.updateWorldStatus(world.world.id, { isEnabled: false })
+
+    const created = await generation.createInterestRun({ personaId, content: '魔法学院课程' })
+    const details = await generation.getRun(created.runId)
+
+    expect(details.run.promptContext).toMatchObject({
+      worldSoulVersionId: null,
+      budgets: { world: { soulUsed: 0, growthUsed: 0 } },
+    })
+    expect(details.evidence.some(item => typeof item.metadata.worldVersionId === 'string')).toBe(false)
+  })
+
   it('调用前按固定提示字符上限失败且不请求模型', async () => {
     const profile = await generation.createParameterProfile({
       name: '极小提示上限',

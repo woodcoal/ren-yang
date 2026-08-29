@@ -475,17 +475,20 @@ export class GenerationApplicationService implements TaskHandler {
       throw new ApplicationError('CAPABILITY_DISABLED', '图片模型尚未配置，不能创建包含图片的运行', 422)
     }
     const persona = await this.requirePersona(personaId)
+    if (!persona.isEnabled) throw new ApplicationError('RESOURCE_DISABLED', '人物已禁用，不能创建新任务', 409)
     if (!persona.activeVersionId) throw new ApplicationError('PERSONA_VERSION_NOT_ACTIVE', '人物尚无已发布当前版本', 409)
     const version = await this.requirePublishedPersonaVersion(persona.activeVersionId, persona.id)
     const parameters = await this.resolveParameters(profileId)
     const template = templateId ? await this.requireFormatTemplate(templateId) : { spec: DEFAULT_FORMAT_TEMPLATE }
-    const world = persona.worldId ? await this.dependencies.content.findWorld(persona.worldId) : null
+    const linkedWorld = persona.worldId ? await this.dependencies.content.findWorld(persona.worldId) : null
+    const world = linkedWorld?.isEnabled ? linkedWorld : null
+    const effectivePersona = world ? persona : { ...persona, worldId: null }
     const worldVersion = world?.activeVersionId ? await this.dependencies.content.findWorldVersion(world.activeVersionId) : null
     const activeWorldVersion = worldVersion?.status === 'published' ? worldVersion : null
     const query = 'content' in input ? input.content : input.requirement
     let contextSearch
     try {
-      contextSearch = await this.dependencies.context.search({ personaId, worldId: persona.worldId, query, limit: parameters.maxEvidenceChunks })
+      contextSearch = await this.dependencies.context.search({ personaId, worldId: effectivePersona.worldId, query, limit: parameters.maxEvidenceChunks })
     }
     catch (error: unknown) {
       if (error instanceof ContextProviderError) {
@@ -510,7 +513,7 @@ export class GenerationApplicationService implements TaskHandler {
       : { tokens: 0, mode: 'estimated' as const, counter: 'none' }
     const personaSoulCount = this.dependencies.tokenCounter.count(tokenCounterModel, version.snapshot.runtimeSummary)
     const prepared = await this.preparePromptBudgetCandidates(
-      persona,
+      effectivePersona,
       contextSearch.candidates,
       tokenCounterModel,
     )

@@ -49,6 +49,7 @@ const deletionConfirmed = shallowRef(false)
 const actionLoading = shallowRef(false)
 const actionError = shallowRef<string | null>(null)
 const actionMessage = shallowRef<string | null>(null)
+const disableConfirmationOpen = shallowRef(false)
 
 /**
  * 切换世界工作区标签。
@@ -271,6 +272,37 @@ async function deleteWorld(): Promise<void> {
 }
 
 /**
+ * 写入世界启用状态，不删除世界版本、人物关系、资料或历史记录。
+ * @param isEnabled 需要写入的新状态。
+ * @returns 状态请求和详情刷新完成时结束。
+ */
+async function updateWorldStatus(isEnabled: boolean): Promise<void> {
+  await runAction(isEnabled ? '世界已启用' : '世界已禁用', async () => {
+    await $fetch(`/api/v1/worlds/${worldId}/status`, { method: 'PATCH', body: { isEnabled } })
+    await refresh()
+  })
+}
+
+/**
+ * 已启用世界先打开二次确认；已禁用世界直接重新启用。
+ * @returns 确认框打开或启用请求完成时结束。
+ */
+async function requestWorldStatusChange(): Promise<void> {
+  if (!details.value) return
+  if (details.value.world.isEnabled) {
+    disableConfirmationOpen.value = true
+    return
+  }
+  await updateWorldStatus(true)
+}
+
+/** @returns 用户确认后的禁用请求完成时结束。 */
+async function confirmDisableWorld(): Promise<void> {
+  disableConfirmationOpen.value = false
+  await updateWorldStatus(false)
+}
+
+/**
  * 统一管理页面动作状态与通俗反馈。
  * @param successMessage 成功提示；不需要时为 null。
  * @param action 当前异步动作。
@@ -299,6 +331,7 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
       :title="details?.world.name || '世界工作区'"
       :description="details?.world.summary || '世界是多个人物共享的背景，也拥有自己的灵魂和成长。'"
     >
+      <UButton v-if="details" color="neutral" variant="soft" :loading="actionLoading" @click="requestWorldStatusChange">{{ details.world.isEnabled ? '禁用世界' : '启用世界' }}</UButton>
       <UButton to="/worlds" color="neutral" variant="ghost">返回世界列表</UButton>
     </ContentPageHeader>
 
@@ -306,6 +339,7 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
     <template v-else>
       <UAlert v-if="actionError" class="mb-5" color="error" title="操作失败" :description="actionError" />
       <UAlert v-if="actionMessage" class="mb-5" color="success" title="操作完成" :description="actionMessage" />
+      <UAlert v-if="!details.world.isEnabled" class="mb-6" color="warning" title="世界当前已禁用" description="世界版本、人物关系、资料和历史任务仍会保留，但该世界不会进入后续新任务。" />
 
       <div class="status-strip page-status-strip mb-6">
         <div class="status-cell"><span class="status-kicker">关联人物</span><strong class="status-value">{{ details.personas.length }} 个</strong></div>
@@ -404,5 +438,13 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
         </UCard>
       </div>
     </template>
+
+    <UModal v-model:open="disableConfirmationOpen" title="确认禁用世界" description="禁用不会删除世界版本、人物关系、资料或历史任务。">
+      <template #body><p class="text-sm text-muted">确定禁用“{{ details?.world.name }}”吗？该世界将停止进入后续新任务，关联人物仍可按自身设定工作。</p></template>
+      <template #footer><div class="flex w-full justify-end gap-2">
+        <UButton color="neutral" variant="ghost" :disabled="actionLoading" @click="disableConfirmationOpen = false">取消</UButton>
+        <UButton color="error" :loading="actionLoading" @click="confirmDisableWorld">确认禁用</UButton>
+      </div></template>
+    </UModal>
   </div>
 </template>

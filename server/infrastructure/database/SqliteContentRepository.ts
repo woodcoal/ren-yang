@@ -16,10 +16,12 @@ import type {
   CreatePersonaRecord,
   CreateSourceRecord,
   CreateWorldRecord,
+  PersonaPageRecord,
   PersonaRunHistoryStatistics,
   ReplaceSourceRecord,
   SourceLinkRecord,
   SourcePageRecord,
+  WorldPageRecord,
   WorldVersionDeletionReferences,
 } from '../../ports/ContentRepository'
 import type { PublishSoulDraftRecord, SoulRepository } from '../../ports/SoulRepository'
@@ -36,6 +38,16 @@ export class SqliteContentRepository implements ContentRepository, SoulRepositor
   /** @returns 按更新时间倒序的人物记录。 */
   async listPersonas(): Promise<PersonaRecord[]> {
     return this.client.prepare('SELECT * FROM personas ORDER BY updated_at DESC, id').all().map(toPersona)
+  }
+
+  /**
+   * 分页读取人物，并把超出总页数的请求修正到最后一页。
+   * @param page 从 1 开始的请求页码。
+   * @param pageSize 受共享 Schema 限制的每页数量。
+   * @returns 顺序稳定的人物分页记录。
+   */
+  async listPersonasPage(page: number, pageSize: 5 | 10 | 20 | 50 | 100): Promise<PersonaPageRecord> {
+    return this.listPage('personas', page, pageSize, toPersona)
   }
 
   /** @param id 人物 UUID。 @returns 找到的人物或 null。 */
@@ -83,6 +95,18 @@ export class SqliteContentRepository implements ContentRepository, SoulRepositor
     return this.client.prepare(`
       UPDATE personas SET name = ?, world_id = ?, updated_at = ? WHERE id = ?
     `).run(name, worldId, timestamp, id).changes === 1
+  }
+
+  /** @param personaId 人物 UUID。 @param isEnabled 新状态。 @param timestamp 更新时间。 @returns 是否更新。 */
+  async updatePersonaStatus(personaId: string, isEnabled: boolean, timestamp: number): Promise<boolean> {
+    return this.client.prepare(`
+      UPDATE personas SET is_enabled = ?, updated_at = ? WHERE id = ?
+    `).run(isEnabled ? 1 : 0, timestamp, personaId).changes === 1
+  }
+
+  /** @param personaIds 人物 UUID 集合。 @param isEnabled 统一新状态。 @param timestamp 更新时间。 @returns 更新数量。 */
+  async updatePersonasStatus(personaIds: string[], isEnabled: boolean, timestamp: number): Promise<number> {
+    return this.updateStatuses('personas', personaIds, isEnabled, timestamp)
   }
 
   /** @param personaId 人物 UUID。 @returns 新版本在前的版本记录。 */
@@ -181,6 +205,16 @@ export class SqliteContentRepository implements ContentRepository, SoulRepositor
     return this.client.prepare('SELECT * FROM worlds ORDER BY updated_at DESC, id').all().map(toWorld)
   }
 
+  /**
+   * 分页读取世界，并把超出总页数的请求修正到最后一页。
+   * @param page 从 1 开始的请求页码。
+   * @param pageSize 受共享 Schema 限制的每页数量。
+   * @returns 顺序稳定的世界分页记录。
+   */
+  async listWorldsPage(page: number, pageSize: 5 | 10 | 20 | 50 | 100): Promise<WorldPageRecord> {
+    return this.listPage('worlds', page, pageSize, toWorld)
+  }
+
   /** @param id 世界 UUID。 @returns 找到的世界或 null。 */
   async findWorld(id: string): Promise<WorldRecord | null> {
     const row = this.client.prepare('SELECT * FROM worlds WHERE id = ?').get(id)
@@ -219,6 +253,18 @@ export class SqliteContentRepository implements ContentRepository, SoulRepositor
     return this.client.prepare(`
       UPDATE worlds SET name = ?, summary = ?, updated_at = ? WHERE id = ?
     `).run(name, summary, timestamp, id).changes === 1
+  }
+
+  /** @param worldId 世界 UUID。 @param isEnabled 新状态。 @param timestamp 更新时间。 @returns 是否更新。 */
+  async updateWorldStatus(worldId: string, isEnabled: boolean, timestamp: number): Promise<boolean> {
+    return this.client.prepare(`
+      UPDATE worlds SET is_enabled = ?, updated_at = ? WHERE id = ?
+    `).run(isEnabled ? 1 : 0, timestamp, worldId).changes === 1
+  }
+
+  /** @param worldIds 世界 UUID 集合。 @param isEnabled 统一新状态。 @param timestamp 更新时间。 @returns 更新数量。 */
+  async updateWorldsStatus(worldIds: string[], isEnabled: boolean, timestamp: number): Promise<number> {
+    return this.updateStatuses('worlds', worldIds, isEnabled, timestamp)
   }
 
   /** @param worldId 世界 UUID。 @returns 新版本在前的版本记录。 */
@@ -693,6 +739,55 @@ export class SqliteContentRepository implements ContentRepository, SoulRepositor
       LIMIT ?
     `).all(`"${phrase}"`, limit).map(toChunk)
   }
+
+  /**
+   * 对允许的内容对象表执行相同的稳定分页查询。
+   * @param table 已在类型层限制的人物表或世界表名称。
+   * @param page 从 1 开始的请求页码。
+   * @param pageSize 每页数量。
+   * @param mapper 把 SQLite 行转换为领域记录的函数。
+   * @returns 已修正越界页码的分页记录。
+   * @remarks 表名不能由请求输入提供；这里只接受代码内固定联合类型。
+   */
+  private listPage<T>(
+    table: 'personas' | 'worlds',
+    page: number,
+    pageSize: 5 | 10 | 20 | 50 | 100,
+    mapper: (value: unknown) => T,
+  ): { items: T[], total: number, page: number, pageSize: 5 | 10 | 20 | 50 | 100, totalPages: number } {
+    const count = this.client.prepare(`SELECT COUNT(*) AS total FROM ${table}`).get() as { total: number }
+    const total = Number(count.total)
+    const totalPages = Math.max(1, Math.ceil(total / pageSize))
+    const effectivePage = Math.min(page, totalPages)
+    const items = this.client.prepare(`
+      SELECT * FROM ${table}
+      ORDER BY updated_at DESC, id
+      LIMIT ? OFFSET ?
+    `).all(pageSize, (effectivePage - 1) * pageSize).map(mapper)
+    return { items, total, page: effectivePage, pageSize, totalPages }
+  }
+
+  /**
+   * 使用单条参数化 SQL 修改人物或世界的统一状态。
+   * @param table 已在类型层限制的人物表或世界表名称。
+   * @param ids 已验证且去重的对象 UUID。
+   * @param isEnabled 统一新状态。
+   * @param timestamp 更新时间。
+   * @returns 实际匹配并更新的行数。
+   * @remarks 表名不能由请求输入提供；对象标识始终作为 SQL 参数绑定。
+   */
+  private updateStatuses(
+    table: 'personas' | 'worlds',
+    ids: string[],
+    isEnabled: boolean,
+    timestamp: number,
+  ): number {
+    if (ids.length === 0) return 0
+    const placeholders = ids.map(() => '?').join(', ')
+    return this.client.prepare(`
+      UPDATE ${table} SET is_enabled = ?, updated_at = ? WHERE id IN (${placeholders})
+    `).run(isEnabled ? 1 : 0, timestamp, ...ids).changes
+  }
 }
 
 /**
@@ -734,6 +829,7 @@ function toPersona(value: unknown): PersonaRecord {
     name: String(row.name),
     origin: row.origin as PersonaRecord['origin'],
     activeVersionId: row.active_soul_version_id === null ? null : String(row.active_soul_version_id),
+    isEnabled: Number(row.is_enabled) === 1,
     createdAt: Number(row.created_at),
     updatedAt: Number(row.updated_at),
   }
@@ -767,6 +863,7 @@ function toWorld(value: unknown): WorldRecord {
     name: String(row.name),
     summary: String(row.summary),
     activeVersionId: row.active_soul_version_id === null ? null : String(row.active_soul_version_id),
+    isEnabled: Number(row.is_enabled) === 1,
     createdAt: Number(row.created_at),
     updatedAt: Number(row.updated_at),
   }

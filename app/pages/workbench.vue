@@ -20,7 +20,7 @@ const [{ data: personaData }, { data: profileData }, { data: templateData }, { d
   useFetch<ApiResponse<CapabilityResponse>>('/api/v1/system/capabilities'),
 ])
 
-const personas = computed(() => (personaData.value?.data ?? []).filter(persona => persona.activeVersionId))
+const personas = computed(() => (personaData.value?.data ?? []).filter(persona => persona.isEnabled && persona.activeVersionId))
 const profiles = computed(() => profileData.value?.data ?? [])
 const templates = computed(() => templateData.value?.data ?? [])
 const capabilities = computed(() => capabilityData.value?.data ?? null)

@@ -2,18 +2,25 @@ import type {
   CreatePersonaInput,
   CreateSourceInput,
   CreateSourceLinkInput,
+  ListSubjectsPageInput,
   ListSourcesPageInput,
   SourceCreationTarget,
   CreateWorldInput,
   UpdatePersonaInput,
+  UpdatePersonaStatusInput,
+  UpdatePersonasStatusInput,
   UpdateSourceInput,
   UpdateSourceStatusInput,
   UpdateSourcesStatusInput,
   UpdateWorldInput,
+  UpdateWorldStatusInput,
+  UpdateWorldsStatusInput,
 } from '../../../shared/schemas/content'
 import type {
   DeletionImpact,
   PersonaDetails,
+  PersonaPageView,
+  PersonaStatusUpdateResult,
   PersonaSummary,
   SourceChunkView,
   SourceDetails,
@@ -22,7 +29,9 @@ import type {
   SourceSummary,
   VersionFieldDiff,
   WorldDetails,
+  WorldPageView,
   WorldSummary,
+  WorldStatusUpdateResult,
 } from '../../../shared/types/content'
 import type {
   PersonaRecord,
@@ -105,6 +114,19 @@ export class ContentApplicationService {
   }
 
   /**
+   * 分页查询人物摘要，限制管理列表单次加载量。
+   * @param input 已校验的页码和每页数量。
+   * @returns 服务端修正页码后的人物分页结果。
+   */
+  async listPersonasPage(input: ListSubjectsPageInput): Promise<PersonaPageView> {
+    const page = await this.dependencies.repository.listPersonasPage(input.page, input.pageSize)
+    return {
+      ...page,
+      items: await Promise.all(page.items.map(persona => this.toPersonaSummary(persona))),
+    }
+  }
+
+  /**
    * 查询单个人物、版本和资料。
    * @param personaId 人物 UUID。
    * @returns 可供管理界面直接使用的人物详情。
@@ -165,6 +187,31 @@ export class ContentApplicationService {
     await this.dependencies.repository.updatePersona(personaId, input.name, input.worldId, this.dependencies.clock.now())
     await this.enqueueSourceSynchronizations(sources.map(source => source.id))
     return await this.getPersona(personaId)
+  }
+
+  /**
+   * 修改单个人物启用状态，同时保留其版本、资料、记忆和历史运行。
+   * @param personaId 人物 UUID。
+   * @param input 已校验的新状态。
+   * @returns 更新后的人物详情。
+   */
+  async updatePersonaStatus(personaId: string, input: UpdatePersonaStatusInput): Promise<PersonaDetails> {
+    const current = await this.requirePersona(personaId)
+    if (current.isEnabled === input.isEnabled) return await this.getPersona(personaId)
+    await this.dependencies.repository.updatePersonaStatus(personaId, input.isEnabled, this.dependencies.clock.now())
+    return await this.getPersona(personaId)
+  }
+
+  /**
+   * 验证全部人物后原子修改统一启用状态，避免部分成功。
+   * @param input 已校验的人物 UUID 集合和统一状态。
+   * @returns 去重后的处理对象与新状态。
+   */
+  async updatePersonasStatus(input: UpdatePersonasStatusInput): Promise<PersonaStatusUpdateResult> {
+    const personaIds = [...new Set(input.personaIds)]
+    await this.requirePersonas(personaIds)
+    await this.dependencies.repository.updatePersonasStatus(personaIds, input.isEnabled, this.dependencies.clock.now())
+    return { personaIds, isEnabled: input.isEnabled }
   }
 
   /**
@@ -237,6 +284,19 @@ export class ContentApplicationService {
   }
 
   /**
+   * 分页查询世界摘要，限制管理列表单次加载量。
+   * @param input 已校验的页码和每页数量。
+   * @returns 服务端修正页码后的世界分页结果。
+   */
+  async listWorldsPage(input: ListSubjectsPageInput): Promise<WorldPageView> {
+    const page = await this.dependencies.repository.listWorldsPage(input.page, input.pageSize)
+    return {
+      ...page,
+      items: await Promise.all(page.items.map(world => this.toWorldSummary(world))),
+    }
+  }
+
+  /**
    * 查询世界、版本、人物和资料。
    * @param worldId 世界 UUID。
    * @returns 世界详情。
@@ -286,6 +346,31 @@ export class ContentApplicationService {
     await this.requireWorld(worldId)
     await this.dependencies.repository.updateWorld(worldId, input.name, input.summary, this.dependencies.clock.now())
     return await this.getWorld(worldId)
+  }
+
+  /**
+   * 修改单个世界启用状态，同时保留其版本、资料、人物关系和历史运行。
+   * @param worldId 世界 UUID。
+   * @param input 已校验的新状态。
+   * @returns 更新后的世界详情。
+   */
+  async updateWorldStatus(worldId: string, input: UpdateWorldStatusInput): Promise<WorldDetails> {
+    const current = await this.requireWorld(worldId)
+    if (current.isEnabled === input.isEnabled) return await this.getWorld(worldId)
+    await this.dependencies.repository.updateWorldStatus(worldId, input.isEnabled, this.dependencies.clock.now())
+    return await this.getWorld(worldId)
+  }
+
+  /**
+   * 验证全部世界后原子修改统一启用状态，避免部分成功。
+   * @param input 已校验的世界 UUID 集合和统一状态。
+   * @returns 去重后的处理对象与新状态。
+   */
+  async updateWorldsStatus(input: UpdateWorldsStatusInput): Promise<WorldStatusUpdateResult> {
+    const worldIds = [...new Set(input.worldIds)]
+    await this.requireWorlds(worldIds)
+    await this.dependencies.repository.updateWorldsStatus(worldIds, input.isEnabled, this.dependencies.clock.now())
+    return { worldIds, isEnabled: input.isEnabled }
   }
 
   /**
@@ -664,6 +749,11 @@ export class ContentApplicationService {
     return persona
   }
 
+  /** @param ids 去重后的人物 UUID。 @returns 无返回值。 @throws ApplicationError 任一人物不存在时抛出。 */
+  private async requirePersonas(ids: string[]): Promise<void> {
+    for (const id of ids) await this.requirePersona(id)
+  }
+
   /** @param id 世界 UUID 或 null。 @returns 无返回值。 @throws ApplicationError 非空世界不存在时抛出。 */
   private async requireOptionalWorld(id: string | null): Promise<void> {
     if (id !== null) {
@@ -678,6 +768,11 @@ export class ContentApplicationService {
       throw new ApplicationError('RESOURCE_NOT_FOUND', '世界设定不存在', 404)
     }
     return world
+  }
+
+  /** @param ids 去重后的世界 UUID。 @returns 无返回值。 @throws ApplicationError 任一世界不存在时抛出。 */
+  private async requireWorlds(ids: string[]): Promise<void> {
+    for (const id of ids) await this.requireWorld(id)
   }
 
   /** @param id 资料 UUID。 @returns 存在的资料。 @throws ApplicationError 不存在时抛出。 */

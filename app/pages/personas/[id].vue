@@ -54,6 +54,7 @@ const deletionConfirmed = shallowRef(false)
 const actionLoading = shallowRef(false)
 const actionError = shallowRef<string | null>(null)
 const actionMessage = shallowRef<string | null>(null)
+const disableConfirmationOpen = shallowRef(false)
 
 /**
  * 切换人物工作区标签。
@@ -238,6 +239,37 @@ async function deletePersona(): Promise<void> {
 }
 
 /**
+ * 写入人物启用状态，不删除人物设定、资料、记忆或历史记录。
+ * @param isEnabled 需要写入的新状态。
+ * @returns 状态请求和详情刷新完成时结束。
+ */
+async function updatePersonaStatus(isEnabled: boolean): Promise<void> {
+  await runAction(isEnabled ? '人物已启用' : '人物已禁用', async () => {
+    await $fetch(`/api/v1/personas/${personaId}/status`, { method: 'PATCH', body: { isEnabled } })
+    await refresh()
+  })
+}
+
+/**
+ * 已启用人物先打开二次确认；已禁用人物直接重新启用。
+ * @returns 确认框打开或启用请求完成时结束。
+ */
+async function requestPersonaStatusChange(): Promise<void> {
+  if (!details.value) return
+  if (details.value.persona.isEnabled) {
+    disableConfirmationOpen.value = true
+    return
+  }
+  await updatePersonaStatus(true)
+}
+
+/** @returns 用户确认后的禁用请求完成时结束。 */
+async function confirmDisablePersona(): Promise<void> {
+  disableConfirmationOpen.value = false
+  await updatePersonaStatus(false)
+}
+
+/**
  * 统一管理页面动作状态和通俗反馈。
  * @param successMessage 成功提示；不需要时为 null。
  * @param action 当前异步动作。
@@ -266,14 +298,16 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
       :title="details?.persona.name || '人物工作区'"
       :description="details?.persona.currentSummary || '灵魂、成长和记忆的长期内容都需要人工确认后才会影响新任务。'"
     >
+      <UButton v-if="details" color="neutral" variant="soft" :loading="actionLoading" @click="requestPersonaStatusChange">{{ details.persona.isEnabled ? '禁用人物' : '启用人物' }}</UButton>
       <UButton to="/personas" color="neutral" variant="ghost">返回人物列表</UButton>
-      <UButton v-if="details?.persona.activeVersionId" to="/workbench">新建任务</UButton>
+      <UButton v-if="details?.persona.isEnabled && details.persona.activeVersionId" to="/workbench">新建任务</UButton>
     </ContentPageHeader>
 
     <UAlert v-if="error || !details || !soul" color="error" title="人物工作区加载失败" :actions="[{ label: '重试', onClick: () => Promise.all([refresh(), refreshSoul()]) }]" />
     <template v-else>
       <UAlert v-if="actionError" class="mb-5" color="error" title="操作失败" :description="actionError" />
       <UAlert v-if="actionMessage" class="mb-5" color="success" title="操作完成" :description="actionMessage" />
+      <UAlert v-if="!details.persona.isEnabled" class="mb-6" color="warning" title="人物当前已禁用" description="人物设定、成长、记忆、资料关系和历史任务仍会保留，但不能用来创建新任务。" />
 
       <div class="status-strip page-status-strip mb-6">
         <div class="status-cell"><span class="status-kicker">所属世界</span><strong class="status-value">{{ details.persona.worldName || '未关联世界' }}</strong></div>
@@ -362,7 +396,7 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
             <UForm :schema="updatePersonaSchema" :state="metadata" class="grid gap-4 md:grid-cols-2" @submit="saveMetadata">
               <UFormField name="name" label="人物名称" required><UInput v-model="metadata.name" class="w-full" /></UFormField>
               <UFormField name="worldId" label="所属世界">
-                <select v-model="metadata.worldId" class="native-control"><option :value="null">不关联世界</option><option v-for="world in worlds" :key="world.id" :value="world.id">{{ world.name }}</option></select>
+                <select v-model="metadata.worldId" class="native-control"><option :value="null">不关联世界</option><option v-for="world in worlds" :key="world.id" :value="world.id">{{ world.name }}{{ world.isEnabled ? '' : '（已禁用）' }}</option></select>
               </UFormField>
               <div class="md:col-span-2"><UButton type="submit" :loading="actionLoading">保存基本信息</UButton></div>
             </UForm>
@@ -386,5 +420,13 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
         </UCard>
       </div>
     </template>
+
+    <UModal v-model:open="disableConfirmationOpen" title="确认禁用人物" description="禁用不会删除人物设定、成长、记忆、资料关系或历史任务。">
+      <template #body><p class="text-sm text-muted">确定禁用“{{ details?.persona.name }}”吗？禁用后不能再用该人物创建新任务。</p></template>
+      <template #footer><div class="flex w-full justify-end gap-2">
+        <UButton color="neutral" variant="ghost" :disabled="actionLoading" @click="disableConfirmationOpen = false">取消</UButton>
+        <UButton color="error" :loading="actionLoading" @click="confirmDisablePersona">确认禁用</UButton>
+      </div></template>
+    </UModal>
   </div>
 </template>

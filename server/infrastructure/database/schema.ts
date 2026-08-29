@@ -80,10 +80,14 @@ export const worlds = sqliteTable(
     name: text('name').notNull(),
     summary: text('summary').notNull().default(''),
     activeSoulVersionId: text('active_soul_version_id'),
+    isEnabled: integer('is_enabled').notNull().default(1),
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull(),
   },
-  table => [check('worlds_name_not_empty_check', sql`length(trim(${table.name})) > 0`)],
+  table => [
+    check('worlds_name_not_empty_check', sql`length(trim(${table.name})) > 0`),
+    check('worlds_enabled_check', sql`${table.isEnabled} IN (0, 1)`),
+  ],
 )
 
 /** 人物聚合根，世界和当前灵魂版本均为可选指针。 */
@@ -95,6 +99,7 @@ export const personas = sqliteTable(
     name: text('name').notNull(),
     origin: text('origin').notNull(),
     activeSoulVersionId: text('active_soul_version_id'),
+    isEnabled: integer('is_enabled').notNull().default(1),
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull(),
   },
@@ -102,6 +107,7 @@ export const personas = sqliteTable(
     index('personas_world_id_index').on(table.worldId),
     check('personas_name_not_empty_check', sql`length(trim(${table.name})) > 0`),
     check('personas_origin_check', sql`${table.origin} IN ('original', 'source_based', 'hybrid')`),
+    check('personas_enabled_check', sql`${table.isEnabled} IN (0, 1)`),
   ],
 )
 

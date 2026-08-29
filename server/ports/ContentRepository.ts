@@ -107,6 +107,34 @@ export interface CreateSourceRecord extends SourceWriteRecord {
 /** 替换资料正文与切片的持久化命令，不改动现有关系。 */
 export interface ReplaceSourceRecord extends SourceWriteRecord {}
 
+/** 仓储返回的人物分页记录。 */
+export interface PersonaPageRecord {
+  /** 当前页人物。 */
+  items: PersonaRecord[]
+  /** 全部人物数量。 */
+  total: number
+  /** 已按总数修正的当前页码。 */
+  page: number
+  /** 每页数量。 */
+  pageSize: 5 | 10 | 20 | 50 | 100
+  /** 总页数；空列表时仍为 1。 */
+  totalPages: number
+}
+
+/** 仓储返回的世界分页记录。 */
+export interface WorldPageRecord {
+  /** 当前页世界。 */
+  items: WorldRecord[]
+  /** 全部世界数量。 */
+  total: number
+  /** 已按总数修正的当前页码。 */
+  page: number
+  /** 每页数量。 */
+  pageSize: 5 | 10 | 20 | 50 | 100
+  /** 总页数；空列表时仍为 1。 */
+  totalPages: number
+}
+
 /** 仓储返回的资料分页记录。 */
 export interface SourcePageRecord {
   /** 当前页资料。 */
@@ -149,12 +177,18 @@ export interface WorldVersionDeletionReferences {
 export interface ContentRepository {
   /** @returns 按更新时间倒序的人物。 */
   listPersonas(): Promise<PersonaRecord[]>
+  /** @param page 从 1 开始的页码。 @param pageSize 每页数量。 @returns 已按总数修正的人物分页记录。 */
+  listPersonasPage(page: number, pageSize: 5 | 10 | 20 | 50 | 100): Promise<PersonaPageRecord>
   /** @param id 人物标识。 @returns 人物或 null。 */
   findPersona(id: string): Promise<PersonaRecord | null>
   /** @param record 完整创建命令。 @returns 无返回值。 */
   createPersona(record: CreatePersonaRecord): Promise<void>
   /** @param id 人物标识。 @param name 新名称。 @param worldId 新世界标识。 @param timestamp 更新时间。 @returns 是否更新成功。 */
   updatePersona(id: string, name: string, worldId: string | null, timestamp: number): Promise<boolean>
+  /** @param personaId 人物标识。 @param isEnabled 新状态。 @param timestamp 更新时间。 @returns 是否更新成功。 */
+  updatePersonaStatus(personaId: string, isEnabled: boolean, timestamp: number): Promise<boolean>
+  /** @param personaIds 人物标识集合。 @param isEnabled 统一新状态。 @param timestamp 更新时间。 @returns 更新数量。 */
+  updatePersonasStatus(personaIds: string[], isEnabled: boolean, timestamp: number): Promise<number>
   /** @param personaId 人物标识。 @returns 按创建时间倒序的版本。 */
   listPersonaVersions(personaId: string): Promise<PersonaVersionRecord[]>
   /** @param id 版本标识。 @returns 版本或 null。 */
@@ -170,12 +204,18 @@ export interface ContentRepository {
 
   /** @returns 按更新时间倒序的世界设定。 */
   listWorlds(): Promise<WorldRecord[]>
+  /** @param page 从 1 开始的页码。 @param pageSize 每页数量。 @returns 已按总数修正的世界分页记录。 */
+  listWorldsPage(page: number, pageSize: 5 | 10 | 20 | 50 | 100): Promise<WorldPageRecord>
   /** @param id 世界标识。 @returns 世界设定或 null。 */
   findWorld(id: string): Promise<WorldRecord | null>
   /** @param record 完整创建命令。 @returns 无返回值。 */
   createWorld(record: CreateWorldRecord): Promise<void>
   /** @param id 世界标识。 @param name 新名称。 @param summary 新摘要。 @param timestamp 更新时间。 @returns 是否更新成功。 */
   updateWorld(id: string, name: string, summary: string, timestamp: number): Promise<boolean>
+  /** @param worldId 世界标识。 @param isEnabled 新状态。 @param timestamp 更新时间。 @returns 是否更新成功。 */
+  updateWorldStatus(worldId: string, isEnabled: boolean, timestamp: number): Promise<boolean>
+  /** @param worldIds 世界标识集合。 @param isEnabled 统一新状态。 @param timestamp 更新时间。 @returns 更新数量。 */
+  updateWorldsStatus(worldIds: string[], isEnabled: boolean, timestamp: number): Promise<number>
   /** @param worldId 世界标识。 @returns 按创建时间倒序的版本。 */
   listWorldVersions(worldId: string): Promise<WorldVersionRecord[]>
   /** @param id 版本标识。 @returns 版本或 null。 */

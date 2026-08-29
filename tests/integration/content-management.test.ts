@@ -14,7 +14,7 @@ import { ConservativeTokenCounter } from '../../server/infrastructure/model/Cons
 import type { Clock } from '../../server/ports/Clock'
 import type { IdentifierGenerator } from '../../server/ports/IdentifierGenerator'
 import type { PersonaSnapshot } from '../../shared/types/content'
-import { listSourcesPageSchema } from '../../shared/schemas/content'
+import { listSourcesPageSchema, listSubjectsPageSchema } from '../../shared/schemas/content'
 
 /** 为测试提供单调递增且符合 UUID 格式的标识。 */
 class SequentialIdentifierGenerator implements IdentifierGenerator {
@@ -413,6 +413,84 @@ describe('人物、世界与资料管理闭环', () => {
     expect(third.items).toHaveLength(3)
     expect(new Set([...first.items, ...second.items, ...third.items].map(item => item.id)).size).toBe(23)
     expect(overflow).toEqual(third)
+  })
+
+  it('人物与世界分页使用默认每页十项并修正越界页码', async () => {
+    for (let index = 1; index <= 13; index += 1) {
+      await service.createWorld({
+        name: `分页世界 ${String(index).padStart(2, '0')}`, summary: '',
+        snapshot: createWorldSnapshot(`分页世界规则 ${index}。`), changeSummary: '建立分页世界',
+      })
+      await service.createPersona({
+        name: `分页人物 ${String(index).padStart(2, '0')}`, origin: 'original', worldId: null, sourceIds: [],
+        snapshot: BASE_PERSONA_SNAPSHOT, changeSummary: '建立分页人物',
+      })
+    }
+
+    const personaFirst = await service.listPersonasPage({ page: 1, pageSize: 10 })
+    const personaLast = await service.listPersonasPage({ page: 999, pageSize: 10 })
+    const worldFirst = await service.listWorldsPage({ page: 1, pageSize: 10 })
+    const worldLast = await service.listWorldsPage({ page: 999, pageSize: 10 })
+
+    expect(listSubjectsPageSchema.parse({})).toEqual({ page: 1, pageSize: 10 })
+    expect(personaFirst).toMatchObject({ total: 13, page: 1, pageSize: 10, totalPages: 2 })
+    expect(personaFirst.items).toHaveLength(10)
+    expect(personaLast).toMatchObject({ total: 13, page: 2, pageSize: 10, totalPages: 2 })
+    expect(personaLast.items).toHaveLength(3)
+    expect(worldFirst).toMatchObject({ total: 13, page: 1, pageSize: 10, totalPages: 2 })
+    expect(worldFirst.items).toHaveLength(10)
+    expect(worldLast).toMatchObject({ total: 13, page: 2, pageSize: 10, totalPages: 2 })
+    expect(worldLast.items).toHaveLength(3)
+  })
+
+  it('人物与世界批量状态修改先验证全部对象并保留原有关联', async () => {
+    const firstWorld = await service.createWorld({
+      name: '第一世界', summary: '', snapshot: createWorldSnapshot('第一世界规则。'), changeSummary: '建立世界',
+    })
+    const secondWorld = await service.createWorld({
+      name: '第二世界', summary: '', snapshot: createWorldSnapshot('第二世界规则。'), changeSummary: '建立世界',
+    })
+    const firstPersona = await service.createPersona({
+      name: '第一人物', origin: 'original', worldId: firstWorld.world.id, sourceIds: [],
+      snapshot: BASE_PERSONA_SNAPSHOT, changeSummary: '建立人物',
+    })
+    const secondPersona = await service.createPersona({
+      name: '第二人物', origin: 'original', worldId: null, sourceIds: [],
+      snapshot: BASE_PERSONA_SNAPSHOT, changeSummary: '建立人物',
+    })
+    const invalidId = '00000000-0000-4000-8000-999999999999'
+
+    await expect(service.updatePersonasStatus({
+      personaIds: [firstPersona.persona.id, invalidId], isEnabled: false,
+    })).rejects.toMatchObject<ApplicationError>({ code: 'RESOURCE_NOT_FOUND', statusCode: 404 })
+    await expect(service.getPersona(firstPersona.persona.id)).resolves.toMatchObject({ persona: { isEnabled: true } })
+    await expect(service.updateWorldsStatus({
+      worldIds: [firstWorld.world.id, invalidId], isEnabled: false,
+    })).rejects.toMatchObject<ApplicationError>({ code: 'RESOURCE_NOT_FOUND', statusCode: 404 })
+    await expect(service.getWorld(firstWorld.world.id)).resolves.toMatchObject({ world: { isEnabled: true } })
+
+    await expect(service.updatePersonasStatus({
+      personaIds: [firstPersona.persona.id, secondPersona.persona.id, firstPersona.persona.id], isEnabled: false,
+    })).resolves.toEqual({ personaIds: [firstPersona.persona.id, secondPersona.persona.id], isEnabled: false })
+    await expect(service.updateWorldsStatus({
+      worldIds: [firstWorld.world.id, secondWorld.world.id, firstWorld.world.id], isEnabled: false,
+    })).resolves.toEqual({ worldIds: [firstWorld.world.id, secondWorld.world.id], isEnabled: false })
+    await expect(service.getPersona(firstPersona.persona.id)).resolves.toMatchObject({
+      persona: { isEnabled: false, worldId: firstWorld.world.id },
+    })
+    await expect(service.getWorld(firstWorld.world.id)).resolves.toMatchObject({
+      world: { isEnabled: false }, personas: [expect.objectContaining({ id: firstPersona.persona.id })],
+    })
+    await expect(service.updatePersona(firstPersona.persona.id, {
+      name: '第一人物改名', worldId: firstWorld.world.id,
+    })).resolves.toMatchObject({ persona: { name: '第一人物改名', worldId: firstWorld.world.id } })
+
+    await expect(service.updatePersonaStatus(firstPersona.persona.id, { isEnabled: true })).resolves.toMatchObject({
+      persona: { isEnabled: true },
+    })
+    await expect(service.updateWorldStatus(firstWorld.world.id, { isEnabled: true })).resolves.toMatchObject({
+      world: { isEnabled: true },
+    })
   })
 
   it('列出资料关联阻断项，解除关联后允许删除资料', async () => {

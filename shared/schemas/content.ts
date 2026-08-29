@@ -97,6 +97,18 @@ export const updatePersonaSchema = z.object({
   worldId: z.string().uuid('世界标识无效').nullable(),
 })
 
+/** 修改人物启用状态的输入。 */
+export const updatePersonaStatusSchema = z.object({
+  isEnabled: z.boolean({ error: '人物状态必须是布尔值' }),
+})
+
+/** 批量修改人物启用状态的输入。 */
+export const updatePersonasStatusSchema = updatePersonaStatusSchema.extend({
+  personaIds: z.array(z.string().uuid('人物标识无效'))
+    .min(1, '至少选择一个人物')
+    .max(100, '一次最多修改 100 个人物'),
+})
+
 /** 保存人物灵魂草稿的兼容输入。 */
 export const createPersonaVersionSchema = z.object({
   baseVersionId: z.string().uuid('基础版本标识无效').nullable(),
@@ -121,6 +133,18 @@ export const createWorldSchema = z.object({
 export const updateWorldSchema = z.object({
   name: z.string().trim().min(1, '世界名称不能为空').max(100, '世界名称不能超过 100 字'),
   summary: z.string().trim().max(2_000, '世界摘要不能超过 2000 字'),
+})
+
+/** 修改世界启用状态的输入。 */
+export const updateWorldStatusSchema = z.object({
+  isEnabled: z.boolean({ error: '世界状态必须是布尔值' }),
+})
+
+/** 批量修改世界启用状态的输入。 */
+export const updateWorldsStatusSchema = updateWorldStatusSchema.extend({
+  worldIds: z.array(z.string().uuid('世界标识无效'))
+    .min(1, '至少选择一个世界')
+    .max(100, '一次最多修改 100 个世界'),
 })
 
 /** 保存世界灵魂草稿的兼容输入。 */
@@ -195,6 +219,9 @@ export const listSourcesPageSchema = z.object({
   ])).default(10),
 })
 
+/** 人物与世界管理列表共用的服务端分页参数。 */
+export const listSubjectsPageSchema = listSourcesPageSchema
+
 /** 创建资料关联的输入。 */
 export const createSourceLinkSchema = z.object({
   targetType: z.enum(['persona', 'world'], { error: '关联目标类型无效' }),
@@ -228,11 +255,15 @@ export type SubjectInitializationInput = z.infer<typeof subjectInitializationSch
 export type GeneratePersonaDraftInput = z.infer<typeof generatePersonaDraftSchema>
 export type PersonaDraft = z.infer<typeof personaDraftSchema>
 export type UpdatePersonaInput = z.infer<typeof updatePersonaSchema>
+export type UpdatePersonaStatusInput = z.infer<typeof updatePersonaStatusSchema>
+export type UpdatePersonasStatusInput = z.infer<typeof updatePersonasStatusSchema>
 export type CreatePersonaVersionInput = z.infer<typeof createPersonaVersionSchema>
 export type CreateWorldInput = z.infer<typeof createWorldSchema>
 export type GenerateWorldDraftInput = z.infer<typeof generateWorldDraftSchema>
 export type WorldDraft = z.infer<typeof worldDraftSchema>
 export type UpdateWorldInput = z.infer<typeof updateWorldSchema>
+export type UpdateWorldStatusInput = z.infer<typeof updateWorldStatusSchema>
+export type UpdateWorldsStatusInput = z.infer<typeof updateWorldsStatusSchema>
 export type CreateWorldVersionInput = z.infer<typeof createWorldVersionSchema>
 export type SaveSoulDraftInput = z.infer<typeof saveSoulDraftSchema>
 export type CreateSoulDraftFromVersionInput = z.infer<typeof createSoulDraftFromVersionSchema>
@@ -243,4 +274,5 @@ export type UpdateSourceInput = z.infer<typeof updateSourceSchema>
 export type UpdateSourceStatusInput = z.infer<typeof updateSourceStatusSchema>
 export type UpdateSourcesStatusInput = z.infer<typeof updateSourcesStatusSchema>
 export type ListSourcesPageInput = z.infer<typeof listSourcesPageSchema>
+export type ListSubjectsPageInput = z.infer<typeof listSubjectsPageSchema>
 export type CreateSourceLinkInput = z.infer<typeof createSourceLinkSchema>
