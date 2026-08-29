@@ -71,7 +71,7 @@ function run(): GenerationRunRecord {
     id: '00000000-0000-4000-8000-000000000040', kind: 'artifact_generation',
     personaVersionId: '00000000-0000-4000-8000-000000000041', formatTemplateId: null, parameterProfileId: null,
     status: 'succeeded', input: { requirement: '测试', includeImages: true }, scene: null,
-    parameterSnapshot: { temperature: 0.4, maxOutputTokens: 2048, timeoutMs: 60000, maxEvidenceChunks: 8, maxTextBlocks: 12 },
+    parameterSnapshot: { temperature: 0.4, maxOutputTokens: 2048, timeoutMs: 60000, maxEvidenceChunks: 8, maxTextBlocks: 12, maxImageBlocks: 4, maxPromptCharacters: 120000, maxTotalTokens: 50000, maxBlockAttempts: 2 },
     modelSnapshot: { provider: 'openai_compatible', model: 'test', endpointOrigin: 'https://text.test' },
     imageModelSnapshot: { provider: 'openai_compatible_images', model: 'test-image', endpointOrigin: 'https://image.test' },
     promptVersion: 'artifact-v2', contextProvider: 'sqlite_fts5', result: null, usage: null,

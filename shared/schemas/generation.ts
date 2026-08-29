@@ -16,6 +16,10 @@ export const textModelParametersSchema = z.object({
   timeoutMs: z.number().int().min(1_000).max(120_000),
   maxEvidenceChunks: z.number().int().min(0).max(50),
   maxTextBlocks: z.number().int().min(1).max(20),
+  maxImageBlocks: z.number().int().min(0).max(20).default(4),
+  maxPromptCharacters: z.number().int().min(1_000).max(500_000).default(120_000),
+  maxTotalTokens: z.number().int().min(64).max(1_000_000).default(50_000),
+  maxBlockAttempts: z.number().int().min(1).max(10).default(2),
 })
 
 /** 创建不可变参数方案版本。 */

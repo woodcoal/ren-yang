@@ -12,6 +12,10 @@ const REQUEST: TextModelRequest = {
     timeoutMs: 1_000,
     maxEvidenceChunks: 4,
     maxTextBlocks: 4,
+    maxImageBlocks: 2,
+    maxPromptCharacters: 120_000,
+    maxTotalTokens: 50_000,
+    maxBlockAttempts: 2,
   },
   responseSchemaName: 'test_schema',
 }

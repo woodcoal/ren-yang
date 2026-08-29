@@ -64,6 +64,10 @@ export const DEFAULT_TEXT_PARAMETERS: TextModelParameters = {
   timeoutMs: 60_000,
   maxEvidenceChunks: 8,
   maxTextBlocks: 12,
+  maxImageBlocks: 4,
+  maxPromptCharacters: 120_000,
+  maxTotalTokens: 50_000,
+  maxBlockAttempts: 2,
 }
 
 /** 未选择格式模板时使用的最小文档结构指导。 */
@@ -223,7 +227,7 @@ export class GenerationApplicationService implements TaskHandler {
         id: block.id, specKey: block.specKey, ordinal: block.ordinal, type: block.type, role: block.role,
         instruction: block.spec.instruction, acceptanceCriteria: block.spec.acceptanceCriteria,
         status: block.status, selectedAttemptId: block.selectedAttemptId, isLocked: block.isLocked, selectedAt: block.selectedAt, lockedAt: block.lockedAt,
-        attempts: (await this.dependencies.runs.listBlockAttempts(block.id)).map(({ blockId: _, inputSnapshot: __, usage: ___, ...attempt }) => {
+        attempts: (await this.dependencies.runs.listBlockAttempts(block.id)).map(({ blockId: _, inputSnapshot: __, ...attempt }) => {
           const asset = assetsByAttempt.get(attempt.id)
           return { ...attempt, asset: asset ? { id: asset.id, relativePath: asset.relativePath, mediaType: asset.mediaType, sizeBytes: asset.sizeBytes, contentHash: asset.contentHash, altText: asset.altText } : null }
         }),
@@ -294,10 +298,14 @@ export class GenerationApplicationService implements TaskHandler {
     this.requireMatchingModel(run)
     const block = (await this.dependencies.runs.listBlocks(runId)).find(item => item.id === blockId)
     if (!block) throw new ApplicationError('RESOURCE_NOT_FOUND', '产物块不存在', 404)
+    if (block.isLocked) throw new ApplicationError('BLOCK_LOCKED', '锁定块不能重试', 409)
+    if ((await this.dependencies.runs.listBlockAttempts(blockId)).length >= run.parameterSnapshot.maxBlockAttempts) {
+      throw new ApplicationError('TASK_LIMIT_EXCEEDED', '该块已达到运行快照规定的最大尝试数', 422)
+    }
     if (block.type === 'image') this.requireMatchingImageModel(run)
     const taskId = this.dependencies.identifiers.create()
     if (!await this.dependencies.runs.enqueueBlockRetry(runId, blockId, taskId, this.dependencies.clock.now())) {
-      throw new ApplicationError(block.isLocked ? 'BLOCK_LOCKED' : 'VERSION_CONFLICT', block.isLocked ? '锁定块不能重试' : '块或运行状态已经变化', 409)
+      throw new ApplicationError('VERSION_CONFLICT', '块或运行状态已经变化', 409)
     }
     return { runId, taskId, status: 'queued' }
   }
@@ -374,7 +382,9 @@ export class GenerationApplicationService implements TaskHandler {
       else throw new Error(`未注册任务类型：${job.type}`)
     }
     catch (error: unknown) {
-      if (await this.finishCancellationIfRequested(runId)) return
+      const responseUsage = error instanceof TextResponseUsageError ? error.usage : null
+      if (await this.finishCancellationIfRequested(runId, responseUsage)) return
+      if (responseUsage) await this.saveCumulativeRunUsage(runId, responseUsage)
       const normalized = normalizeExecutionError(error)
       const willRetry = normalized.retryable && job.attemptCount < job.maxAttempts
       if (willRetry) {
@@ -465,9 +475,10 @@ export class GenerationApplicationService implements TaskHandler {
       const evidenceIds = new Set(context.evidence.map(item => item.id))
       if ([...parsed.supportingEvidenceIds, ...parsed.opposingEvidenceIds].some(id => !evidenceIds.has(id))) throw new Error('兴趣判断引用了不存在的证据标识')
       return parsed
-    })
-    if (await this.finishCancellationIfRequested(runId)) return
-    if (!await this.dependencies.runs.completeInterestRun(runId, output, usage, this.dependencies.clock.now())) throw new Error('兴趣运行状态已经变化')
+    }, run.usage)
+    if (await this.finishCancellationIfRequested(runId, usage)) return
+    const cumulativeUsage = aggregateTextModelUsage(run.usage ? [run.usage, usage] : [usage])
+    if (!await this.dependencies.runs.completeInterestRun(runId, output, cumulativeUsage, this.dependencies.clock.now())) throw new Error('兴趣运行状态已经变化')
   }
 
   /** @param runId 文档规划运行 UUID。 @returns 规划结束时完成。 */
@@ -477,17 +488,25 @@ export class GenerationApplicationService implements TaskHandler {
     await this.requireRunStarted(run, ['planning', 'running'])
     const context = await this.loadPromptContext(run)
     const template = run.formatTemplateId ? await this.requireFormatTemplate(run.formatTemplateId) : { spec: DEFAULT_FORMAT_TEMPLATE }
-    const maximum = Math.min(template.spec.maximumBlocks, run.parameterSnapshot.maxTextBlocks)
     const allowImages = 'includeImages' in run.input && run.input.includeImages
+    const maximum = Math.min(
+      template.spec.maximumBlocks,
+      run.parameterSnapshot.maxTextBlocks + (allowImages ? run.parameterSnapshot.maxImageBlocks : 0),
+    )
+    if (template.spec.minimumBlocks > maximum) {
+      throw new ApplicationError('TASK_LIMIT_EXCEEDED', '格式模板最少块数超过当前运行允许的图文块总数', 422)
+    }
     const prompt = buildDocumentPlanPrompt(context, 'requirement' in run.input ? run.input.requirement : '', template.spec.guidance, template.spec.minimumBlocks, maximum, allowImages)
     const { output, usage } = await this.generateValidated(prompt, run.parameterSnapshot, 'document_spec', value => {
       const parsed = documentSpecSchema.parse(value)
       if (parsed.blocks.length < template.spec.minimumBlocks || parsed.blocks.length > maximum) throw new Error('模型规划的块数量超出模板或运行限制')
       if (!allowImages && parsed.blocks.some(block => block.type === 'image')) throw new Error('当前运行未启用图片，模型不得规划图片块')
+      this.validateDocumentLimits(parsed, run)
       return parsed
-    })
-    if (await this.finishCancellationIfRequested(runId)) return
-    if (!await this.dependencies.runs.savePlannedDocumentSpec(runId, this.dependencies.identifiers.create(), output, usage, this.dependencies.clock.now())) throw new Error('文档规划运行状态已经变化')
+    }, run.usage)
+    if (await this.finishCancellationIfRequested(runId, usage)) return
+    const cumulativeUsage = aggregateTextModelUsage(run.usage ? [run.usage, usage] : [usage])
+    if (!await this.dependencies.runs.savePlannedDocumentSpec(runId, this.dependencies.identifiers.create(), output, cumulativeUsage, this.dependencies.clock.now())) throw new Error('文档规划运行状态已经变化')
   }
 
   /** @param runId 已确认文档运行 UUID。 @returns 所有图文块串行执行结束时完成。 */
@@ -512,7 +531,7 @@ export class GenerationApplicationService implements TaskHandler {
         continue
       }
       if (!dependenciesSucceeded(block, blocks)) {
-        await this.recordDependencyFailure(block, previousOutputs)
+        await this.recordDependencyFailure(run, block, previousOutputs)
         block.status = 'failed'
         continue
       }
@@ -541,13 +560,13 @@ export class GenerationApplicationService implements TaskHandler {
     for (const block of blocks.slice(0, target.ordinal)) {
       if (block.status === 'succeeded') await this.appendSelectedText(block, previousOutputs)
     }
-    if (!dependenciesSucceeded(target, blocks)) await this.recordDependencyFailure(target, previousOutputs)
+    if (!dependenciesSucceeded(target, blocks)) await this.recordDependencyFailure(run, target, previousOutputs)
     else await this.executeArtifactBlock(run, context, spec.spec, target, previousOutputs)
     await this.dependencies.runs.finishDocumentRun(runId, this.dependencies.clock.now())
   }
 
   /**
-   * 执行单个文字或图片块的最多两次追加尝试。
+   * 在运行快照的累计尝试上限内执行单个文字或图片块。
    * @param run 固定运行快照。
    * @param context 固定提示上下文。
    * @param documentSpec 已确认规格。
@@ -562,18 +581,23 @@ export class GenerationApplicationService implements TaskHandler {
     block: ArtifactBlockRecord,
     previousOutputs: Array<{ key: string, text: string }>,
   ): Promise<{ succeeded: boolean, text: string | null }> {
-    for (let attemptIndex = 0; attemptIndex < 2; attemptIndex += 1) {
+    const existingAttempts = await this.dependencies.runs.listBlockAttempts(block.id)
+    const remainingAttempts = run.parameterSnapshot.maxBlockAttempts - existingAttempts.length
+    for (let attemptIndex = 0; attemptIndex < remainingAttempts; attemptIndex += 1) {
       const attemptId = this.dependencies.identifiers.create()
       const inputSnapshot = block.spec.type === 'image'
         ? { promptVersion: run.promptVersion, block: block.spec, visualBrief: block.spec.visualBrief, previousOutputs }
         : { promptVersion: run.promptVersion, block: block.spec, previousOutputs }
       const attempt = await this.dependencies.runs.startBlockAttempt(block.id, attemptId, inputSnapshot, this.dependencies.clock.now())
       if (!attempt) break
+      let responseUsage: TextModelUsage | null = null
       try {
         if (block.spec.type === 'image') {
           const brief = block.spec.visualBrief
+          const imagePrompt = buildImagePrompt(context, brief, previousOutputs)
+          this.assertPromptCharacterLimit({ systemPrompt: '', userPrompt: imagePrompt }, run.parameterSnapshot)
           const response = await this.dependencies.imageModel.generate({
-            prompt: buildImagePrompt(context, brief, previousOutputs),
+            prompt: imagePrompt,
             aspectRatio: brief.aspectRatio,
             timeoutMs: run.parameterSnapshot.timeoutMs,
           })
@@ -590,14 +614,18 @@ export class GenerationApplicationService implements TaskHandler {
           return { succeeded: true, text: null }
         }
         const prompt = buildTextBlockPrompt(context, documentSpec, block.spec, previousOutputs)
+        this.assertPromptCharacterLimit(prompt, run.parameterSnapshot)
+        await this.assertRunTokenBudget(run, null)
         const response = await this.dependencies.model.generateStructured({ ...prompt, parameters: run.parameterSnapshot, responseSchemaName: 'text_block' })
+        responseUsage = response.usage
+        await this.assertRunTokenBudget(run, response.usage)
         const output = textBlockOutputSchema.parse(response.structuredOutput)
         await this.dependencies.runs.completeBlockAttempt(block.id, attemptId, output.text, response.usage, this.dependencies.clock.now())
         return { succeeded: true, text: output.text }
       }
       catch (error: unknown) {
         const normalized = normalizeExecutionError(error)
-        await this.dependencies.runs.failBlockAttempt(block.id, attemptId, normalized.code, normalized.message, this.dependencies.clock.now())
+        await this.dependencies.runs.failBlockAttempt(block.id, attemptId, normalized.code, normalized.message, responseUsage, this.dependencies.clock.now())
         if (!normalized.retryable) break
       }
     }
@@ -611,30 +639,99 @@ export class GenerationApplicationService implements TaskHandler {
     if (selected?.outputText) outputs.push({ key: block.specKey, text: selected.outputText })
   }
 
-  /** @param block 依赖未完成块。 @param previousOutputs 前序文字。 @returns 保存一次稳定失败尝试。 */
-  private async recordDependencyFailure(block: ArtifactBlockRecord, previousOutputs: Array<{ key: string, text: string }>): Promise<void> {
+  /** @param run 固定运行快照。 @param block 依赖未完成块。 @param previousOutputs 前序文字。 @returns 在上限内保存一次稳定失败尝试。 */
+  private async recordDependencyFailure(run: GenerationRunRecord, block: ArtifactBlockRecord, previousOutputs: Array<{ key: string, text: string }>): Promise<void> {
+    if ((await this.dependencies.runs.listBlockAttempts(block.id)).length >= run.parameterSnapshot.maxBlockAttempts) return
     const attemptId = this.dependencies.identifiers.create()
     const attempt = await this.dependencies.runs.startBlockAttempt(block.id, attemptId, { promptVersion: 'dependency-check', block: block.spec, previousOutputs }, this.dependencies.clock.now())
-    if (attempt) await this.dependencies.runs.failBlockAttempt(block.id, attemptId, 'DEPENDENCY_FAILED', '前置依赖块未成功，当前块未调用模型', this.dependencies.clock.now())
+    if (attempt) await this.dependencies.runs.failBlockAttempt(block.id, attemptId, 'DEPENDENCY_FAILED', '前置依赖块未成功，当前块未调用模型', null, this.dependencies.clock.now())
   }
 
-  /** @param prompt 已分层提示。 @param parameters 固定参数。 @param schemaName 结构名称。 @param parse 结构校验器。 @returns 最多两次尝试后的结果。 */
-  private async generateValidated<T>(prompt: { systemPrompt: string, userPrompt: string }, parameters: TextModelParameters, schemaName: string, parse: (value: unknown) => T): Promise<{ output: T, usage: TextModelUsage }> {
+  /**
+   * 执行最多两次结构化调用，并累计本轮所有供应商响应的用量。
+   * @param prompt 已分层提示。
+   * @param parameters 固定参数。
+   * @param schemaName 结构名称。
+   * @param parse 结构校验器。
+   * @param priorUsage 当前运行此前已保存的用量；非运行调用为空。
+   * @returns 校验通过的结构和本轮新增用量。
+   */
+  private async generateValidated<T>(
+    prompt: { systemPrompt: string, userPrompt: string },
+    parameters: TextModelParameters,
+    schemaName: string,
+    parse: (value: unknown) => T,
+    priorUsage: TextModelUsage | null = null,
+  ): Promise<{ output: T, usage: TextModelUsage }> {
     let lastError: unknown
     let currentPrompt = prompt
+    const usages: TextModelUsage[] = []
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
+        this.assertPromptCharacterLimit(currentPrompt, parameters)
+        const consumedTokens = usageTotalTokens(aggregateTextModelUsage(priorUsage ? [priorUsage, ...usages] : usages))
+        if (consumedTokens !== null && consumedTokens >= parameters.maxTotalTokens) {
+          throw new ApplicationError('TASK_LIMIT_EXCEEDED', '模型已报告的运行总 Token 达到上限', 422)
+        }
         const response = await this.dependencies.model.generateStructured({ ...currentPrompt, parameters, responseSchemaName: schemaName })
-        return { output: parse(response.structuredOutput), usage: response.usage }
+        usages.push(response.usage)
+        const usage = aggregateTextModelUsage(priorUsage ? [priorUsage, ...usages] : usages)
+        const totalTokens = usageTotalTokens(usage)
+        if (totalTokens !== null && totalTokens > parameters.maxTotalTokens) {
+          throw new TextUsageLimitError(aggregateTextModelUsage(usages))
+        }
+        return { output: parse(response.structuredOutput), usage: aggregateTextModelUsage(usages) }
       }
       catch (error: unknown) {
         lastError = error
         const normalized = normalizeExecutionError(error)
-        if (error instanceof TextModelError && !error.retryable) break
+        if (!normalized.retryable) break
         currentPrompt = { ...prompt, userPrompt: `${prompt.userPrompt}\n\n<上次输出校验错误>${JSON.stringify(normalized.message)}</上次输出校验错误>\n请重新输出完整 JSON 对象。` }
       }
     }
+    if (lastError instanceof TextResponseUsageError) throw lastError
+    if (usages.length) {
+      const normalized = normalizeExecutionError(lastError)
+      throw new TextResponseUsageError(normalized.code, normalized.message, normalized.retryable, aggregateTextModelUsage(usages))
+    }
     throw lastError
+  }
+
+  /**
+   * 在调用供应商前校验系统提示与用户提示的准确字符总数。
+   * @param prompt 待发送的分层提示。
+   * @param parameters 固定运行参数。
+   * @returns 未超过上限时无返回值。
+   */
+  private assertPromptCharacterLimit(prompt: { systemPrompt: string, userPrompt: string }, parameters: TextModelParameters): void {
+    if (prompt.systemPrompt.length + prompt.userPrompt.length > parameters.maxPromptCharacters) {
+      throw new ApplicationError('TASK_LIMIT_EXCEEDED', '模型提示字符数超过运行上限', 422)
+    }
+  }
+
+  /**
+   * 按供应商已经报告的用量校验当前运行总 Token。
+   * @param run 固定运行快照。
+   * @param additionalUsage 尚未持久化的本次响应，可为空。
+   * @returns 未达到或超过上限时无返回值。
+   */
+  private async assertRunTokenBudget(run: GenerationRunRecord, additionalUsage: TextModelUsage | null): Promise<void> {
+    const persistedUsage = await this.getRunUsage(run)
+    const persistedTokens = usageTotalTokens(persistedUsage)
+    const additionalTokens = usageTotalTokens(additionalUsage)
+    const projectedTokens = (persistedTokens ?? 0) + (additionalTokens ?? 0)
+    const hasKnownUsage = persistedTokens !== null || additionalTokens !== null
+    const exceeded = additionalUsage
+      ? hasKnownUsage && projectedTokens > run.parameterSnapshot.maxTotalTokens
+      : persistedTokens !== null && persistedTokens >= run.parameterSnapshot.maxTotalTokens
+    if (exceeded) throw new ApplicationError('TASK_LIMIT_EXCEEDED', '模型已报告的运行总 Token 达到上限', 422)
+  }
+
+  /** @param run 运行记录。 @returns 规划或兴趣调用与全部已报告块用量的合计。 */
+  private async getRunUsage(run: GenerationRunRecord): Promise<TextModelUsage | null> {
+    const blockUsages = await this.dependencies.runs.listRunTextUsages(run.id)
+    const usages = run.usage ? [run.usage, ...blockUsages] : blockUsages
+    return usages.length ? aggregateTextModelUsage(usages) : null
   }
 
   /** @param run 固定运行。 @returns 人物、世界、场景和证据提示上下文。 */
@@ -690,11 +787,27 @@ export class GenerationApplicationService implements TaskHandler {
     }
   }
 
-  /** @param runId 运行 UUID。 @returns 存在取消请求时完成取消并返回 true。 */
-  private async finishCancellationIfRequested(runId: string): Promise<boolean> {
+  /**
+   * 完成已请求的协作取消，并在取消前保存已经收到的供应商用量。
+   * @param runId 运行 UUID。
+   * @param responseUsage 本轮已收到但尚未保存的供应商用量。
+   * @returns 存在取消请求时完成取消并返回 true。
+   */
+  private async finishCancellationIfRequested(runId: string, responseUsage: TextModelUsage | null = null): Promise<boolean> {
     if (!await this.dependencies.runs.isCancellationRequested(runId)) return false
+    if (responseUsage) await this.saveCumulativeRunUsage(runId, responseUsage)
     await this.dependencies.runs.markRunCanceled(runId, this.dependencies.clock.now())
     return true
+  }
+
+  /** @param runId 运行 UUID。 @param responseUsage 本轮新增供应商用量。 @returns 累计并保存后的完成信号。 */
+  private async saveCumulativeRunUsage(runId: string, responseUsage: TextModelUsage): Promise<void> {
+    const latest = await this.requireRun(runId)
+    await this.dependencies.runs.saveRunUsage(
+      runId,
+      aggregateTextModelUsage(latest.usage ? [latest.usage, responseUsage] : [responseUsage]),
+      this.dependencies.clock.now(),
+    )
   }
 
   /** @param id 参数方案 UUID 或 null。 @returns 最终参数快照。 */
@@ -720,7 +833,10 @@ export class GenerationApplicationService implements TaskHandler {
   /** @param spec 文档规格。 @param run 固定运行参数。 @returns 无返回值。 */
   private validateDocumentLimits(spec: DocumentSpec, run: GenerationRunRecord): void {
     documentSpecSchema.parse(spec)
-    if (spec.blocks.length > run.parameterSnapshot.maxTextBlocks) throw new ApplicationError('TASK_LIMIT_EXCEEDED', '文档块数量超过运行上限', 422)
+    const textBlocks = spec.blocks.filter(block => block.type === 'text').length
+    const imageBlocks = spec.blocks.length - textBlocks
+    if (textBlocks > run.parameterSnapshot.maxTextBlocks) throw new ApplicationError('TASK_LIMIT_EXCEEDED', '文字块数量超过运行上限', 422)
+    if (imageBlocks > run.parameterSnapshot.maxImageBlocks) throw new ApplicationError('TASK_LIMIT_EXCEEDED', '图片块数量超过运行上限', 422)
     if (spec.blocks.some(block => block.type === 'image')) {
       if (!('includeImages' in run.input) || !run.input.includeImages || !run.imageModelSnapshot) {
         throw new ApplicationError('CAPABILITY_DISABLED', '当前运行没有启用图片能力，不能加入图片块', 422)
@@ -758,7 +874,7 @@ export class GenerationApplicationService implements TaskHandler {
   private async toRunSummary(run: GenerationRunRecord): Promise<RunSummary> {
     const identity = await this.dependencies.runs.findRunPersona(run.id)
     if (!identity) throw new Error('运行人物关系损坏')
-    return { id: run.id, kind: run.kind, personaVersionId: run.personaVersionId, ...identity, status: run.status, input: run.input, scene: run.scene, parameters: run.parameterSnapshot, model: run.modelSnapshot, imageModel: run.imageModelSnapshot, promptVersion: run.promptVersion, contextProvider: run.contextProvider, result: run.result, errorCode: run.errorCode, errorMessage: run.errorMessage, createdAt: run.createdAt, updatedAt: run.updatedAt, completedAt: run.completedAt }
+    return { id: run.id, kind: run.kind, personaVersionId: run.personaVersionId, ...identity, status: run.status, input: run.input, scene: run.scene, parameters: run.parameterSnapshot, model: run.modelSnapshot, imageModel: run.imageModelSnapshot, promptVersion: run.promptVersion, contextProvider: run.contextProvider, result: run.result, usage: await this.getRunUsage(run), errorCode: run.errorCode, errorMessage: run.errorMessage, createdAt: run.createdAt, updatedAt: run.updatedAt, completedAt: run.completedAt }
   }
 }
 
@@ -790,6 +906,7 @@ function assertFormatsRequested(spec: DocumentSpec, formats: ArtifactFormat[]): 
 
 /** @param error 未知执行异常。 @returns 稳定错误码和脱敏消息。 */
 function normalizeExecutionError(error: unknown): { code: string, message: string, retryable: boolean } {
+  if (error instanceof TextResponseUsageError) return { code: error.code, message: error.message, retryable: error.retryable }
   if (error instanceof TextModelError) return { code: error.code, message: error.message, retryable: error.retryable }
   if (error instanceof ImageModelError) return { code: error.code, message: error.message, retryable: error.retryable }
   if (error instanceof ImageAssetError) return { code: error.code, message: error.message, retryable: error.code === 'IMAGE_OUTPUT_INVALID' }
@@ -804,4 +921,57 @@ function sourceRoleRank(role: 'canon_fact' | 'reference' | 'style_sample'): numb
   if (role === 'canon_fact') return 0
   if (role === 'reference') return 1
   return 2
+}
+
+/** @param usages 一次或多次供应商响应的用量。 @returns 各字段严格合计，任一响应缺字段时该合计为 null。 */
+function aggregateTextModelUsage(usages: TextModelUsage[]): TextModelUsage {
+  return {
+    inputTokens: sumUsageField(usages.map(usage => usage.inputTokens)),
+    outputTokens: sumUsageField(usages.map(usage => usage.outputTokens)),
+    totalTokens: sumUsageField(usages.map(usage => usage.totalTokens)),
+  }
+}
+
+/** @param values 同一用量字段的序列。 @returns 全部已知时的总和，否则为 null。 */
+function sumUsageField(values: Array<number | null>): number | null {
+  return values.every((value): value is number => value !== null)
+    ? values.reduce((total, value) => total + value, 0)
+    : null
+}
+
+/** @param usage 供应商用量。 @returns 总 Token，或在供应商只给出输入与输出时计算的总和。 */
+function usageTotalTokens(usage: TextModelUsage | null): number | null {
+  if (!usage) return null
+  if (usage.totalTokens !== null) return usage.totalTokens
+  return usage.inputTokens !== null && usage.outputTokens !== null
+    ? usage.inputTokens + usage.outputTokens
+    : null
+}
+
+/** 携带本轮已产生供应商用量的模型执行错误。 */
+class TextResponseUsageError extends Error {
+  /**
+   * @param code 稳定错误码。
+   * @param message 已脱敏错误原因。
+   * @param retryable 是否允许任务级有限重试。
+   * @param usage 本轮已产生但尚未保存的供应商用量。
+   */
+  constructor(
+    public readonly code: string,
+    message: string,
+    public readonly retryable: boolean,
+    public readonly usage: TextModelUsage,
+  ) {
+    super(message)
+    this.name = 'TextResponseUsageError'
+  }
+}
+
+/** 携带已产生供应商用量的不可重试 Token 门禁错误。 */
+class TextUsageLimitError extends TextResponseUsageError {
+  /** @param usage 触发门禁前本轮已产生的供应商用量。 */
+  constructor(usage: TextModelUsage) {
+    super('TASK_LIMIT_EXCEEDED', '模型已报告的总 Token 超过运行上限', false, usage)
+    this.name = 'TextUsageLimitError'
+  }
 }

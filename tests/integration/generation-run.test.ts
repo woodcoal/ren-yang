@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { unzipSync } from 'fflate'
 import { ContentApplicationService } from '../../server/application/content/ContentApplicationService'
-import { GenerationApplicationService } from '../../server/application/generation/GenerationApplicationService'
+import { DEFAULT_TEXT_PARAMETERS, GenerationApplicationService } from '../../server/application/generation/GenerationApplicationService'
 import { WorkerApplicationService } from '../../server/application/tasks/WorkerApplicationService'
 import { LocalSourceFileStorage } from '../../server/infrastructure/content/LocalSourceFileStorage'
 import { LocalImageAssetStorage } from '../../server/infrastructure/content/LocalImageAssetStorage'
@@ -44,6 +44,10 @@ class FixedTextModel implements TextModelPort {
   public invalidInterestAlways = false
   /** 兴趣调用前还要模拟的限流次数。 */
   public interestRateLimitsRemaining = 0
+  /** 每次成功响应返回的固定供应商用量。 */
+  public usage = { inputTokens: 10, outputTokens: 5, totalTokens: 15 }
+  /** 兴趣响应返回前执行的异步测试钩子。 */
+  public afterInterestResponse: (() => Promise<void>) | null = null
 
   /** @returns 固定非敏感模型快照。 */
   getConfiguredModel() {
@@ -72,17 +76,17 @@ class FixedTextModel implements TextModelPort {
           visualStyle: '',
           constraints: '资料不足时明确说明未知。',
         },
-      })
+      }, this.usage)
     }
     if (request.responseSchemaName === 'interest_assessment') {
       if (this.interestRateLimitsRemaining > 0) {
         this.interestRateLimitsRemaining -= 1
         throw new TextModelError('PROVIDER_RATE_LIMITED', '测试限流', true)
       }
-      if (this.invalidInterestAlways || (this.invalidInterestOnce && call === 1)) return response({ decision: 'invalid' })
+      if (this.invalidInterestAlways || (this.invalidInterestOnce && call === 1)) return response({ decision: 'invalid' }, this.usage)
       const evidence = readEvidence(request.userPrompt)
       const fact = evidence.find(item => item.role === 'canon_fact')
-      return response({
+      const result = response({
         probability: 0.88,
         confidence: 0.82,
         decision: 'interested',
@@ -91,7 +95,9 @@ class FixedTextModel implements TextModelPort {
         opposingEvidenceIds: [],
         unknowns: [],
         reasoningSummary: '人物偏好与内容主题一致。',
-      })
+      }, this.usage)
+      if (this.afterInterestResponse) await this.afterInterestResponse()
+      return result
     }
     if (request.responseSchemaName === 'document_spec') {
       return response({
@@ -101,10 +107,10 @@ class FixedTextModel implements TextModelPort {
           { key: 'title', role: 'heading', instruction: '写标题', acceptanceCriteria: ['简短'], dependsOn: [] },
           { key: 'body', role: 'paragraph', instruction: '写正文', acceptanceCriteria: ['符合人物风格'], dependsOn: ['title'] },
         ],
-      })
+      }, this.usage)
     }
     const currentBlockInstruction = request.userPrompt.match(/<当前块任务>(.*?)<\/当前块任务>/s)?.[1]
-    return response({ text: currentBlockInstruction === '"写标题"' ? '学院观察' : '这里的课程值得认真研究。' })
+    return response({ text: currentBlockInstruction === '"写标题"' ? '学院观察' : '这里的课程值得认真研究。' }, this.usage)
   }
 }
 
@@ -143,9 +149,9 @@ class DisabledImageModel extends FixedImageModel {
   override getConfiguredModel(): null { return null }
 }
 
-/** @param structuredOutput 固定结构。 @returns 统一模型响应。 */
-function response(structuredOutput: unknown): TextModelResponse {
-  return { structuredOutput, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 } }
+/** @param structuredOutput 固定结构。 @param usage 固定供应商用量。 @returns 统一模型响应。 */
+function response(structuredOutput: unknown, usage: TextModelResponse['usage']): TextModelResponse {
+  return { structuredOutput, usage }
 }
 
 /** @param prompt 分层用户提示。 @returns 提示中的证据简表。 */
@@ -261,6 +267,42 @@ describe('阶段三纯文本运行', () => {
     expect(details.evidence.map(item => item.role)).toEqual(['user_setting', 'canon_fact'])
     expect(details.run.result?.supportingEvidenceIds).toEqual([details.evidence[1]!.id])
     expect(model.calls.get('interest_assessment')).toBe(2)
+    expect(details.run.usage).toEqual({ inputTokens: 20, outputTokens: 10, totalTokens: 30 })
+  })
+
+  it('调用前按固定提示字符上限失败且不请求模型', async () => {
+    const profile = await generation.createParameterProfile({
+      name: '极小提示上限',
+      values: { ...DEFAULT_TEXT_PARAMETERS, maxPromptCharacters: 1_000 },
+    })
+    const beforeCalls = model.calls.get('interest_assessment') ?? 0
+    const created = await generation.createInterestRun({
+      personaId,
+      content: '长内容'.repeat(500),
+      parameterProfileId: profile.id,
+    })
+
+    await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: false })
+    const failed = await generation.getRun(created.runId)
+    expect(failed.run).toMatchObject({ status: 'failed', errorCode: 'TASK_LIMIT_EXCEEDED', usage: null })
+    expect(model.calls.get('interest_assessment') ?? 0).toBe(beforeCalls)
+  })
+
+  it('供应商报告用量超过运行总 Token 上限时保存用量并停止重试', async () => {
+    const profile = await generation.createParameterProfile({
+      name: '小型 Token 预算',
+      values: { ...DEFAULT_TEXT_PARAMETERS, maxTotalTokens: 64 },
+    })
+    model.usage = { inputTokens: 70, outputTokens: 30, totalTokens: 100 }
+    const created = await generation.createInterestRun({ personaId, content: '学院课程', parameterProfileId: profile.id })
+
+    await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: false })
+    const failed = await generation.getRun(created.runId)
+    expect(failed.run).toMatchObject({
+      status: 'failed', errorCode: 'TASK_LIMIT_EXCEEDED',
+      usage: { inputTokens: 70, outputTokens: 30, totalTokens: 100 },
+    })
+    expect(failed.tasks[0]).toMatchObject({ attemptCount: 1, status: 'failed' })
   })
 
   it('规划规格后必须确认，确认后串行生成并保存独立块尝试', async () => {
@@ -287,6 +329,8 @@ describe('阶段三纯文本运行', () => {
       '这里的课程值得认真研究。',
     ])
     expect(completed.blocks.every(block => block.selectedAttemptId === block.attempts[0]?.id)).toBe(true)
+    expect(completed.blocks.map(block => block.attempts[0]?.usage?.totalTokens)).toEqual([15, 15])
+    expect(completed.run.usage).toEqual({ inputTokens: 30, outputTokens: 15, totalTokens: 45 })
   })
 
   it('排队运行可协作取消且不会再被 Worker 领取', async () => {
@@ -294,6 +338,16 @@ describe('阶段三纯文本运行', () => {
     await generation.cancelRun(created.runId)
     expect((await generation.getRun(created.runId)).run.status).toBe('canceled')
     await expect(worker.executeNext()).resolves.toMatchObject({ handled: false })
+  })
+
+  it('供应商响应后收到取消请求时保留已经产生的用量', async () => {
+    const created = await generation.createInterestRun({ personaId, content: '魔法学院课程' })
+    model.afterInterestResponse = async () => { await generation.cancelRun(created.runId) }
+
+    await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: true })
+    await expect(generation.getRun(created.runId)).resolves.toMatchObject({
+      run: { status: 'canceled', usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 } },
+    })
   })
 
   it('进程退出后将已请求取消且租约过期的任务恢复为已取消', async () => {
@@ -367,7 +421,10 @@ describe('阶段三纯文本运行', () => {
     await worker.executeNext()
     await worker.executeNext()
     const failed = await generation.getRun(created.runId)
-    expect(failed.run).toMatchObject({ status: 'failed', errorCode: 'MODEL_OUTPUT_INVALID' })
+    expect(failed.run).toMatchObject({
+      status: 'failed', errorCode: 'MODEL_OUTPUT_INVALID',
+      usage: { inputTokens: 40, outputTokens: 20, totalTokens: 60 },
+    })
     expect(failed.tasks[0]).toMatchObject({ status: 'failed', attemptCount: 2 })
 
     model.invalidInterestAlways = false
@@ -375,6 +432,7 @@ describe('阶段三纯文本运行', () => {
     expect(retried.taskId).not.toBe(created.taskId)
     await worker.executeNext()
     const completed = await generation.getRun(created.runId)
+    expect(completed.run.usage).toEqual({ inputTokens: 50, outputTokens: 25, totalTokens: 75 })
     expect(completed.run.status).toBe('succeeded')
     expect(completed.tasks.map(task => task.status).sort()).toEqual(['failed', 'succeeded'])
   })
@@ -457,6 +515,34 @@ async function executeMixedRun(spec: DocumentSpec = mixedDocumentSpec()): Promis
 }
 
 describe('阶段四图文块与导出', () => {
+  it('文档规格分别执行文字块与图片块数量上限', async () => {
+    const profile = await generation.createParameterProfile({
+      name: '两文一图',
+      values: { ...DEFAULT_TEXT_PARAMETERS, maxTextBlocks: 2, maxImageBlocks: 1 },
+    })
+    const created = await generation.createGenerationRun({
+      personaId, requirement: '生成一文一图', includeImages: true, parameterProfileId: profile.id,
+    })
+    await worker.executeNext()
+    const withinLimit = mixedDocumentSpec()
+    await expect(generation.reviseDocumentSpec(created.runId, withinLimit)).resolves.toMatchObject({ revision: 2 })
+
+    const tooManyTexts = mixedDocumentSpec()
+    tooManyTexts.blocks.push({
+      key: 'ending', type: 'text', role: 'paragraph', instruction: '写结尾', acceptanceCriteria: ['简短'], dependsOn: ['body'],
+    })
+    await expect(generation.reviseDocumentSpec(created.runId, tooManyTexts))
+      .rejects.toMatchObject({ code: 'TASK_LIMIT_EXCEEDED', message: '文字块数量超过运行上限' })
+    const tooManyImages = mixedDocumentSpec()
+    tooManyImages.blocks = [
+      tooManyImages.blocks[0]!,
+      tooManyImages.blocks[1]!,
+      { ...tooManyImages.blocks[1]!, key: 'illustration_2', dependsOn: ['title'] },
+    ]
+    await expect(generation.reviseDocumentSpec(created.runId, tooManyImages))
+      .rejects.toMatchObject({ code: 'TASK_LIMIT_EXCEEDED', message: '图片块数量超过运行上限' })
+  })
+
   it('图片模型未配置时拒绝图片运行但不影响纯文本运行', async () => {
     const identifiers = new SystemIdentifierGenerator()
     const disabled = new GenerationApplicationService({
@@ -551,6 +637,9 @@ describe('阶段四图文块与导出', () => {
     await expect(generation.retryBlock(runId, imageBlock.id)).rejects.toMatchObject({ code: 'BLOCK_LOCKED' })
     await expect(generation.setBlockLock(runId, imageBlock.id, false)).resolves.toMatchObject({
       blocks: expect.arrayContaining([expect.objectContaining({ id: imageBlock.id, isLocked: false, lockedAt: null })]),
+    })
+    await expect(generation.retryBlock(runId, imageBlock.id)).rejects.toMatchObject({
+      code: 'TASK_LIMIT_EXCEEDED', message: '该块已达到运行快照规定的最大尝试数',
     })
   })
 

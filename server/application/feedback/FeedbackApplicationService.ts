@@ -46,6 +46,10 @@ export const FEEDBACK_MODEL_PARAMETERS = {
   timeoutMs: 60_000,
   maxEvidenceChunks: 0,
   maxTextBlocks: 1,
+  maxImageBlocks: 0,
+  maxPromptCharacters: 120_000,
+  maxTotalTokens: 50_000,
+  maxBlockAttempts: 1,
 }
 
 /** 反馈、提案和评测应用服务依赖。 */

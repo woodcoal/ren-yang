@@ -18,12 +18,13 @@ const RUN: RunSummary = {
   status: 'failed',
   input: { content: '课程' },
   scene: null,
-  parameters: { temperature: 0.4, maxOutputTokens: 2048, timeoutMs: 60000, maxEvidenceChunks: 8, maxTextBlocks: 12 },
+  parameters: { temperature: 0.4, maxOutputTokens: 2048, timeoutMs: 60000, maxEvidenceChunks: 8, maxTextBlocks: 12, maxImageBlocks: 4, maxPromptCharacters: 120000, maxTotalTokens: 50000, maxBlockAttempts: 2 },
   model: { provider: 'openai_compatible', model: 'test-model', endpointOrigin: 'https://model.test' },
   imageModel: null,
   promptVersion: 'artifact-v2',
   contextProvider: 'sqlite_fts5',
   result: null,
+  usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 },
   errorCode: 'MODEL_OUTPUT_INVALID',
   errorMessage: '输出结构无效',
   createdAt: 1_000,
@@ -59,6 +60,7 @@ describe('阶段三生成组件', () => {
     const wrapper = await mountSuspended(RunStatusPanel, { props: { run: RUN, tasks: [] } })
     expect(wrapper.text()).toContain('重新执行')
     expect(wrapper.text()).not.toContain('取消运行')
+    expect(wrapper.text()).toContain('15 / 50000')
 
     await wrapper.findAll('button').find(button => button.text().includes('重新执行'))!.trigger('click')
     expect(wrapper.emitted('retry')).toHaveLength(1)
@@ -96,6 +98,7 @@ const IMAGE_BLOCK: ArtifactBlockView = {
   attempts: [
     {
       id: '00000000-0000-4000-8000-000000000012', attemptNo: 2, status: 'succeeded', outputText: null,
+      usage: null,
       asset: {
         id: '00000000-0000-4000-8000-000000000013', relativePath: 'assets/00000000-0000-4000-8000-000000000013.png',
         mediaType: 'image/png', sizeBytes: 1024, contentHash: 'b'.repeat(64), altText: '学院主图新版',
@@ -104,6 +107,7 @@ const IMAGE_BLOCK: ArtifactBlockView = {
     },
     {
       id: '00000000-0000-4000-8000-000000000011', attemptNo: 1, status: 'succeeded', outputText: null,
+      usage: null,
       asset: {
         id: '00000000-0000-4000-8000-000000000014', relativePath: 'assets/00000000-0000-4000-8000-000000000014.png',
         mediaType: 'image/png', sizeBytes: 900, contentHash: 'c'.repeat(64), altText: '学院主图',
@@ -180,6 +184,15 @@ describe('阶段四图文组件', () => {
     expect(wrapper.emitted('select')).toEqual([['00000000-0000-4000-8000-000000000012']])
     expect(wrapper.emitted('retry')).toHaveLength(1)
     expect(wrapper.emitted('lock')).toEqual([[true]])
+  })
+
+  it('块达到运行快照的累计尝试上限后不再提供重试入口', async () => {
+    const wrapper = await mountSuspended(ArtifactBlockCard, {
+      props: { runId: PREVIEW.runId, block: IMAGE_BLOCK, maxAttempts: 2 },
+    })
+
+    expect(wrapper.text()).toContain('已达到 2 次尝试上限')
+    expect(wrapper.findAll('button').some(button => button.text().includes('单块重试'))).toBe(false)
   })
 
   it('HTML 只进入沙箱 srcdoc 并把相对图片改写为授权接口', async () => {

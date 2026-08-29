@@ -4,6 +4,9 @@ import type {
   SceneContext,
   TextModelParameters,
 } from '../../../shared/schemas/generation'
+import type { TextModelUsage } from '../../../shared/types/generation'
+
+export type { TextModelUsage }
 
 export type RunKind = 'interest_assessment' | 'artifact_generation'
 export type RunStatus = 'planning' | 'awaiting_confirmation' | 'queued' | 'running' | 'succeeded' | 'partial' | 'failed' | 'canceled'
@@ -50,13 +53,6 @@ export interface GenerationRunRecord {
   createdAt: number
   updatedAt: number
   completedAt: number | null
-}
-
-/** 模型供应商返回的可审计用量。 */
-export interface TextModelUsage {
-  inputTokens: number | null
-  outputTokens: number | null
-  totalTokens: number | null
 }
 
 /** 运行中复制保存的证据快照。 */

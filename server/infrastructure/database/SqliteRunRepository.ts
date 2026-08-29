@@ -215,6 +215,17 @@ export class SqliteRunRepository implements RunRepository {
     return this.client.prepare('SELECT * FROM task_jobs WHERE run_id = ? ORDER BY created_at DESC, id DESC').all(runId).map(toRunTask)
   }
 
+  /** @param runId 运行 UUID。 @returns 已收到供应商响应的块尝试用量。 */
+  async listRunTextUsages(runId: string): Promise<TextModelUsage[]> {
+    return (this.client.prepare(`
+      SELECT block_attempts.usage_json FROM block_attempts
+      INNER JOIN artifact_blocks ON artifact_blocks.id = block_attempts.block_id
+      INNER JOIN artifact_documents ON artifact_documents.id = artifact_blocks.document_id
+      WHERE artifact_documents.run_id = ? AND block_attempts.usage_json IS NOT NULL
+      ORDER BY block_attempts.created_at, block_attempts.id
+    `).all(runId) as Array<{ usage_json: string }>).map(row => JSON.parse(row.usage_json) as TextModelUsage)
+  }
+
   /** @param runId 运行 UUID。 @returns 按块顺序排列的成功图片资产。 */
   async listImageAssets(runId: string): Promise<ImageAssetRecord[]> {
     return this.client.prepare(`
@@ -344,6 +355,12 @@ export class SqliteRunRepository implements RunRepository {
       UPDATE generation_runs SET status = 'failed', error_code = ?, error_message = ?, completed_at = ?, updated_at = ?
       WHERE id = ? AND status NOT IN ('succeeded', 'canceled')
     `).run(code, message.slice(0, 1000), timestamp, timestamp, runId)
+  }
+
+  /** @param runId 运行 UUID。 @param usage 已收到但因门禁失败尚未保存的供应商用量。 @param timestamp 更新时间。 @returns 无返回值。 */
+  async saveRunUsage(runId: string, usage: TextModelUsage, timestamp: number): Promise<void> {
+    this.client.prepare(`UPDATE generation_runs SET usage_json = ?, updated_at = ? WHERE id = ?`)
+      .run(JSON.stringify(usage), timestamp, runId)
   }
 
   /**
@@ -539,10 +556,10 @@ export class SqliteRunRepository implements RunRepository {
     }).immediate()
   }
 
-  /** @param blockId 块 UUID。 @param attemptId 尝试 UUID。 @param code 稳定错误码。 @param message 脱敏原因。 @param timestamp 完成时间。 @returns 无返回值。 */
-  async failBlockAttempt(blockId: string, attemptId: string, code: string, message: string, timestamp: number): Promise<void> {
+  /** @param blockId 块 UUID。 @param attemptId 尝试 UUID。 @param code 稳定错误码。 @param message 脱敏原因。 @param usage 已收到供应商响应时的用量。 @param timestamp 完成时间。 @returns 无返回值。 */
+  async failBlockAttempt(blockId: string, attemptId: string, code: string, message: string, usage: TextModelUsage | null, timestamp: number): Promise<void> {
     this.client.transaction(() => {
-      this.client.prepare(`UPDATE block_attempts SET status = 'failed', error_code = ?, error_message = ?, completed_at = ? WHERE id = ? AND block_id = ? AND status = 'running'`).run(code, message.slice(0, 1000), timestamp, attemptId, blockId)
+      this.client.prepare(`UPDATE block_attempts SET status = 'failed', usage_json = ?, error_code = ?, error_message = ?, completed_at = ? WHERE id = ? AND block_id = ? AND status = 'running'`).run(usage ? JSON.stringify(usage) : null, code, message.slice(0, 1000), timestamp, attemptId, blockId)
       this.client.prepare(`
         UPDATE artifact_blocks SET status = CASE WHEN selected_attempt_id IS NOT NULL THEN 'succeeded' ELSE 'failed' END,
           updated_at = ? WHERE id = ?

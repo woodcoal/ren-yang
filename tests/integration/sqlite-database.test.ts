@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { DrizzleAdministratorRepository } from '../../server/infrastructure/database/DrizzleAdministratorRepository'
 import { SqliteDatabase } from '../../server/infrastructure/database/SqliteDatabase'
+import { SqliteRunRepository } from '../../server/infrastructure/database/SqliteRunRepository'
 import { SqliteTaskJobRepository } from '../../server/infrastructure/database/SqliteTaskJobRepository'
 
 /** 每个测试创建的数据目录，结束后只清理自身目录。 */
@@ -153,7 +154,7 @@ describe('SqliteDatabase', () => {
       .toEqual({ status: 'failed', attempt_count: 2 })
   })
 
-  it('从阶段四数据库升级后保留人物、运行和图片资产且新增业务表为空', () => {
+  it('从阶段四数据库升级后保留人物、运行和图片资产且新增业务表为空', async () => {
     temporaryDirectory = mkdtempSync(resolve(tmpdir(), 'ren-yang-sqlite-upgrade-test-'))
     const oldMigrations = createStageFourMigrations(temporaryDirectory)
     database = new SqliteDatabase({ dataDirectory: temporaryDirectory, migrationsDirectory: oldMigrations })
@@ -212,6 +213,14 @@ describe('SqliteDatabase', () => {
       id: 'persona-1', name: '林默', active_version_id: null,
     })
     expect(upgraded.prepare(`SELECT id, status FROM generation_runs WHERE id = 'run-1'`).get()).toEqual({ id: 'run-1', status: 'succeeded' })
+    await expect(new SqliteRunRepository(upgraded).findRun('run-1')).resolves.toMatchObject({
+      parameterSnapshot: {
+        maxImageBlocks: 4,
+        maxPromptCharacters: 120_000,
+        maxTotalTokens: 50_000,
+        maxBlockAttempts: 2,
+      },
+    })
     const newTables = [
       'feedback_events',
       'feedback_suggestions',

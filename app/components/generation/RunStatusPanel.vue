@@ -45,6 +45,7 @@ function formatTime(timestamp: number): string {
       <p><span class="text-muted">模型：</span>{{ run.model.model }}</p>
       <p v-if="run.imageModel"><span class="text-muted">图片模型：</span>{{ run.imageModel.model }}</p>
       <p><span class="text-muted">上下文：</span>{{ run.contextProvider }}</p>
+      <p><span class="text-muted">已报告总 Token：</span>{{ run.usage?.totalTokens ?? '供应商未返回' }} / {{ run.parameters.maxTotalTokens }}</p>
       <p><span class="text-muted">创建：</span>{{ formatTime(run.createdAt) }}</p>
     </div>
     <UAlert v-if="run.errorMessage" class="mt-4" color="error" :title="run.errorCode || '运行失败'" :description="run.errorMessage" />

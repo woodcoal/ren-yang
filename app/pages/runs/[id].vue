@@ -241,6 +241,7 @@ function toPersonaSnapshotFields(snapshot: PersonaSnapshot): Array<{ label: stri
                 :key="block.id"
                 :run-id="runId"
                 :block="block"
+                :max-attempts="details.run.parameters.maxBlockAttempts"
                 :loading="actionLoading"
                 :actions-disabled="active"
                 @retry="retryBlock(block.id)"

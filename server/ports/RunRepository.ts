@@ -108,6 +108,8 @@ export interface RunRepository {
   listBlockAttempts(blockId: string): Promise<BlockAttemptRecord[]>
   /** @param runId 运行 UUID。 @returns 任务历史。 */
   listRunTasks(runId: string): Promise<RunTaskRecord[]>
+  /** @param runId 运行 UUID。 @returns 已收到供应商响应的块尝试用量。 */
+  listRunTextUsages(runId: string): Promise<TextModelUsage[]>
   /** @param runId 运行 UUID。 @returns 所属成功图片资产。 */
   listImageAssets(runId: string): Promise<ImageAssetRecord[]>
   /** @param runId 运行 UUID。 @param assetId 资产 UUID。 @returns 所属资产或 null。 */
@@ -125,6 +127,8 @@ export interface RunRepository {
   confirmDocumentSpec(runId: string, documentId: string, taskId: string, blockIds: string[], timestamp: number): Promise<boolean>
   /** @param runId 运行 UUID。 @param code 稳定错误码。 @param message 脱敏原因。 @param timestamp 完成时间。 @returns 无返回值。 */
   failRun(runId: string, code: string, message: string, timestamp: number): Promise<void>
+  /** @param runId 运行 UUID。 @param usage 已收到但因门禁失败尚未保存的供应商用量。 @param timestamp 更新时间。 @returns 无返回值。 */
+  saveRunUsage(runId: string, usage: TextModelUsage, timestamp: number): Promise<void>
   /** @param runId 运行 UUID。 @param taskType 当前任务类型。 @param timestamp 更新时间。 @returns 无返回值。 */
   prepareAutomaticRetry(runId: string, taskType: string, timestamp: number): Promise<void>
   /** @param runId 运行 UUID。 @param taskId 新任务 UUID。 @param timestamp 创建时间。 @returns 新任务类型和运行状态；不可重试时返回 null。 */
@@ -144,8 +148,8 @@ export interface RunRepository {
   completeBlockAttempt(blockId: string, attemptId: string, outputText: string, usage: TextModelUsage, timestamp: number): Promise<void>
   /** @param blockId 块 UUID。 @param attemptId 尝试 UUID。 @param asset 完整图片资产事实。 @param timestamp 完成时间。 @returns 无返回值。 */
   completeImageBlockAttempt(blockId: string, attemptId: string, asset: Omit<ImageAssetRecord, 'attemptId' | 'createdAt'>, timestamp: number): Promise<void>
-  /** @param blockId 块 UUID。 @param attemptId 尝试 UUID。 @param code 稳定错误码。 @param message 脱敏原因。 @param timestamp 完成时间。 @returns 无返回值。 */
-  failBlockAttempt(blockId: string, attemptId: string, code: string, message: string, timestamp: number): Promise<void>
+  /** @param blockId 块 UUID。 @param attemptId 尝试 UUID。 @param code 稳定错误码。 @param message 脱敏原因。 @param usage 已收到供应商响应时的用量。 @param timestamp 完成时间。 @returns 无返回值。 */
+  failBlockAttempt(blockId: string, attemptId: string, code: string, message: string, usage: TextModelUsage | null, timestamp: number): Promise<void>
   /** @param runId 运行 UUID。 @param blockId 块 UUID。 @param taskId 新任务 UUID。 @param timestamp 创建时间。 @returns 是否创建单块任务。 */
   enqueueBlockRetry(runId: string, blockId: string, taskId: string, timestamp: number): Promise<boolean>
   /** @param runId 运行 UUID。 @param blockId 块 UUID。 @param attemptId 成功尝试 UUID。 @param timestamp 选择时间。 @returns 是否选择成功。 */

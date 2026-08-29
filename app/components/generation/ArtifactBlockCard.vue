@@ -11,6 +11,8 @@ const props = defineProps<{
   loading?: boolean
   /** 运行处于活动状态时禁止会与 Worker 竞争的选择和锁定操作。 */
   actionsDisabled?: boolean
+  /** 当前运行固定的单块累计尝试上限。 */
+  maxAttempts?: number
 }>()
 
 defineEmits<{
@@ -23,7 +25,9 @@ defineEmits<{
 }>()
 
 /** 当前是否允许从终态追加单块尝试。 */
-const canRetry = computed(() => ['succeeded', 'failed'].includes(props.block.status) && !props.block.isLocked)
+const canRetry = computed(() => ['succeeded', 'failed'].includes(props.block.status)
+  && !props.block.isLocked
+  && props.block.attempts.length < (props.maxAttempts ?? Number.POSITIVE_INFINITY))
 
 /** @param timestamp 可空 UTC Unix 毫秒。 @returns 本地日期时间或占位文本。 */
 function formatTime(timestamp: number | null): string {
@@ -62,6 +66,7 @@ function assetUrl(assetId: string): string {
           <figcaption class="mt-2 text-xs text-muted">{{ attempt.asset.altText }} · {{ Math.ceil(attempt.asset.sizeBytes / 1024) }} KiB</figcaption>
         </figure>
         <p v-if="attempt.errorMessage" class="mt-3 text-sm text-error">{{ attempt.errorCode }}：{{ attempt.errorMessage }}</p>
+        <p v-if="attempt.usage" class="mt-3 text-xs text-muted">用量：输入 {{ attempt.usage.inputTokens ?? '未知' }} · 输出 {{ attempt.usage.outputTokens ?? '未知' }} · 总计 {{ attempt.usage.totalTokens ?? '未知' }} Token</p>
         <UButton
           v-if="attempt.status === 'succeeded' && attempt.id !== block.selectedAttemptId"
           class="mt-3"
@@ -76,6 +81,7 @@ function assetUrl(assetId: string): string {
 
     <div class="mt-4 flex flex-wrap gap-2">
       <UButton v-if="canRetry" size="sm" color="neutral" variant="soft" :disabled="actionsDisabled" :loading="loading" @click="$emit('retry')">单块重试</UButton>
+      <span v-else-if="block.attempts.length >= (maxAttempts ?? Number.POSITIVE_INFINITY)" class="self-center text-xs text-muted">已达到 {{ maxAttempts }} 次尝试上限</span>
       <UButton
         v-if="block.selectedAttemptId"
         size="sm"

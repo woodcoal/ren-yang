@@ -1,5 +1,12 @@
 import type { ArtifactFormat, DocumentSpec, InterestAssessment, SceneContext, TextModelParameters } from '../schemas/generation'
 
+/** 模型供应商返回的可审计用量；供应商未返回的字段为 null。 */
+export interface TextModelUsage {
+  inputTokens: number | null
+  outputTokens: number | null
+  totalTokens: number | null
+}
+
 /** 文本模型能力状态，不暴露密钥。 */
 export interface TextModelCapability {
   configured: boolean
@@ -39,6 +46,8 @@ export interface RunSummary {
   promptVersion: string
   contextProvider: 'sqlite_fts5' | 'openviking'
   result: InterestAssessment | null
+  /** 当前运行已持久化的供应商用量；供应商未提供时字段为 null。 */
+  usage: TextModelUsage | null
   errorCode: string | null
   errorMessage: string | null
   createdAt: number
@@ -74,6 +83,8 @@ export interface BlockAttemptView {
   attemptNo: number
   status: 'running' | 'succeeded' | 'failed'
   outputText: string | null
+  /** 本次文字模型调用的供应商用量；图片或调用前失败时为 null。 */
+  usage: TextModelUsage | null
   /** 成功图片尝试的本地资产；文字尝试为 null。 */
   asset: {
     id: string
