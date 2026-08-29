@@ -86,8 +86,107 @@ viking://user/{user_id}/peers/{peer_id}/resources/...
 因此：
 
 - 业务登录用户应映射到 OpenViking `account/user`，不能只换 `peer`。
-- 模拟人物不必天然映射成 OpenViking 用户或 Peer。当前模拟人物只是“人样”的业务对象，资料还可能同时关联多个人物和世界；将人物强行映射为 Peer 会造成资料复制或共享语义不清。
-- 只有未来确实使用“关于某个交互对象的记忆/资料”时，才适合把人物或外部参与者映射到 Peer。
+- 是否把模拟人物映射为 Peer 取决于产品是否需要人物专属资料与长期记忆；“人样”后续已确认需要这两项能力，具体映射见下一节。
+
+## 已确认的人样映射（实施基准）
+
+后续实现采用以下业务映射，取代本文后面的原始单用户阶段建议：
+
+```text
+Account：人样租户或独立部署
+└── User：世界上下文空间（world-{worldId}）
+    ├── User Resources：世界背景、规则和世界公共资料
+    └── Peer：人物（persona-{personaId}）
+        ├── Peer Resources：人物专属资料
+        └── Peer Memories：人物专属长期记忆与 Profile
+```
+
+- 没有关联世界的人物使用独立 User 空间 `standalone-{personaId}`，仍以 `persona-{personaId}` 作为 Peer。
+- 世界公共资料写入该世界的 User Resources；人物专属资料和长期记忆写入对应 Peer。
+- 一份业务资料若跨世界或跨人物共享，需要生成多份远端投影，不能再假设“一份本地资料只对应一个远端 URI”。同步映射应采用 `sourceId + scopeType + scopeId -> remoteUri`。
+- 人物换世界时，旧 User 下的 Peer Memory 不会自动迁移；实施时必须让用户选择迁移、复制或清空。
+- 推荐由“人样”后端以 Trusted 模式传递 Account、世界 User 和人物 Peer，并禁止客户端绕过后端直接访问 OpenViking。
+- 继续由 SQLite 计算精确 `target_uri[]`；不得以空范围检索代替业务授权。
+
+这里是利用 OpenViking 的原生隔离层承载“世界上下文 + 人物记忆”，不是把 OpenViking User 的官方自然人语义原样照搬。世界本身不应生成 User Profile；对人物记忆提交建议关闭 `memory_policy.self`、开启 `memory_policy.peer`，并给相关消息设置明确的 `peer_id`，避免把人物信息误写到世界 User 根记忆。[S18][S19]
+
+## Profile、人设与自动迭代机制
+
+### User Profile 与 Peer Profile
+
+OpenViking 没有两套不同的 Profile 类型。二者使用同一个 `profile` Memory Schema，只因写入命名空间不同而被称为 User Profile 或 Peer Profile：[S16][S17][S19]
+
+```text
+User Profile
+viking://user/{userId}/memories/profile.md
+
+Peer Profile
+viking://user/{userId}/peers/{peerId}/memories/profile.md
+```
+
+- `role=user` 的消息没有 `peer_id` 时，符合条件的画像信息写入 User Profile。
+- `role=user` 的消息带有允许的 `peer_id` 时，符合条件的画像信息写入该 Peer Profile。
+- `profile.md` 只保留相对稳定、由用户陈述或确认的客观属性。官方模板明确禁止猜测、临时状态、单纯事件、仅由 Assistant 给出的内容、敏感信息和琐碎更新；相似项合并，冲突时保留较新的信息。
+
+因此，OpenViking 的 Profile 主要是**自动生成并持续合并更新**，但原始事实仍来自用户输入或应用提交的消息，不是系统脱离输入自行编造人物。它属于“人工提供事实，系统自动抽取与迭代”的混合机制。
+
+官方 `v0.4.17` 的 Profile Schema 与 `v0.4.16` 相同，仍采用上述稳定事实约束和 `patch` 合并；Peer 目标解析增加了更明确的跳过原因，但没有把 Profile 改成纯手工数据，也没有改变“User 角色消息 + `peer_id` 决定 Peer 归属”的核心规则。[S23]
+
+### 什么时候会自动更新
+
+Profile 不会因为消息被添加到 Session 就立即变化。标准流程是：[S18]
+
+```text
+添加 Session 消息
+→ commit 归档
+→ 后台 Phase 2 运行 Memory Extraction
+→ LLM 按 Profile Schema 生成新增、修改或删除操作
+→ 以 patch 方式合并到 profile.md
+```
+
+只有同时满足以下条件才可能更新：
+
+1. Session 已 commit，或应用调用了内部仍以 Session + commit 实现的显式记忆提交；
+2. 服务端已启用 Memory Extraction；
+3. `memory_policy` 允许目标范围和 `profile` 类型；
+4. 对话中存在值得长期保存的稳定画像事实；
+5. Peer Profile 场景下，消息带有合法且被允许的 `peer_id`。
+
+所以 `session.commit()` 是“触发一次候选记忆抽取”，不是“每次必定改人设”。VikingBot 的 `openviking_memory_commit` 也只是显式触发这条抽取链路，并不是把调用参数原样写入 Profile。[S20]
+
+### 手动维护能力
+
+OpenViking 的 Content Write API 技术上允许创建或替换有权限访问的 Markdown 文件，因此可以直接维护 `profile.md`；写入后还会刷新语义与向量。[S22] 但它不是 Profile 的主要产品入口，直接手改与后续自动 patch 同时存在时需要处理覆盖和审计问题。
+
+“人样”不应把 OpenViking Profile 当成人物核心设定的唯一事实源：
+
+- SQLite 中经过用户确认、可版本化的人物设定仍是权威数据；
+- Peer Profile 适合作为从对话与反馈中沉淀出的派生画像；
+- 自动抽取结果应可查看、回滚或提升为人物设定候选，不应无审查覆盖核心设定；
+- 构造提示词时应明确优先级：已确认人物设定高于 OpenViking 派生 Profile/Memory。
+
+普通图文生成任务与人格迭代任务必须分流：
+
+- 普通生成只读取人物设定、世界资料和获准的 Peer Memory，不应把本次提示词、模型产物或格式要求自动提交给 Profile 抽取；
+- 只有用户明确提交反馈或要求人物学习时，才建立人物 Peer 范围的独立记忆 Session，设置明确 `peer_id` 和受限 `memory_policy` 后 commit；
+- 这样可避免“写一篇文章”被误当成人物稳定属性，也避免模型自产内容反向污染人物设定。
+
+### VikingBot 自身人设不是 Peer Profile
+
+VikingBot 的静态 Agent 人设主要来自活动 Workspace 中的启动文件：[S21]
+
+| 文件 | 作用 | 产生方式 |
+| --- | --- | --- |
+| `SOUL.md` | 人格、价值观、语气和回答风格 | 用户或管理员手动维护 |
+| `IDENTITY.md` | Agent 名称、角色、职责和身份背景 | 用户或管理员手动维护 |
+| `AGENTS.md` | 工作方式、流程和输出约束 | 用户或管理员手动维护 |
+| Peer `profile.md` | 当前交互对象的长期画像 | Session commit 后自动抽取，也可人工校正 |
+
+VikingBot 每轮重新读取 `SOUL.md`、`IDENTITY.md` 和 `AGENTS.md`，但 Peer Profile 由 OpenViking 读取后作为“当前发送者信息”加入系统提示。[S20][S21] 两者用途不同：前者定义“Agent 应该是谁、怎么说”，后者描述“Agent 正在面对的人是谁”。
+
+OpenViking Memory 中还存在名为 `identity`、`soul` 的记忆类型；它们与 VikingBot Workspace 的同名静态文件不是同一份数据。项目若需要可控的小说人物人设，当前应继续以本地人物设定为主，不直接依赖 OpenViking 的 Agent 身份演化能力。
+
+这两类 OpenViking Memory 采用第三种产生方式：首次执行允许相应类型的自我记忆提取时，服务端会按模板中的 `init_value` 自动创建默认 `identity.md`、`soul.md`；后续记忆抽取可以按 Schema 更新允许变更的字段。[S24] 因而它们是“系统给默认值 + 后续自动更新”，仍不等于用户已确认的人物核心设定。
 
 ## 各类数据的隔离范围
 
@@ -183,7 +282,9 @@ Dev 模式不认证请求，服务端使用 `default/default` ROOT 上下文，�
 4. **非空 reason 生成 Memory**：每次同步可能在 `default/coder` 下提取记忆，项目没有追踪这些记忆 URI；切换资料命名空间本身不会自动证明旧记忆已清空。[S8]
 5. **配置与数据库身份脱节**：当前 SQLite 模型只有单例管理员，也没有 tenant/user 所有权字段。仅给 OpenViking 请求增加 Peer 头不会弥补业务库缺少多租户边界的问题。
 
-## 推荐方案
+## 原始阶段建议（已被后续映射决策取代）
+
+以下内容保留为决策历史，不再作为实施基准；当前基准见“已确认的人样映射（实施基准）”。
 
 ### 当前阶段：专用 OpenViking 用户 + 用户私有资料
 
@@ -216,7 +317,7 @@ Dev 模式不认证请求，服务端使用 `default/default` ROOT 上下文，�
 
 不推荐“所有业务用户共用一个 OpenViking User，仅用 Peer 区分”。Peer 不改变用户身份，当前用户根和共享资源仍可见，无法形成完整租户边界。[S1][S6]
 
-## 迁移风险与顺序
+## 原始阶段迁移建议（实施时需按新映射重写）
 
 不能只改 URI 生成函数后直接重建。安全迁移顺序如下：
 
@@ -273,6 +374,33 @@ Dev 模式不认证请求，服务端使用 `default/default` ROOT 上下文，�
 - **[S15] Codex Memory Plugin 0.7.7 Peer 召回模式**：默认 broad recall 与显式 Actor 隔离模式。
   <https://github.com/volcengine/OpenViking/blob/v0.4.17/examples/codex-memory-plugin/README.md#L106-L124>
   <https://github.com/volcengine/OpenViking/blob/v0.4.17/examples/codex-memory-plugin/scripts/shared/mcp-proxy-config.mjs#L44-L65>
+- **[S16] Memory 类型与动态更新语义（v0.4.16）**：Profile 是 User/Peer 的稳定画像；Identity/Soul 分别是 Assistant 身份与原则风格。
+  <https://github.com/volcengine/OpenViking/blob/v0.4.16/docs/en/concepts/02-context-types.md#L45-L80>
+- **[S17] Profile Memory Schema（v0.4.16 源码）**：只抽取用户陈述或确认的稳定事实，禁止猜测，并使用 `patch` 合并到 `profile.md`。
+  <https://github.com/volcengine/OpenViking/blob/v0.4.16/openviking/prompts/templates/memory/profile.yaml#L1-L42>
+- **[S18] Session commit 与记忆抽取（v0.4.16）**：Phase 1 归档，Phase 2 后台抽取长期记忆；`memory_policy.self/peer` 控制目标范围。
+  <https://github.com/volcengine/OpenViking/blob/v0.4.16/docs/en/api/05-sessions.md#commit>
+  <https://github.com/volcengine/OpenViking/blob/v0.4.16/openviking/session/session.py#L195-L210>
+  <https://github.com/volcengine/OpenViking/blob/v0.4.16/openviking/session/session.py#L2552-L2615>
+- **[S19] User/Peer 记忆归属（v0.4.16 源码）**：只有 User 角色消息参与 Profile 所有者解析；无 Peer 写 User 根，有合法 Peer 写 Peer 空间。
+  <https://github.com/volcengine/OpenViking/blob/v0.4.16/openviking/session/memory/memory_isolation_handler.py#L29-L84>
+  <https://github.com/volcengine/OpenViking/blob/v0.4.16/openviking/session/memory/memory_isolation_handler.py#L236-L298>
+- **[S20] VikingBot 的 Peer Profile 与显式记忆提交（v0.4.16）**：Profile 作为当前发送者信息注入；显式记忆仍通过 Session commit 触发抽取。
+  <https://github.com/volcengine/OpenViking/blob/v0.4.16/bot/docs/zh/concepts/04-openviking-integration.md#peer-profile>
+  <https://github.com/volcengine/OpenViking/blob/v0.4.16/bot/docs/zh/concepts/04-openviking-integration.md#显式记忆提交>
+- **[S21] VikingBot Workspace 启动文件（v0.4.16）**：`SOUL.md`、`IDENTITY.md`、`AGENTS.md` 每轮读取，由用户或管理员维护。
+  <https://github.com/volcengine/OpenViking/blob/v0.4.16/bot/docs/zh/concepts/02-agent-capabilities.md#启动文件>
+- **[S22] Content Write API（v0.4.16）**：允许创建或替换文本文件，并刷新语义与向量。
+  <https://github.com/volcengine/OpenViking/blob/v0.4.16/docs/en/api/12-content.md#write>
+- **[S23] Profile 与 Peer 归属（v0.4.17 源码）**：Profile 规则保持不变；Peer 目标解析补充可观察的跳过原因。
+  <https://github.com/volcengine/OpenViking/blob/v0.4.17/openviking/prompts/templates/memory/profile.yaml#L1-L42>
+  <https://github.com/volcengine/OpenViking/blob/v0.4.17/openviking/session/memory/memory_isolation_handler.py#L63-L137>
+  <https://github.com/volcengine/OpenViking/blob/v0.4.17/openviking/session/memory/memory_isolation_handler.py#L350-L428>
+- **[S24] Identity/Soul 默认初始化（v0.4.16 源码）**：模板提供默认字段；首次允许自我记忆抽取时，Registry 创建尚不存在的单文件记忆。
+  <https://github.com/volcengine/OpenViking/blob/v0.4.16/openviking/prompts/templates/memory/identity.yaml#L1-L42>
+  <https://github.com/volcengine/OpenViking/blob/v0.4.16/openviking/prompts/templates/memory/soul.yaml#L1-L34>
+  <https://github.com/volcengine/OpenViking/blob/v0.4.16/openviking/session/memory/memory_type_registry.py#L221-L291>
+  <https://github.com/volcengine/OpenViking/blob/v0.4.16/openviking/session/compressor_v3.py#L615-L629>
 
 在线文档入口仅用于跟踪最新行为，不作为本机 `v0.4.16` 的唯一依据：
 
