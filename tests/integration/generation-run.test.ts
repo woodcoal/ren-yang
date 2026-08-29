@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { unzipSync } from 'fflate'
 import { ContentApplicationService } from '../../server/application/content/ContentApplicationService'
+import { SoulApplicationService } from '../../server/application/content/SoulApplicationService'
 import { DEFAULT_TEXT_PARAMETERS, GenerationApplicationService } from '../../server/application/generation/GenerationApplicationService'
 import { WorkerApplicationService } from '../../server/application/tasks/WorkerApplicationService'
 import { LocalSourceFileStorage } from '../../server/infrastructure/content/LocalSourceFileStorage'
@@ -13,8 +14,10 @@ import { SqliteContextProvider } from '../../server/infrastructure/context/Sqlit
 import { SqliteContentRepository } from '../../server/infrastructure/database/SqliteContentRepository'
 import { SqliteDatabase } from '../../server/infrastructure/database/SqliteDatabase'
 import { SqliteRunRepository } from '../../server/infrastructure/database/SqliteRunRepository'
+import { SqliteLearningRepository } from '../../server/infrastructure/database/SqliteLearningRepository'
 import { SqliteTaskJobRepository } from '../../server/infrastructure/database/SqliteTaskJobRepository'
 import { SystemIdentifierGenerator } from '../../server/infrastructure/system/SystemIdentifierGenerator'
+import { ConservativeTokenCounter } from '../../server/infrastructure/model/ConservativeTokenCounter'
 import type { Clock } from '../../server/ports/Clock'
 import type { ImageModelPort, ImageModelRequest, ImageModelResponse } from '../../server/ports/ImageModelPort'
 import { ImageModelError } from '../../server/ports/ImageModelPort'
@@ -67,14 +70,11 @@ class FixedTextModel implements TextModelPort {
       return response({
         name: '林默',
         snapshot: {
-          summary: '谨慎的学院档案员',
-          identityFacts: '负责整理学院档案。',
-          interests: '古代文献与档案。',
-          valuesAndMotivations: '重视可核验事实。',
-          expressionStyle: '冷静简洁。',
-          appearance: '',
-          visualStyle: '',
-          constraints: '资料不足时明确说明未知。',
+          chapters: [
+            { id: '50000000-0000-4000-8000-000000000001', title: '身份与倾向', content: '谨慎的学院档案员，负责整理学院档案，重视可核验事实。', order: 0, required: true },
+            { id: '50000000-0000-4000-8000-000000000002', title: '表达与边界', content: '冷静简洁；资料不足时明确说明未知。', order: 1, required: true },
+          ],
+          runtimeSummary: '谨慎的学院档案员；重视可核验事实；冷静简洁；资料不足时明确说明未知。',
         },
       }, this.usage)
     }
@@ -161,14 +161,11 @@ function readEvidence(prompt: string): Array<{ id: string, role: string }> {
 }
 
 const PERSONA_SNAPSHOT: PersonaSnapshot = {
-  summary: '热爱知识的学院观察员',
-  identityFacts: '由用户明确创建。',
-  interests: '课程与图书馆。',
-  valuesAndMotivations: '重视求证。',
-  expressionStyle: '冷静简洁。',
-  appearance: '',
-  visualStyle: '',
-  constraints: '资料不足时说明未知。',
+  chapters: [
+    { id: '50000000-0000-4000-8000-000000000003', title: '核心人设', content: '热爱知识的学院观察员，关注课程与图书馆，重视求证。', order: 0, required: true },
+    { id: '50000000-0000-4000-8000-000000000004', title: '表达与边界', content: '冷静简洁；资料不足时说明未知。', order: 1, required: true },
+  ],
+  runtimeSummary: '热爱知识的学院观察员；重视求证；冷静简洁；资料不足时说明未知。',
 }
 
 let directory: string
@@ -192,7 +189,7 @@ beforeEach(async () => {
   const processor = new NodeSourceContentProcessor(identifiers)
   imageAssets = new LocalImageAssetStorage(directory)
   contentService = new ContentApplicationService({
-    repository: contentRepository, identifiers, clock: testClock, sourceProcessor: processor,
+    repository: contentRepository, souls: contentRepository, identifiers, clock: testClock, sourceProcessor: processor,
     sourceFiles: new LocalSourceFileStorage(directory), imageAssets,
   })
   const source = await contentService.createPastedSource({
@@ -203,7 +200,14 @@ beforeEach(async () => {
     name: '林默', origin: 'source_based', worldId: null, sourceIds: [source.source.id],
     snapshot: PERSONA_SNAPSHOT, changeSummary: '建立人物',
   })
-  await contentService.publishPersonaVersion(persona.versions[0]!.id)
+  await new SoulApplicationService({
+    content: contentRepository,
+    souls: contentRepository,
+    identifiers,
+    clock: testClock,
+    tokenCounter: new ConservativeTokenCounter(),
+    tokenBudgets: { world: 2_500, persona: 3_500 },
+  }).publishDraft('persona', persona.persona.id)
   personaId = persona.persona.id
   model = new FixedTextModel()
   imageModel = new FixedImageModel()
@@ -211,6 +215,7 @@ beforeEach(async () => {
     runs: new SqliteRunRepository(database.getClient()), content: contentRepository,
     context: new SqliteContextProvider(database.getClient()), model, imageModel, imageAssets,
     identifiers, clock: testClock, sourceProcessor: processor,
+    operationRecords: new SqliteLearningRepository(database.getClient()),
   })
   worker = new WorkerApplicationService({
     taskJobRepository: new SqliteTaskJobRepository(database.getClient()), taskHandler: generation,
@@ -235,7 +240,7 @@ describe('阶段三纯文本运行', () => {
 
     expect(draft).toMatchObject({
       name: '林默',
-      snapshot: { summary: '谨慎的学院档案员', constraints: '资料不足时明确说明未知。' },
+      snapshot: { runtimeSummary: expect.stringContaining('谨慎的学院档案员') },
       warnings: [],
     })
     const request = model.requests.get('persona_draft')!
@@ -268,6 +273,11 @@ describe('阶段三纯文本运行', () => {
     expect(details.run.result?.supportingEvidenceIds).toEqual([details.evidence[1]!.id])
     expect(model.calls.get('interest_assessment')).toBe(2)
     expect(details.run.usage).toEqual({ inputTokens: 20, outputTokens: 10, totalTokens: 30 })
+    expect(database.getClient().prepare(`
+      SELECT persona_id, run_id, operation_type, is_enabled FROM persona_operation_records WHERE run_id = ?
+    `).get(created.runId)).toEqual({
+      persona_id: personaId, run_id: created.runId, operation_type: 'interest_assessment', is_enabled: 1,
+    })
   })
 
   it('调用前按固定提示字符上限失败且不请求模型', async () => {

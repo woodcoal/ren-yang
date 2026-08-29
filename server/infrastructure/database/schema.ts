@@ -229,11 +229,117 @@ export const worldSources = sqliteTable(
     worldId: text('world_id').notNull().references(() => worlds.id, { onDelete: 'cascade' }),
     sourceId: text('source_id').notNull().references(() => sourceMaterials.id, { onDelete: 'restrict' }),
     priority: integer('priority').notNull().default(100),
+    isEnabled: integer('is_enabled').notNull().default(1),
+    enabledAt: integer('enabled_at'),
+    disabledAt: integer('disabled_at'),
+    updatedAt: integer('updated_at').notNull().default(0),
   },
   table => [
     uniqueIndex('world_sources_unique').on(table.worldId, table.sourceId),
     index('world_sources_source_id_index').on(table.sourceId),
     check('world_sources_priority_check', sql`${table.priority} >= 0`),
+    check('world_sources_enabled_check', sql`${table.isEnabled} IN (0, 1)`),
+  ],
+)
+
+/** 人物明确用于成长分析的反馈原始资料。 */
+export const personaFeedbackSources = sqliteTable(
+  'persona_feedback_sources',
+  {
+    id: text('id').primaryKey(),
+    personaId: text('persona_id').notNull().references(() => personas.id, { onDelete: 'cascade' }),
+    title: text('title').notNull(),
+    content: text('content').notNull(),
+    sourceType: text('source_type').notNull(),
+    sourceId: text('source_id'),
+    isEnabled: integer('is_enabled').notNull().default(1),
+    contentHash: text('content_hash').notNull(),
+    deletionState: text('deletion_state').notNull().default('active'),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  table => [
+    index('persona_feedback_sources_persona_enabled_index').on(table.personaId, table.isEnabled, table.createdAt),
+    check('persona_feedback_sources_title_check', sql`length(trim(${table.title})) > 0`),
+    check('persona_feedback_sources_content_check', sql`length(trim(${table.content})) > 0`),
+    check('persona_feedback_sources_source_type_check', sql`${table.sourceType} IN ('run_feedback', 'manual', 'imported', 'memory_conversion')`),
+    check('persona_feedback_sources_enabled_check', sql`${table.isEnabled} IN (0, 1)`),
+    check('persona_feedback_sources_hash_check', sql`length(${table.contentHash}) = 64`),
+    check('persona_feedback_sources_deletion_state_check', sql`${table.deletionState} IN ('active', 'pending_remote_delete')`),
+  ],
+)
+
+/** 世界与人物共用的逻辑成长记录。 */
+export const growthRecords = sqliteTable(
+  'growth_records',
+  {
+    id: text('id').primaryKey(),
+    subjectType: text('subject_type').notNull(),
+    worldId: text('world_id').references(() => worlds.id, { onDelete: 'cascade' }),
+    personaId: text('persona_id').references(() => personas.id, { onDelete: 'cascade' }),
+    currentRevisionId: text('current_revision_id').notNull(),
+    status: text('status').notNull().default('candidate'),
+    supersededById: text('superseded_by_id'),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  table => [
+    index('growth_records_world_status_index').on(table.worldId, table.status, table.updatedAt),
+    index('growth_records_persona_status_index').on(table.personaId, table.status, table.updatedAt),
+    check('growth_records_subject_type_check', sql`${table.subjectType} IN ('world', 'persona')`),
+    check('growth_records_subject_check', sql`(
+      (${table.subjectType} = 'world' AND ${table.worldId} IS NOT NULL AND ${table.personaId} IS NULL)
+      OR (${table.subjectType} = 'persona' AND ${table.personaId} IS NOT NULL AND ${table.worldId} IS NULL)
+    )`),
+    check('growth_records_status_check', sql`${table.status} IN ('candidate', 'active', 'superseded', 'archived', 'rejected')`),
+  ],
+)
+
+/** 成长正文与适用范围的不可变修订。 */
+export const growthRevisions = sqliteTable(
+  'growth_revisions',
+  {
+    id: text('id').primaryKey(),
+    growthId: text('growth_id').notNull().references(() => growthRecords.id, { onDelete: 'cascade' }),
+    revisionNo: integer('revision_no').notNull(),
+    content: text('content').notNull(),
+    contentHash: text('content_hash').notNull(),
+    scope: text('scope').notNull(),
+    importance: integer('importance').notNull(),
+    conflictSummary: text('conflict_summary'),
+    analysisBatchId: text('analysis_batch_id'),
+    createdBy: text('created_by').notNull(),
+    createdAt: integer('created_at').notNull(),
+  },
+  table => [
+    uniqueIndex('growth_revisions_growth_revision_unique').on(table.growthId, table.revisionNo),
+    check('growth_revisions_revision_check', sql`${table.revisionNo} > 0`),
+    check('growth_revisions_content_check', sql`length(trim(${table.content})) > 0`),
+    check('growth_revisions_hash_check', sql`length(${table.contentHash}) = 64`),
+    check('growth_revisions_scope_check', sql`length(trim(${table.scope})) > 0`),
+    check('growth_revisions_importance_check', sql`${table.importance} BETWEEN 1 AND 5`),
+    check('growth_revisions_created_by_check', sql`${table.createdBy} IN ('user', 'analysis')`),
+  ],
+)
+
+/** 成长修订与原始资料之间的证据关系。 */
+export const growthRevisionEvidence = sqliteTable(
+  'growth_revision_evidence',
+  {
+    id: text('id').primaryKey(),
+    growthRevisionId: text('growth_revision_id').notNull().references(() => growthRevisions.id, { onDelete: 'cascade' }),
+    sourceType: text('source_type').notNull(),
+    sourceId: text('source_id').notNull(),
+    sourceHash: text('source_hash').notNull(),
+    sourceTitle: text('source_title').notNull(),
+    relationship: text('relationship').notNull(),
+    sourceAvailable: integer('source_available').notNull().default(1),
+  },
+  table => [
+    uniqueIndex('growth_revision_evidence_unique').on(table.growthRevisionId, table.sourceType, table.sourceId),
+    check('growth_revision_evidence_source_type_check', sql`${table.sourceType} IN ('world_source', 'persona_feedback_source')`),
+    check('growth_revision_evidence_relationship_check', sql`${table.relationship} IN ('supporting', 'opposing')`),
+    check('growth_revision_evidence_available_check', sql`${table.sourceAvailable} IN (0, 1)`),
   ],
 )
 
@@ -311,6 +417,102 @@ export const generationRuns = sqliteTable(
       sql`${table.status} IN ('planning', 'awaiting_confirmation', 'queued', 'running', 'succeeded', 'partial', 'failed', 'canceled')`,
     ),
     check('generation_runs_context_provider_check', sql`${table.contextProvider} IN ('sqlite_fts5', 'openviking')`),
+  ],
+)
+
+/** 人物执行任务后形成的记忆原始处理记录。 */
+export const personaOperationRecords = sqliteTable(
+  'persona_operation_records',
+  {
+    id: text('id').primaryKey(),
+    personaId: text('persona_id').notNull().references(() => personas.id, { onDelete: 'cascade' }),
+    runId: text('run_id').notNull().references(() => generationRuns.id, { onDelete: 'cascade' }),
+    operationType: text('operation_type').notNull(),
+    resultSummary: text('result_summary').notNull(),
+    decisionJson: text('decision_json'),
+    isEnabled: integer('is_enabled').notNull().default(1),
+    contextSnapshotJson: text('context_snapshot_json').notNull(),
+    sessionRecordId: text('session_record_id'),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  table => [
+    uniqueIndex('persona_operation_records_run_unique').on(table.runId),
+    index('persona_operation_records_persona_enabled_index').on(table.personaId, table.isEnabled, table.createdAt),
+    check('persona_operation_records_type_check', sql`${table.operationType} IN ('interest_assessment', 'artifact_generation', 'content_analysis')`),
+    check('persona_operation_records_summary_check', sql`length(trim(${table.resultSummary})) > 0`),
+    check('persona_operation_records_enabled_check', sql`${table.isEnabled} IN (0, 1)`),
+    check('persona_operation_records_decision_json_check', sql`${table.decisionJson} IS NULL OR json_valid(${table.decisionJson})`),
+    check('persona_operation_records_context_json_check', sql`json_valid(${table.contextSnapshotJson})`),
+  ],
+)
+
+/** 人物逻辑记忆及其当前不可变修订指针。 */
+export const memoryRecords = sqliteTable(
+  'memory_records',
+  {
+    id: text('id').primaryKey(),
+    personaId: text('persona_id').notNull().references(() => personas.id, { onDelete: 'cascade' }),
+    currentRevisionId: text('current_revision_id').notNull(),
+    memoryType: text('memory_type').notNull(),
+    status: text('status').notNull().default('candidate'),
+    supersededById: text('superseded_by_id'),
+    openVikingUri: text('openviking_uri'),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  table => [
+    index('memory_records_persona_status_index').on(table.personaId, table.status, table.updatedAt),
+    uniqueIndex('memory_records_openviking_uri_unique').on(table.openVikingUri),
+    check('memory_records_type_check', sql`${table.memoryType} IN ('interest', 'judgment', 'experience', 'preference')`),
+    check('memory_records_status_check', sql`${table.status} IN ('candidate', 'active', 'superseded', 'archived', 'rejected')`),
+  ],
+)
+
+/** 记忆正文和证据统计的不可变修订。 */
+export const memoryRevisions = sqliteTable(
+  'memory_revisions',
+  {
+    id: text('id').primaryKey(),
+    memoryId: text('memory_id').notNull().references(() => memoryRecords.id, { onDelete: 'cascade' }),
+    revisionNo: integer('revision_no').notNull(),
+    content: text('content').notNull(),
+    contentHash: text('content_hash').notNull(),
+    scope: text('scope').notNull(),
+    importance: integer('importance').notNull(),
+    occurredFrom: integer('occurred_from'),
+    occurredTo: integer('occurred_to'),
+    independentEvidenceCount: integer('independent_evidence_count').notNull(),
+    conflictSummary: text('conflict_summary'),
+    analysisBatchId: text('analysis_batch_id'),
+    createdBy: text('created_by').notNull(),
+    createdAt: integer('created_at').notNull(),
+  },
+  table => [
+    uniqueIndex('memory_revisions_memory_revision_unique').on(table.memoryId, table.revisionNo),
+    check('memory_revisions_revision_check', sql`${table.revisionNo} > 0`),
+    check('memory_revisions_content_check', sql`length(trim(${table.content})) > 0`),
+    check('memory_revisions_hash_check', sql`length(${table.contentHash}) = 64`),
+    check('memory_revisions_scope_check', sql`length(trim(${table.scope})) > 0`),
+    check('memory_revisions_importance_check', sql`${table.importance} BETWEEN 1 AND 5`),
+    check('memory_revisions_evidence_count_check', sql`${table.independentEvidenceCount} >= 0`),
+    check('memory_revisions_created_by_check', sql`${table.createdBy} IN ('user', 'analysis')`),
+  ],
+)
+
+/** 记忆修订与人物处理记录之间的证据关系。 */
+export const memoryRevisionEvidence = sqliteTable(
+  'memory_revision_evidence',
+  {
+    id: text('id').primaryKey(),
+    memoryRevisionId: text('memory_revision_id').notNull().references(() => memoryRevisions.id, { onDelete: 'cascade' }),
+    operationRecordId: text('operation_record_id').notNull().references(() => personaOperationRecords.id, { onDelete: 'restrict' }),
+    runId: text('run_id').notNull(),
+    relationship: text('relationship').notNull(),
+  },
+  table => [
+    uniqueIndex('memory_revision_evidence_unique').on(table.memoryRevisionId, table.operationRecordId),
+    check('memory_revision_evidence_relationship_check', sql`${table.relationship} IN ('supporting', 'opposing')`),
   ],
 )
 
@@ -733,9 +935,17 @@ export const databaseSchema = {
   sourceChunks,
   personaSources,
   worldSources,
+  personaFeedbackSources,
+  growthRecords,
+  growthRevisions,
+  growthRevisionEvidence,
   formatTemplates,
   parameterProfiles,
   generationRuns,
+  personaOperationRecords,
+  memoryRecords,
+  memoryRevisions,
+  memoryRevisionEvidence,
   evidenceSnapshots,
   documentSpecs,
   artifactDocuments,

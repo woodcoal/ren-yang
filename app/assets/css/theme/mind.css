@@ -94,6 +94,49 @@
     font-weight: 600;
   }
 
+  .learning-create-form {
+    display: grid;
+    gap: 1rem;
+    border-bottom: 1px solid var(--ui-border);
+    padding-bottom: 1.25rem;
+  }
+
+  .learning-batch-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    border: 1px solid color-mix(in srgb, var(--ui-primary) 30%, var(--ui-border));
+    border-radius: var(--ui-radius);
+    background: color-mix(in srgb, var(--ui-primary) 5%, var(--ui-bg));
+    padding: 0.75rem 1rem;
+    color: var(--ui-text-highlighted);
+    font-size: 0.875rem;
+  }
+
+  .learning-list {
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .learning-batch-bar + .learning-list {
+    margin-top: 1rem;
+  }
+
+  .learning-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    border: 1px solid var(--ui-border);
+    border-radius: var(--ui-radius);
+    background: var(--ui-bg-elevated);
+    padding: 0.875rem;
+  }
+
+  .learning-row > input {
+    margin-top: 0.2rem;
+  }
+
   @media (max-width: 640px) {
     .soul-editor__heading {
       flex-direction: column;
@@ -109,6 +152,11 @@
 
     .soul-chapter__actions {
       display: flex;
+    }
+
+    .learning-batch-bar {
+      align-items: flex-start;
+      flex-direction: column;
     }
   }
 }

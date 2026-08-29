@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { DrizzleAdministratorRepository } from '../../server/infrastructure/database/DrizzleAdministratorRepository'
 import { SqliteDatabase } from '../../server/infrastructure/database/SqliteDatabase'
-import { SqliteRunRepository } from '../../server/infrastructure/database/SqliteRunRepository'
 import { SqliteTaskJobRepository } from '../../server/infrastructure/database/SqliteTaskJobRepository'
 
 /** 每个测试创建的数据目录，结束后只清理自身目录。 */
@@ -175,11 +174,15 @@ describe('SqliteDatabase', () => {
       .toEqual({ status: 'failed', attempt_count: 2 })
   })
 
-  it('从阶段四数据库升级后保留人物、运行和图片资产且新增业务表为空', async () => {
+  it('方案 A 升级只保留管理员凭据并清空旧业务数据后建立统一心智表', async () => {
     temporaryDirectory = mkdtempSync(resolve(tmpdir(), 'ren-yang-sqlite-upgrade-test-'))
     const oldMigrations = createStageFourMigrations(temporaryDirectory)
     database = new SqliteDatabase({ dataDirectory: temporaryDirectory, migrationsDirectory: oldMigrations })
     const client = database.getClient()
+    client.prepare(`
+      INSERT INTO administrators (id, username, password_hash, credential_version, created_at, updated_at)
+      VALUES ('administrator', 'admin', '保留的密码哈希', 1, 1000, 1000)
+    `).run()
     client.prepare(`INSERT INTO personas (id, name, origin, created_at, updated_at) VALUES ('persona-1', '林默', 'original', 1000, 1000)`).run()
     client.prepare(`
       INSERT INTO persona_versions (id, persona_id, status, snapshot_json, change_summary, published_at, created_at)
@@ -223,39 +226,19 @@ describe('SqliteDatabase', () => {
 
     database = new SqliteDatabase({ dataDirectory: temporaryDirectory, migrationsDirectory: resolve(process.cwd(), 'drizzle') })
     const upgraded = database.getClient()
-    expect(upgraded.prepare(`SELECT type, status, selected_attempt_id, is_locked, selected_at, locked_at FROM artifact_blocks WHERE id = 'block-1'`).get()).toEqual({
-      type: 'text', status: 'succeeded', selected_attempt_id: 'attempt-1', is_locked: 1, selected_at: null, locked_at: null,
+    expect(upgraded.prepare(`SELECT id, username, password_hash FROM administrators`).get()).toEqual({
+      id: 'administrator', username: 'admin', password_hash: '保留的密码哈希',
     })
-    expect(upgraded.prepare(`SELECT status, output_text FROM block_attempts WHERE id = 'attempt-1'`).get()).toEqual({ status: 'succeeded', output_text: '旧版正文' })
-    expect(upgraded.prepare(`SELECT id, relative_path, alt_text FROM image_assets WHERE id = 'asset-1'`).get()).toEqual({
-      id: 'asset-1', relative_path: 'assets/asset-1.png', alt_text: '旧版图片',
-    })
-    expect(upgraded.prepare(`SELECT id, name, active_version_id FROM personas WHERE id = 'persona-1'`).get()).toEqual({
-      id: 'persona-1', name: '林默', active_version_id: null,
-    })
-    expect(upgraded.prepare(`SELECT id, status FROM generation_runs WHERE id = 'run-1'`).get()).toEqual({ id: 'run-1', status: 'succeeded' })
-    await expect(new SqliteRunRepository(upgraded).findRun('run-1')).resolves.toMatchObject({
-      parameterSnapshot: {
-        maxImageBlocks: 4,
-        maxPromptCharacters: 120_000,
-        maxTotalTokens: 50_000,
-        maxBlockAttempts: 2,
-      },
-    })
-    const newTables = [
-      'feedback_events',
-      'feedback_suggestions',
-      'feedback_resolutions',
-      'revision_proposals',
-      'candidate_memories',
-      'evaluation_cases',
-      'evaluation_runs',
-      'evaluation_results',
-      'context_sync_records',
+    const clearedBusinessTables = [
+      'personas', 'worlds', 'generation_runs', 'artifact_blocks', 'block_attempts', 'image_assets',
+      'feedback_events', 'evaluation_runs', 'context_sync_records', 'soul_drafts', 'soul_versions',
+      'persona_feedback_sources', 'growth_records', 'growth_revisions',
+      'persona_operation_records', 'memory_records', 'memory_revisions',
     ]
-    for (const table of newTables) {
+    for (const table of clearedBusinessTables) {
       expect(upgraded.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get(), `${table} 应为空`).toEqual({ count: 0 })
     }
+    expect(upgraded.prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('persona_versions', 'world_versions')`).all()).toEqual([])
     expect(upgraded.prepare(`PRAGMA foreign_key_check`).all()).toEqual([])
   })
 })

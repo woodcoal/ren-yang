@@ -6,6 +6,7 @@ import type { FeedbackApplicationService } from './feedback/FeedbackApplicationS
 import type { SystemApplicationService } from './system/SystemApplicationService'
 import type { ContextSynchronizationApplicationService } from './context/ContextSynchronizationApplicationService'
 import type { BackupApplicationService } from './backup/BackupApplicationService'
+import type { LearningApplicationService } from './learning/LearningApplicationService'
 
 /** 每个 HTTP 请求能够访问的应用服务集合。 */
 export interface RequestApplicationServices {
@@ -15,6 +16,8 @@ export interface RequestApplicationServices {
   content: ContentApplicationService
   /** 世界与人物灵魂草稿及发布用例。 */
   soul: SoulApplicationService
+  /** 世界成长、人物成长和人物记忆人工管理用例。 */
+  learning: LearningApplicationService
   /** 兴趣判断、文档规划、生成和运行历史用例。 */
   generation: GenerationApplicationService
   /** 反馈归因、修订提案、评测和发布用例。 */

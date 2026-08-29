@@ -5,20 +5,31 @@ import type { SaveSoulDraftInput, UpdatePersonaInput } from '#shared/schemas/con
 import { updatePersonaSchema } from '#shared/schemas/content'
 import type { ApiResponse } from '#shared/types/api'
 import type { DeletionImpact, PersonaDetails, SoulWorkspaceView, WorldSummary } from '#shared/types/content'
+import type { PersonaGrowthWorkspaceView, PersonaMemoryWorkspaceView } from '#shared/types/learning'
 import { getApiErrorMessage } from '../../utils/apiError'
 
 type PersonaTab = 'overview' | 'soul' | 'growth' | 'memory' | 'relations'
 
 const personaId = String(useRoute().params.id)
-const [{ data, error, refresh }, { data: soulData, refresh: refreshSoul }, { data: worldData }] = await Promise.all([
+const [
+  { data, error, refresh },
+  { data: soulData, refresh: refreshSoul },
+  { data: worldData },
+  { data: growthData, refresh: refreshGrowth },
+  { data: memoryData, refresh: refreshMemory },
+] = await Promise.all([
   useFetch<ApiResponse<PersonaDetails>>(`/api/v1/personas/${personaId}`),
   useFetch<ApiResponse<SoulWorkspaceView>>(`/api/v1/personas/${personaId}/soul`),
   useFetch<ApiResponse<WorldSummary[]>>('/api/v1/worlds'),
+  useFetch<ApiResponse<PersonaGrowthWorkspaceView>>(`/api/v1/personas/${personaId}/growth`),
+  useFetch<ApiResponse<PersonaMemoryWorkspaceView>>(`/api/v1/personas/${personaId}/memories`),
 ])
 
 const details = computed(() => data.value?.data ?? null)
 const soul = computed(() => soulData.value?.data ?? null)
 const worlds = computed(() => worldData.value?.data ?? [])
+const growthWorkspace = computed(() => growthData.value?.data ?? { feedbackSources: [], growth: [] })
+const memoryWorkspace = computed(() => memoryData.value?.data ?? { operationRecords: [], memories: [] })
 const tabs: Array<{ id: PersonaTab, label: string }> = [
   { id: 'overview', label: '概览' },
   { id: 'soul', label: '灵魂' },
@@ -104,6 +115,70 @@ async function createDraftFromVersion(versionId: string): Promise<void> {
       body: { versionId },
     })
     await refreshSoul()
+  })
+}
+
+/** @param input 新人物反馈资料。 @returns 创建和成长工作区刷新完成时结束。 */
+async function createFeedbackSource(input: { title: string, content: string, sourceType: 'manual' }): Promise<void> {
+  await runAction('反馈资料已加入人物成长来源', async () => {
+    await $fetch(`/api/v1/personas/${personaId}/feedback-sources`, { method: 'POST', body: input })
+    await refreshGrowth()
+  })
+}
+
+/** @param input 反馈资料批量启用状态。 @returns 更新和成长工作区刷新完成时结束。 */
+async function updateFeedbackSourceStatus(input: { ids: string[], isEnabled: boolean }): Promise<void> {
+  await runAction(input.isEnabled ? '所选反馈资料已启用' : '所选反馈资料已禁用', async () => {
+    await $fetch(`/api/v1/personas/${personaId}/feedback-sources/status`, { method: 'PATCH', body: input })
+    await refreshGrowth()
+  })
+}
+
+/** @param input 待永久删除的反馈资料。 @returns 删除和成长工作区刷新完成时结束。 */
+async function deleteFeedbackSources(input: { ids: string[] }): Promise<void> {
+  await runAction('所选反馈资料已删除；已确认成长保持不变', async () => {
+    await $fetch(`/api/v1/personas/${personaId}/feedback-sources`, { method: 'DELETE', body: input })
+    await refreshGrowth()
+  })
+}
+
+/** @param input 人工成长候选。 @returns 创建和成长工作区刷新完成时结束。 */
+async function createGrowth(input: { content: string, scope: string, importance: number, sourceIds: string[] }): Promise<void> {
+  await runAction('成长候选已创建，确认前不会进入任务', async () => {
+    await $fetch(`/api/v1/personas/${personaId}/growth`, { method: 'POST', body: input })
+    await refreshGrowth()
+  })
+}
+
+/** @param input 成长批量目标状态。 @returns 审核和成长工作区刷新完成时结束。 */
+async function updateGrowthStatus(input: { ids: string[], status: 'active' | 'archived' | 'rejected' }): Promise<void> {
+  await runAction('人物成长状态已更新', async () => {
+    await $fetch(`/api/v1/personas/${personaId}/growth/status`, { method: 'PATCH', body: input })
+    await refreshGrowth()
+  })
+}
+
+/** @param input 处理记录批量启用状态。 @returns 更新和记忆工作区刷新完成时结束。 */
+async function updateOperationRecordStatus(input: { ids: string[], isEnabled: boolean }): Promise<void> {
+  await runAction(input.isEnabled ? '所选处理记录已参加记忆分析' : '所选处理记录已不参加记忆分析', async () => {
+    await $fetch(`/api/v1/personas/${personaId}/operation-records`, { method: 'PATCH', body: input })
+    await refreshMemory()
+  })
+}
+
+/** @param input 记忆批量目标状态。 @returns 审核和记忆工作区刷新完成时结束。 */
+async function updateMemoryStatus(input: { ids: string[], status: 'active' | 'archived' | 'rejected' }): Promise<void> {
+  await runAction('人物记忆状态已更新', async () => {
+    await $fetch(`/api/v1/personas/${personaId}/memories/status`, { method: 'PATCH', body: input })
+    await refreshMemory()
+  })
+}
+
+/** @param memoryId 记忆 UUID。 @returns 转换和两个工作区刷新完成时结束。 */
+async function convertMemoryToFeedbackSource(memoryId: string): Promise<void> {
+  await runAction('记忆已复制为人物反馈资料，尚未自动形成成长', async () => {
+    await $fetch(`/api/v1/personas/${personaId}/memories/${memoryId}/to-feedback-source`, { method: 'POST' })
+    await Promise.all([refreshGrowth(), refreshMemory()])
   })
 }
 
@@ -206,14 +281,27 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
         @from-version="createDraftFromVersion"
       />
 
-      <div v-else-if="selectedTab === 'growth'" class="grid gap-6 xl:grid-cols-2">
-        <UCard><template #header><h2 class="font-semibold text-highlighted">人物反馈资料</h2></template><p class="text-sm text-muted">人物只从你明确加入的反馈资料中成长。反馈按条管理，可批量启用、禁用、分析或删除。</p></UCard>
-        <UCard><template #header><h2 class="font-semibold text-highlighted">成长记录</h2></template><p class="text-sm text-muted">候选、已确认、已停用和已取代记录保持独立；只有已确认成长会进入新任务。</p></UCard>
+      <div v-else-if="selectedTab === 'growth'" class="grid items-start gap-6 xl:grid-cols-2">
+        <LearningPersonaFeedbackSourcePanel
+          :items="growthWorkspace.feedbackSources"
+          :loading="actionLoading"
+          @create="createFeedbackSource"
+          @status="updateFeedbackSourceStatus"
+          @delete="deleteFeedbackSources"
+        />
+        <LearningGrowthRecordPanel
+          subject-label="人物"
+          :items="growthWorkspace.growth"
+          :sources="growthWorkspace.feedbackSources.map(item => ({ id: item.id, label: item.title }))"
+          :loading="actionLoading"
+          @create="createGrowth"
+          @status="updateGrowthStatus"
+        />
       </div>
 
-      <div v-else-if="selectedTab === 'memory'" class="grid gap-6 xl:grid-cols-2">
-        <UCard><template #header><h2 class="font-semibold text-highlighted">人物处理记录</h2></template><p class="text-sm text-muted">写作、兴趣判断和内容分析形成原始处理记录。记录可以批量启用、禁用或加入记忆分析。</p></UCard>
-        <UCard><template #header><h2 class="font-semibold text-highlighted">有效记忆</h2></template><p class="text-sm text-muted">多条独立证据分析出的候选仍需人工确认。记忆转成长时会先生成反馈资料。</p></UCard>
+      <div v-else-if="selectedTab === 'memory'" class="grid items-start gap-6 xl:grid-cols-2">
+        <LearningOperationRecordPanel :items="memoryWorkspace.operationRecords" :loading="actionLoading" @status="updateOperationRecordStatus" />
+        <LearningMemoryRecordPanel :items="memoryWorkspace.memories" :loading="actionLoading" @status="updateMemoryStatus" @convert="convertMemoryToFeedbackSource" />
       </div>
 
       <div v-else class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">

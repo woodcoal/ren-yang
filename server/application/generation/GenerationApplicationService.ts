@@ -42,6 +42,7 @@ import { ImageModelError } from '../../ports/ImageModelPort'
 import { StorageCapacityError } from '../../ports/StorageCapacity'
 import type { NewEvidenceSnapshot, RunListFilter, RunRepository } from '../../ports/RunRepository'
 import type { SourceContentProcessor } from '../../ports/SourceContentPorts'
+import type { LearningRepository } from '../../ports/LearningRepository'
 import type { TaskHandler } from '../../ports/TaskPorts'
 import { TaskExecutionError } from '../../ports/TaskPorts'
 import type { TextModelPort } from '../../ports/TextModelPort'
@@ -96,6 +97,8 @@ export interface GenerationApplicationServiceDependencies {
   identifiers: IdentifierGenerator
   clock: Clock
   sourceProcessor: SourceContentProcessor
+  /** 运行完成后写入人物记忆原始处理记录；未注入时兼容只读测试环境。 */
+  operationRecords?: Pick<LearningRepository, 'createPersonaOperationRecord'>
   /** OpenViking 启用时使用的 Session 异步队列。 */
   contextSyncQueue?: ContextSyncTaskQueue
 }
@@ -500,7 +503,9 @@ export class GenerationApplicationService implements TaskHandler {
     }, run.usage)
     if (await this.finishCancellationIfRequested(runId, usage)) return
     const cumulativeUsage = aggregateTextModelUsage(run.usage ? [run.usage, usage] : [usage])
-    if (!await this.dependencies.runs.completeInterestRun(runId, output, cumulativeUsage, this.dependencies.clock.now())) throw new Error('兴趣运行状态已经变化')
+    const timestamp = this.dependencies.clock.now()
+    if (!await this.dependencies.runs.completeInterestRun(runId, output, cumulativeUsage, timestamp)) throw new Error('兴趣运行状态已经变化')
+    await this.recordPersonaOperation(run, output.reasoningSummary, output as Record<string, unknown>, timestamp)
   }
 
   /** @param runId 文档规划运行 UUID。 @returns 规划结束时完成。 */
@@ -561,7 +566,9 @@ export class GenerationApplicationService implements TaskHandler {
       block.status = output.succeeded ? 'succeeded' : 'failed'
       if (output.text) previousOutputs.push({ key: block.specKey, text: output.text })
     }
-    await this.dependencies.runs.finishDocumentRun(runId, this.dependencies.clock.now())
+    const timestamp = this.dependencies.clock.now()
+    const status = await this.dependencies.runs.finishDocumentRun(runId, timestamp)
+    if (status !== 'failed') await this.recordPersonaOperation(run, `图文任务已${status === 'succeeded' ? '全部完成' : '部分完成'}，共处理 ${blocks.length} 个内容块。`, null, timestamp)
   }
 
   /** @param runId 运行 UUID。 @param blockId 目标块 UUID。 @returns 单块任务完成时结束。 */
@@ -584,7 +591,44 @@ export class GenerationApplicationService implements TaskHandler {
     }
     if (!dependenciesSucceeded(target, blocks)) await this.recordDependencyFailure(run, target, previousOutputs)
     else await this.executeArtifactBlock(run, context, spec.spec, target, previousOutputs)
-    await this.dependencies.runs.finishDocumentRun(runId, this.dependencies.clock.now())
+    const timestamp = this.dependencies.clock.now()
+    const status = await this.dependencies.runs.finishDocumentRun(runId, timestamp)
+    if (status !== 'failed') await this.recordPersonaOperation(run, `图文任务单块重试后状态为${status === 'succeeded' ? '全部完成' : '部分完成'}。`, null, timestamp)
+  }
+
+  /**
+   * 把成功运行压缩为一条可审核的记忆原始处理记录。
+   * @param run 完成时仍保持不变的运行快照。
+   * @param resultSummary 便于检索的结果摘要。
+   * @param decision 兴趣选择、评分或其他结构化结论。
+   * @param timestamp 运行完成时间。
+   * @returns 未配置写入端口或幂等写入完成时结束。
+   */
+  private async recordPersonaOperation(
+    run: GenerationRunRecord,
+    resultSummary: string,
+    decision: Record<string, unknown> | null,
+    timestamp: number,
+  ): Promise<void> {
+    if (!this.dependencies.operationRecords) return
+    const [identity, evidence] = await Promise.all([
+      this.dependencies.runs.findRunPersona(run.id),
+      this.dependencies.runs.listEvidence(run.id),
+    ])
+    if (!identity) throw new Error('运行绑定人物不存在')
+    await this.dependencies.operationRecords.createPersonaOperationRecord({
+      id: this.dependencies.identifiers.create(),
+      personaId: identity.personaId,
+      runId: run.id,
+      operationType: run.kind,
+      resultSummary,
+      decision,
+      contextSnapshot: {
+        personaVersionId: run.personaVersionId,
+        evidence: evidence.map(item => ({ id: item.id, role: item.role, contentHash: item.contentHash })),
+      },
+      timestamp,
+    })
   }
 
   /**

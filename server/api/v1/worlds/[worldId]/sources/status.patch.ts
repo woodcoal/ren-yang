@@ -1,0 +1,16 @@
+import type { H3Event } from 'h3'
+import { getRouterParam, readBody } from 'h3'
+import { resourceIdSchema } from '#shared/schemas/content'
+import { batchEnabledStateSchema } from '#shared/schemas/learning'
+import { executeController } from '../../../../../presentation/http/controller'
+
+/** @param event 当前请求。 @returns 批量启停后的世界成长工作区。 */
+async function handleUpdateWorldSourceStatus(event: H3Event) {
+  return await executeController(event, async () => {
+    const worldId = resourceIdSchema.parse(getRouterParam(event, 'worldId'))
+    const input = batchEnabledStateSchema.parse(await readBody(event))
+    return await event.context.applicationServices.learning.updateWorldSourceStates(worldId, input)
+  })
+}
+
+export default defineEventHandler(handleUpdateWorldSourceStatus)

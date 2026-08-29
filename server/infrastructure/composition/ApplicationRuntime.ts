@@ -38,6 +38,8 @@ import { OpenVikingHttpContextProvider } from '../context/OpenVikingHttpContextP
 import { SwitchableContextProvider } from '../context/SwitchableContextProvider'
 import { LocalBackupManager } from '../backup/LocalBackupManager'
 import { ConservativeTokenCounter } from '../model/ConservativeTokenCounter'
+import { LearningApplicationService } from '../../application/learning/LearningApplicationService'
+import { SqliteLearningRepository } from '../database/SqliteLearningRepository'
 
 /** 应用运行时组合配置。 */
 export interface ApplicationRuntimeOptions {
@@ -103,6 +105,8 @@ export class ApplicationRuntime {
   private readonly contentService: ContentApplicationService
   /** 请求间可安全共享的灵魂应用服务。 */
   private readonly soulService: SoulApplicationService
+  /** 请求间可安全共享的成长与记忆应用服务。 */
+  private readonly learningService: LearningApplicationService
   /** 请求与 Worker 共用的生成应用服务。 */
   private readonly generationService: GenerationApplicationService
   /** 请求与 Worker 共用的反馈和评测应用服务。 */
@@ -135,6 +139,7 @@ export class ApplicationRuntime {
     this.administratorRepository = new DrizzleAdministratorRepository(this.sqlite.db)
     const identifiers = new SystemIdentifierGenerator()
     const contentRepository = new SqliteContentRepository(this.sqlite.getClient())
+    const learningRepository = new SqliteLearningRepository(this.sqlite.getClient())
     const sourceProcessor = new NodeSourceContentProcessor(identifiers)
     const storageCapacity = new NodeStorageCapacityGuard(options.minimumFreeDiskBytes)
     const imageAssets = new LocalImageAssetStorage(options.dataDirectory, storageCapacity)
@@ -168,6 +173,12 @@ export class ApplicationRuntime {
       tokenCounter: new ConservativeTokenCounter(),
       tokenBudgets: { world: 2_500, persona: 3_500 },
     })
+    this.learningService = new LearningApplicationService({
+      content: contentRepository,
+      learning: learningRepository,
+      identifiers,
+      clock: this.clock,
+    })
     this.generationService = new GenerationApplicationService({
       runs: new SqliteRunRepository(this.sqlite.getClient()),
       content: contentRepository,
@@ -178,6 +189,7 @@ export class ApplicationRuntime {
       identifiers,
       clock: this.clock,
       sourceProcessor,
+      operationRecords: learningRepository,
       contextSyncQueue,
     })
     this.feedbackService = new FeedbackApplicationService({
@@ -246,6 +258,7 @@ export class ApplicationRuntime {
       }),
       content: this.contentService,
       soul: this.soulService,
+      learning: this.learningService,
       generation: this.generationService,
       feedback: this.feedbackService,
       contextSynchronization: this.contextSynchronizationService,
