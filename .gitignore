@@ -95,6 +95,9 @@ dist
 
 # Application runtime data
 data/
+.playwright-data/
+test-results/
+playwright-report/
 
 # Nuxt generated declarations
 auto-imports.d.ts

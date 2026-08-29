@@ -83,18 +83,18 @@ async function submitRun(): Promise<void> {
         <template #header><h2 class="font-semibold text-highlighted">任务</h2></template>
         <div class="grid gap-4 md:grid-cols-2">
           <UFormField label="任务类型" required>
-            <select v-model="form.task" class="native-control"><option value="interest">判断人物兴趣</option><option value="generation">结构化图文创作</option></select>
+            <select v-model="form.task" class="native-control" aria-label="任务类型"><option value="interest">判断人物兴趣</option><option value="generation">结构化图文创作</option></select>
           </UFormField>
           <UFormField label="已发布人物" required>
-            <select v-model="form.personaId" class="native-control">
+            <select v-model="form.personaId" class="native-control" aria-label="已发布人物">
               <option value="" disabled>请选择人物</option><option v-for="persona in personas" :key="persona.id" :value="persona.id">{{ persona.name }}</option>
             </select>
           </UFormField>
           <UFormField label="参数方案">
-            <select v-model="form.parameterProfileId" class="native-control"><option :value="null">系统默认</option><option v-for="profile in profiles" :key="profile.id" :value="profile.id">{{ profile.name }} v{{ profile.version }}</option></select>
+            <select v-model="form.parameterProfileId" class="native-control" aria-label="参数方案"><option :value="null">系统默认</option><option v-for="profile in profiles" :key="profile.id" :value="profile.id">{{ profile.name }} v{{ profile.version }}</option></select>
           </UFormField>
           <UFormField v-if="form.task === 'generation'" label="格式模板">
-            <select v-model="form.formatTemplateId" class="native-control"><option :value="null">默认文档结构</option><option v-for="template in templates" :key="template.id" :value="template.id">{{ template.name }} v{{ template.version }}</option></select>
+            <select v-model="form.formatTemplateId" class="native-control" aria-label="格式模板"><option :value="null">默认文档结构</option><option v-for="template in templates" :key="template.id" :value="template.id">{{ template.name }} v{{ template.version }}</option></select>
           </UFormField>
           <UFormField v-if="form.task === 'generation'" label="图片能力">
             <label class="flex items-start gap-3 rounded-md border border-default p-3 text-sm">

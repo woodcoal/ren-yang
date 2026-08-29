@@ -37,6 +37,8 @@
 | `pnpm restore -- <目录>` | 应用停机后恢复备份并保留恢复前回退目录 |
 | `pnpm typecheck` | 执行 Nuxt 严格类型检查 |
 | `pnpm test` | 执行自动化测试 |
+| `pnpm exec playwright install chromium` | 首次安装浏览器测试所需 Chromium |
+| `pnpm test:e2e` | 构建并启动隔离生产服务，执行核心 Playwright 流程 |
 | `pnpm check` | 依次执行类型检查、测试和生产构建 |
 
 ## 代码边界

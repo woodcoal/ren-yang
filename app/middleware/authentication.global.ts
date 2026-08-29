@@ -15,10 +15,10 @@ async function enforceAuthentication(to: RouteLocationNormalized) {
   if (PUBLIC_PAGE_PATHS.has(to.path)) {
     const setup = await requestFetch<ApiResponse<SetupStatusResult>>('/api/v1/setup/status')
     if (to.path === '/setup' && !setup.data.setupRequired) {
-      return navigateTo('/login')
+      return '/login'
     }
     if (to.path === '/login' && setup.data.setupRequired) {
-      return navigateTo('/setup')
+      return '/setup'
     }
     return
   }
@@ -29,7 +29,7 @@ async function enforceAuthentication(to: RouteLocationNormalized) {
   }
 
   const setup = await requestFetch<ApiResponse<SetupStatusResult>>('/api/v1/setup/status')
-  return navigateTo(setup.data.setupRequired ? '/setup' : '/login')
+  return setup.data.setupRequired ? '/setup' : '/login'
 }
 
 export default defineNuxtRouteMiddleware(enforceAuthentication)

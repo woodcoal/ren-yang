@@ -14,6 +14,7 @@
     "prepare": "nuxt prepare",
     "typecheck": "nuxt typecheck",
     "test": "vitest run",
+    "test:e2e": "tsx tests/e2e/prepare-environment.ts && playwright test",
     "test:watch": "vitest",
     "check": "pnpm typecheck && pnpm test && pnpm build",
     "migrate": "tsx scripts/migrate.ts",
@@ -35,6 +36,7 @@
   },
   "devDependencies": {
     "@nuxt/test-utils": "^4.2.0",
+    "@playwright/test": "^1.62.1",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^24.10.0",
     "@vue/test-utils": "^2.4.6",
