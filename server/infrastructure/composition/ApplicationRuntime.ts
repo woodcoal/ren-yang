@@ -51,7 +51,7 @@ export interface ApplicationRuntimeOptions {
   minimumFreeDiskBytes?: number
   /** OpenAI-compatible 文本模型配置。 */
   textModel?: {
-    /** Chat Completions 完整接口 URL。 */
+    /** API 根地址或 Chat Completions 完整接口 URL。 */
     endpoint: string
     /** 仓库外访问凭据。 */
     apiKey: string
@@ -60,7 +60,7 @@ export interface ApplicationRuntimeOptions {
   }
   /** OpenAI-compatible 图片模型配置。 */
   imageModel?: {
-    /** Images Generations 完整接口 URL。 */
+    /** API 根地址或 Images Generations 完整接口 URL。 */
     endpoint: string
     /** 仓库外访问凭据。 */
     apiKey: string

@@ -32,14 +32,14 @@ export function validateRealModelAcceptanceEnvironment(
     apiKey: requireEnvironmentValue(environment, 'NUXT_TEXT_MODEL_API_KEY'),
     model: requireEnvironmentValue(environment, 'NUXT_TEXT_MODEL_MODEL'),
   }).getConfiguredModel()
-  if (!textModel) throw new Error('文本模型配置无效；接口必须是完整的 HTTP(S) Chat Completions 地址')
+  if (!textModel) throw new Error('文本模型配置无效；接口必须是 HTTP(S) API 根地址或完整 Chat Completions 地址')
 
   const imageModel = new OpenAiCompatibleImageModel({
     endpoint: requireEnvironmentValue(environment, 'NUXT_IMAGE_MODEL_ENDPOINT'),
     apiKey: requireEnvironmentValue(environment, 'NUXT_IMAGE_MODEL_API_KEY'),
     model: requireEnvironmentValue(environment, 'NUXT_IMAGE_MODEL_MODEL'),
   }).getConfiguredModel()
-  if (!imageModel) throw new Error('图片模型配置无效；接口必须是完整的 HTTP(S) Images Generations 地址')
+  if (!imageModel) throw new Error('图片模型配置无效；接口必须是 HTTP(S) API 根地址或完整 Images Generations 地址')
 
   return {
     textModel: { model: textModel.model, endpointOrigin: textModel.endpointOrigin },

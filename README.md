@@ -13,8 +13,8 @@
 ## 本地启动
 
 1. 在仓库外的环境配置中设置至少 32 个字符的 `NUXT_SESSION_PASSWORD`。
-2. 配置文本模型：`NUXT_TEXT_MODEL_ENDPOINT`、`NUXT_TEXT_MODEL_API_KEY`、`NUXT_TEXT_MODEL_MODEL`。
-3. 如需图片块，再配置：`NUXT_IMAGE_MODEL_ENDPOINT`、`NUXT_IMAGE_MODEL_API_KEY`、`NUXT_IMAGE_MODEL_MODEL`；不配置时纯文本路径保持可用。
+2. 配置文本模型：`NUXT_TEXT_MODEL_ENDPOINT` 填写 OpenAI-compatible API 根地址（通常以 `/v1` 结尾，程序自动补全 `/chat/completions`），再设置 `NUXT_TEXT_MODEL_API_KEY`、`NUXT_TEXT_MODEL_MODEL`；完整接口地址同样兼容。
+3. 如需图片块，`NUXT_IMAGE_MODEL_ENDPOINT` 填写 API 根地址（程序自动补全 `/images/generations`），再配置 `NUXT_IMAGE_MODEL_API_KEY`、`NUXT_IMAGE_MODEL_MODEL`；不配置时纯文本路径保持可用。
 4. 如需语义上下文，设置 `NUXT_OPEN_VIKING_ENABLED=true`、`NUXT_OPEN_VIKING_ENDPOINT` 和可选的 `NUXT_OPEN_VIKING_API_KEY`；关闭时使用 SQLite FTS5。
 5. 低风险人物修订默认仍需人工发布；只有明确设置 `NUXT_FEEDBACK_AUTO_PUBLISH_LOW_RISK=true` 且全部评测通过时才允许自动发布。
 6. 设置监听地址和端口：`HOST=127.0.0.1`、`PORT=3001`；端口可改为任意未占用端口。

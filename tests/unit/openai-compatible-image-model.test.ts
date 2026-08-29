@@ -37,6 +37,24 @@ describe('OpenAiCompatibleImageModel', () => {
     expect(requestBody).toMatchObject({ model: 'fixed-image-model', size: '1536x1024', response_format: 'b64_json', n: 1 })
   })
 
+  it('从 OpenAI-compatible API 根地址推导 Images Generations 地址', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      data: [{ b64_json: Buffer.from(PNG_BYTES).toString('base64') }],
+    }), { status: 200 })))
+    const model = new OpenAiCompatibleImageModel({
+      endpoint: 'https://images.test/v1',
+      apiKey: 'test-key',
+      model: 'fixed-image-model',
+    })
+
+    await model.generate(createRequest())
+
+    expect(fetch).toHaveBeenCalledWith(
+      new URL('https://images.test/v1/images/generations'),
+      expect.any(Object),
+    )
+  })
+
   it('供应商仅返回公网 URL 时受限下载图片', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ data: [{ url: 'https://93.184.216.34/generated.png' }] }), { status: 200 }))

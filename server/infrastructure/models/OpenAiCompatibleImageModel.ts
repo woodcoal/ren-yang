@@ -3,6 +3,7 @@ import { BlockList, isIP } from 'node:net'
 import type { ImageModelPort, ImageModelRequest, ImageModelResponse } from '../../ports/ImageModelPort'
 import { ImageModelError } from '../../ports/ImageModelPort'
 import type { ImageModelSnapshot } from '../../domain/generation/GenerationModels'
+import { parseOpenAiCompatibleEndpoint } from './OpenAiCompatibleEndpoint'
 
 /** OpenAI-compatible Images Generations 适配器配置。 */
 export interface OpenAiCompatibleImageModelOptions {
@@ -18,12 +19,12 @@ const PRIVATE_NETWORKS = createPrivateNetworkBlockList()
 
 /** 通过原生 fetch 调用 Images Generations，并归一化 Base64 或安全远程图片。 */
 export class OpenAiCompatibleImageModel implements ImageModelPort {
-  /** 通过校验的完整接口 URL。 */
+  /** 由 API 根地址或完整接口地址归一化后的完整接口 URL。 */
   private readonly endpoint: URL | null
 
   /** @param options 仓库外提供的接口、密钥和模型。 */
   constructor(private readonly options: OpenAiCompatibleImageModelOptions) {
-    this.endpoint = parseEndpoint(options.endpoint)
+    this.endpoint = parseOpenAiCompatibleEndpoint(options.endpoint, 'images/generations')
   }
 
   /** @returns 配置完整时的非敏感图片模型快照，否则返回 null。 */
@@ -79,18 +80,6 @@ export class OpenAiCompatibleImageModel implements ImageModelPort {
     finally {
       clearTimeout(timeout)
     }
-  }
-}
-
-/** @param value 配置字符串。 @returns 有效 HTTP(S) URL 或 null。 */
-function parseEndpoint(value: string): URL | null {
-  if (!value.trim()) return null
-  try {
-    const endpoint = new URL(value)
-    return endpoint.protocol === 'http:' || endpoint.protocol === 'https:' ? endpoint : null
-  }
-  catch {
-    return null
   }
 }
 

@@ -62,6 +62,24 @@ describe('OpenAiCompatibleTextModel', () => {
     expect(init?.headers).toMatchObject({ authorization: 'Bearer secret-key' })
   })
 
+  it('从 OpenAI-compatible API 根地址推导 Chat Completions 地址', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      choices: [{ message: { content: '{"answer":"ok"}' } }],
+    }), { status: 200 })))
+    const model = new OpenAiCompatibleTextModel({
+      endpoint: 'https://model.example/v1',
+      apiKey: 'secret-key',
+      model: 'test-model',
+    })
+
+    await model.generateStructured(REQUEST)
+
+    expect(fetch).toHaveBeenCalledWith(
+      new URL('https://model.example/v1/chat/completions'),
+      expect.any(Object),
+    )
+  })
+
   it('将限流和无效模型输出映射为可重试稳定错误', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(new Response('', { status: 429 }))

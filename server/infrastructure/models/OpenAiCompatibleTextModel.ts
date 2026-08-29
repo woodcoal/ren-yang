@@ -1,6 +1,7 @@
 import type { TextModelPort, TextModelRequest, TextModelResponse } from '../../ports/TextModelPort'
 import { TextModelError } from '../../ports/TextModelPort'
 import type { TextModelSnapshot } from '../../domain/generation/GenerationModels'
+import { parseOpenAiCompatibleEndpoint } from './OpenAiCompatibleEndpoint'
 
 /** OpenAI-compatible Chat Completions 适配器配置。 */
 export interface OpenAiCompatibleTextModelOptions {
@@ -11,7 +12,7 @@ export interface OpenAiCompatibleTextModelOptions {
 
 /** 通过原生 fetch 调用 OpenAI-compatible Chat Completions，不引入供应商 SDK。 */
 export class OpenAiCompatibleTextModel implements TextModelPort {
-  /** 通过校验的完整接口 URL。 */
+  /** 由 API 根地址或完整接口地址归一化后的完整接口 URL。 */
   private readonly endpoint: URL | null
 
   /**
@@ -19,7 +20,7 @@ export class OpenAiCompatibleTextModel implements TextModelPort {
    * @param options 仓库外环境提供的接口、密钥和模型名称。
    */
   constructor(private readonly options: OpenAiCompatibleTextModelOptions) {
-    this.endpoint = parseEndpoint(options.endpoint)
+    this.endpoint = parseOpenAiCompatibleEndpoint(options.endpoint, 'chat/completions')
   }
 
   /**
@@ -90,18 +91,6 @@ export class OpenAiCompatibleTextModel implements TextModelPort {
     finally {
       clearTimeout(timeout)
     }
-  }
-}
-
-/** @param value 配置字符串。 @returns 有效 HTTP(S) URL 或 null。 */
-function parseEndpoint(value: string): URL | null {
-  if (!value.trim()) return null
-  try {
-    const endpoint = new URL(value)
-    return endpoint.protocol === 'http:' || endpoint.protocol === 'https:' ? endpoint : null
-  }
-  catch {
-    return null
   }
 }
 
