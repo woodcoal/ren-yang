@@ -27,6 +27,7 @@ import type { TaskJob } from '../../domain/tasks/TaskJob'
 import type { Clock } from '../../ports/Clock'
 import type { ContentRepository } from '../../ports/ContentRepository'
 import type { ContextProvider } from '../../ports/ContextProvider'
+import { ContextProviderError } from '../../ports/ContextProvider'
 import type { IdentifierGenerator } from '../../ports/IdentifierGenerator'
 import type { ImageAssetStorage } from '../../ports/ImageAssetStorage'
 import type { ImageModelPort } from '../../ports/ImageModelPort'
@@ -94,13 +95,14 @@ export class GenerationApplicationService implements TaskHandler {
   /** @returns 当前阶段全部非敏感外部能力和实际上下文提供器。 */
   getCapabilities() {
     const imageModel = this.dependencies.imageModel.getConfiguredModel()
+    const openViking = this.dependencies.context.getOpenVikingCapability()
     return {
       textModel: this.getTextModelCapability(),
       imageModel: imageModel
         ? { configured: true, ...imageModel }
         : { configured: false, provider: 'openai_compatible_images' as const, model: null, endpointOrigin: null },
-      openViking: { configured: false, enabled: false },
-      contextProvider: 'sqlite_fts5' as const,
+      openViking,
+      contextProvider: this.dependencies.context.getProvider(),
     }
   }
 
@@ -336,7 +338,16 @@ export class GenerationApplicationService implements TaskHandler {
     const parameters = await this.resolveParameters(profileId)
     if (templateId) await this.requireFormatTemplate(templateId)
     const query = 'content' in input ? input.content : input.requirement
-    const candidates = await this.dependencies.context.search({ personaId, worldId: persona.worldId, query, limit: parameters.maxEvidenceChunks })
+    let candidates
+    try {
+      candidates = await this.dependencies.context.search({ personaId, worldId: persona.worldId, query, limit: parameters.maxEvidenceChunks })
+    }
+    catch (error: unknown) {
+      if (error instanceof ContextProviderError) {
+        throw new ApplicationError('PROVIDER_UNAVAILABLE', error.message, 503)
+      }
+      throw error
+    }
     const runId = this.dependencies.identifiers.create()
     const taskId = this.dependencies.identifiers.create()
     const timestamp = this.dependencies.clock.now()
@@ -367,6 +378,7 @@ export class GenerationApplicationService implements TaskHandler {
       personaVersionId: version.id, formatTemplateId: templateId, parameterProfileId: profileId,
       status: kind === 'interest_assessment' ? 'queued' : 'planning', input, scene, parameters, model, imageModel,
       promptVersion: GENERATION_PROMPT_VERSION,
+      contextProvider: this.dependencies.context.getProvider(),
       evidence: [
         ...userSettings,
         ...candidates.map((candidate, index) => ({ id: this.dependencies.identifiers.create(), sourceId: candidate.sourceId, chunkId: candidate.chunkId, role: candidate.role, content: candidate.content, contentHash: candidate.contentHash, rank: index + userSettings.length, metadata: { heading: candidate.heading, priority: candidate.priority } })),

@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, shallowRef, watch } from 'vue'
 import type { ArtifactFormat, DocumentSpec } from '#shared/schemas/generation'
+import type { ConfirmFeedbackClassificationInput, SubmitFeedbackInput } from '#shared/schemas/feedback'
 import type { ApiResponse } from '#shared/types/api'
+import type { PersonaDetails, PersonaSnapshot } from '#shared/types/content'
+import type { FeedbackView } from '#shared/types/feedback'
 import type { RenderedArtifactView, RunDetails } from '#shared/types/generation'
 import { getApiErrorMessage } from '../../utils/apiError'
 
@@ -9,11 +12,24 @@ const route = useRoute()
 const runId = String(route.params.id)
 const { data, error, refresh } = await useFetch<ApiResponse<RunDetails>>(`/api/v1/runs/${runId}`)
 const details = computed(() => data.value?.data ?? null)
+const personaId = computed(() => details.value?.run.personaId ?? '')
+const [{ data: feedbackData, refresh: refreshFeedback }, { data: personaData, refresh: refreshPersona }] = await Promise.all([
+  useFetch<ApiResponse<FeedbackView[]>>('/api/v1/feedback'),
+  useFetch<ApiResponse<PersonaDetails>>(() => `/api/v1/personas/${personaId.value}`, {
+    immediate: Boolean(personaId.value),
+    watch: [personaId],
+  }),
+])
 const active = computed(() => details.value ? ['planning', 'queued', 'running'].includes(details.value.run.status) : false)
 const draftSpec = computed(() => details.value?.documentSpecs.find(spec => spec.status === 'draft') ?? null)
 const confirmedSpec = computed(() => details.value?.documentSpecs.find(spec => spec.status === 'confirmed') ?? null)
 const artifactFormats = computed<ArtifactFormat[]>(() => confirmedSpec.value?.spec.requestedFormats ?? [])
 const canRenderArtifact = computed(() => details.value?.blocks.some(block => block.selectedAttemptId) ?? false)
+const runFeedback = computed(() => (feedbackData.value?.data ?? []).filter(item => item.runId === runId))
+const pendingFeedback = computed(() => runFeedback.value.filter(item => item.confirmedTarget === null))
+const personaDetails = computed(() => personaData.value?.data ?? null)
+const personaVersion = computed(() => personaDetails.value?.versions.find(version => version.id === details.value?.run.personaVersionId) ?? null)
+const personaSnapshotFields = computed(() => personaVersion.value ? toPersonaSnapshotFields(personaVersion.value.snapshot) : [])
 const actionLoading = shallowRef(false)
 const actionError = shallowRef<string | null>(null)
 const actionMessage = shallowRef<string | null>(null)
@@ -114,6 +130,26 @@ async function renderArtifact(): Promise<void> {
   }
 }
 
+/** @param input 原始反馈输入。 @returns 保存反馈并展示 AI 分类建议。 */
+async function submitFeedback(input: SubmitFeedbackInput): Promise<void> {
+  await executeAction(async () => {
+    await $fetch(`/api/v1/runs/${runId}/feedback`, { method: 'POST', body: input })
+    await refreshFeedback()
+    actionMessage.value = '反馈已保存，请确认或纠正 AI 分类建议'
+  })
+}
+
+/** @param feedbackId 反馈 UUID。 @param input 用户确认后的分类动作。 @returns 执行动作并刷新运行、人物和反馈。 */
+async function confirmFeedback(feedbackId: string, input: ConfirmFeedbackClassificationInput): Promise<void> {
+  await executeAction(async () => {
+    await $fetch(`/api/v1/feedback/${feedbackId}/classify`, { method: 'POST', body: input })
+    await Promise.all([refreshFeedback(), refreshPersona()])
+    actionMessage.value = input.targetType === 'persona'
+      ? '已创建候选人物版本与修订提案'
+      : '反馈分类已确认，对应动作已执行'
+  })
+}
+
 /** @param action 单次写操作。 @returns 统一处理提交锁、错误和详情刷新。 */
 async function executeAction(action: () => Promise<void>): Promise<void> {
   if (actionLoading.value) return
@@ -136,6 +172,20 @@ async function executeAction(action: () => Promise<void>): Promise<void> {
 /** @param timestamp 可空 UTC Unix 毫秒。 @returns 本地日期时间或占位文本。 */
 function formatTime(timestamp: number | null): string {
   return timestamp === null ? '—' : new Date(timestamp).toLocaleString('zh-CN')
+}
+
+/** @param snapshot 不可变人物版本快照。 @returns 按固定顺序展示的中文字段。 */
+function toPersonaSnapshotFields(snapshot: PersonaSnapshot): Array<{ label: string, value: string }> {
+  return [
+    { label: '人物定位', value: snapshot.summary },
+    { label: '身份事实', value: snapshot.identityFacts },
+    { label: '兴趣偏好', value: snapshot.interests },
+    { label: '价值与动机', value: snapshot.valuesAndMotivations },
+    { label: '表达风格', value: snapshot.expressionStyle },
+    { label: '外观描述', value: snapshot.appearance },
+    { label: '视觉风格', value: snapshot.visualStyle },
+    { label: '约束与边界', value: snapshot.constraints },
+  ]
 }
 </script>
 
@@ -213,6 +263,36 @@ function formatTime(timestamp: number | null): string {
             <template #header><h2 class="font-semibold text-highlighted">证据快照</h2></template>
             <GenerationEvidenceList :evidence="details.evidence" />
           </UCard>
+
+          <UCard>
+            <template #header><div><h2 class="font-semibold text-highlighted">运行反馈</h2><p class="mt-1 text-sm text-muted">原始反馈不会直接改写人物；先审查 AI 建议，再执行对应动作。</p></div></template>
+            <div class="space-y-5">
+              <FeedbackForm :blocks="details.blocks" :loading="actionLoading" @submit="submitFeedback" />
+              <template v-if="pendingFeedback.length && personaVersion">
+                <div v-for="item in pendingFeedback" :key="item.id" class="border-t border-default pt-5">
+                  <p class="mb-3 whitespace-pre-wrap text-sm">{{ item.content }}</p>
+                  <FeedbackClassificationReview
+                    :feedback="item"
+                    :blocks="details.blocks"
+                    :persona-snapshot="personaVersion.snapshot"
+                    :sources="personaDetails?.sources ?? []"
+                    :loading="actionLoading"
+                    @confirm="confirmFeedback(item.id, $event)"
+                  />
+                </div>
+              </template>
+              <UAlert v-else-if="pendingFeedback.length" color="error" title="人物版本快照不可用" description="无法安全确认分类，请刷新运行详情后重试。" />
+              <div v-if="runFeedback.some(item => item.confirmedTarget !== null)" class="border-t border-default pt-5">
+                <p class="mb-3 text-sm font-medium text-highlighted">已确认反馈</p>
+                <ul class="space-y-2 text-sm">
+                  <li v-for="item in runFeedback.filter(value => value.confirmedTarget !== null)" :key="item.id" class="rounded-md bg-elevated p-3">
+                    <span class="whitespace-pre-wrap">{{ item.content }}</span>
+                    <UBadge class="ml-2" color="neutral" variant="subtle">{{ item.confirmedTarget }}</UBadge>
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </UCard>
         </div>
 
         <div class="space-y-6">
@@ -230,6 +310,26 @@ function formatTime(timestamp: number | null): string {
           <UCard v-if="details.documentSpecs.length > 1">
             <template #header><h2 class="font-semibold text-highlighted">规格修订历史</h2></template>
             <div class="space-y-2 text-sm"><p v-for="spec in details.documentSpecs" :key="spec.id">v{{ spec.revision }} · {{ spec.status }} · {{ formatTime(spec.createdAt) }}</p></div>
+          </UCard>
+          <UCard>
+            <template #header><h2 class="font-semibold text-highlighted">固定人物版本快照</h2></template>
+            <div v-if="personaVersion" class="space-y-4 text-sm">
+              <div v-for="field in personaSnapshotFields" :key="field.label">
+                <p class="text-xs text-muted">{{ field.label }}</p>
+                <p class="mt-1 whitespace-pre-wrap">{{ field.value || '—' }}</p>
+              </div>
+            </div>
+            <p v-else class="text-sm text-muted">人物版本快照加载失败。</p>
+          </UCard>
+          <UCard>
+            <template #header><h2 class="font-semibold text-highlighted">关联资料</h2></template>
+            <ul v-if="personaDetails?.sources.length" class="space-y-3 text-sm">
+              <li v-for="source in personaDetails.sources" :key="source.id" class="rounded-md bg-elevated p-3">
+                <NuxtLink :to="`/sources/${source.id}`" class="font-medium text-highlighted hover:underline">{{ source.name }}</NuxtLink>
+                <p class="mt-1 text-xs text-muted">{{ source.role }} · {{ source.chunkCount }} 个切片</p>
+              </li>
+            </ul>
+            <p v-else class="text-sm text-muted">该人物没有直接关联资料。</p>
           </UCard>
         </div>
       </div>

@@ -22,6 +22,15 @@ export default defineNuxtConfig({
       apiKey: '',
       model: '',
     },
+    feedback: {
+      autoPublishLowRisk: false,
+    },
+    openViking: {
+      enabled: false,
+      endpoint: '',
+      apiKey: '',
+      timeoutMs: 60_000,
+    },
     session: {
       password: process.env.NUXT_SESSION_PASSWORD || '',
       maxAge: 60 * 60 * 24 * 7,

@@ -43,6 +43,7 @@ export interface CreateRunCommand {
   model: TextModelSnapshot
   imageModel: ImageModelSnapshot | null
   promptVersion: string
+  contextProvider: 'sqlite_fts5' | 'openviking'
   evidence: NewEvidenceSnapshot[]
   timestamp: number
 }

@@ -34,6 +34,7 @@ import type {
 import { SourceContentError } from '../../domain/content/SourceContentError'
 import type { Clock } from '../../ports/Clock'
 import type { ContentRepository } from '../../ports/ContentRepository'
+import type { ContextSyncTaskQueue } from '../../ports/ContextSyncTaskQueue'
 import type { IdentifierGenerator } from '../../ports/IdentifierGenerator'
 import type { ImageAssetStorage } from '../../ports/ImageAssetStorage'
 import type { DecodedSourceFile, SourceContentProcessor, SourceFileStorage } from '../../ports/SourceContentPorts'
@@ -67,6 +68,8 @@ export interface ContentApplicationServiceDependencies {
   sourceFiles: SourceFileStorage
   /** 可选阶段四运行资产清理端口。 */
   imageAssets?: Pick<ImageAssetStorage, 'deleteRunAssets'>
+  /** OpenViking 启用时提供的持久增量同步队列；关闭时不注入。 */
+  contextSyncQueue?: ContextSyncTaskQueue
 }
 
 /** 编排人物、世界、不可变版本、资料及证据检索用例。 */
@@ -476,6 +479,7 @@ export class ContentApplicationService {
       chunks: this.dependencies.sourceProcessor.chunk(sourceId, content),
       timestamp,
     })
+    await this.enqueueSourceSynchronization(sourceId)
     return await this.getSource(sourceId)
   }
 
@@ -505,6 +509,7 @@ export class ContentApplicationService {
       await this.dependencies.sourceFiles.delete(relativePath)
       throw error
     }
+    await this.enqueueSourceSynchronization(sourceId)
     return await this.getSource(sourceId)
   }
 
@@ -534,7 +539,22 @@ export class ContentApplicationService {
     if (contentChanged && current.originalFilePath) {
       await this.dependencies.sourceFiles.delete(current.originalFilePath)
     }
+    await this.enqueueSourceSynchronization(sourceId)
     return await this.getSource(sourceId)
+  }
+
+  /**
+   * 仅在组合根启用 OpenViking 时创建持久同步任务，不在资料请求中联网。
+   * @param sourceId 已成功保存的资料 UUID。
+   * @returns 排队完成时结束；能力关闭时直接结束。
+   */
+  private async enqueueSourceSynchronization(sourceId: string): Promise<void> {
+    if (!this.dependencies.contextSyncQueue) return
+    await this.dependencies.contextSyncQueue.enqueueSourceSynchronization(
+      sourceId,
+      this.dependencies.identifiers.create(),
+      this.dependencies.clock.now(),
+    )
   }
 
   /**

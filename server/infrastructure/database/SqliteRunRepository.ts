@@ -106,7 +106,7 @@ export class SqliteRunRepository implements RunRepository {
           id, kind, persona_version_id, format_template_id, parameter_profile_id, status,
           input_json, scene_json, parameter_snapshot_json, model_snapshot_json, image_model_snapshot_json,
           prompt_version, context_provider, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'sqlite_fts5', ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         command.runId,
         command.kind,
@@ -120,6 +120,7 @@ export class SqliteRunRepository implements RunRepository {
         JSON.stringify(command.model),
         command.imageModel ? JSON.stringify(command.imageModel) : null,
         command.promptVersion,
+        command.contextProvider,
         command.timestamp,
         command.timestamp,
       )

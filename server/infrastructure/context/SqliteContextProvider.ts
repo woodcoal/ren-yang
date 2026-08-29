@@ -9,6 +9,16 @@ export class SqliteContextProvider implements ContextProvider {
    */
   constructor(private readonly client: BetterSqliteDatabase) {}
 
+  /** @returns 本地全文检索提供器标识。 */
+  getProvider(): 'sqlite_fts5' {
+    return 'sqlite_fts5'
+  }
+
+  /** @returns 单独使用本地提供器时的未配置 OpenViking 状态。 */
+  getOpenVikingCapability() {
+    return { configured: false, enabled: false, provider: 'openviking' as const, endpointOrigin: null }
+  }
+
   /**
    * 在直接关联人物或世界的资料中检索，并按证据角色和显式优先级排序。
    * @param request 目标范围、自然语言任务和结果上限。

@@ -25,15 +25,15 @@ function createDatabase(): SqliteDatabase {
 }
 
 /**
- * 创建只包含阶段三迁移的目录，用于验证真实增量升级。
+ * 创建只包含阶段四迁移的目录，用于验证真实增量升级。
  * @param root 测试独占根目录。
  * @returns 旧迁移目录绝对路径。
  */
-function createStageThreeMigrations(root: string): string {
+function createStageFourMigrations(root: string): string {
   const migrations = resolve(root, 'old-migrations')
   const metadata = resolve(migrations, 'meta')
   mkdirSync(metadata, { recursive: true })
-  for (const name of ['0000_initial_foundation.sql', '0001_jazzy_rage.sql', '0002_premium_nocturne.sql']) {
+  for (const name of ['0000_initial_foundation.sql', '0001_jazzy_rage.sql', '0002_premium_nocturne.sql', '0003_image-artifacts.sql']) {
     copyFileSync(resolve(process.cwd(), 'drizzle', name), resolve(migrations, name))
   }
   const journal = JSON.parse(readFileSync(resolve(process.cwd(), 'drizzle/meta/_journal.json'), 'utf8')) as {
@@ -43,7 +43,7 @@ function createStageThreeMigrations(root: string): string {
   }
   writeFileSync(resolve(metadata, '_journal.json'), JSON.stringify({
     ...journal,
-    entries: journal.entries.filter(entry => entry.idx <= 2),
+    entries: journal.entries.filter(entry => entry.idx <= 3),
   }))
   return migrations
 }
@@ -153,9 +153,9 @@ describe('SqliteDatabase', () => {
       .toEqual({ status: 'failed', attempt_count: 2 })
   })
 
-  it('从阶段三数据库升级后保留已有块、选择指针和尝试', () => {
+  it('从阶段四数据库升级后保留人物、运行和图片资产且新增业务表为空', () => {
     temporaryDirectory = mkdtempSync(resolve(tmpdir(), 'ren-yang-sqlite-upgrade-test-'))
-    const oldMigrations = createStageThreeMigrations(temporaryDirectory)
+    const oldMigrations = createStageFourMigrations(temporaryDirectory)
     database = new SqliteDatabase({ dataDirectory: temporaryDirectory, migrationsDirectory: oldMigrations })
     const client = database.getClient()
     client.prepare(`INSERT INTO personas (id, name, origin, created_at, updated_at) VALUES ('persona-1', '林默', 'original', 1000, 1000)`).run()
@@ -192,6 +192,11 @@ describe('SqliteDatabase', () => {
         id, block_id, attempt_no, status, input_snapshot_json, output_text, usage_json, created_at, completed_at
       ) VALUES ('attempt-1', 'block-1', 1, 'succeeded', '{}', '旧版正文', '{}', 1200, 2000)
     `).run()
+    client.prepare(`
+      INSERT INTO image_assets (
+        id, attempt_id, relative_path, media_type, size_bytes, content_hash, alt_text, created_at
+      ) VALUES ('asset-1', 'attempt-1', 'assets/asset-1.png', 'image/png', 1024, ?, '旧版图片', 2000)
+    `).run('a'.repeat(64))
     database.close()
 
     database = new SqliteDatabase({ dataDirectory: temporaryDirectory, migrationsDirectory: resolve(process.cwd(), 'drizzle') })
@@ -200,6 +205,27 @@ describe('SqliteDatabase', () => {
       type: 'text', status: 'succeeded', selected_attempt_id: 'attempt-1', is_locked: 1, selected_at: null, locked_at: null,
     })
     expect(upgraded.prepare(`SELECT status, output_text FROM block_attempts WHERE id = 'attempt-1'`).get()).toEqual({ status: 'succeeded', output_text: '旧版正文' })
+    expect(upgraded.prepare(`SELECT id, relative_path, alt_text FROM image_assets WHERE id = 'asset-1'`).get()).toEqual({
+      id: 'asset-1', relative_path: 'assets/asset-1.png', alt_text: '旧版图片',
+    })
+    expect(upgraded.prepare(`SELECT id, name, active_version_id FROM personas WHERE id = 'persona-1'`).get()).toEqual({
+      id: 'persona-1', name: '林默', active_version_id: null,
+    })
+    expect(upgraded.prepare(`SELECT id, status FROM generation_runs WHERE id = 'run-1'`).get()).toEqual({ id: 'run-1', status: 'succeeded' })
+    const newTables = [
+      'feedback_events',
+      'feedback_suggestions',
+      'feedback_resolutions',
+      'revision_proposals',
+      'candidate_memories',
+      'evaluation_cases',
+      'evaluation_runs',
+      'evaluation_results',
+      'context_sync_records',
+    ]
+    for (const table of newTables) {
+      expect(upgraded.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get(), `${table} 应为空`).toEqual({ count: 0 })
+    }
     expect(upgraded.prepare(`PRAGMA foreign_key_check`).all()).toEqual([])
   })
 })

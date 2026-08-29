@@ -3,9 +3,12 @@ import { AuthenticationApplicationService } from '../../application/authenticati
 import { AdministratorMaintenanceApplicationService } from '../../application/authentication/AdministratorMaintenanceApplicationService'
 import { ContentApplicationService } from '../../application/content/ContentApplicationService'
 import { GenerationApplicationService } from '../../application/generation/GenerationApplicationService'
+import { FeedbackApplicationService } from '../../application/feedback/FeedbackApplicationService'
+import { ContextSynchronizationApplicationService } from '../../application/context/ContextSynchronizationApplicationService'
 import type { RequestApplicationServices } from '../../application/RequestApplicationServices'
 import { SystemApplicationService } from '../../application/system/SystemApplicationService'
 import { WorkerApplicationService } from '../../application/tasks/WorkerApplicationService'
+import { TaskRoutingApplicationService } from '../../application/tasks/TaskRoutingApplicationService'
 import { InternalWorker } from '../../worker/InternalWorker'
 import { H3RequestSecurity } from '../authentication/H3RequestSecurity'
 import { NuxtAuthenticationSession } from '../authentication/NuxtAuthenticationSession'
@@ -17,12 +20,17 @@ import { SqliteContextProvider } from '../context/SqliteContextProvider'
 import { DrizzleAdministratorRepository } from '../database/DrizzleAdministratorRepository'
 import { SqliteContentRepository } from '../database/SqliteContentRepository'
 import { SqliteRunRepository } from '../database/SqliteRunRepository'
+import { SqliteFeedbackRepository } from '../database/SqliteFeedbackRepository'
+import { SqliteContextIndexRepository } from '../database/SqliteContextIndexRepository'
+import { SqliteContextSyncTaskQueue } from '../database/SqliteContextSyncTaskQueue'
 import { SqliteDatabase } from '../database/SqliteDatabase'
 import { SqliteTaskJobRepository } from '../database/SqliteTaskJobRepository'
 import { SystemClock } from '../system/SystemClock'
 import { SystemIdentifierGenerator } from '../system/SystemIdentifierGenerator'
 import { OpenAiCompatibleTextModel } from '../models/OpenAiCompatibleTextModel'
 import { OpenAiCompatibleImageModel } from '../models/OpenAiCompatibleImageModel'
+import { OpenVikingHttpContextProvider } from '../context/OpenVikingHttpContextProvider'
+import { SwitchableContextProvider } from '../context/SwitchableContextProvider'
 
 /** 应用运行时组合配置。 */
 export interface ApplicationRuntimeOptions {
@@ -52,6 +60,22 @@ export interface ApplicationRuntimeOptions {
     /** 供应商模型名称。 */
     model: string
   }
+  /** 反馈学习和自动发布设置。 */
+  feedback?: {
+    /** 评测通过后是否允许低风险提案自动发布。 */
+    autoPublishLowRisk: boolean
+  }
+  /** 可选 OpenViking 上下文索引配置。 */
+  openViking?: {
+    /** 是否作为新运行的上下文提供器。 */
+    enabled: boolean
+    /** OpenViking 服务根地址。 */
+    endpoint: string
+    /** 可选 API Key。 */
+    apiKey: string
+    /** 单次 HTTP 超时。 */
+    timeoutMs: number
+  }
 }
 
 /** 唯一组合根，负责连接基础设施适配器与应用服务。 */
@@ -68,6 +92,10 @@ export class ApplicationRuntime {
   private readonly contentService: ContentApplicationService
   /** 请求与 Worker 共用的生成应用服务。 */
   private readonly generationService: GenerationApplicationService
+  /** 请求与 Worker 共用的反馈和评测应用服务。 */
+  private readonly feedbackService: FeedbackApplicationService
+  /** OpenViking 检测与重建应用服务。 */
+  private readonly contextSynchronizationService: ContextSynchronizationApplicationService
   /** 进程内 Worker。 */
   private readonly worker: InternalWorker
   /** 请求间可安全共享的系统应用服务。 */
@@ -87,6 +115,15 @@ export class ApplicationRuntime {
     const contentRepository = new SqliteContentRepository(this.sqlite.getClient())
     const sourceProcessor = new NodeSourceContentProcessor(identifiers)
     const imageAssets = new LocalImageAssetStorage(options.dataDirectory)
+    const textModel = new OpenAiCompatibleTextModel(options.textModel ?? { endpoint: '', apiKey: '', model: '' })
+    const contextRepository = new SqliteContextIndexRepository(this.sqlite.getClient())
+    const openVikingOptions = options.openViking ?? { enabled: false, endpoint: '', apiKey: '', timeoutMs: 60_000 }
+    const openViking = new OpenVikingHttpContextProvider({ ...openVikingOptions, repository: contextRepository })
+    const contextProvider = new SwitchableContextProvider(
+      new SqliteContextProvider(this.sqlite.getClient()),
+      openViking,
+      openVikingOptions.enabled,
+    )
     this.contentService = new ContentApplicationService({
       repository: contentRepository,
       identifiers,
@@ -94,22 +131,40 @@ export class ApplicationRuntime {
       sourceProcessor,
       sourceFiles: new LocalSourceFileStorage(options.dataDirectory),
       imageAssets,
+      contextSyncQueue: openVikingOptions.enabled ? new SqliteContextSyncTaskQueue(this.sqlite.getClient()) : undefined,
     })
     this.generationService = new GenerationApplicationService({
       runs: new SqliteRunRepository(this.sqlite.getClient()),
       content: contentRepository,
-      context: new SqliteContextProvider(this.sqlite.getClient()),
-      model: new OpenAiCompatibleTextModel(options.textModel ?? { endpoint: '', apiKey: '', model: '' }),
+      context: contextProvider,
+      model: textModel,
       imageModel: new OpenAiCompatibleImageModel(options.imageModel ?? { endpoint: '', apiKey: '', model: '' }),
       imageAssets,
       identifiers,
       clock: this.clock,
       sourceProcessor,
     })
+    this.feedbackService = new FeedbackApplicationService({
+      repository: new SqliteFeedbackRepository(this.sqlite.getClient()),
+      model: textModel,
+      identifiers,
+      clock: this.clock,
+      autoPublishLowRisk: options.feedback?.autoPublishLowRisk ?? false,
+    })
+    this.contextSynchronizationService = new ContextSynchronizationApplicationService({
+      repository: contextRepository,
+      openViking,
+      identifiers,
+      clock: this.clock,
+    })
 
     const workerService = new WorkerApplicationService({
       taskJobRepository: new SqliteTaskJobRepository(this.sqlite.getClient()),
-      taskHandler: this.generationService,
+      taskHandler: new TaskRoutingApplicationService(
+        this.generationService,
+        this.feedbackService,
+        this.contextSynchronizationService,
+      ),
       clock: this.clock,
       leaseDurationMs: options.workerLeaseDurationMs ?? 60_000,
     })
@@ -145,6 +200,8 @@ export class ApplicationRuntime {
       }),
       content: this.contentService,
       generation: this.generationService,
+      feedback: this.feedbackService,
+      contextSynchronization: this.contextSynchronizationService,
       system: this.systemService,
     }
   }

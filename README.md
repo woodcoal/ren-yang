@@ -2,7 +2,7 @@
 
 让 Agent 有记性、有分寸、有个人样。
 
-当前完成阶段四：已具备人物、世界与资料管理，文本兴趣判断，结构化图文生成，块尝试选择、锁定和重试，以及 HTML、Markdown、Txt 同源预览与导出。反馈迭代、评测和可选 OpenViking 将在后续阶段实现。
+当前完成阶段五：已具备人物、世界与资料管理，文本兴趣判断，结构化图文生成与三格式导出，以及可审查的反馈分类、候选人物版本、后台回归评测、风险发布门禁和可选 OpenViking 上下文索引。SQLite 始终保存全部业务事实。
 
 ## 环境要求
 
@@ -15,9 +15,11 @@
 1. 在仓库外的环境配置中设置至少 32 个字符的 `NUXT_SESSION_PASSWORD`。
 2. 配置文本模型：`NUXT_TEXT_MODEL_ENDPOINT`、`NUXT_TEXT_MODEL_API_KEY`、`NUXT_TEXT_MODEL_MODEL`。
 3. 如需图片块，再配置：`NUXT_IMAGE_MODEL_ENDPOINT`、`NUXT_IMAGE_MODEL_API_KEY`、`NUXT_IMAGE_MODEL_MODEL`；不配置时纯文本路径保持可用。
-4. 安装依赖：`pnpm install`。
-5. 启动开发服务：`pnpm dev`。
-6. 首次访问 `/setup` 创建唯一管理员。
+4. 如需语义上下文，设置 `NUXT_OPEN_VIKING_ENABLED=true`、`NUXT_OPEN_VIKING_ENDPOINT` 和可选的 `NUXT_OPEN_VIKING_API_KEY`；关闭时使用 SQLite FTS5。
+5. 低风险人物修订默认仍需人工发布；只有明确设置 `NUXT_FEEDBACK_AUTO_PUBLISH_LOW_RISK=true` 且全部评测通过时才允许自动发布。
+6. 安装依赖：`pnpm install`。
+7. 启动开发服务：`pnpm dev`。
+8. 首次访问 `/setup` 创建唯一管理员。
 
 运行数据默认保存在 `./data`，该目录不会进入 Git。可通过 `NUXT_DATA_DIRECTORY` 指向其他本地目录。
 
@@ -49,3 +51,4 @@
 - [阶段二：人物、世界与资料](./docs/开发记录/02-人物世界与资料.md)
 - [阶段三：文本生成与兴趣判断](./docs/开发记录/03-文本生成与兴趣判断.md)
 - [阶段四：图片、图文块与三格式导出](./docs/开发记录/04-图片图文块与导出.md)
+- [阶段五：反馈、评测、版本与 OpenViking](./docs/开发记录/05-反馈评测版本与OpenViking.md)

@@ -403,6 +403,202 @@ export const imageAssets = sqliteTable(
   ],
 )
 
+/** 用户对一次运行或具体产物块提交的不可变原始反馈。 */
+export const feedbackEvents = sqliteTable(
+  'feedback_events',
+  {
+    id: text('id').primaryKey(),
+    runId: text('run_id').notNull().references(() => generationRuns.id, { onDelete: 'cascade' }),
+    blockId: text('block_id').references(() => artifactBlocks.id, { onDelete: 'set null' }),
+    content: text('content').notNull(),
+    rating: text('rating'),
+    isLongTerm: integer('is_long_term').notNull().default(0),
+    editedOutput: text('edited_output'),
+    createdAt: integer('created_at').notNull(),
+  },
+  table => [
+    index('feedback_events_run_created_at_index').on(table.runId, table.createdAt),
+    check('feedback_events_content_check', sql`length(trim(${table.content})) > 0`),
+    check('feedback_events_rating_check', sql`${table.rating} IS NULL OR ${table.rating} IN ('positive', 'negative', 'neutral')`),
+    check('feedback_events_long_term_check', sql`${table.isLongTerm} IN (0, 1)`),
+  ],
+)
+
+/** 文本模型对反馈目标给出的可纠正分类建议。 */
+export const feedbackSuggestions = sqliteTable(
+  'feedback_suggestions',
+  {
+    feedbackId: text('feedback_id').primaryKey().references(() => feedbackEvents.id, { onDelete: 'cascade' }),
+    targetType: text('target_type').notNull(),
+    confidence: integer('confidence_millionths').notNull(),
+    rationale: text('rationale').notNull(),
+    modelSnapshotJson: text('model_snapshot_json').notNull(),
+    parameterSnapshotJson: text('parameter_snapshot_json').notNull(),
+    promptVersion: text('prompt_version').notNull(),
+    createdAt: integer('created_at').notNull(),
+  },
+  table => [
+    check('feedback_suggestions_target_check', sql`${table.targetType} IN ('artifact', 'parameters', 'persona', 'source_fact')`),
+    check('feedback_suggestions_confidence_check', sql`${table.confidence} BETWEEN 0 AND 1000000`),
+  ],
+)
+
+/** 用户确认分类后唯一且不可重复的业务动作结果。 */
+export const feedbackResolutions = sqliteTable(
+  'feedback_resolutions',
+  {
+    feedbackId: text('feedback_id').primaryKey().references(() => feedbackEvents.id, { onDelete: 'cascade' }),
+    targetType: text('target_type').notNull(),
+    resolutionJson: text('resolution_json').notNull(),
+    confirmedAt: integer('confirmed_at').notNull(),
+  },
+  table => [check('feedback_resolutions_target_check', sql`${table.targetType} IN ('artifact', 'parameters', 'persona', 'source_fact')`)],
+)
+
+/** 反馈产生且等待评测和发布的人物修订提案。 */
+export const revisionProposals = sqliteTable(
+  'revision_proposals',
+  {
+    id: text('id').primaryKey(),
+    feedbackId: text('feedback_id').notNull().references(() => feedbackEvents.id, { onDelete: 'cascade' }),
+    personaId: text('persona_id').notNull().references(() => personas.id, { onDelete: 'cascade' }),
+    baseVersionId: text('base_version_id').notNull().references(() => personaVersions.id, { onDelete: 'cascade' }),
+    candidateVersionId: text('candidate_version_id').notNull().references(() => personaVersions.id, { onDelete: 'cascade' }),
+    riskLevel: text('risk_level').notNull(),
+    status: text('status').notNull().default('awaiting_evaluation'),
+    patchesJson: text('patches_json').notNull(),
+    riskReasonsJson: text('risk_reasons_json').notNull(),
+    hasEvidenceConflict: integer('has_evidence_conflict').notNull().default(0),
+    latestEvaluationRunId: text('latest_evaluation_run_id'),
+    decisionReason: text('decision_reason'),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  table => [
+    uniqueIndex('revision_proposals_feedback_unique').on(table.feedbackId),
+    uniqueIndex('revision_proposals_candidate_version_unique').on(table.candidateVersionId),
+    index('revision_proposals_persona_status_created_index').on(table.personaId, table.status, table.createdAt),
+    check('revision_proposals_risk_check', sql`${table.riskLevel} IN ('low', 'high', 'critical')`),
+    check('revision_proposals_status_check', sql`${table.status} IN ('awaiting_evaluation', 'evaluation_failed', 'ready', 'published', 'rejected')`),
+    check('revision_proposals_conflict_check', sql`${table.hasEvidenceConflict} IN (0, 1)`),
+  ],
+)
+
+/** 场景或明确长期反馈形成且已转入提案门禁的候选记忆。 */
+export const candidateMemories = sqliteTable(
+  'candidate_memories',
+  {
+    id: text('id').primaryKey(),
+    feedbackId: text('feedback_id').notNull().references(() => feedbackEvents.id, { onDelete: 'cascade' }),
+    personaId: text('persona_id').notNull().references(() => personas.id, { onDelete: 'cascade' }),
+    content: text('content').notNull(),
+    status: text('status').notNull().default('proposed'),
+    proposalId: text('proposal_id').references(() => revisionProposals.id, { onDelete: 'set null' }),
+    createdAt: integer('created_at').notNull(),
+  },
+  table => [
+    uniqueIndex('candidate_memories_feedback_unique').on(table.feedbackId),
+    check('candidate_memories_status_check', sql`${table.status} IN ('proposed', 'promoted', 'rejected')`),
+    check('candidate_memories_content_check', sql`length(trim(${table.content})) > 0`),
+  ],
+)
+
+/** 人物维护的固定回归评测用例。 */
+export const evaluationCases = sqliteTable(
+  'evaluation_cases',
+  {
+    id: text('id').primaryKey(),
+    personaId: text('persona_id').notNull().references(() => personas.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    category: text('category').notNull(),
+    prompt: text('prompt').notNull(),
+    expectedChange: text('expected_change').notNull(),
+    assertionsJson: text('assertions_json').notNull(),
+    isActive: integer('is_active').notNull().default(1),
+    createdAt: integer('created_at').notNull(),
+  },
+  table => [
+    uniqueIndex('evaluation_cases_persona_name_unique').on(table.personaId, table.name),
+    index('evaluation_cases_persona_active_index').on(table.personaId, table.isActive),
+    check('evaluation_cases_name_check', sql`length(trim(${table.name})) > 0`),
+    check('evaluation_cases_category_check', sql`${table.category} IN ('behavior', 'style', 'safety')`),
+    check('evaluation_cases_expected_change_check', sql`${table.expectedChange} IN ('improve', 'retain')`),
+    check('evaluation_cases_active_check', sql`${table.isActive} IN (0, 1)`),
+  ],
+)
+
+/** 一次提案评测的固定模型、参数、提示和汇总。 */
+export const evaluationRuns = sqliteTable(
+  'evaluation_runs',
+  {
+    id: text('id').primaryKey(),
+    proposalId: text('proposal_id').notNull().references(() => revisionProposals.id, { onDelete: 'cascade' }),
+    candidateVersionId: text('candidate_version_id').notNull().references(() => personaVersions.id, { onDelete: 'cascade' }),
+    status: text('status').notNull().default('queued'),
+    modelSnapshotJson: text('model_snapshot_json').notNull(),
+    parameterSnapshotJson: text('parameter_snapshot_json').notNull(),
+    promptVersion: text('prompt_version').notNull(),
+    passedCases: integer('passed_cases').notNull().default(0),
+    totalCases: integer('total_cases').notNull(),
+    errorCode: text('error_code'),
+    errorMessage: text('error_message'),
+    createdAt: integer('created_at').notNull(),
+    completedAt: integer('completed_at'),
+  },
+  table => [
+    index('evaluation_runs_proposal_created_index').on(table.proposalId, table.createdAt),
+    check('evaluation_runs_status_check', sql`${table.status} IN ('queued', 'running', 'passed', 'failed')`),
+    check('evaluation_runs_count_check', sql`${table.passedCases} >= 0 AND ${table.totalCases} > 0 AND ${table.passedCases} <= ${table.totalCases}`),
+  ],
+)
+
+/** 评测模型证据与确定性规则形成的逐用例结果。 */
+export const evaluationResults = sqliteTable(
+  'evaluation_results',
+  {
+    id: text('id').primaryKey(),
+    evaluationRunId: text('evaluation_run_id').notNull().references(() => evaluationRuns.id, { onDelete: 'cascade' }),
+    caseId: text('case_id').notNull().references(() => evaluationCases.id, { onDelete: 'restrict' }),
+    caseName: text('case_name').notNull(),
+    status: text('status').notNull(),
+    baseScore: integer('base_score_millionths').notNull(),
+    candidateScore: integer('candidate_score_millionths').notNull(),
+    baseOutput: text('base_output').notNull(),
+    candidateOutput: text('candidate_output').notNull(),
+    failuresJson: text('failures_json').notNull(),
+    reasoningSummary: text('reasoning_summary').notNull(),
+  },
+  table => [
+    uniqueIndex('evaluation_results_run_case_unique').on(table.evaluationRunId, table.caseId),
+    check('evaluation_results_status_check', sql`${table.status} IN ('passed', 'failed')`),
+    check('evaluation_results_base_score_check', sql`${table.baseScore} BETWEEN 0 AND 1000000`),
+    check('evaluation_results_candidate_score_check', sql`${table.candidateScore} BETWEEN 0 AND 1000000`),
+  ],
+)
+
+/** 可选上下文提供器对每项 SQLite 资料的可重建同步状态。 */
+export const contextSyncRecords = sqliteTable(
+  'context_sync_records',
+  {
+    id: text('id').primaryKey(),
+    sourceId: text('source_id').notNull().references(() => sourceMaterials.id, { onDelete: 'cascade' }),
+    provider: text('provider').notNull(),
+    remoteUri: text('remote_uri'),
+    contentHash: text('content_hash').notNull(),
+    status: text('status').notNull(),
+    error: text('error'),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  table => [
+    uniqueIndex('context_sync_records_source_provider_unique').on(table.sourceId, table.provider),
+    index('context_sync_records_provider_status_index').on(table.provider, table.status),
+    check('context_sync_records_provider_check', sql`${table.provider} IN ('openviking')`),
+    check('context_sync_records_status_check', sql`${table.status} IN ('pending', 'synchronized', 'failed')`),
+    check('context_sync_records_hash_check', sql`length(${table.contentHash}) = 64`),
+  ],
+)
+
 /** 数据库 Schema 的统一导出，供 Drizzle 查询和迁移使用。 */
 export const databaseSchema = {
   administrators,
@@ -424,4 +620,13 @@ export const databaseSchema = {
   artifactBlocks,
   blockAttempts,
   imageAssets,
+  feedbackEvents,
+  feedbackSuggestions,
+  feedbackResolutions,
+  revisionProposals,
+  candidateMemories,
+  evaluationCases,
+  evaluationRuns,
+  evaluationResults,
+  contextSyncRecords,
 }
