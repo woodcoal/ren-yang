@@ -41,7 +41,7 @@ async function initializeApplicationRuntime(nitroApp: NitroApp): Promise<void> {
   }
   catch (error: unknown) {
     if (runtime) await runtime.close()
-    terminateFailedStartup()
+    terminateFailedStartup(error)
   }
 
   /**
@@ -65,10 +65,15 @@ async function initializeApplicationRuntime(nitroApp: NitroApp): Promise<void> {
   nitroApp.hooks.hook('close', closeApplicationRuntime)
 }
 
-/** @returns 立即以非零状态终止已开始监听但初始化失败的 Nitro 进程。 */
-function terminateFailedStartup(): never {
+/**
+ * 输出不含异常堆栈的明确失败原因，并以非零状态终止已开始监听的 Nitro 进程。
+ * @param error 运行时初始化阶段捕获的未知异常。
+ * @returns 不返回，始终终止当前进程。
+ */
+function terminateFailedStartup(error: unknown): never {
   // Nitro 先建立监听再异步运行插件；单纯抛错只会形成 unhandledRejection，必须主动终止进程。
-  console.error('应用运行时初始化失败，进程已终止')
+  const reason = error instanceof Error && error.message.trim() ? error.message : '未知错误'
+  console.error(`应用运行时初始化失败：${reason}`)
   process.exit(1)
 }
 
