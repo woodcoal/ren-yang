@@ -48,6 +48,12 @@ describe('阶段二内容表单', () => {
     expect(textarea!.value).toBe('创建一个浮岛与风帆船构成的世界')
     expect(document.body.textContent).toContain('模型暂时不可用')
     expect(document.body.textContent).toContain('创建后仍是待确认草稿')
+
+    await wrapper.setProps({ loading: true, errorMessage: null })
+    await flushPromises()
+    expect(document.body.textContent).toContain('AI 正在生成世界初始设定')
+    expect(document.body.textContent).toContain('请保持当前页面开启，不要重复提交')
+    expect(document.querySelector('textarea')).toBeNull()
   })
 
   it('原创人物在没有世界和资料时仍可提交初始候选档案', async () => {

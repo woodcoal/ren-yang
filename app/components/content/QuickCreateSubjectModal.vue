@@ -23,15 +23,23 @@ const emit = defineEmits<{
 /** 弹窗唯一可变输入；失败时不重置，便于用户直接修改。 */
 const state = reactive<SubjectInitializationInput>({ prompt: '' })
 const isPersona = computed(() => props.subjectType === 'persona')
-const title = computed(() => isPersona.value ? '快速创建人物' : '快速创建世界')
-const description = computed(() => isPersona.value
-  ? '写下人物的身份、性格、偏好、表达方式和行为边界。'
-  : '写下世界的背景、核心规则、关键势力和整体风格。')
+const title = computed(() => {
+  if (props.loading) return isPersona.value ? '正在创建人物' : '正在创建世界'
+  return isPersona.value ? '快速创建人物' : '快速创建世界'
+})
+const description = computed(() => {
+  if (props.loading) return '正在调用 AI 整理初始设定并保存待确认草稿。'
+  return isPersona.value
+    ? '写下人物的身份、性格、偏好、表达方式和行为边界。'
+    : '写下世界的背景、核心规则、关键势力和整体风格。'
+})
 const fieldLabel = computed(() => isPersona.value ? '人物描述' : '世界描述')
 const placeholder = computed(() => isPersona.value
   ? '例如：她是架空学院的年轻档案员，谨慎、重视证据，回答简短；遇到未知事实必须明确说明不知道。'
   : '例如：人类生活在浮空岛屿，依靠风帆船和受季风约束的航路往来，浮石能量决定岛屿稳定。')
 const submitLabel = computed(() => isPersona.value ? '生成并创建人物' : '生成并创建世界')
+const processingTitle = computed(() => isPersona.value ? 'AI 正在生成人物初始设定' : 'AI 正在生成世界初始设定')
+const processingDestination = computed(() => isPersona.value ? '人物详情页' : '世界详情页')
 
 /**
  * 把 Nuxt UI 已校验的自然语言描述交给列表页编排。
@@ -44,9 +52,16 @@ function handleSubmit(event: FormSubmitEvent<SubjectInitializationInput>): void 
 </script>
 
 <template>
-  <UModal v-model:open="open" :title="title" :description="description" :dismissible="!loading">
+  <UModal v-model:open="open" :title="title" :description="description" :dismissible="!loading" :close="!loading">
+    <slot />
     <template #body>
-      <UForm :schema="subjectInitializationSchema" :state="state" class="space-y-4" @submit="handleSubmit">
+      <div v-if="loading" class="flex min-h-64 flex-col items-center justify-center px-4 text-center" role="status" aria-live="polite">
+        <UIcon name="i-lucide-loader-circle" class="mb-5 size-10 animate-spin text-primary" aria-hidden="true" />
+        <strong class="text-base text-highlighted">{{ processingTitle }}</strong>
+        <p class="mt-2 max-w-md text-sm leading-6 text-muted">生成和结构校验可能需要几十秒，请保持当前页面开启，不要重复提交。</p>
+        <p class="mt-1 max-w-md text-sm leading-6 text-muted">处理完成后会自动进入{{ processingDestination }}继续调整。</p>
+      </div>
+      <UForm v-else :schema="subjectInitializationSchema" :state="state" class="space-y-4" @submit="handleSubmit">
         <UFormField name="prompt" :label="fieldLabel" required>
           <UTextarea
             v-model="state.prompt"

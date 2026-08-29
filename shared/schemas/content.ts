@@ -1,4 +1,19 @@
-import { z } from 'zod'
+import { z, type RefinementCtx } from 'zod'
+
+/** 不得进入人物或世界实际提示词的创建流程元话术。 */
+const initializationMetaPhrases = ['候选草稿', '待用户编辑确认', '待用户确认', '尚未发布', '不代表已影响', '不会自动发布', 'AI 生成']
+
+/**
+ * 拒绝把应用创建流程状态混入模型生成的实际提示词。
+ * @param values 需要进入人物或世界设定的模型文本字段。
+ * @param context Zod 精细校验上下文，用于返回可重试的结构错误。
+ * @returns 无返回值；命中元话术时向校验上下文添加错误。
+ * @remarks 只匹配明确的应用流程短语，避免删改或清洗模型输出导致语义残缺。
+ */
+function rejectInitializationMetaText(values: string[], context: RefinementCtx): void {
+  if (!values.some(value => initializationMetaPhrases.some(phrase => value.includes(phrase)))) return
+  context.addIssue({ code: 'custom', message: '生成内容不能包含候选、确认或发布等创建流程说明' })
+}
 
 /** 人物来源模式校验。 */
 export const personaOriginSchema = z.enum(['original', 'source_based', 'hybrid'], { error: '人物来源模式无效' })
@@ -40,6 +55,11 @@ export const generatePersonaDraftSchema = subjectInitializationSchema.extend({
 export const personaDraftSchema = z.object({
   name: z.string().trim().min(1, '人物名称不能为空').max(100, '人物名称不能超过 100 字'),
   snapshot: personaSnapshotSchema,
+}).superRefine((value, context) => {
+  rejectInitializationMetaText([
+    value.snapshot.runtimeSummary,
+    ...value.snapshot.chapters.flatMap(chapter => [chapter.title, chapter.content]),
+  ], context)
 })
 
 /** 从自然语言生成世界候选草稿的输入。 */
@@ -53,6 +73,12 @@ export const worldDraftSchema = z.object({
   name: z.string().trim().min(1, '世界名称不能为空').max(100, '世界名称不能超过 100 字'),
   summary: z.string().trim().max(2_000, '世界摘要不能超过 2000 字'),
   snapshot: worldSnapshotSchema,
+}).superRefine((value, context) => {
+  rejectInitializationMetaText([
+    value.summary,
+    value.snapshot.runtimeSummary,
+    ...value.snapshot.chapters.flatMap(chapter => [chapter.title, chapter.content]),
+  ], context)
 })
 
 /** 创建人物及其初始候选版本的输入。 */

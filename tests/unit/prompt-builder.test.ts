@@ -20,7 +20,7 @@ describe('真实模型提示契约', () => {
       evidence: [],
     }, '测试内容')
 
-    expect(GENERATION_PROMPT_VERSION).toBe('artifact-v5')
+    expect(GENERATION_PROMPT_VERSION).toBe('artifact-v6')
     expect(prompt.systemPrompt).toContain('factors 必须是对象数组')
     expect(prompt.systemPrompt).toContain('dimension、score、explanation')
     expect(prompt.systemPrompt).toContain('score 必须是 -1 到 1 的数字')
@@ -55,5 +55,7 @@ describe('真实模型提示契约', () => {
     expect(prompt.systemPrompt).toContain('用户明确描述是唯一事实来源')
     expect(prompt.systemPrompt).toContain('name、summary 和 snapshot')
     expect(prompt.systemPrompt).toContain('chapters 和 runtimeSummary')
+    expect(prompt.systemPrompt).toContain('禁止写入返回内容')
+    expect(prompt.systemPrompt).not.toContain('当前结果只是待用户编辑确认的候选草稿')
   })
 })

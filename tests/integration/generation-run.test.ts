@@ -45,6 +45,10 @@ class FixedTextModel implements TextModelPort {
   public invalidInterestOnce = false
   /** 是否持续返回无效兴趣结构。 */
   public invalidInterestAlways = false
+  /** 是否让第一次人物草稿错误地包含创建流程元话术。 */
+  public invalidPersonaMetaOnce = false
+  /** 是否让第一次世界草稿错误地包含创建流程元话术。 */
+  public invalidWorldMetaOnce = false
   /** 兴趣调用前还要模拟的限流次数。 */
   public interestRateLimitsRemaining = 0
   /** 每次成功响应返回的固定供应商用量。 */
@@ -67,7 +71,7 @@ class FixedTextModel implements TextModelPort {
     this.calls.set(request.responseSchemaName, call)
     this.requests.set(request.responseSchemaName, request)
     if (request.responseSchemaName === 'persona_draft') {
-      return response({
+      const result = {
         name: '林默',
         snapshot: {
           chapters: [
@@ -76,10 +80,12 @@ class FixedTextModel implements TextModelPort {
           ],
           runtimeSummary: '谨慎的学院档案员；重视可核验事实；冷静简洁；资料不足时明确说明未知。',
         },
-      }, this.usage)
+      }
+      if (this.invalidPersonaMetaOnce && call === 1) result.snapshot.runtimeSummary = '该设定仅为待用户编辑确认的候选草稿，尚未发布。'
+      return response(result, this.usage)
     }
     if (request.responseSchemaName === 'world_draft') {
-      return response({
+      const result = {
         name: '浮岛纪元',
         summary: '浮空岛屿与风帆航路构成的架空世界。',
         snapshot: {
@@ -89,7 +95,9 @@ class FixedTextModel implements TextModelPort {
           ],
           runtimeSummary: '人类定居浮空岛屿，依靠风帆船与受季风约束的航路往来。',
         },
-      }, this.usage)
+      }
+      if (this.invalidWorldMetaOnce && call === 1) result.snapshot.runtimeSummary = '该设定仅为候选草稿，尚未发布，也不代表已影响任何人物。'
+      return response(result, this.usage)
     }
     if (request.responseSchemaName === 'interest_assessment') {
       if (this.interestRateLimitsRemaining > 0) {
@@ -245,6 +253,7 @@ afterEach(() => {
 describe('阶段三纯文本运行', () => {
   it('从自然语言和选定资料生成不落库的结构化人物候选草稿', async () => {
     const before = database.getClient().prepare('SELECT COUNT(*) AS count FROM personas').get()
+    model.invalidPersonaMetaOnce = true
     const draft = await generation.generatePersonaDraft({
       prompt: '创建一名谨慎的学院档案员，回答必须简短。',
       origin: 'source_based',
@@ -262,11 +271,15 @@ describe('阶段三纯文本运行', () => {
     expect(request.userPrompt).toContain('魔法学院课程包含古代文献研究与档案整理。')
     expect(request.userPrompt.match(/学院原著事实/g)).toHaveLength(1)
     expect(request.systemPrompt).toContain('原著事实只能来自 role=canon_fact')
+    expect(request.systemPrompt).toContain('禁止写入返回内容')
+    expect(model.calls.get('persona_draft')).toBe(2)
+    expect(JSON.stringify(draft)).not.toContain('候选草稿')
     expect(database.getClient().prepare('SELECT COUNT(*) AS count FROM personas').get()).toEqual(before)
   })
 
   it('从自然语言生成不落库的结构化世界候选草稿', async () => {
     const before = database.getClient().prepare('SELECT COUNT(*) AS count FROM worlds').get()
+    model.invalidWorldMetaOnce = true
     const draft = await generation.generateWorldDraft({ prompt: '创建一个人类生活在浮空岛屿、依靠风帆船往来的世界。' })
 
     expect(draft).toMatchObject({
@@ -278,6 +291,9 @@ describe('阶段三纯文本运行', () => {
     expect(request.userPrompt).toContain('人类生活在浮空岛屿')
     expect(request.systemPrompt).toContain('字段必须为 name、summary 和 snapshot')
     expect(request.systemPrompt).toContain('runtimeSummary 是实际进入人物任务提示词')
+    expect(request.systemPrompt).toContain('禁止写入返回内容')
+    expect(model.calls.get('world_draft')).toBe(2)
+    expect(JSON.stringify(draft)).not.toContain('候选草稿')
     expect(database.getClient().prepare('SELECT COUNT(*) AS count FROM worlds').get()).toEqual(before)
   })
 
@@ -296,7 +312,7 @@ describe('阶段三纯文本运行', () => {
       status: 'succeeded',
       result: { decision: 'interested', probability: 0.88, confidence: 0.82 },
       scene: { location: '图书馆' },
-      promptVersion: 'artifact-v5',
+      promptVersion: 'artifact-v6',
       contextProvider: 'sqlite_fts5',
       promptContext: {
         tokenCountExact: false,

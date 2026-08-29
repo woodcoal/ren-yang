@@ -67,16 +67,16 @@ async function createPersona(prompt: string): Promise<void> {
 <template>
   <div>
     <ContentPageHeader title="人物工作区" description="查看每个人物当前是否可工作，以及其灵魂版本、所属世界、资料和待确认状态。">
-      <UButton icon="i-lucide-plus" @click="openCreateModal">创建人物</UButton>
+      <ContentQuickCreateSubjectModal
+        v-model:open="showCreate"
+        subject-type="persona"
+        :loading="createLoading"
+        :error-message="createErrorMessage"
+        @submit="createPersona"
+      >
+        <UButton icon="i-lucide-plus">创建人物</UButton>
+      </ContentQuickCreateSubjectModal>
     </ContentPageHeader>
-
-    <ContentQuickCreateSubjectModal
-      v-model:open="showCreate"
-      subject-type="persona"
-      :loading="createLoading"
-      :error-message="createErrorMessage"
-      @submit="createPersona"
-    />
 
     <div class="status-strip page-status-strip" aria-label="人物状态摘要">
       <div class="status-cell"><span class="status-kicker">全部人物</span><strong class="status-value">{{ personas.length }}</strong></div>

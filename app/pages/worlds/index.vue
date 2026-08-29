@@ -46,16 +46,16 @@ async function createWorld(prompt: string): Promise<void> {
 <template>
   <div>
     <ContentPageHeader title="世界设定" description="世界是相关人物共用的背景与规则；人物也可以不关联世界，独立完成任务。">
-      <UButton icon="i-lucide-plus" @click="showCreate = true">创建世界</UButton>
+      <ContentQuickCreateSubjectModal
+        v-model:open="showCreate"
+        subject-type="world"
+        :loading="loading"
+        :error-message="errorMessage"
+        @submit="createWorld"
+      >
+        <UButton icon="i-lucide-plus">创建世界</UButton>
+      </ContentQuickCreateSubjectModal>
     </ContentPageHeader>
-
-    <ContentQuickCreateSubjectModal
-      v-model:open="showCreate"
-      subject-type="world"
-      :loading="loading"
-      :error-message="errorMessage"
-      @submit="createWorld"
-    />
 
     <div class="status-strip page-status-strip" aria-label="世界状态摘要">
       <div class="status-cell"><span class="status-kicker">全部世界</span><strong class="status-value">{{ worlds.length }}</strong></div>
