@@ -230,6 +230,8 @@ describe('OpenViking 原生 HTTP 上下文适配器', () => {
     await expect(provider.search({ personaId: 'persona', worldId: null, query: '证据', limit: 5 })).resolves.toEqual({
       provider: 'openviking',
       candidates: [{
+        entityType: 'source',
+        entityId: SOURCE_ID,
         sourceId: SOURCE_ID,
         chunkId: null,
         role: 'canon_fact',
@@ -287,6 +289,7 @@ describe('OpenViking 原生 HTTP 上下文适配器', () => {
 
   it('关闭时仅走 SQLite，并仍公开 OpenViking 的配置状态', async () => {
     const evidence: EvidenceCandidate[] = [{
+      entityType: 'source', entityId: SOURCE_ID,
       sourceId: SOURCE_ID, chunkId: 'chunk', role: 'reference', heading: null,
       content: '本地证据', contentHash: 'b'.repeat(64), priority: 100,
     }]

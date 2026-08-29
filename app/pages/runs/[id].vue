@@ -177,15 +177,19 @@ function formatTime(timestamp: number | null): string {
 /** @param snapshot 不可变人物版本快照。 @returns 按固定顺序展示的中文字段。 */
 function toPersonaSnapshotFields(snapshot: PersonaSnapshot): Array<{ label: string, value: string }> {
   return [
-    { label: '人物定位', value: snapshot.summary },
-    { label: '身份事实', value: snapshot.identityFacts },
-    { label: '兴趣偏好', value: snapshot.interests },
-    { label: '价值与动机', value: snapshot.valuesAndMotivations },
-    { label: '表达风格', value: snapshot.expressionStyle },
-    { label: '外观描述', value: snapshot.appearance },
-    { label: '视觉风格', value: snapshot.visualStyle },
-    { label: '约束与边界', value: snapshot.constraints },
+    { label: '实际使用的灵魂摘要', value: snapshot.runtimeSummary },
+    ...snapshot.chapters.map(chapter => ({ label: chapter.title, value: chapter.content })),
   ]
+}
+
+/** @param category 运行上下文分类。 @returns 后台通俗分类名称。 */
+function promptCategoryLabel(category: string): string {
+  return ({ world_growth: '世界成长', persona_growth: '人物成长', persona_memory: '人物记忆', source: '参考资料' } as Record<string, string>)[category] ?? category
+}
+
+/** @param reason 稳定跳过原因。 @returns 用户可理解的原因。 */
+function skippedReasonLabel(reason: string | null): string {
+  return ({ category_budget: '超过本类长度', parent_budget: '超过世界或人物总长度', total_budget: '超过模型可用输入', scope_or_state_invalid: '已失效或不属于当前人物' } as Record<string, string>)[reason ?? ''] ?? '未选入'
 }
 </script>
 
@@ -207,6 +211,33 @@ function toPersonaSnapshotFields(snapshot: PersonaSnapshot): Array<{ label: stri
             <pre class="content-pre">{{ 'content' in details.run.input ? details.run.input.content : details.run.input.requirement }}</pre>
             <div v-if="details.run.scene" class="mt-4 rounded-md bg-elevated p-3 text-sm">
               <p class="font-medium text-highlighted">临时场景</p><pre class="content-pre mt-2">{{ JSON.stringify(details.run.scene, null, 2) }}</pre>
+            </div>
+          </UCard>
+          <UCard v-if="details.run.promptContext">
+            <template #header><div><h2 class="font-semibold text-highlighted">本次提示词用量</h2><p class="mt-1 text-sm text-muted">创建任务时已固定；后续修改设置不会改变本次结果。</p></div></template>
+            <div class="space-y-4 text-sm">
+              <div class="grid grid-cols-2 gap-3">
+                <div><p class="text-xs text-muted">预计输入</p><p class="mt-1 font-medium">{{ details.run.promptContext.estimatedInputTokens }} Token</p></div>
+                <div><p class="text-xs text-muted">可用输入</p><p class="mt-1 font-medium">{{ details.run.promptContext.availableInputTokens }} Token</p></div>
+              </div>
+              <dl class="space-y-2">
+                <div><dt class="text-muted">世界</dt><dd>{{ details.run.promptContext.budgets.world.used }} / {{ details.run.promptContext.budgets.world.limit }}</dd></div>
+                <div><dt class="text-muted">人物</dt><dd>{{ details.run.promptContext.budgets.persona.used }} / {{ details.run.promptContext.budgets.persona.limit }}</dd></div>
+                <div><dt class="text-muted">参考资料</dt><dd>{{ details.run.promptContext.budgets.sources.used }} / {{ details.run.promptContext.budgets.sources.limit }}</dd></div>
+                <div><dt class="text-muted">计算方式</dt><dd>{{ details.run.promptContext.tokenCountExact ? '模型精确计算' : '保守估算' }}</dd></div>
+              </dl>
+              <div>
+                <p class="font-medium text-highlighted">已选入 {{ details.run.promptContext.selected.length }} 项</p>
+                <ul v-if="details.run.promptContext.selected.length" class="mt-2 space-y-1 text-xs text-muted">
+                  <li v-for="item in details.run.promptContext.selected" :key="`selected-${item.category}-${item.entityId}-${item.contentHash}`">{{ promptCategoryLabel(item.category) }} · {{ item.estimatedTokens }} Token</li>
+                </ul>
+              </div>
+              <div v-if="details.run.promptContext.skipped.length">
+                <p class="font-medium text-highlighted">未选入 {{ details.run.promptContext.skipped.length }} 项</p>
+                <ul class="mt-2 space-y-1 text-xs text-muted">
+                  <li v-for="item in details.run.promptContext.skipped" :key="`skipped-${item.category}-${item.entityId}-${item.contentHash}`">{{ promptCategoryLabel(item.category) }} · {{ skippedReasonLabel(item.skippedReason) }}</li>
+                </ul>
+              </div>
             </div>
           </UCard>
 

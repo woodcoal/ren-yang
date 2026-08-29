@@ -173,25 +173,30 @@ export class SqliteContextIndexRepository implements ContextIndexRepository {
   /** @param personaId 人物 UUID。 @returns 没有远端 URI但必须参与提示的有效成长和记忆。 */
   async listActiveLocalLearning(personaId: string): Promise<ActiveLocalLearning[]> {
     return this.client.prepare(`
-      SELECT 'memory' AS role, memory_revisions.content, memory_revisions.content_hash
+      SELECT memory_records.id, 'persona_memory' AS entity_type, 'memory' AS role,
+        memory_revisions.content, memory_revisions.content_hash, memory_revisions.importance, memory_records.updated_at
       FROM memory_records
       INNER JOIN memory_revisions ON memory_revisions.id = memory_records.current_revision_id
       WHERE memory_records.persona_id = ? AND memory_records.status = 'active'
       UNION ALL
-      SELECT 'growth' AS role, growth_revisions.content, growth_revisions.content_hash
+      SELECT growth_records.id, 'persona_growth' AS entity_type, 'growth' AS role,
+        growth_revisions.content, growth_revisions.content_hash, growth_revisions.importance, growth_records.updated_at
       FROM growth_records
       INNER JOIN growth_revisions ON growth_revisions.id = growth_records.current_revision_id
       WHERE growth_records.persona_id = ? AND growth_records.status = 'active'
       UNION ALL
-      SELECT 'growth' AS role, growth_revisions.content, growth_revisions.content_hash
+      SELECT growth_records.id, 'world_growth' AS entity_type, 'growth' AS role,
+        growth_revisions.content, growth_revisions.content_hash, growth_revisions.importance, growth_records.updated_at
       FROM personas
       INNER JOIN growth_records ON growth_records.world_id = personas.world_id
       INNER JOIN growth_revisions ON growth_revisions.id = growth_records.current_revision_id
       WHERE personas.id = ? AND growth_records.status = 'active'
-      ORDER BY role, content_hash
+      ORDER BY importance DESC, updated_at DESC, id
     `).all(personaId, personaId, personaId).map((value) => {
       const data = row(value)
       return {
+        id: String(data.id),
+        entityType: data.entity_type as ActiveLocalLearning['entityType'],
         role: data.role as ActiveLocalLearning['role'],
         content: String(data.content),
         contentHash: String(data.content_hash),

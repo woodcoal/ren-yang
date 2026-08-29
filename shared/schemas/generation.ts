@@ -20,6 +20,34 @@ export const textModelParametersSchema = z.object({
   maxPromptCharacters: z.number().int().min(1_000).max(500_000).default(120_000),
   maxTotalTokens: z.number().int().min(64).max(1_000_000).default(50_000),
   maxBlockAttempts: z.number().int().min(1).max(10).default(2),
+  contextWindowTokens: z.number().int().min(4_096).max(2_000_000).default(32_768),
+  reservedOutputTokens: z.number().int().min(64).max(200_000).default(8_192),
+  safetyMarginTokens: z.number().int().min(0).max(200_000).default(2_048),
+  worldBudgetTokens: z.number().int().min(0).max(500_000).default(5_000),
+  worldSoulBudgetTokens: z.number().int().min(0).max(200_000).default(2_500),
+  worldGrowthBudgetTokens: z.number().int().min(0).max(200_000).default(2_500),
+  personaBudgetTokens: z.number().int().min(0).max(500_000).default(9_000),
+  personaSoulBudgetTokens: z.number().int().min(1).max(200_000).default(3_500),
+  personaGrowthBudgetTokens: z.number().int().min(0).max(200_000).default(2_500),
+  personaMemoryBudgetTokens: z.number().int().min(0).max(200_000).default(3_000),
+  sourceBudgetTokens: z.number().int().min(0).max(500_000).default(5_000),
+}).superRefine((value, context) => {
+  const availableInputTokens = value.contextWindowTokens - value.reservedOutputTokens - value.safetyMarginTokens
+  if (availableInputTokens <= 0) {
+    context.addIssue({ code: 'custom', path: ['contextWindowTokens'], message: '模型上下文必须大于预留输出与安全余量之和' })
+  }
+  if (value.maxOutputTokens > value.reservedOutputTokens) {
+    context.addIssue({ code: 'custom', path: ['reservedOutputTokens'], message: '预留输出 Token 不能小于单次回答长度上限' })
+  }
+  if (value.worldSoulBudgetTokens + value.worldGrowthBudgetTokens > value.worldBudgetTokens) {
+    context.addIssue({ code: 'custom', path: ['worldBudgetTokens'], message: '世界灵魂与世界成长预算之和不能超过世界总预算' })
+  }
+  if (value.personaSoulBudgetTokens + value.personaGrowthBudgetTokens + value.personaMemoryBudgetTokens > value.personaBudgetTokens) {
+    context.addIssue({ code: 'custom', path: ['personaBudgetTokens'], message: '人物灵魂、人物成长与人物记忆预算之和不能超过人物总预算' })
+  }
+  if (value.worldBudgetTokens + value.personaBudgetTokens + value.sourceBudgetTokens > availableInputTokens) {
+    context.addIssue({ code: 'custom', path: ['sourceBudgetTokens'], message: '世界、人物和参考资料总预算不能超过可用输入 Token' })
+  }
 })
 
 /** 创建不可变参数方案版本。 */

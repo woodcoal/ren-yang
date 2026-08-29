@@ -22,8 +22,20 @@ const form = reactive<CreateParameterProfileInput>({
     maxPromptCharacters: 120000,
     maxTotalTokens: 50000,
     maxBlockAttempts: 2,
+    contextWindowTokens: 32768,
+    reservedOutputTokens: 4096,
+    safetyMarginTokens: 2048,
+    worldBudgetTokens: 5000,
+    worldSoulBudgetTokens: 2500,
+    worldGrowthBudgetTokens: 2500,
+    personaBudgetTokens: 9000,
+    personaSoulBudgetTokens: 3500,
+    personaGrowthBudgetTokens: 2500,
+    personaMemoryBudgetTokens: 3000,
+    sourceBudgetTokens: 5000,
   },
 })
+const availableInputTokens = computed(() => form.values.contextWindowTokens - form.values.reservedOutputTokens - form.values.safetyMarginTokens)
 
 /** @param event Nuxt UI 已通过共享 Schema 校验的提交事件。 @returns 创建新版本并刷新列表。 */
 async function createProfile(event: FormSubmitEvent<CreateParameterProfileInput>): Promise<void> {
@@ -48,8 +60,8 @@ function formatTime(timestamp: number): string { return new Date(timestamp).toLo
 
 <template>
   <div>
-    <ContentPageHeader title="生成设置" description="控制 AI 输出长度、随机程度、超时时间和重试次数；普通使用建议保留系统默认值。" />
-    <div class="grid gap-6 xl:grid-cols-[24rem_minmax(0,1fr)]">
+    <ContentPageHeader title="生成设置" description="控制 AI 输出、等待时间，以及世界、人物、记忆和参考资料进入提示词的长度。" />
+    <div class="grid gap-6 2xl:grid-cols-[32rem_minmax(0,1fr)]">
       <UCard>
         <template #header><div><h2 class="font-semibold text-highlighted">新建生成设置</h2><p class="mt-1 text-sm text-muted">同名再次保存会生成新记录，已经创建的任务不会随之变化。</p></div></template>
         <UAlert v-if="actionError" class="mb-4" color="error" title="创建失败" :description="actionError" />
@@ -64,6 +76,27 @@ function formatTime(timestamp: number): string { return new Date(timestamp).toLo
           <UFormField name="values.maxPromptCharacters" label="单次发送内容的字符上限" required><UInput v-model.number="form.values.maxPromptCharacters" type="number" min="1000" max="500000" class="w-full" /></UFormField>
           <UFormField name="values.maxTotalTokens" label="整个任务的模型用量上限" required><UInput v-model.number="form.values.maxTotalTokens" type="number" min="64" max="1000000" class="w-full" /></UFormField>
           <UFormField name="values.maxBlockAttempts" label="单个内容块最多尝试次数" required><UInput v-model.number="form.values.maxBlockAttempts" type="number" min="1" max="10" class="w-full" /></UFormField>
+          <div class="border-t border-default pt-4">
+            <h3 class="font-medium text-highlighted">提示词长度</h3>
+            <p class="mt-1 text-sm text-muted">模型总长度扣除回答预留和安全余量后，本方案可使用 {{ availableInputTokens }} Token。</p>
+          </div>
+          <div class="grid gap-4 sm:grid-cols-3">
+            <UFormField name="values.contextWindowTokens" label="模型总长度" required><UInput v-model.number="form.values.contextWindowTokens" type="number" min="4096" max="2000000" class="w-full" /></UFormField>
+            <UFormField name="values.reservedOutputTokens" label="回答预留" required><UInput v-model.number="form.values.reservedOutputTokens" type="number" min="64" max="200000" class="w-full" /></UFormField>
+            <UFormField name="values.safetyMarginTokens" label="安全余量" required><UInput v-model.number="form.values.safetyMarginTokens" type="number" min="0" max="200000" class="w-full" /></UFormField>
+          </div>
+          <div class="grid gap-4 sm:grid-cols-3">
+            <UFormField name="values.worldBudgetTokens" label="世界总长度" required><UInput v-model.number="form.values.worldBudgetTokens" type="number" min="0" class="w-full" /></UFormField>
+            <UFormField name="values.worldSoulBudgetTokens" label="世界灵魂" required><UInput v-model.number="form.values.worldSoulBudgetTokens" type="number" min="0" class="w-full" /></UFormField>
+            <UFormField name="values.worldGrowthBudgetTokens" label="世界成长" required><UInput v-model.number="form.values.worldGrowthBudgetTokens" type="number" min="0" class="w-full" /></UFormField>
+          </div>
+          <div class="grid gap-4 sm:grid-cols-2">
+            <UFormField name="values.personaBudgetTokens" label="人物总长度" required><UInput v-model.number="form.values.personaBudgetTokens" type="number" min="0" class="w-full" /></UFormField>
+            <UFormField name="values.personaSoulBudgetTokens" label="人物灵魂" required><UInput v-model.number="form.values.personaSoulBudgetTokens" type="number" min="1" class="w-full" /></UFormField>
+            <UFormField name="values.personaGrowthBudgetTokens" label="人物成长" required><UInput v-model.number="form.values.personaGrowthBudgetTokens" type="number" min="0" class="w-full" /></UFormField>
+            <UFormField name="values.personaMemoryBudgetTokens" label="人物记忆" required><UInput v-model.number="form.values.personaMemoryBudgetTokens" type="number" min="0" class="w-full" /></UFormField>
+          </div>
+          <UFormField name="values.sourceBudgetTokens" label="参考资料总长度" description="达到上限后会整段跳过低优先级资料，不会截断半段正文。" required><UInput v-model.number="form.values.sourceBudgetTokens" type="number" min="0" class="w-full" /></UFormField>
           <UButton type="submit" :loading="loading">保存生成设置</UButton>
         </UForm>
       </UCard>
@@ -83,6 +116,8 @@ function formatTime(timestamp: number): string { return new Date(timestamp).toLo
               <div><dt class="text-muted">提示字符</dt><dd>{{ profile.values.maxPromptCharacters }}</dd></div>
               <div><dt class="text-muted">总 Token</dt><dd>{{ profile.values.maxTotalTokens }}</dd></div>
               <div><dt class="text-muted">块尝试</dt><dd>{{ profile.values.maxBlockAttempts }}</dd></div>
+              <div><dt class="text-muted">可用输入</dt><dd>{{ profile.values.contextWindowTokens - profile.values.reservedOutputTokens - profile.values.safetyMarginTokens }} Token</dd></div>
+              <div><dt class="text-muted">世界 / 人物 / 资料</dt><dd>{{ profile.values.worldBudgetTokens }} / {{ profile.values.personaBudgetTokens }} / {{ profile.values.sourceBudgetTokens }}</dd></div>
               <div><dt class="text-muted">创建时间</dt><dd>{{ formatTime(profile.createdAt) }}</dd></div>
             </dl>
           </UCard>

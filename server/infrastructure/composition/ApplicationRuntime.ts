@@ -148,6 +148,7 @@ export class ApplicationRuntime {
     const storageCapacity = new NodeStorageCapacityGuard(options.minimumFreeDiskBytes)
     const imageAssets = new LocalImageAssetStorage(options.dataDirectory, storageCapacity)
     const textModel = new OpenAiCompatibleTextModel(options.textModel ?? { endpoint: '', apiKey: '', model: '' })
+    const tokenCounter = new ConservativeTokenCounter()
     const contextRepository = new SqliteContextIndexRepository(this.sqlite.getClient())
     const openVikingOptions = options.openViking ?? { enabled: false, endpoint: '', apiKey: '', timeoutMs: 60_000 }
     const openViking = new OpenVikingHttpContextProvider({ ...openVikingOptions, repository: contextRepository })
@@ -174,7 +175,7 @@ export class ApplicationRuntime {
       souls: contentRepository,
       identifiers,
       clock: this.clock,
-      tokenCounter: new ConservativeTokenCounter(),
+      tokenCounter,
       tokenBudgets: { world: 2_500, persona: 3_500 },
     })
     this.learningService = new LearningApplicationService({
@@ -203,7 +204,8 @@ export class ApplicationRuntime {
       identifiers,
       clock: this.clock,
       sourceProcessor,
-      operationRecords: learningRepository,
+      tokenCounter,
+      learning: learningRepository,
       contextSyncQueue,
     })
     this.feedbackService = new FeedbackApplicationService({

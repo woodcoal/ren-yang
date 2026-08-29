@@ -203,6 +203,8 @@ export class OpenVikingHttpContextProvider implements ContextProvider, OpenVikin
       this.options.repository.listActiveLocalLearning(request.personaId),
     ])
     const localCandidates: EvidenceCandidate[] = localLearning.map(item => ({
+      entityType: item.entityType,
+      entityId: item.id,
       sourceId: null,
       chunkId: null,
       role: item.role,
@@ -243,6 +245,8 @@ export class OpenVikingHttpContextProvider implements ContextProvider, OpenVikin
           const content = rawContent.trim().slice(0, 20_000)
           if (!target || !sourceScope || !content) return []
           return [{
+            entityType: 'source',
+            entityId: target.sourceId ?? resultUri,
             sourceId: target.sourceId,
             chunkId: null,
             role: sourceScope.role,

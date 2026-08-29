@@ -156,7 +156,7 @@ function response(structuredOutput: unknown, usage: TextModelResponse['usage']):
 
 /** @param prompt 分层用户提示。 @returns 提示中的证据简表。 */
 function readEvidence(prompt: string): Array<{ id: string, role: string }> {
-  const match = /<不可信证据资料>(.*?)<\/不可信证据资料>/s.exec(prompt)
+  const match = /<不可信参考资料>(.*?)<\/不可信参考资料>/s.exec(prompt)
   return match ? JSON.parse(match[1]!) as Array<{ id: string, role: string }> : []
 }
 
@@ -186,6 +186,7 @@ beforeEach(async () => {
   const identifiers = new SystemIdentifierGenerator()
   testClock = new TestClock()
   const contentRepository = new SqliteContentRepository(database.getClient())
+  const learningRepository = new SqliteLearningRepository(database.getClient())
   const processor = new NodeSourceContentProcessor(identifiers)
   imageAssets = new LocalImageAssetStorage(directory)
   contentService = new ContentApplicationService({
@@ -215,7 +216,7 @@ beforeEach(async () => {
     runs: new SqliteRunRepository(database.getClient()), content: contentRepository,
     context: new SqliteContextProvider(database.getClient()), model, imageModel, imageAssets,
     identifiers, clock: testClock, sourceProcessor: processor,
-    operationRecords: new SqliteLearningRepository(database.getClient()),
+    tokenCounter: new ConservativeTokenCounter(), learning: learningRepository,
   })
   worker = new WorkerApplicationService({
     taskJobRepository: new SqliteTaskJobRepository(database.getClient()), taskHandler: generation,
@@ -266,8 +267,14 @@ describe('阶段三纯文本运行', () => {
       status: 'succeeded',
       result: { decision: 'interested', probability: 0.88, confidence: 0.82 },
       scene: { location: '图书馆' },
-      promptVersion: 'artifact-v4',
+      promptVersion: 'artifact-v5',
       contextProvider: 'sqlite_fts5',
+      promptContext: {
+        tokenCountExact: false,
+        personaSoulVersionId: details.run.personaVersionId,
+        selected: [expect.objectContaining({ category: 'source', role: 'canon_fact', skippedReason: null })],
+        skipped: [],
+      },
     })
     expect(details.evidence.map(item => item.role)).toEqual(['user_setting', 'canon_fact'])
     expect(details.run.result?.supportingEvidenceIds).toEqual([details.evidence[1]!.id])
@@ -401,6 +408,8 @@ describe('阶段三纯文本运行', () => {
       identifiers: new SystemIdentifierGenerator(),
       clock: new TestClock(),
       sourceProcessor: new NodeSourceContentProcessor(new SystemIdentifierGenerator()),
+      tokenCounter: new ConservativeTokenCounter(),
+      learning: new SqliteLearningRepository(database.getClient()),
     })
     await expect(disabled.createInterestRun({ personaId, content: '测试' })).rejects.toMatchObject({ code: 'CAPABILITY_DISABLED' })
     await expect(disabled.generatePersonaDraft({ prompt: '测试人物', origin: 'original', sourceIds: [] }))
@@ -565,6 +574,8 @@ describe('阶段四图文块与导出', () => {
       identifiers,
       clock: testClock,
       sourceProcessor: new NodeSourceContentProcessor(identifiers),
+      tokenCounter: new ConservativeTokenCounter(),
+      learning: new SqliteLearningRepository(database.getClient()),
     })
 
     await expect(disabled.createGenerationRun({ personaId, requirement: '生成图文', includeImages: true }))

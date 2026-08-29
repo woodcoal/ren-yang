@@ -400,6 +400,7 @@ export const generationRuns = sqliteTable(
     imageModelSnapshotJson: text('image_model_snapshot_json'),
     promptVersion: text('prompt_version').notNull(),
     contextProvider: text('context_provider').notNull(),
+    promptContextSnapshotJson: text('prompt_context_snapshot_json'),
     resultJson: text('result_json'),
     usageJson: text('usage_json'),
     errorCode: text('error_code'),
@@ -417,6 +418,7 @@ export const generationRuns = sqliteTable(
       sql`${table.status} IN ('planning', 'awaiting_confirmation', 'queued', 'running', 'succeeded', 'partial', 'failed', 'canceled')`,
     ),
     check('generation_runs_context_provider_check', sql`${table.contextProvider} IN ('sqlite_fts5', 'openviking')`),
+    check('generation_runs_prompt_context_json_check', sql`${table.promptContextSnapshotJson} IS NULL OR json_valid(${table.promptContextSnapshotJson})`),
   ],
 )
 

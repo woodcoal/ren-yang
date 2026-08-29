@@ -105,8 +105,8 @@ export class SqliteRunRepository implements RunRepository {
         INSERT INTO generation_runs (
           id, kind, persona_version_id, format_template_id, parameter_profile_id, status,
           input_json, scene_json, parameter_snapshot_json, model_snapshot_json, image_model_snapshot_json,
-          prompt_version, context_provider, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          prompt_version, context_provider, prompt_context_snapshot_json, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         command.runId,
         command.kind,
@@ -121,6 +121,7 @@ export class SqliteRunRepository implements RunRepository {
         command.imageModel ? JSON.stringify(command.imageModel) : null,
         command.promptVersion,
         command.contextProvider,
+        JSON.stringify(command.promptContextSnapshot),
         command.timestamp,
         command.timestamp,
       )
@@ -665,6 +666,9 @@ function toRun(value: unknown): GenerationRunRecord {
     modelSnapshot: JSON.parse(String(data.model_snapshot_json)) as TextModelSnapshot,
     imageModelSnapshot: data.image_model_snapshot_json === null ? null : JSON.parse(String(data.image_model_snapshot_json)),
     promptVersion: String(data.prompt_version), contextProvider: data.context_provider as GenerationRunRecord['contextProvider'],
+    promptContextSnapshot: data.prompt_context_snapshot_json === null
+      ? null
+      : JSON.parse(String(data.prompt_context_snapshot_json)),
     result: data.result_json === null ? null : interestAssessmentSchema.parse(JSON.parse(String(data.result_json))),
     usage: data.usage_json === null ? null : JSON.parse(String(data.usage_json)) as TextModelUsage,
     errorCode: nullableString(data.error_code), errorMessage: nullableString(data.error_message),

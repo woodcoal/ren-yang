@@ -71,10 +71,10 @@ function run(): GenerationRunRecord {
     id: '00000000-0000-4000-8000-000000000040', kind: 'artifact_generation',
     personaVersionId: '00000000-0000-4000-8000-000000000041', formatTemplateId: null, parameterProfileId: null,
     status: 'succeeded', input: { requirement: '测试', includeImages: true }, scene: null,
-    parameterSnapshot: { temperature: 0.4, maxOutputTokens: 2048, timeoutMs: 60000, maxEvidenceChunks: 8, maxTextBlocks: 12, maxImageBlocks: 4, maxPromptCharacters: 120000, maxTotalTokens: 50000, maxBlockAttempts: 2 },
+    parameterSnapshot: { temperature: 0.4, maxOutputTokens: 2048, timeoutMs: 60000, maxEvidenceChunks: 8, maxTextBlocks: 12, maxImageBlocks: 4, maxPromptCharacters: 120000, maxTotalTokens: 50000, maxBlockAttempts: 2, contextWindowTokens: 32768, reservedOutputTokens: 4096, safetyMarginTokens: 2048, worldBudgetTokens: 5000, worldSoulBudgetTokens: 2500, worldGrowthBudgetTokens: 2500, personaBudgetTokens: 9000, personaSoulBudgetTokens: 3500, personaGrowthBudgetTokens: 2500, personaMemoryBudgetTokens: 3000, sourceBudgetTokens: 5000 },
     modelSnapshot: { provider: 'openai_compatible', model: 'test', endpointOrigin: 'https://text.test' },
     imageModelSnapshot: { provider: 'openai_compatible_images', model: 'test-image', endpointOrigin: 'https://image.test' },
-    promptVersion: 'artifact-v2', contextProvider: 'sqlite_fts5', result: null, usage: null,
+    promptVersion: 'artifact-v2', contextProvider: 'sqlite_fts5', promptContextSnapshot: null, result: null, usage: null,
     errorCode: null, errorMessage: null, createdAt: 1_000, updatedAt: 2_000, completedAt: 2_000,
   }
 }

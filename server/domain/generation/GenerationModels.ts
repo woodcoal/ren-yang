@@ -4,7 +4,7 @@ import type {
   SceneContext,
   TextModelParameters,
 } from '../../../shared/schemas/generation'
-import type { TextModelUsage } from '../../../shared/types/generation'
+import type { PromptContextSnapshot, TextModelUsage } from '../../../shared/types/generation'
 
 export type { TextModelUsage }
 
@@ -46,6 +46,8 @@ export interface GenerationRunRecord {
   imageModelSnapshot: ImageModelSnapshot | null
   promptVersion: string
   contextProvider: 'sqlite_fts5' | 'openviking'
+  /** 创建运行时固定的心智与预算快照；迁移前历史运行为空。 */
+  promptContextSnapshot: PromptContextSnapshot | null
   result: InterestAssessment | null
   usage: TextModelUsage | null
   errorCode: string | null

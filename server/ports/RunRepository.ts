@@ -1,4 +1,5 @@
 import type { DocumentSpec, TextModelParameters } from '../../shared/schemas/generation'
+import type { PromptContextSnapshot } from '../../shared/types/generation'
 import type {
   ArtifactBlockRecord,
   BlockAttemptRecord,
@@ -44,6 +45,8 @@ export interface CreateRunCommand {
   imageModel: ImageModelSnapshot | null
   promptVersion: string
   contextProvider: 'sqlite_fts5' | 'openviking'
+  /** 最终心智选择、预算和初始提示哈希。 */
+  promptContextSnapshot: PromptContextSnapshot
   evidence: NewEvidenceSnapshot[]
   timestamp: number
 }

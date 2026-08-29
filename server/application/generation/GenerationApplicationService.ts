@@ -21,6 +21,9 @@ import type {
   CreatedRun,
   FormatTemplateView,
   ParameterProfileView,
+  PromptContextCategory,
+  PromptContextItemSnapshot,
+  PromptContextSnapshot,
   RunDetails,
   RenderedArtifactView,
   RunSummary,
@@ -29,6 +32,7 @@ import type { SystemCapabilitiesResult } from '../../../shared/types/system'
 import type { PersonaRecord, PersonaVersionRecord } from '../../domain/content/ContentModels'
 import { ImageAssetError } from '../../domain/generation/ImageAssetError'
 import type { ArtifactBlockRecord, GenerationRunRecord, TextModelUsage } from '../../domain/generation/GenerationModels'
+import { selectPromptContextByBudget, type PromptBudgetCandidate } from '../../domain/generation/PromptContextBudget'
 import type { TaskJob } from '../../domain/tasks/TaskJob'
 import type { Clock } from '../../ports/Clock'
 import type { ContentRepository } from '../../ports/ContentRepository'
@@ -46,6 +50,7 @@ import type { LearningRepository } from '../../ports/LearningRepository'
 import type { TaskHandler } from '../../ports/TaskPorts'
 import { TaskExecutionError } from '../../ports/TaskPorts'
 import type { TextModelPort } from '../../ports/TextModelPort'
+import type { TokenCounter } from '../../ports/TokenCounter'
 import { TextModelError } from '../../ports/TextModelPort'
 import { ApplicationError } from '../errors/ApplicationError'
 import {
@@ -71,6 +76,17 @@ export const DEFAULT_TEXT_PARAMETERS: TextModelParameters = {
   maxPromptCharacters: 120_000,
   maxTotalTokens: 50_000,
   maxBlockAttempts: 2,
+  contextWindowTokens: 32_768,
+  reservedOutputTokens: 4_096,
+  safetyMarginTokens: 2_048,
+  worldBudgetTokens: 5_000,
+  worldSoulBudgetTokens: 2_500,
+  worldGrowthBudgetTokens: 2_500,
+  personaBudgetTokens: 9_000,
+  personaSoulBudgetTokens: 3_500,
+  personaGrowthBudgetTokens: 2_500,
+  personaMemoryBudgetTokens: 3_000,
+  sourceBudgetTokens: 5_000,
 }
 
 /** 未选择格式模板时使用的最小文档结构指导。 */
@@ -97,8 +113,10 @@ export interface GenerationApplicationServiceDependencies {
   identifiers: IdentifierGenerator
   clock: Clock
   sourceProcessor: SourceContentProcessor
-  /** 运行完成后写入人物记忆原始处理记录；未注入时兼容只读测试环境。 */
-  operationRecords?: Pick<LearningRepository, 'createPersonaOperationRecord'>
+  /** 调用前执行分层提示词预算的 Token 计数器。 */
+  tokenCounter: TokenCounter
+  /** 成长、记忆状态校验和人物处理记录事实源。 */
+  learning: Pick<LearningRepository, 'listGrowth' | 'listMemories' | 'createPersonaOperationRecord'>
   /** OpenViking 启用时使用的 Session 异步队列。 */
   contextSyncQueue?: ContextSyncTaskQueue
 }
@@ -436,7 +454,10 @@ export class GenerationApplicationService implements TaskHandler {
     if (!persona.activeVersionId) throw new ApplicationError('PERSONA_VERSION_NOT_ACTIVE', '人物尚无已发布当前版本', 409)
     const version = await this.requirePublishedPersonaVersion(persona.activeVersionId, persona.id)
     const parameters = await this.resolveParameters(profileId)
-    if (templateId) await this.requireFormatTemplate(templateId)
+    const template = templateId ? await this.requireFormatTemplate(templateId) : { spec: DEFAULT_FORMAT_TEMPLATE }
+    const world = persona.worldId ? await this.dependencies.content.findWorld(persona.worldId) : null
+    const worldVersion = world?.activeVersionId ? await this.dependencies.content.findWorldVersion(world.activeVersionId) : null
+    const activeWorldVersion = worldVersion?.status === 'published' ? worldVersion : null
     const query = 'content' in input ? input.content : input.requirement
     let contextSearch
     try {
@@ -451,6 +472,60 @@ export class GenerationApplicationService implements TaskHandler {
     const runId = this.dependencies.identifiers.create()
     const taskId = this.dependencies.identifiers.create()
     const timestamp = this.dependencies.clock.now()
+    const emptyPromptContext: PromptContext = {
+      persona: version.snapshot,
+      world: activeWorldVersion?.snapshot ?? null,
+      scene,
+      evidence: [],
+    }
+    const fixedPrompt = this.buildInitialRunPrompt(kind, input, template.spec, parameters, emptyPromptContext)
+    const tokenCounterModel = model.model
+    const fixedInputTokens = this.countPromptTokens(tokenCounterModel, fixedPrompt)
+    const worldSoulCount = activeWorldVersion
+      ? this.dependencies.tokenCounter.count(tokenCounterModel, activeWorldVersion.snapshot.runtimeSummary)
+      : { tokens: 0, mode: 'estimated' as const, counter: 'none' }
+    const personaSoulCount = this.dependencies.tokenCounter.count(tokenCounterModel, version.snapshot.runtimeSummary)
+    const prepared = await this.preparePromptBudgetCandidates(
+      persona,
+      contextSearch.candidates,
+      tokenCounterModel,
+    )
+    let selection
+    try {
+      selection = selectPromptContextByBudget({
+        parameters,
+        fixedInputTokens,
+        worldSoulTokens: worldSoulCount.tokens,
+        personaSoulTokens: personaSoulCount.tokens,
+        candidates: prepared.valid.map(item => item.budget),
+      })
+    }
+    catch (error: unknown) {
+      throw new ApplicationError('PROMPT_BUDGET_EXCEEDED', error instanceof Error ? error.message : '提示词预算不足', 422)
+    }
+    const preparedByKey = new Map(prepared.valid.map(item => [promptBudgetCandidateKey(item.budget), item]))
+    const selectedEvidence = selection.selected
+      .map(candidate => preparedByKey.get(promptBudgetCandidateKey(candidate)))
+      .filter((item): item is PreparedPromptCandidates['valid'][number] => Boolean(item))
+      .map((item, index): NewEvidenceSnapshot => ({
+        id: item.evidenceId,
+        sourceId: item.sourceId,
+        chunkId: item.chunkId,
+        role: item.budget.role,
+        content: item.budget.content,
+        contentHash: item.budget.contentHash,
+        rank: index,
+        metadata: { heading: item.heading, priority: item.priority, category: item.budget.category, entityId: item.budget.entityId },
+      }))
+    const promptContext: PromptContext = {
+      ...emptyPromptContext,
+      evidence: selectedEvidence.map(item => ({ ...item, runId, createdAt: timestamp })),
+    }
+    const initialPrompt = this.buildInitialRunPrompt(kind, input, template.spec, parameters, promptContext)
+    const estimatedInputTokens = this.countPromptTokens(tokenCounterModel, initialPrompt)
+    if (estimatedInputTokens > selection.availableInputTokens) {
+      throw new ApplicationError('PROMPT_BUDGET_EXCEEDED', '最终提示词超过可用输入 Token，请减少任务内容或上下文预算', 422)
+    }
     const userSettingContent = JSON.stringify(version.snapshot)
     const userSettings: NewEvidenceSnapshot[] = [
       {
@@ -459,19 +534,44 @@ export class GenerationApplicationService implements TaskHandler {
         rank: 0, metadata: { personaVersionId: version.id },
       },
     ]
-    if (persona.worldId) {
-      const world = await this.dependencies.content.findWorld(persona.worldId)
-      const worldVersion = world?.activeVersionId
-        ? await this.dependencies.content.findWorldVersion(world.activeVersionId)
-        : null
-      if (worldVersion?.status === 'published') {
-        const content = JSON.stringify(worldVersion.snapshot)
+    if (activeWorldVersion) {
+        const content = JSON.stringify(activeWorldVersion.snapshot)
         userSettings.push({
           id: this.dependencies.identifiers.create(), sourceId: null, chunkId: null, role: 'user_setting',
           content, contentHash: this.dependencies.sourceProcessor.hash(content), rank: 1,
-          metadata: { worldVersionId: worldVersion.id },
+          metadata: { worldVersionId: activeWorldVersion.id },
         })
-      }
+    }
+    const selectedSnapshots = selection.selected.map(candidate => toPromptContextItemSnapshot(candidate, null))
+    const skippedSnapshots = [
+      ...selection.skipped.map(candidate => toPromptContextItemSnapshot(candidate, candidate.skippedReason)),
+      ...prepared.invalid,
+    ]
+    const promptContextSnapshot: PromptContextSnapshot = {
+      tokenCounter: personaSoulCount.counter,
+      tokenCountExact: personaSoulCount.mode === 'exact' && (!activeWorldVersion || worldSoulCount.mode === 'exact'),
+      availableInputTokens: selection.availableInputTokens,
+      estimatedInputTokens,
+      budgets: {
+        world: {
+          limit: parameters.worldBudgetTokens, used: selection.used.world,
+          soulLimit: parameters.worldSoulBudgetTokens, soulUsed: worldSoulCount.tokens,
+          growthLimit: parameters.worldGrowthBudgetTokens, growthUsed: selection.used.worldGrowth,
+        },
+        persona: {
+          limit: parameters.personaBudgetTokens, used: selection.used.persona,
+          soulLimit: parameters.personaSoulBudgetTokens, soulUsed: personaSoulCount.tokens,
+          growthLimit: parameters.personaGrowthBudgetTokens, growthUsed: selection.used.personaGrowth,
+          memoryLimit: parameters.personaMemoryBudgetTokens, memoryUsed: selection.used.personaMemory,
+        },
+        sources: { limit: parameters.sourceBudgetTokens, used: selection.used.sources },
+      },
+      worldSoulVersionId: activeWorldVersion?.id ?? null,
+      personaSoulVersionId: version.id,
+      selected: selectedSnapshots,
+      skipped: skippedSnapshots,
+      systemPromptHash: this.dependencies.sourceProcessor.hash(initialPrompt.systemPrompt),
+      userPromptHash: this.dependencies.sourceProcessor.hash(initialPrompt.userPrompt),
     }
     await this.dependencies.runs.createRun({
       runId, taskId, taskType: kind === 'interest_assessment' ? 'assess_interest' : 'plan_document', kind,
@@ -479,13 +579,122 @@ export class GenerationApplicationService implements TaskHandler {
       status: kind === 'interest_assessment' ? 'queued' : 'planning', input, scene, parameters, model, imageModel,
       promptVersion: GENERATION_PROMPT_VERSION,
       contextProvider: contextSearch.provider,
+      promptContextSnapshot,
       evidence: [
         ...userSettings,
-        ...contextSearch.candidates.map((candidate, index) => ({ id: this.dependencies.identifiers.create(), sourceId: candidate.sourceId, chunkId: candidate.chunkId, role: candidate.role, content: candidate.content, contentHash: candidate.contentHash, rank: index + userSettings.length, metadata: { heading: candidate.heading, priority: candidate.priority } })),
+        ...selectedEvidence.map(item => ({ ...item, rank: item.rank + userSettings.length })),
       ],
       timestamp,
     })
     return { runId, taskId, status: kind === 'interest_assessment' ? 'queued' : 'planning' }
+  }
+
+  /**
+   * 构建创建运行时即可确定的首次文本模型提示。
+   * @param kind 运行类型。
+   * @param input 固定任务输入。
+   * @param template 格式模板规格。
+   * @param parameters 运行参数快照。
+   * @param context 已选择的心智与资料上下文。
+   * @returns 兴趣判断或文档规划的完整提示。
+   */
+  private buildInitialRunPrompt(
+    kind: GenerationRunRecord['kind'],
+    input: GenerationRunRecord['input'],
+    template: { guidance: string, minimumBlocks: number, maximumBlocks: number },
+    parameters: TextModelParameters,
+    context: PromptContext,
+  ): { systemPrompt: string, userPrompt: string } {
+    if (kind === 'interest_assessment') {
+      return buildInterestPrompt(context, 'content' in input ? input.content : '')
+    }
+    const allowImages = 'includeImages' in input && input.includeImages
+    const maximum = Math.min(template.maximumBlocks, parameters.maxTextBlocks + (allowImages ? parameters.maxImageBlocks : 0))
+    if (template.minimumBlocks > maximum) {
+      throw new ApplicationError('TASK_LIMIT_EXCEEDED', '格式模板最少块数超过当前运行允许的图文块总数', 422)
+    }
+    return buildDocumentPlanPrompt(
+      context,
+      'requirement' in input ? input.requirement : '',
+      template.guidance,
+      template.minimumBlocks,
+      maximum,
+      allowImages,
+    )
+  }
+
+  /**
+   * 使用 SQLite 当前状态再次过滤提供器结果，并生成逐条预算输入。
+   * @param persona 当前人物及所属世界。
+   * @param candidates OpenViking 或 FTS5 排序结果。
+   * @param model 当前模型名称。
+   * @returns 有效候选、证据标识和被拒绝条目快照。
+   */
+  private async preparePromptBudgetCandidates(
+    persona: PersonaRecord,
+    candidates: Awaited<ReturnType<ContextProvider['search']>>['candidates'],
+    model: string,
+  ): Promise<PreparedPromptCandidates> {
+    const [personaSources, worldSources, personaGrowth, worldGrowth, memories] = await Promise.all([
+      this.dependencies.content.listPersonaSources(persona.id),
+      persona.worldId ? this.dependencies.content.listWorldSources(persona.worldId) : Promise.resolve([]),
+      this.dependencies.learning.listGrowth('persona', persona.id),
+      persona.worldId ? this.dependencies.learning.listGrowth('world', persona.worldId) : Promise.resolve([]),
+      this.dependencies.learning.listMemories(persona.id),
+    ])
+    const sources = new Map([...worldSources, ...personaSources].map(item => [item.id, item]))
+    const learning = new Map([
+      ...worldGrowth.filter(item => item.status === 'active').map(item => [`world_growth:${item.id}`, item] as const),
+      ...personaGrowth.filter(item => item.status === 'active').map(item => [`persona_growth:${item.id}`, item] as const),
+      ...memories.filter(item => item.status === 'active').map(item => [`persona_memory:${item.id}`, item] as const),
+    ])
+    const valid: PreparedPromptCandidates['valid'] = []
+    const invalid: PromptContextItemSnapshot[] = []
+    const seen = new Set<string>()
+    for (const candidate of candidates) {
+      const category = candidate.entityType === 'source' ? 'source' : candidate.entityType
+      const entityId = candidate.entityType === 'source'
+        ? candidate.chunkId ?? candidate.entityId
+        : candidate.entityId
+      const evidenceId = this.dependencies.identifiers.create()
+      const estimatedTokens = this.dependencies.tokenCounter.count(
+        model,
+        JSON.stringify({ id: evidenceId, entityId, role: candidate.role, content: candidate.content }),
+      ).tokens
+      const budget: PromptBudgetCandidate = {
+        entityId,
+        category,
+        role: candidate.role,
+        content: candidate.content,
+        contentHash: candidate.contentHash,
+        estimatedTokens,
+      }
+      const uniqueKey = promptBudgetCandidateKey(budget)
+      const source = candidate.sourceId ? sources.get(candidate.sourceId) : null
+      const learningRecord = learning.get(`${candidate.entityType}:${candidate.entityId}`)
+      const isValid = candidate.entityType === 'source'
+        ? Boolean(source && source.contentText.includes(candidate.content))
+        : Boolean(learningRecord && this.dependencies.sourceProcessor.hash(learningRecord.content) === candidate.contentHash)
+      if (!isValid || seen.has(uniqueKey)) {
+        invalid.push(toPromptContextItemSnapshot(budget, 'scope_or_state_invalid'))
+        continue
+      }
+      seen.add(uniqueKey)
+      valid.push({
+        budget,
+        evidenceId,
+        sourceId: candidate.sourceId,
+        chunkId: candidate.chunkId,
+        heading: candidate.heading,
+        priority: candidate.priority,
+      })
+    }
+    return { valid, invalid }
+  }
+
+  /** @param model 当前模型名称。 @param prompt 完整系统与用户提示。 @returns 保守或精确的合并输入 Token。 */
+  private countPromptTokens(model: string, prompt: { systemPrompt: string, userPrompt: string }): number {
+    return this.dependencies.tokenCounter.count(model, `${prompt.systemPrompt}\n${prompt.userPrompt}`).tokens
   }
 
   /** @param runId 兴趣运行 UUID。 @returns 执行结束时完成。 */
@@ -610,13 +819,12 @@ export class GenerationApplicationService implements TaskHandler {
     decision: Record<string, unknown> | null,
     timestamp: number,
   ): Promise<void> {
-    if (!this.dependencies.operationRecords) return
     const [identity, evidence] = await Promise.all([
       this.dependencies.runs.findRunPersona(run.id),
       this.dependencies.runs.listEvidence(run.id),
     ])
     if (!identity) throw new Error('运行绑定人物不存在')
-    await this.dependencies.operationRecords.createPersonaOperationRecord({
+    await this.dependencies.learning.createPersonaOperationRecord({
       id: this.dependencies.identifiers.create(),
       personaId: identity.personaId,
       runId: run.id,
@@ -681,6 +889,7 @@ export class GenerationApplicationService implements TaskHandler {
         }
         const prompt = buildTextBlockPrompt(context, documentSpec, block.spec, previousOutputs)
         this.assertPromptCharacterLimit(prompt, run.parameterSnapshot)
+        this.assertPromptInputBudget(prompt, run.parameterSnapshot, run.modelSnapshot.model)
         await this.assertRunTokenBudget(run, null)
         const response = await this.dependencies.model.generateStructured({ ...prompt, parameters: run.parameterSnapshot, responseSchemaName: 'text_block' })
         responseUsage = response.usage
@@ -735,6 +944,7 @@ export class GenerationApplicationService implements TaskHandler {
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
         this.assertPromptCharacterLimit(currentPrompt, parameters)
+        this.assertPromptInputBudget(currentPrompt, parameters, this.dependencies.model.getConfiguredModel()?.model ?? '')
         const consumedTokens = usageTotalTokens(aggregateTextModelUsage(priorUsage ? [priorUsage, ...usages] : usages))
         if (consumedTokens !== null && consumedTokens >= parameters.maxTotalTokens) {
           throw new ApplicationError('TASK_LIMIT_EXCEEDED', '模型已报告的运行总 Token 达到上限', 422)
@@ -776,6 +986,20 @@ export class GenerationApplicationService implements TaskHandler {
   }
 
   /**
+   * 在供应商调用前校验当前完整提示不突破模型可用输入 Token。
+   * @param prompt 最终系统与用户提示。
+   * @param parameters 固定预算配置。
+   * @param model 当前运行绑定的模型名称。
+   * @returns 预算允许时无返回值。
+   */
+  private assertPromptInputBudget(prompt: { systemPrompt: string, userPrompt: string }, parameters: TextModelParameters, model: string): void {
+    const available = parameters.contextWindowTokens - parameters.reservedOutputTokens - parameters.safetyMarginTokens
+    if (this.countPromptTokens(model, prompt) > available) {
+      throw new ApplicationError('PROMPT_BUDGET_EXCEEDED', '当前模型提示超过可用输入 Token', 422)
+    }
+  }
+
+  /**
    * 按供应商已经报告的用量校验当前运行总 Token。
    * @param run 固定运行快照。
    * @param additionalUsage 尚未持久化的本次响应，可为空。
@@ -806,7 +1030,7 @@ export class GenerationApplicationService implements TaskHandler {
     const evidence = await this.dependencies.runs.listEvidence(run.id)
     const worldEvidence = evidence.find(item => typeof item.metadata.worldVersionId === 'string')
     const world = worldEvidence ? worldSnapshotSchema.parse(JSON.parse(worldEvidence.content)) : null
-    return { persona: version.snapshot, world, scene: run.scene, evidence }
+    return { persona: version.snapshot, world, scene: run.scene, evidence: evidence.filter(item => item.role !== 'user_setting') }
   }
 
   /** @param id 人物 UUID。 @returns 人物。 */
@@ -940,7 +1164,47 @@ export class GenerationApplicationService implements TaskHandler {
   private async toRunSummary(run: GenerationRunRecord): Promise<RunSummary> {
     const identity = await this.dependencies.runs.findRunPersona(run.id)
     if (!identity) throw new Error('运行人物关系损坏')
-    return { id: run.id, kind: run.kind, personaVersionId: run.personaVersionId, ...identity, status: run.status, input: run.input, scene: run.scene, parameters: run.parameterSnapshot, model: run.modelSnapshot, imageModel: run.imageModelSnapshot, promptVersion: run.promptVersion, contextProvider: run.contextProvider, result: run.result, usage: await this.getRunUsage(run), errorCode: run.errorCode, errorMessage: run.errorMessage, createdAt: run.createdAt, updatedAt: run.updatedAt, completedAt: run.completedAt }
+    return { id: run.id, kind: run.kind, personaVersionId: run.personaVersionId, ...identity, status: run.status, input: run.input, scene: run.scene, parameters: run.parameterSnapshot, model: run.modelSnapshot, imageModel: run.imageModelSnapshot, promptVersion: run.promptVersion, contextProvider: run.contextProvider, promptContext: run.promptContextSnapshot, result: run.result, usage: await this.getRunUsage(run), errorCode: run.errorCode, errorMessage: run.errorMessage, createdAt: run.createdAt, updatedAt: run.updatedAt, completedAt: run.completedAt }
+  }
+}
+
+/** 已通过 SQLite 范围和状态复核的提示候选集合。 */
+interface PreparedPromptCandidates {
+  /** 可参与预算选择并携带最终证据标识的候选。 */
+  valid: Array<{
+    budget: PromptBudgetCandidate
+    evidenceId: string
+    sourceId: string | null
+    chunkId: string | null
+    heading: string | null
+    priority: number
+  }>
+  /** 因范围、状态、正文变化或重复被拒绝的候选。 */
+  invalid: PromptContextItemSnapshot[]
+}
+
+/** @param candidate 预算候选。 @returns 可区分同一资料不同切片正文的稳定键。 */
+function promptBudgetCandidateKey(candidate: PromptBudgetCandidate): string {
+  return `${candidate.category}:${candidate.entityId}:${candidate.contentHash}`
+}
+
+/**
+ * 转换运行预算快照条目。
+ * @param candidate 已估算候选。
+ * @param skippedReason 跳过原因；选中时为空。
+ * @returns 不包含正文的可审计快照。
+ */
+function toPromptContextItemSnapshot(
+  candidate: PromptBudgetCandidate,
+  skippedReason: PromptContextItemSnapshot['skippedReason'],
+): PromptContextItemSnapshot {
+  return {
+    entityId: candidate.entityId,
+    category: candidate.category,
+    role: candidate.role,
+    contentHash: candidate.contentHash,
+    estimatedTokens: candidate.estimatedTokens,
+    skippedReason,
   }
 }
 

@@ -7,6 +7,55 @@ export interface TextModelUsage {
   totalTokens: number | null
 }
 
+/** 运行提示词中可独立限额的上下文分类。 */
+export type PromptContextCategory = 'world_growth' | 'persona_growth' | 'persona_memory' | 'source'
+
+/** 运行最终选入或因预算跳过的一项上下文。 */
+export interface PromptContextItemSnapshot {
+  /** SQLite 业务实体 UUID。 */
+  entityId: string
+  /** 所属预算分类。 */
+  category: PromptContextCategory
+  /** 证据角色。 */
+  role: 'growth' | 'memory' | 'canon_fact' | 'reference' | 'style_sample'
+  /** 固定正文 SHA-256。 */
+  contentHash: string
+  /** 调用前估算 Token。 */
+  estimatedTokens: number
+  /** 未选入时的稳定原因；已选入时为空。 */
+  skippedReason: 'category_budget' | 'parent_budget' | 'total_budget' | 'scope_or_state_invalid' | null
+}
+
+/** 新运行创建时固定的完整心智与提示预算快照。 */
+export interface PromptContextSnapshot {
+  /** Token 计数器和是否精确的说明。 */
+  tokenCounter: string
+  /** 当前计数是否为供应商精确分词。 */
+  tokenCountExact: boolean
+  /** 模型可用输入预算。 */
+  availableInputTokens: number
+  /** 初始模型调用预计输入量。 */
+  estimatedInputTokens: number
+  /** 各级预算及实际估算量。 */
+  budgets: {
+    world: { limit: number, used: number, soulLimit: number, soulUsed: number, growthLimit: number, growthUsed: number }
+    persona: { limit: number, used: number, soulLimit: number, soulUsed: number, growthLimit: number, growthUsed: number, memoryLimit: number, memoryUsed: number }
+    sources: { limit: number, used: number }
+  }
+  /** 运行固定使用的世界灵魂版本；独立人物或世界未发布时为空。 */
+  worldSoulVersionId: string | null
+  /** 运行固定使用的人物灵魂版本。 */
+  personaSoulVersionId: string
+  /** 最终选入的成长、记忆与资料。 */
+  selected: PromptContextItemSnapshot[]
+  /** 因预算、范围或状态未进入提示词的条目。 */
+  skipped: PromptContextItemSnapshot[]
+  /** 初始模型调用最终系统提示哈希。 */
+  systemPromptHash: string
+  /** 初始模型调用最终用户提示哈希。 */
+  userPromptHash: string
+}
+
 /** 文本模型能力状态，不暴露密钥。 */
 export interface TextModelCapability {
   configured: boolean
@@ -45,6 +94,8 @@ export interface RunSummary {
   imageModel: { provider: 'openai_compatible_images', model: string, endpointOrigin: string } | null
   promptVersion: string
   contextProvider: 'sqlite_fts5' | 'openviking'
+  /** 创建运行时固定的心智选择与预算；旧运行为空。 */
+  promptContext: PromptContextSnapshot | null
   result: InterestAssessment | null
   /** 当前运行已持久化的供应商用量；供应商未提供时字段为 null。 */
   usage: TextModelUsage | null

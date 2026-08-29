@@ -107,6 +107,8 @@ function buildFtsQuery(value: string): string {
 function toEvidenceCandidate(value: unknown): EvidenceCandidate {
   const row = value as Record<string, unknown>
   return {
+    entityType: 'source',
+    entityId: String(row.source_id),
     sourceId: String(row.source_id),
     chunkId: String(row.chunk_id),
     role: row.role as EvidenceCandidate['role'],
@@ -121,6 +123,10 @@ function toEvidenceCandidate(value: unknown): EvidenceCandidate {
 function toLearningCandidate(value: unknown): EvidenceCandidate {
   const row = value as Record<string, unknown>
   return {
+    entityType: row.entity_type === 'memory'
+      ? 'persona_memory'
+      : row.entity_type as 'world_growth' | 'persona_growth',
+    entityId: String(row.entity_id),
     sourceId: null,
     chunkId: null,
     role: row.entity_type === 'memory' ? 'memory' : 'growth',

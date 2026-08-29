@@ -2,6 +2,10 @@ import type { OpenVikingCapabilityView } from '../../shared/types/context'
 
 /** 本地检索返回且尚未复制到运行的证据候选。 */
 export interface EvidenceCandidate {
+  /** SQLite 最终校验和预算快照使用的实体分类。 */
+  entityType: 'source' | 'world_growth' | 'persona_growth' | 'persona_memory'
+  /** SQLite 业务实体 UUID。 */
+  entityId: string
   sourceId: string | null
   chunkId: string | null
   role: 'canon_fact' | 'reference' | 'style_sample' | 'growth' | 'memory'

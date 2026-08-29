@@ -97,6 +97,10 @@ export interface DerivedMemoryDocument {
 
 /** 尚无远端 URI 但已由 SQLite 审核生效的成长或记忆。 */
 export interface ActiveLocalLearning {
+  /** 成长或记忆业务 UUID。 */
+  id: string
+  /** 区分世界成长、人物成长和人物记忆。 */
+  entityType: 'world_growth' | 'persona_growth' | 'persona_memory'
   /** 成长或记忆。 */
   role: 'growth' | 'memory'
   /** 完整正文。 */
