@@ -16,7 +16,7 @@ import { SqliteTaskJobRepository } from '../../server/infrastructure/database/Sq
 import type { Clock } from '../../server/ports/Clock'
 import type { ContextSourceDocument } from '../../server/ports/ContextIndexRepository'
 import type { IdentifierGenerator } from '../../server/ports/IdentifierGenerator'
-import type { OpenVikingPort } from '../../server/ports/OpenVikingPort'
+import { OpenVikingError, type OpenVikingPort } from '../../server/ports/OpenVikingPort'
 import { ApplicationError } from '../../server/application/errors/ApplicationError'
 
 /** 测试使用的顺序 UUID。 */
@@ -49,6 +49,8 @@ class InMemoryOpenViking implements OpenVikingPort {
   public readonly resources = new Map<string, string>()
   /** 重建删除次数。 */
   public resetCount = 0
+  /** 删除资源前还需模拟的临时失败次数。 */
+  public deleteFailuresRemaining = 0
 
   /** @param enabled 能力开关。 */
   constructor(private readonly enabled = true) {}
@@ -65,6 +67,19 @@ class InMemoryOpenViking implements OpenVikingPort {
   async resetIndex() {
     this.resetCount += 1
     this.resources.clear()
+  }
+
+  /**
+   * 删除一项稳定 URI 的模拟远端资料。
+   * @param sourceId 已从 SQLite 删除的资料 UUID。
+   * @returns 删除内存资源后结束。
+   */
+  async deleteSource(sourceId: string): Promise<void> {
+    if (this.deleteFailuresRemaining > 0) {
+      this.deleteFailuresRemaining -= 1
+      throw new OpenVikingError('PROVIDER_UNAVAILABLE', '模拟 OpenViking 删除失败')
+    }
+    this.resources.delete(`viking://resources/ren-yang/${sourceId}.md`)
   }
 
   /** @param source SQLite 资料。 @returns 写入的稳定远端 URI。 */
@@ -136,7 +151,7 @@ describe('OpenViking 可关闭索引与 SQLite 重建', () => {
     expect(openViking.resetCount).toBe(0)
   })
 
-  it('能力启用时资料创建和更新只排持久任务并由 Worker 同步最新正文', async () => {
+  it('能力启用时资料创建、更新和删除均排持久任务，并由 Worker 同步和重试', async () => {
     database.getClient().prepare('DELETE FROM source_materials').run()
     const identifiers = new SequentialIdentifierGenerator()
     const clock = new IncrementingClock()
@@ -173,6 +188,23 @@ describe('OpenViking 可关闭索引与 SQLite 重建', () => {
     await content.updateSource(created.source.id, { name: '增量资料', role: 'reference', content: '第二版增量正文。' })
     await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: true })
     expect(openViking.resources.get(`viking://resources/ren-yang/${created.source.id}.md`)).toBe('第二版增量正文。')
+
+    await content.deleteSource(created.source.id)
+    expect(openViking.resources.has(`viking://resources/ren-yang/${created.source.id}.md`)).toBe(true)
+    expect(database.getClient().prepare(`
+      SELECT COUNT(*) AS count FROM task_jobs WHERE type = 'sync_context_source' AND status = 'queued'
+    `).get()).toEqual({ count: 1 })
+    expect(database.getClient().prepare('SELECT COUNT(*) AS count FROM context_sync_records').get()).toEqual({ count: 0 })
+
+    openViking.deleteFailuresRemaining = 1
+    await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: false })
+    expect(database.getClient().prepare(`
+      SELECT status, attempt_count FROM task_jobs WHERE type = 'sync_context_source' AND status = 'queued'
+    `).get()).toEqual({ status: 'queued', attempt_count: 1 })
+    expect(openViking.resources.has(`viking://resources/ren-yang/${created.source.id}.md`)).toBe(true)
+
+    await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: true })
+    expect(openViking.resources.has(`viking://resources/ren-yang/${created.source.id}.md`)).toBe(false)
   })
 
   it('能力关闭时资料保存不创建 OpenViking 同步任务', async () => {

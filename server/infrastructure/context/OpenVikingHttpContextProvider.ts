@@ -73,6 +73,15 @@ export class OpenVikingHttpContextProvider implements ContextProvider, OpenVikin
   }
 
   /**
+   * 删除一项 SQLite 已不存在的远端资料资源。
+   * @param sourceId 已删除资料 UUID，用于生成稳定且受控的远端 URI。
+   * @returns OpenViking 删除完成时结束；远端资源不存在时同样成功。
+   */
+  async deleteSource(sourceId: string): Promise<void> {
+    await this.deleteUri(sourceRemoteUri(sourceId), false)
+  }
+
+  /**
    * 用 SQLite 完整正文替换一项 OpenViking 资源，并等待语义索引完成。
    * @param source SQLite 唯一资料事实。
    * @returns 实际写入的稳定 Viking URI。

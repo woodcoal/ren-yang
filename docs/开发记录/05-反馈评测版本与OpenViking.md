@@ -98,7 +98,7 @@ DELETE /api/v1/fs
 viking://resources/ren-yang/{sourceId}.md
 ```
 
-OpenViking 开启时，资料创建、文件导入和资料更新只在 SQLite 成功后创建 `sync_context_source` 持久任务。Worker 读取执行时的最新 SQLite 正文，最多尝试三次，并保存 `pending`、`synchronized` 或 `failed` 状态、正文哈希、远端 URI 和脱敏错误。资料 HTTP 请求本身不等待外部网络。
+OpenViking 开启时，资料创建、文件导入、资料更新和删除只在 SQLite 操作成功后创建 `sync_context_source` 持久任务。Worker 读取执行时的最新 SQLite 正文；资料存在时写入最新内容，不存在时删除稳定远端 URI。任务最多尝试三次。资料 HTTP 请求本身不等待外部网络。
 
 关闭 OpenViking 时不创建同步任务，运行使用 SQLite FTS5。开启后故障不会在同一次运行中静默回退 SQLite。管理页可主动检查健康状态，也可明确确认后删除 `viking://resources/ren-yang` 并从 SQLite 全量重建。SQLite 正文、关联、版本和运行历史均不依赖远端索引恢复。
 
@@ -194,7 +194,7 @@ OpenViking 开启路径：
 ## 已知边界
 
 - 当前只把资料正文同步到 OpenViking Resource，不同步人物版本、候选记忆或反馈到 Memory。
-- 删除无关联资料后，旧远端 URI 可能保留到下一次全量重建；人物和世界检索范围已不包含该资料，因此不会被新运行检索。
+- 删除无关联资料后，启用状态下会创建持久任务异步删除旧远端 URI；远端 404 视为已完成，其他故障沿用任务重试。
 - 全量重建是管理员显式同步请求；资料增量同步才经过后台任务。
 - OpenViking 检索发生在运行事实创建前；外部检索失败会返回 503，不创建缺少证据快照的不完整运行。
 - 每个人物最多 10 个活动评测用例；当前不提供停用或编辑用例接口。

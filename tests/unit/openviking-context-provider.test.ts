@@ -54,6 +54,36 @@ class FixedContextProvider implements ContextProvider {
 const SOURCE_ID = '00000000-0000-4000-8000-000000000001'
 
 describe('OpenViking 原生 HTTP 上下文适配器', () => {
+  it('按稳定资料 URI 删除远端资源，并把远端不存在视为成功', async () => {
+    const requests: string[] = []
+    const responses = [
+      new Response(JSON.stringify({ status: 'ok', result: { status: 'success' } })),
+      new Response(JSON.stringify({ status: 'error', error: { code: 'NOT_FOUND' } }), { status: 404 }),
+    ]
+    const provider = new OpenVikingHttpContextProvider({
+      enabled: true,
+      endpoint: 'https://ov.test',
+      apiKey: '',
+      timeoutMs: 5_000,
+      repository: new FixedContextIndexRepository([]),
+      fetcher: vi.fn(async (input: URL | RequestInfo) => {
+        requests.push(String(input))
+        return responses.shift()!
+      }) as unknown as typeof fetch,
+    })
+
+    await expect(provider.deleteSource(SOURCE_ID)).resolves.toBeUndefined()
+    await expect(provider.deleteSource(SOURCE_ID)).resolves.toBeUndefined()
+
+    expect(requests.map((value) => {
+      const url = new URL(value)
+      return { path: url.pathname, uri: url.searchParams.get('uri'), recursive: url.searchParams.get('recursive'), wait: url.searchParams.get('wait') }
+    })).toEqual([
+      { path: '/api/v1/fs', uri: `viking://resources/ren-yang/${SOURCE_ID}.md`, recursive: 'false', wait: 'true' },
+      { path: '/api/v1/fs', uri: `viking://resources/ren-yang/${SOURCE_ID}.md`, recursive: 'false', wait: 'true' },
+    ])
+  })
+
   it('按 temp_upload、wait=true 资源写入和限定 URI 检索契约转换统一证据', async () => {
     const requests: Array<{ url: string, init: RequestInit }> = []
     const responses = [

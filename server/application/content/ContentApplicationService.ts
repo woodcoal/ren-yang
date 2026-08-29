@@ -69,7 +69,7 @@ export interface ContentApplicationServiceDependencies {
   sourceFiles: SourceFileStorage
   /** 可选阶段四运行资产清理端口。 */
   imageAssets?: Pick<ImageAssetStorage, 'deleteRunAssets'>
-  /** OpenViking 启用时提供的持久增量同步队列；关闭时不注入。 */
+  /** OpenViking 启用时提供的持久资料同步与删除队列；关闭时不注入。 */
   contextSyncQueue?: ContextSyncTaskQueue
 }
 
@@ -577,7 +577,7 @@ export class ContentApplicationService {
 
   /**
    * 仅在组合根启用 OpenViking 时创建持久同步任务，不在资料请求中联网。
-   * @param sourceId 已成功保存的资料 UUID。
+   * @param sourceId 已成功保存、更新或删除的资料 UUID。
    * @returns 排队完成时结束；能力关闭时直接结束。
    */
   private async enqueueSourceSynchronization(sourceId: string): Promise<void> {
@@ -649,7 +649,7 @@ export class ContentApplicationService {
   }
 
   /**
-   * 永久删除无关联资料、切片、FTS 索引和原始文件。
+   * 永久删除无关联资料、切片、FTS 索引和原始文件，并异步清理可选远端索引。
    * @param sourceId 资料 UUID。
    * @returns 无返回值。
    */
@@ -660,6 +660,8 @@ export class ContentApplicationService {
       throw new ApplicationError('RESOURCE_IN_USE', impact.blockers[0]!, 409, { impact })
     }
     await this.dependencies.repository.deleteSource(sourceId, this.dependencies.clock.now())
+    // 本地事实删除成功后再排队；Worker 通过资料不存在这一事实执行远端删除并负责失败重试。
+    await this.enqueueSourceSynchronization(sourceId)
     if (source.originalFilePath) {
       await this.dependencies.sourceFiles.delete(source.originalFilePath)
     }

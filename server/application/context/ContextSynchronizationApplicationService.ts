@@ -62,14 +62,23 @@ export class ContextSynchronizationApplicationService implements TaskHandler {
   }
 
   /**
-   * 读取 SQLite 最新资料并同步单个稳定远端 URI；资料已删除时任务安全结束。
+   * 读取 SQLite 最新资料并同步单个稳定远端 URI；资料已删除时同步清理远端资源。
    * @param sourceId 资料 UUID。
    * @returns 同步完成时结束；外部故障保存失败事实并交由 Worker 重试。
    */
   async synchronizeSource(sourceId: string): Promise<void> {
     this.requireConfigured(true)
     const source = await this.dependencies.repository.findSourceDocument(sourceId)
-    if (!source) return
+    if (!source) {
+      try {
+        await this.dependencies.openViking.deleteSource(sourceId)
+      }
+      catch (error: unknown) {
+        const message = error instanceof OpenVikingError ? error.message.slice(0, 500) : 'OpenViking 远端资料删除失败'
+        throw new TaskExecutionError(message, true)
+      }
+      return
+    }
     const previous = (await this.dependencies.repository.listSyncRecords()).find(record => record.sourceId === sourceId)
     const timestamp = this.dependencies.clock.now()
     const pending: ContextSyncRecordView = {

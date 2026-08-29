@@ -15,6 +15,8 @@ export interface OpenVikingPort {
   checkHealth(): Promise<OpenVikingHealthResult>
   /** @returns 删除人样专属远端根目录；不存在视为成功。 */
   resetIndex(): Promise<void>
+  /** @param sourceId 已从 SQLite 删除的资料 UUID。 @returns 删除对应远端资源后结束；不存在视为成功。 */
+  deleteSource(sourceId: string): Promise<void>
   /** @param source SQLite 资料完整事实。 @returns 实际远端 URI。 */
   synchronizeSource(source: ContextSourceDocument): Promise<string>
 }
