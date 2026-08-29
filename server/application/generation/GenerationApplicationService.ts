@@ -1,10 +1,12 @@
 import { ZodError } from 'zod'
 import {
   personaDraftSchema,
+  worldDraftSchema,
   worldSnapshotSchema,
   type GeneratePersonaDraftInput,
+  type GenerateWorldDraftInput,
 } from '../../../shared/schemas/content'
-import type { PersonaDraftView } from '../../../shared/types/content'
+import type { PersonaDraftView, WorldDraftView } from '../../../shared/types/content'
 import {
   documentSpecSchema,
   interestAssessmentSchema,
@@ -59,6 +61,7 @@ import {
   buildInterestPrompt,
   buildPersonaDraftPrompt,
   buildTextBlockPrompt,
+  buildWorldDraftPrompt,
   GENERATION_PROMPT_VERSION,
   type PromptContext,
 } from './PromptBuilder'
@@ -195,6 +198,27 @@ export class GenerationApplicationService implements TaskHandler {
     try {
       const { output } = await this.generateValidated(prompt, DEFAULT_TEXT_PARAMETERS, 'persona_draft', value => personaDraftSchema.parse(value))
       return { ...output, warnings }
+    }
+    catch (error: unknown) {
+      const normalized = normalizeExecutionError(error)
+      const statusCode = normalized.code === 'CAPABILITY_DISABLED' ? 422 : normalized.code === 'MODEL_OUTPUT_INVALID' ? 502 : 503
+      throw new ApplicationError(normalized.code, normalized.message, statusCode)
+    }
+  }
+
+  /**
+   * 把自然语言整理为待人工确认的世界草稿。
+   * @param input 已校验的世界自然语言输入。
+   * @returns 不写入数据库的结构化世界草稿。
+   */
+  async generateWorldDraft(input: GenerateWorldDraftInput): Promise<WorldDraftView> {
+    if (!this.dependencies.model.getConfiguredModel()) {
+      throw new ApplicationError('CAPABILITY_DISABLED', '文本模型尚未配置，不能生成世界草稿', 422)
+    }
+    try {
+      const prompt = buildWorldDraftPrompt(input.prompt)
+      const { output } = await this.generateValidated(prompt, DEFAULT_TEXT_PARAMETERS, 'world_draft', value => worldDraftSchema.parse(value))
+      return output
     }
     catch (error: unknown) {
       const normalized = normalizeExecutionError(error)

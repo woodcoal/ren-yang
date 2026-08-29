@@ -78,6 +78,19 @@ class FixedTextModel implements TextModelPort {
         },
       }, this.usage)
     }
+    if (request.responseSchemaName === 'world_draft') {
+      return response({
+        name: '浮岛纪元',
+        summary: '浮空岛屿与风帆航路构成的架空世界。',
+        snapshot: {
+          chapters: [
+            { id: '60000000-0000-4000-8000-000000000001', title: '世界背景', content: '人类定居在浮空岛屿，依靠风帆船往来。', order: 0, required: true },
+            { id: '60000000-0000-4000-8000-000000000002', title: '核心规则', content: '航路受季风与浮石能量约束。', order: 1, required: true },
+          ],
+          runtimeSummary: '人类定居浮空岛屿，依靠风帆船与受季风约束的航路往来。',
+        },
+      }, this.usage)
+    }
     if (request.responseSchemaName === 'interest_assessment') {
       if (this.interestRateLimitsRemaining > 0) {
         this.interestRateLimitsRemaining -= 1
@@ -252,6 +265,22 @@ describe('阶段三纯文本运行', () => {
     expect(database.getClient().prepare('SELECT COUNT(*) AS count FROM personas').get()).toEqual(before)
   })
 
+  it('从自然语言生成不落库的结构化世界候选草稿', async () => {
+    const before = database.getClient().prepare('SELECT COUNT(*) AS count FROM worlds').get()
+    const draft = await generation.generateWorldDraft({ prompt: '创建一个人类生活在浮空岛屿、依靠风帆船往来的世界。' })
+
+    expect(draft).toMatchObject({
+      name: '浮岛纪元',
+      summary: expect.stringContaining('浮空岛屿'),
+      snapshot: { runtimeSummary: expect.stringContaining('季风') },
+    })
+    const request = model.requests.get('world_draft')!
+    expect(request.userPrompt).toContain('人类生活在浮空岛屿')
+    expect(request.systemPrompt).toContain('字段必须为 name、summary 和 snapshot')
+    expect(request.systemPrompt).toContain('runtimeSummary 是实际进入人物任务提示词')
+    expect(database.getClient().prepare('SELECT COUNT(*) AS count FROM worlds').get()).toEqual(before)
+  })
+
   it('保存固定输入与证据快照并完成结构化兴趣判断', async () => {
     model.invalidInterestOnce = true
     const created = await generation.createInterestRun({
@@ -413,6 +442,8 @@ describe('阶段三纯文本运行', () => {
     })
     await expect(disabled.createInterestRun({ personaId, content: '测试' })).rejects.toMatchObject({ code: 'CAPABILITY_DISABLED' })
     await expect(disabled.generatePersonaDraft({ prompt: '测试人物', origin: 'original', sourceIds: [] }))
+      .rejects.toMatchObject({ code: 'CAPABILITY_DISABLED' })
+    await expect(disabled.generateWorldDraft({ prompt: '测试世界' }))
       .rejects.toMatchObject({ code: 'CAPABILITY_DISABLED' })
     expect(database.getClient().prepare('SELECT COUNT(*) AS count FROM generation_runs').get()).toEqual({ count: 0 })
   })

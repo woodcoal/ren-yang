@@ -36,6 +36,16 @@ export interface PersonaDraftView {
 /** 世界灵魂的完整不可变快照。 */
 export type WorldSnapshot = SoulSnapshot
 
+/** 自然语言生成但尚未保存的世界候选草稿。 */
+export interface WorldDraftView {
+  /** 模型建议的世界名称。 */
+  name: string
+  /** 只用于后台辨认的简短说明。 */
+  summary: string
+  /** 模型建议的结构化世界快照。 */
+  snapshot: WorldSnapshot
+}
+
 /** 世界或人物当前唯一可编辑的灵魂草稿。 */
 export interface SoulDraftView {
   /** 草稿 UUID。 */

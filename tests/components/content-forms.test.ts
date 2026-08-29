@@ -3,6 +3,7 @@ import { DOMWrapper, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
 import PersonaDraftAssistant from '../../app/components/content/PersonaDraftAssistant.vue'
 import PersonaForm from '../../app/components/content/PersonaForm.vue'
+import QuickCreateSubjectModal from '../../app/components/content/QuickCreateSubjectModal.vue'
 import SourceImportForm from '../../app/components/content/SourceImportForm.vue'
 import WorldForm from '../../app/components/content/WorldForm.vue'
 import WorldSourceManager from '../../app/components/content/WorldSourceManager.vue'
@@ -28,6 +29,27 @@ async function selectSourceTarget(wrapper: VueWrapper, searchTerm: string, optio
 }
 
 describe('阶段二内容表单', () => {
+  it('快速创建弹窗只提交自然语言且失败时保留原文', async () => {
+    const wrapper = await mountSuspended(QuickCreateSubjectModal, {
+      props: { open: true, subjectType: 'world', loading: false, errorMessage: '模型暂时不可用' },
+    })
+    await flushPromises()
+
+    const textarea = document.querySelector<HTMLTextAreaElement>('textarea')
+    expect(textarea).toBeDefined()
+    await new DOMWrapper(textarea!).setValue('创建一个浮岛与风帆船构成的世界')
+    const submitButton = [...document.querySelectorAll<HTMLButtonElement>('button')]
+      .find(button => button.textContent?.includes('生成并创建世界'))
+    expect(submitButton).toBeDefined()
+    await new DOMWrapper(submitButton!).trigger('click')
+    await flushPromises()
+
+    expect(wrapper.emitted('submit')).toEqual([['创建一个浮岛与风帆船构成的世界']])
+    expect(textarea!.value).toBe('创建一个浮岛与风帆船构成的世界')
+    expect(document.body.textContent).toContain('模型暂时不可用')
+    expect(document.body.textContent).toContain('创建后仍是待确认草稿')
+  })
+
   it('原创人物在没有世界和资料时仍可提交初始候选档案', async () => {
     const wrapper = await mountSuspended(PersonaForm, {
       props: { worlds: [], sources: [], loading: false, errorMessage: null },

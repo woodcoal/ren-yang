@@ -52,6 +52,23 @@ export function buildPersonaDraftPrompt(
   }
 }
 
+/**
+ * 构建自然语言世界候选草稿提示。
+ * @param prompt 用户对世界背景、规则和风格的明确描述。
+ * @returns 要求返回世界名称、后台摘要和灵魂快照的分层提示。
+ */
+export function buildWorldDraftPrompt(prompt: string): { systemPrompt: string, userPrompt: string } {
+  return {
+    systemPrompt: `你是世界候选设定整理器。必须遵守以下规则：
+1. 用户明确描述是唯一事实来源；证据不足的事实必须在对应章节标明未知，不得擅自补全为确定事实。
+2. 当前结果只是待用户编辑确认的候选草稿，不得声称已经发布或影响人物。
+3. 只输出一个 JSON 对象，字段必须为 name、summary 和 snapshot。summary 是只用于后台辨认的简短说明。
+4. snapshot 必须包含 chapters 和 runtimeSummary。chapters 为对象数组，每项完整包含 UUID 格式 id、title、content、order、required；order 从 0 连续排列。runtimeSummary 是实际进入人物任务提示词的精炼世界背景与规则。
+5. 不输出 Markdown 代码围栏、解释或隐藏推理。`,
+    userPrompt: `<用户明确世界设定>${JSON.stringify(prompt)}</用户明确世界设定>`,
+  }
+}
+
 /** 构建提示所需的固定运行上下文。 */
 export interface PromptContext {
   persona: PersonaSnapshot

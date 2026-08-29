@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildDocumentPlanPrompt, buildInterestPrompt, GENERATION_PROMPT_VERSION } from '../../server/application/generation/PromptBuilder'
+import { buildDocumentPlanPrompt, buildInterestPrompt, buildWorldDraftPrompt, GENERATION_PROMPT_VERSION } from '../../server/application/generation/PromptBuilder'
 
 describe('真实模型提示契约', () => {
   it('明确声明兴趣因素的对象结构和数值边界', () => {
@@ -46,5 +46,14 @@ describe('真实模型提示契约', () => {
     expect(prompt.systemPrompt).toContain('requestedFormats 必须是只含 html、markdown、txt 枚举值的字符串数组')
     expect(prompt.systemPrompt).toContain('禁止输出格式说明对象')
     expect(prompt.systemPrompt).toContain('aspectRatio 只能是 1:1、4:3、3:4、16:9、9:16')
+  })
+
+  it('世界快速初始化只使用用户描述并要求完整结构', () => {
+    const prompt = buildWorldDraftPrompt('浮岛与风帆船构成的世界')
+
+    expect(prompt.userPrompt).toContain('浮岛与风帆船构成的世界')
+    expect(prompt.systemPrompt).toContain('用户明确描述是唯一事实来源')
+    expect(prompt.systemPrompt).toContain('name、summary 和 snapshot')
+    expect(prompt.systemPrompt).toContain('chapters 和 runtimeSummary')
   })
 })

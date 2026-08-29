@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { computed, shallowRef } from 'vue'
-import type { CreateWorldInput } from '#shared/schemas/content'
 import type { ApiResponse } from '#shared/types/api'
-import type { WorldDetails, WorldSummary } from '#shared/types/content'
+import type { WorldDetails, WorldDraftView, WorldSummary } from '#shared/types/content'
 import { getApiErrorMessage } from '../../utils/apiError'
 
 const { data, error, refresh } = await useFetch<ApiResponse<WorldSummary[]>>('/api/v1/worlds')
@@ -15,16 +14,25 @@ const loading = shallowRef(false)
 const errorMessage = shallowRef<string | null>(null)
 
 /**
- * 创建世界后进入详情页，由用户明确确认并使用初始修改稿。
- * @param input 已通过共享 Schema 校验的世界输入。
- * @returns 请求和导航结束时完成。
+ * 先把自然语言生成为世界草稿，再使用现有内容服务创建世界并进入详情。
+ * @param prompt 用户在弹窗中确认的世界描述。
+ * @returns 生成、创建和导航全部完成时结束。
  */
-async function createWorld(input: CreateWorldInput): Promise<void> {
+async function createWorld(prompt: string): Promise<void> {
   loading.value = true
   errorMessage.value = null
   try {
-    const response = await $fetch<ApiResponse<WorldDetails>>('/api/v1/worlds', { method: 'POST', body: input })
-    await navigateTo(`/worlds/${response.data.world.id}`)
+    const draft = await $fetch<ApiResponse<WorldDraftView>>('/api/v1/worlds/draft', { method: 'POST', body: { prompt } })
+    const created = await $fetch<ApiResponse<WorldDetails>>('/api/v1/worlds', {
+      method: 'POST',
+      body: {
+        name: draft.data.name,
+        summary: draft.data.summary,
+        snapshot: draft.data.snapshot,
+        changeSummary: '根据自然语言生成初始世界灵魂草稿',
+      },
+    })
+    await navigateTo(`/worlds/${created.data.world.id}`)
   }
   catch (requestError: unknown) {
     errorMessage.value = getApiErrorMessage(requestError, '世界设定创建失败')
@@ -38,8 +46,16 @@ async function createWorld(input: CreateWorldInput): Promise<void> {
 <template>
   <div>
     <ContentPageHeader title="世界设定" description="世界是相关人物共用的背景与规则；人物也可以不关联世界，独立完成任务。">
-      <UButton icon="i-lucide-plus" @click="showCreate = !showCreate">{{ showCreate ? '收起表单' : '创建世界' }}</UButton>
+      <UButton icon="i-lucide-plus" @click="showCreate = true">创建世界</UButton>
     </ContentPageHeader>
+
+    <ContentQuickCreateSubjectModal
+      v-model:open="showCreate"
+      subject-type="world"
+      :loading="loading"
+      :error-message="errorMessage"
+      @submit="createWorld"
+    />
 
     <div class="status-strip page-status-strip" aria-label="世界状态摘要">
       <div class="status-cell"><span class="status-kicker">全部世界</span><strong class="status-value">{{ worlds.length }}</strong></div>
@@ -47,11 +63,6 @@ async function createWorld(input: CreateWorldInput): Promise<void> {
       <div class="status-cell"><span class="status-kicker">关联人物</span><strong class="status-value">{{ linkedPersonaCount }}</strong></div>
       <div class="status-cell"><span class="status-kicker">参考资料</span><strong class="status-value">{{ sourceCount }}</strong></div>
     </div>
-
-    <UCard v-if="showCreate" class="mt-6 mb-6">
-      <template #header><h2 class="font-semibold text-highlighted">新世界设定</h2></template>
-      <ContentWorldForm :loading="loading" :error-message="errorMessage" @submit="createWorld" />
-    </UCard>
 
     <UAlert v-if="error" color="error" title="世界列表加载失败" :actions="[{ label: '重试', onClick: () => refresh() }]" />
     <section v-else-if="worlds.length" class="content-section" aria-labelledby="world-list-heading">

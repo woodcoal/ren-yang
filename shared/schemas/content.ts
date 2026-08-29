@@ -24,9 +24,13 @@ export const soulSnapshotSchema = z.object({
 /** 人物灵魂快照校验。 */
 export const personaSnapshotSchema = soulSnapshotSchema
 
+/** 世界与人物快速初始化共用的自然语言输入。 */
+export const subjectInitializationSchema = z.object({
+  prompt: z.string().trim().min(1, '自然语言描述不能为空').max(20_000, '自然语言描述不能超过 20000 字'),
+})
+
 /** 从自然语言生成人物候选草稿的输入。 */
-export const generatePersonaDraftSchema = z.object({
-  prompt: z.string().trim().min(1, '自然语言人设不能为空').max(20_000, '自然语言人设不能超过 20000 字'),
+export const generatePersonaDraftSchema = subjectInitializationSchema.extend({
   origin: personaOriginSchema,
   worldId: z.string().uuid('世界标识无效').nullable().optional(),
   sourceIds: z.array(z.string().uuid('资料标识无效')).max(8, '一次最多使用 8 项参考资料').default([]),
@@ -38,8 +42,18 @@ export const personaDraftSchema = z.object({
   snapshot: personaSnapshotSchema,
 })
 
+/** 从自然语言生成世界候选草稿的输入。 */
+export const generateWorldDraftSchema = subjectInitializationSchema
+
 /** 世界灵魂快照校验。 */
 export const worldSnapshotSchema = soulSnapshotSchema
+
+/** 文本模型返回且仍需用户确认的世界候选草稿。 */
+export const worldDraftSchema = z.object({
+  name: z.string().trim().min(1, '世界名称不能为空').max(100, '世界名称不能超过 100 字'),
+  summary: z.string().trim().max(2_000, '世界摘要不能超过 2000 字'),
+  snapshot: worldSnapshotSchema,
+})
 
 /** 创建人物及其初始候选版本的输入。 */
 export const createPersonaSchema = z.object({
@@ -184,11 +198,14 @@ export const compareVersionsSchema = z.object({
 })
 
 export type CreatePersonaInput = z.infer<typeof createPersonaSchema>
+export type SubjectInitializationInput = z.infer<typeof subjectInitializationSchema>
 export type GeneratePersonaDraftInput = z.infer<typeof generatePersonaDraftSchema>
 export type PersonaDraft = z.infer<typeof personaDraftSchema>
 export type UpdatePersonaInput = z.infer<typeof updatePersonaSchema>
 export type CreatePersonaVersionInput = z.infer<typeof createPersonaVersionSchema>
 export type CreateWorldInput = z.infer<typeof createWorldSchema>
+export type GenerateWorldDraftInput = z.infer<typeof generateWorldDraftSchema>
+export type WorldDraft = z.infer<typeof worldDraftSchema>
 export type UpdateWorldInput = z.infer<typeof updateWorldSchema>
 export type CreateWorldVersionInput = z.infer<typeof createWorldVersionSchema>
 export type SaveSoulDraftInput = z.infer<typeof saveSoulDraftSchema>
