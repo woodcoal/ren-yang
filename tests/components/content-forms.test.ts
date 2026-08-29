@@ -5,6 +5,8 @@ import PersonaDraftAssistant from '../../app/components/content/PersonaDraftAssi
 import PersonaForm from '../../app/components/content/PersonaForm.vue'
 import SourceImportForm from '../../app/components/content/SourceImportForm.vue'
 import WorldForm from '../../app/components/content/WorldForm.vue'
+import WorldSourceManager from '../../app/components/content/WorldSourceManager.vue'
+import WorldVersionHistory from '../../app/components/content/WorldVersionHistory.vue'
 
 describe('阶段二内容表单', () => {
   it('原创人物在没有世界和资料时仍可提交初始候选档案', async () => {
@@ -89,6 +91,60 @@ describe('阶段二内容表单', () => {
 
     expect(wrapper.emitted('submit')).toBeUndefined()
     expect(wrapper.text()).toContain('世界设定正文不能为空')
+    expect(wrapper.text()).toContain('简短说明')
+    expect(wrapper.text()).toContain('这部分会提供给关联人物的新任务')
+  })
+
+  it('世界修改记录要求二次确认后才提交版本删除', async () => {
+    const wrapper = await mountSuspended(WorldVersionHistory, {
+      props: {
+        activeVersionId: '00000000-0000-4000-8000-000000000001',
+        loading: false,
+        versions: [
+          {
+            id: '00000000-0000-4000-8000-000000000002', worldId: '00000000-0000-4000-8000-000000000010',
+            parentVersionId: '00000000-0000-4000-8000-000000000001', status: 'candidate', snapshot: { content: '错误正文' },
+            changeSummary: '错误修改稿', publishedAt: null, createdAt: 2_000,
+          },
+          {
+            id: '00000000-0000-4000-8000-000000000001', worldId: '00000000-0000-4000-8000-000000000010',
+            parentVersionId: null, status: 'published', snapshot: { content: '当前正文' },
+            changeSummary: '初始版本', publishedAt: 1_000, createdAt: 1_000,
+          },
+        ],
+      },
+    })
+
+    expect(wrapper.text()).toContain('只有标记为“正在使用”的版本会用于人物的新任务')
+    await wrapper.get('button[aria-label="删除"]').trigger('click')
+    expect(wrapper.emitted('delete')).toBeUndefined()
+    await wrapper.get('button[role="checkbox"]').trigger('click')
+    await wrapper.findAll('button').find(button => button.text() === '永久删除')!.trigger('click')
+
+    expect(wrapper.emitted('delete')).toEqual([['00000000-0000-4000-8000-000000000002']])
+  })
+
+  it('世界资料区可直接加入已有资料或解除关联', async () => {
+    const linkedSource = {
+      id: '00000000-0000-4000-8000-000000000001', name: '现有资料', role: 'canon_fact' as const,
+      inputType: 'paste' as const, contentHash: 'a'.repeat(64), contentText: '已加入正文', originalFilePath: null,
+      chunkCount: 1, linkCount: 1, createdAt: 1_000, updatedAt: 1_000,
+    }
+    const availableSource = {
+      ...linkedSource,
+      id: '00000000-0000-4000-8000-000000000002', name: '待加入资料', role: 'reference' as const,
+      contentText: '待加入正文', linkCount: 0,
+    }
+    const wrapper = await mountSuspended(WorldSourceManager, {
+      props: { linkedSources: [linkedSource], allSources: [linkedSource, availableSource], loading: false, errorMessage: null },
+    })
+
+    expect(wrapper.text()).toContain('解除关联不会删除资料本身')
+    await wrapper.findAll('button').find(button => button.text() === '加入')!.trigger('click')
+    await wrapper.get('button[aria-label="从世界中移除资料"]').trigger('click')
+
+    expect(wrapper.emitted('link')).toEqual([[availableSource.id]])
+    expect(wrapper.emitted('unlink')).toEqual([[linkedSource.id]])
   })
 
   it('文件资料表单要求用户明确选择文件', async () => {

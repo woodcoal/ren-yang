@@ -62,7 +62,7 @@ const capabilityItems = computed(() => [
 
     <div v-if="props.showLimits" class="mt-5 border-t border-default pt-5">
       <h3 class="text-sm font-medium text-highlighted">系统默认运行限制</h3>
-      <p class="mt-1 text-xs text-muted">选择参数方案后，实际限制会固定在对应运行快照中。</p>
+      <p class="mt-1 text-xs text-muted">选择生成设置后，本次任务会固定使用这些限制，之后修改设置不会影响旧任务。</p>
       <ul class="mt-3 grid gap-2 text-sm sm:grid-cols-2">
         <li>最多 {{ props.capabilities.defaultParameters.maxTextBlocks }} 个文字块</li>
         <li>最多 {{ props.capabilities.defaultParameters.maxImageBlocks }} 个图片块</li>

@@ -376,6 +376,30 @@ export class ContentApplicationService {
   }
 
   /**
+   * 永久删除未生效、无后续修改且未被历史任务使用的世界版本。
+   * @param versionId 待删除世界版本 UUID。
+   * @returns 无返回值。
+   */
+  async deleteWorldVersion(versionId: string): Promise<void> {
+    const version = await this.requireWorldVersion(versionId)
+    const world = await this.requireWorld(version.worldId)
+    if (world.activeVersionId === versionId) {
+      throw new ApplicationError('RESOURCE_IN_USE', '当前正在使用的版本不能删除，请先启用其他已发布版本', 409)
+    }
+    const references = await this.dependencies.repository.getWorldVersionDeletionReferences(versionId)
+    if (references.childVersions > 0) {
+      throw new ApplicationError('RESOURCE_IN_USE', `还有 ${references.childVersions} 个修改版本以此版本为基础，不能删除`, 409)
+    }
+    if (references.runs > 0) {
+      throw new ApplicationError('RESOURCE_IN_USE', `已有 ${references.runs} 次历史任务使用此版本，必须保留以便追溯`, 409)
+    }
+    const deleted = await this.dependencies.repository.deleteWorldVersion(versionId, this.dependencies.clock.now())
+    if (deleted !== 1) {
+      throw new ApplicationError('VERSION_CONFLICT', '版本状态或引用已经变化，请刷新后重试', 409)
+    }
+  }
+
+  /**
    * 比较两个同世界版本的正文。
    * @param baseVersionId 基础版本 UUID。
    * @param targetVersionId 目标版本 UUID。

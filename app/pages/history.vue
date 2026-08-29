@@ -56,8 +56,8 @@ function formatTime(timestamp: number): string {
 
 <template>
   <div>
-    <ContentPageHeader title="运行历史" description="运行输入、人物版本、参数、模型、证据和任务历史均可追溯。">
-      <UButton to="/workbench" icon="i-lucide-plus">创建运行</UButton>
+    <ContentPageHeader title="任务记录" description="查看每次判断或创作使用了哪个人物、哪些资料、哪些设置，以及最终结果。">
+      <UButton to="/workbench" icon="i-lucide-plus">创建新任务</UButton>
     </ContentPageHeader>
 
     <UCard class="mb-6">
@@ -69,7 +69,7 @@ function formatTime(timestamp: number): string {
       </form>
     </UCard>
 
-    <UAlert v-if="error" color="error" title="运行历史加载失败" :actions="[{ label: '重试', onClick: () => refresh() }]" />
+    <UAlert v-if="error" color="error" title="任务记录加载失败" :actions="[{ label: '重试', onClick: () => refresh() }]" />
     <div v-else-if="runs.length" class="space-y-3">
       <NuxtLink v-for="run in runs" :key="run.id" :to="`/runs/${run.id}`" class="block rounded-md border border-default p-4 transition hover:bg-elevated">
         <div class="flex flex-wrap items-start justify-between gap-3">
@@ -82,6 +82,6 @@ function formatTime(timestamp: number): string {
         <p class="mt-3 text-xs text-dimmed">{{ formatTime(run.createdAt) }} · {{ run.model.model }} · {{ run.id }}</p>
       </NuxtLink>
     </div>
-    <UCard v-else><p class="py-8 text-center text-sm text-muted">当前筛选下没有运行记录。</p></UCard>
+    <UCard v-else><p class="py-8 text-center text-sm text-muted">当前筛选条件下没有任务记录。</p></UCard>
   </div>
 </template>

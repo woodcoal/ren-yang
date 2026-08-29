@@ -14,6 +14,7 @@ const ACTION_LABELS: Record<string, string> = {
   persona_rolled_back: '回滚人物版本',
   persona_deleted: '删除人物',
   world_version_published: '发布世界版本',
+  world_version_deleted: '删除世界版本',
   world_rolled_back: '回滚世界版本',
   world_deleted: '删除世界',
   source_deleted: '删除资料',

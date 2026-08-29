@@ -35,7 +35,7 @@ function formatTime(timestamp: number | null): string {
 
 <template>
   <div>
-    <ContentPageHeader title="人物评测" description="固定模型、参数和提示版本逐用例比较基础人物与候选人物；模型评分仅作为证据。">
+    <ContentPageHeader title="人物修改效果检查" description="使用相同模型和设置逐项比较修改前后的人物表现；AI 评分只作为参考，不会代替人工决定。">
       <UButton to="/feedback" color="neutral" variant="ghost">返回反馈与版本</UButton>
     </ContentPageHeader>
     <UAlert v-if="error || !evaluation" color="error" title="评测运行加载失败" :actions="[{ label: '重试', onClick: () => refresh() }]" />

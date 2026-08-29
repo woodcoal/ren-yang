@@ -191,7 +191,7 @@ function toPersonaSnapshotFields(snapshot: PersonaSnapshot): Array<{ label: stri
 
 <template>
   <div>
-    <ContentPageHeader title="运行详情" description="查看固定输入、证据快照、规格修订、图文块尝试和任务状态。">
+    <ContentPageHeader title="任务详情" description="查看这次任务使用的人物、资料和设置，确认内容规划，并管理每个图文内容块。">
       <UButton to="/history" color="neutral" variant="ghost">返回历史</UButton>
     </ContentPageHeader>
 
@@ -228,7 +228,7 @@ function toPersonaSnapshotFields(snapshot: PersonaSnapshot): Array<{ label: stri
           </UCard>
 
           <UCard v-if="draftSpec && details.run.status === 'awaiting_confirmation'">
-            <template #header><div><h2 class="font-semibold text-highlighted">确认文档规格</h2><p class="mt-1 text-sm text-muted">当前为修订 v{{ draftSpec.revision }}，确认前不会生成图文块。</p></div></template>
+            <template #header><div><h2 class="font-semibold text-highlighted">确认内容规划</h2><p class="mt-1 text-sm text-muted">这是第 {{ draftSpec.revision }} 版规划，确认前不会正式生成图文内容。</p></div></template>
             <GenerationDocumentSpecEditor
               :spec="draftSpec.spec"
               :allow-images="'includeImages' in details.run.input && details.run.input.includeImages"
@@ -266,7 +266,7 @@ function toPersonaSnapshotFields(snapshot: PersonaSnapshot): Array<{ label: stri
           />
 
           <UCard>
-            <template #header><h2 class="font-semibold text-highlighted">证据快照</h2></template>
+            <template #header><div><h2 class="font-semibold text-highlighted">本次使用的设定与资料</h2><p class="mt-1 text-sm text-muted">任务创建时已固定保存，之后修改人物或资料不会改变这里的内容。</p></div></template>
             <GenerationEvidenceList
               :evidence="details.evidence"
               :supporting-evidence-ids="details.run.result?.supportingEvidenceIds ?? []"
@@ -308,7 +308,7 @@ function toPersonaSnapshotFields(snapshot: PersonaSnapshot): Array<{ label: stri
         <div class="space-y-6">
           <GenerationRunStatusPanel :run="details.run" :tasks="details.tasks" :loading="actionLoading" @cancel="cancelRun" @retry="retryRun" />
           <UCard>
-            <template #header><h2 class="font-semibold text-highlighted">运行快照</h2></template>
+            <template #header><div><h2 class="font-semibold text-highlighted">本次任务使用的设置</h2><p class="mt-1 text-sm text-muted">用于复查任务当时使用的人物版本、模型和生成限制。</p></div></template>
             <dl class="space-y-3 text-sm">
               <div><dt class="text-muted">人物版本</dt><dd class="break-all">{{ details.run.personaVersionId }}</dd></div>
               <div><dt class="text-muted">提示版本</dt><dd>{{ details.run.promptVersion }}</dd></div>
@@ -336,7 +336,7 @@ function toPersonaSnapshotFields(snapshot: PersonaSnapshot): Array<{ label: stri
             <ul v-if="personaDetails?.sources.length" class="space-y-3 text-sm">
               <li v-for="source in personaDetails.sources" :key="source.id" class="rounded-md bg-elevated p-3">
                 <NuxtLink :to="`/sources/${source.id}`" class="font-medium text-highlighted hover:underline">{{ source.name }}</NuxtLink>
-                <p class="mt-1 text-xs text-muted">{{ source.role }} · {{ source.chunkCount }} 个切片</p>
+                <p class="mt-1 text-xs text-muted">{{ source.role }} · {{ source.chunkCount }} 个内容段落</p>
               </li>
             </ul>
             <p v-else class="text-sm text-muted">该人物没有直接关联资料。</p>

@@ -52,7 +52,7 @@ async function refreshDashboard(): Promise<void> {
   <div>
     <ContentPageHeader
       title="仪表盘"
-      description="本地人物事实源、版本和资料索引概览。"
+      description="集中查看人物、世界、资料、进行中的任务和外部能力状态。"
     />
 
     <UAlert

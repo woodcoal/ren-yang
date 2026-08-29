@@ -40,15 +40,15 @@ function handleSubmit(event: FormSubmitEvent<CreateWorldInput>): void {
   <UForm :schema="createWorldSchema" :state="state" class="space-y-5" @submit="handleSubmit">
     <div class="grid gap-4 md:grid-cols-2">
       <UFormField name="name" label="世界名称" required><UInput v-model="state.name" class="w-full" :disabled="loading" /></UFormField>
-      <UFormField name="summary" label="摘要"><UInput v-model="state.summary" class="w-full" :disabled="loading" /></UFormField>
+      <UFormField name="summary" label="简短说明" description="只方便后台辨认，不会提供给人物。"><UInput v-model="state.summary" class="w-full" :disabled="loading" /></UFormField>
     </div>
-    <UFormField name="snapshot.content" label="世界规则与背景" required>
+    <UFormField name="snapshot.content" label="详细规则与背景" description="这部分会提供给关联人物的新任务。" required>
       <UTextarea v-model="state.snapshot.content" class="w-full" :rows="10" autoresize :disabled="loading" />
     </UFormField>
-    <UFormField name="changeSummary" label="版本变化摘要" required>
+    <UFormField name="changeSummary" label="这次写了什么" description="方便以后在修改记录中辨认。" required>
       <UInput v-model="state.changeSummary" class="w-full" :disabled="loading" />
     </UFormField>
     <p v-if="errorMessage" class="text-sm text-error" role="alert">{{ errorMessage }}</p>
-    <UButton type="submit" :loading="loading">保存候选世界</UButton>
+    <UButton type="submit" :loading="loading">保存初始修改稿</UButton>
   </UForm>
 </template>

@@ -111,7 +111,7 @@ function formatTime(timestamp: number): string {
           <div><dt class="text-xs text-muted">新运行提供器</dt><dd class="mt-1 font-medium">{{ contextProvider }}</dd></div>
           <div><dt class="text-xs text-muted">服务来源</dt><dd class="mt-1 break-all font-medium">{{ capability.endpointOrigin ?? '未配置' }}</dd></div>
         </dl>
-        <UAlert class="mt-5" color="neutral" title="SQLite 始终是唯一业务事实源" description="关闭能力不会删除同步记录；远端索引可随时从 SQLite 资料完整重建。启用但不可用时，当前运行会明确失败，不会静默改用本地检索。" />
+        <UAlert class="mt-5" color="neutral" title="本地资料始终是原始数据" description="关闭 OpenViking 不会删除本地资料；以后可以随时从本地资料重新建立搜索内容。启用后如果服务不可用，新任务会明确失败，不会偷偷换成另一种搜索方式。" />
         <div class="mt-5 flex flex-wrap gap-2">
           <UButton :loading="actionLoading" color="neutral" variant="soft" @click="checkProvider">检测服务</UButton>
         </div>

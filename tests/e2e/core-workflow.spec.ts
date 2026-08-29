@@ -52,25 +52,61 @@ test('首次设置、人物发布、文档确认及三格式导出形成可复�
   await expect(page.getByLabel('账户与系统状态')).toContainText('文本可用')
   await expect(page.getByRole('heading', { name: '外部能力', exact: true })).toBeVisible()
 
+  // 先创建可复用资料，再从世界详情直接关联，覆盖新的世界资料管理入口。
+  await page.getByRole('link', { name: '资料', exact: true }).click()
+  await page.getByRole('button', { name: '导入资料', exact: true }).click()
+  const pasteForm = page.locator('form').filter({ has: page.getByRole('button', { name: '导入粘贴文本', exact: true }) })
+  await pasteForm.getByLabel('资料名称').fill('浮岛背景资料')
+  await pasteForm.getByLabel('正文').fill('浮岛城市依靠风帆船往来。')
+  await pasteForm.getByRole('button', { name: '导入粘贴文本', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '浮岛背景资料', exact: true })).toBeVisible()
+
+  await page.getByRole('link', { name: '世界设定', exact: true }).click()
+  await page.getByRole('button', { name: '创建世界', exact: true }).click()
+  await page.getByLabel('世界名称').fill('浮岛纪元')
+  await page.getByLabel('简短说明').fill('浮岛人物共享的背景')
+  await page.getByLabel('详细规则与背景').fill('所有城市位于浮岛，远行依赖风帆船。')
+  await page.getByLabel('这次写了什么').fill('建立初始世界设定')
+  await page.getByRole('button', { name: '保存初始修改稿', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '这个世界的参考资料', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '加入', exact: true }).click()
+  await expect(page.getByText('资料已加入这个世界', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '确认并使用', exact: true }).click()
+  await expect(page.getByText('修改稿已确认，之后创建的新任务将使用这一版', { exact: true })).toBeVisible()
+
+  // 创建并删除一个未使用的错误修改稿，验证二次确认和服务端删除闭环。
+  await page.getByLabel('这次改了什么').fill('明显错误的修改')
+  await page.getByRole('button', { name: '保存修改稿', exact: true }).click()
+  await page.getByRole('button', { name: '删除', exact: true }).click()
+  await page.getByLabel('我确认这是一条错误记录，需要永久删除').click()
+  await page.getByRole('button', { name: '永久删除', exact: true }).click()
+  await expect(page.getByText('错误版本已永久删除', { exact: true })).toBeVisible()
+
+  // 窄屏下关键区块应纵向排列，页面不能产生横向溢出。
+  await page.setViewportSize({ width: 390, height: 844 })
+  await expect(page.getByRole('heading', { name: '当前生效设定', exact: true })).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  await page.setViewportSize({ width: 1280, height: 720 })
+
   await page.getByRole('link', { name: '人物', exact: true }).click()
   await page.getByRole('link', { name: '创建人物', exact: true }).click()
   await page.getByLabel('人物名称').fill('林默')
   await page.getByLabel('人物定位').fill('严谨克制的学院观察员')
   await page.getByLabel('兴趣偏好').fill('课程、档案与古代文献')
   await page.getByLabel('表达风格').fill('冷静、简洁、先核验再判断')
-  await page.getByRole('button', { name: '保存候选人物', exact: true }).click()
+  await page.getByRole('button', { name: '保存人物修改稿', exact: true }).click()
   await expect(page.getByRole('heading', { name: '林默', exact: true })).toBeVisible()
 
-  await page.getByRole('button', { name: '发布', exact: true }).click()
-  await expect(page.getByText('候选版本已发布', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '确认并使用', exact: true }).click()
+  await expect(page.getByText('修改稿已确认，之后的新任务将使用这一版', { exact: true })).toBeVisible()
 
   await page.getByRole('link', { name: '创作', exact: true }).click()
   await page.getByLabel('任务类型').selectOption('generation')
-  await page.getByLabel('已发布人物').selectOption({ label: '林默' })
+  await page.getByLabel('使用的人物').selectOption({ label: '林默' })
   await page.getByLabel('创作要求').fill('用人物风格介绍学院课程，并输出 HTML、Markdown 和 Txt。')
-  await page.getByRole('button', { name: '生成文档规格', exact: true }).click()
+  await page.getByRole('button', { name: '开始规划内容', exact: true }).click()
 
-  await expect(page.getByRole('heading', { name: '确认文档规格', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '确认内容规划', exact: true })).toBeVisible()
   await page.getByRole('button', { name: '保存并确认执行', exact: true }).click()
   await expect(page.getByText('规格已确认，图文块已进入执行队列', { exact: true })).toBeVisible()
 

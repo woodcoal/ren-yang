@@ -57,7 +57,7 @@ function inputPreview(run: RunSummary): string {
         <NuxtLink v-for="persona in recentPersonas" :key="persona.id" :to="`/personas/${persona.id}`" class="block rounded-md border border-default p-3 hover:bg-elevated">
           <div class="flex items-center justify-between gap-3">
             <p class="font-medium text-highlighted">{{ persona.name }}</p>
-            <UBadge :color="persona.activeVersionId ? 'success' : 'warning'" variant="subtle">{{ persona.activeVersionId ? '已发布' : '仅候选' }}</UBadge>
+            <UBadge :color="persona.activeVersionId ? 'success' : 'warning'" variant="subtle">{{ persona.activeVersionId ? '正在使用' : '只有修改稿' }}</UBadge>
           </div>
           <p class="mt-1 line-clamp-2 text-sm text-muted">{{ persona.currentSummary || '尚无已发布人物摘要' }}</p>
         </NuxtLink>

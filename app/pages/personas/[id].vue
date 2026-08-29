@@ -67,7 +67,7 @@ const snapshotFields: Array<{ key: keyof PersonaSnapshot, label: string }> = [
  * @returns 请求完成时结束。
  */
 async function saveMetadata(event: FormSubmitEvent<UpdatePersonaInput>): Promise<void> {
-  await runAction('人物元数据已保存', async () => {
+  await runAction('人物基本信息已保存', async () => {
     await $fetch(`/api/v1/personas/${personaId}`, { method: 'PATCH', body: event.data })
     await refresh()
   })
@@ -79,7 +79,7 @@ async function saveMetadata(event: FormSubmitEvent<UpdatePersonaInput>): Promise
  * @returns 请求完成时结束。
  */
 async function createCandidate(event: FormSubmitEvent<CreatePersonaVersionInput>): Promise<void> {
-  await runAction('候选版本已创建，发布前不会影响当前人物', async () => {
+  await runAction('修改稿已保存，确认使用前不会影响当前人物', async () => {
     await $fetch(`/api/v1/personas/${personaId}/versions`, { method: 'POST', body: event.data })
     candidate.changeSummary = ''
     await refresh()
@@ -92,7 +92,7 @@ async function createCandidate(event: FormSubmitEvent<CreatePersonaVersionInput>
  * @returns 请求完成时结束。
  */
 async function publishVersion(versionId: string): Promise<void> {
-  await runAction('候选版本已发布', async () => {
+  await runAction('修改稿已确认，之后的新任务将使用这一版', async () => {
     await $fetch(`/api/v1/persona-versions/${versionId}/publish`, { method: 'POST' })
     await refresh()
   })
@@ -104,7 +104,7 @@ async function publishVersion(versionId: string): Promise<void> {
  * @returns 请求完成时结束。
  */
 async function rollbackVersion(versionId: string): Promise<void> {
-  await runAction('当前版本指针已回滚，后续版本仍完整保留', async () => {
+  await runAction('已恢复使用所选版本，之后的修改记录仍完整保留', async () => {
     await $fetch(`/api/v1/personas/${personaId}/rollback`, { method: 'POST', body: { versionId } })
     await refresh()
   })
@@ -195,7 +195,7 @@ function formatTime(timestamp: number): string {
   <div>
     <ContentPageHeader
       :title="details?.persona.name || '人物详情'"
-      description="已发布版本不可原地修改；新设定先保存为候选，再由你明确发布。"
+      description="正在使用的设定不会被直接覆盖；新内容先保存为修改稿，再由你确认使用。"
     >
       <UButton to="/personas" color="neutral" variant="ghost">返回列表</UButton>
     </ContentPageHeader>
@@ -208,7 +208,7 @@ function formatTime(timestamp: number): string {
       <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
         <div class="space-y-6">
           <UCard>
-            <template #header><h2 class="font-semibold text-highlighted">元数据</h2></template>
+            <template #header><div><h2 class="font-semibold text-highlighted">基本信息</h2><p class="mt-1 text-sm text-muted">世界设定会作为这个人物执行新任务时的共同背景。</p></div></template>
             <UForm :schema="updatePersonaSchema" :state="metadata" class="grid gap-4 md:grid-cols-2" @submit="saveMetadata">
               <UFormField name="name" label="人物名称" required><UInput v-model="metadata.name" class="w-full" /></UFormField>
               <UFormField name="worldId" label="世界设定">
@@ -217,28 +217,28 @@ function formatTime(timestamp: number): string {
                   <option v-for="world in worlds" :key="world.id" :value="world.id">{{ world.name }}</option>
                 </select>
               </UFormField>
-              <div class="md:col-span-2"><UButton type="submit" :loading="actionLoading">保存元数据</UButton></div>
+              <div class="md:col-span-2"><UButton type="submit" :loading="actionLoading">保存基本信息</UButton></div>
             </UForm>
           </UCard>
 
           <UCard>
             <template #header>
-              <div><h2 class="font-semibold text-highlighted">版本时间线</h2><p class="mt-1 text-sm text-muted">当前指针：{{ details.persona.activeVersionId || '尚未发布' }}</p></div>
+              <div><h2 class="font-semibold text-highlighted">修改记录</h2><p class="mt-1 text-sm text-muted">标记为“正在使用”的设定会用于之后创建的新任务。</p></div>
             </template>
             <div class="space-y-4">
               <div v-for="version in details.versions" :key="version.id" class="rounded-md border border-default p-4">
                 <div class="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <div class="flex items-center gap-2">
-                      <UBadge :color="version.status === 'published' ? 'success' : 'warning'" variant="subtle">{{ version.status === 'published' ? '已发布' : '候选' }}</UBadge>
-                      <UBadge v-if="version.id === details.persona.activeVersionId" color="primary">当前</UBadge>
+                      <UBadge :color="version.status === 'published' ? 'success' : 'warning'" variant="subtle">{{ version.status === 'published' ? '已确认' : '待确认修改稿' }}</UBadge>
+                      <UBadge v-if="version.id === details.persona.activeVersionId" color="primary">正在使用</UBadge>
                     </div>
                     <p class="mt-2 font-medium text-highlighted">{{ version.changeSummary }}</p>
                     <p class="mt-1 text-xs text-muted">{{ formatTime(version.createdAt) }} · {{ version.id }}</p>
                   </div>
                   <div class="flex gap-2">
-                    <UButton v-if="version.status === 'candidate'" size="sm" :loading="actionLoading" @click="publishVersion(version.id)">发布</UButton>
-                    <UButton v-else-if="version.id !== details.persona.activeVersionId" size="sm" color="neutral" variant="soft" :loading="actionLoading" @click="rollbackVersion(version.id)">回滚到此版</UButton>
+                    <UButton v-if="version.status === 'candidate'" size="sm" :loading="actionLoading" @click="publishVersion(version.id)">确认并使用</UButton>
+                    <UButton v-else-if="version.id !== details.persona.activeVersionId" size="sm" color="neutral" variant="soft" :loading="actionLoading" @click="rollbackVersion(version.id)">恢复使用此版</UButton>
                   </div>
                 </div>
                 <p class="mt-3 whitespace-pre-wrap text-sm text-muted">{{ version.snapshot.summary }}</p>
@@ -247,11 +247,11 @@ function formatTime(timestamp: number): string {
           </UCard>
 
           <UCard>
-            <template #header><h2 class="font-semibold text-highlighted">创建候选版本</h2></template>
+            <template #header><div><h2 class="font-semibold text-highlighted">修改人物设定</h2><p class="mt-1 text-sm text-muted">先保存为修改稿，确认无误后再启用，不会直接影响当前人物。</p></div></template>
             <UForm :schema="createPersonaVersionSchema" :state="candidate" class="space-y-5" @submit="createCandidate">
-              <UFormField name="baseVersionId" label="基础版本" required>
+              <UFormField name="baseVersionId" label="从哪一版开始修改" required>
                 <select v-model="candidate.baseVersionId" class="native-control">
-                  <option v-for="version in details.versions.filter(item => item.status !== 'rejected')" :key="version.id" :value="version.id">{{ version.changeSummary }}（{{ version.status === 'published' ? '已发布' : '候选' }}）</option>
+                  <option v-for="version in details.versions.filter(item => item.status !== 'rejected')" :key="version.id" :value="version.id">{{ version.changeSummary }}（{{ version.status === 'published' ? '已确认' : '修改稿' }}）</option>
                 </select>
               </UFormField>
               <div class="grid gap-4 md:grid-cols-2">
@@ -259,13 +259,13 @@ function formatTime(timestamp: number): string {
                   <UTextarea v-model="candidate.snapshot[field.key]" class="w-full" autoresize />
                 </UFormField>
               </div>
-              <UFormField name="changeSummary" label="变化摘要" required><UInput v-model="candidate.changeSummary" class="w-full" /></UFormField>
-              <UButton type="submit" :loading="actionLoading">保存候选版本</UButton>
+              <UFormField name="changeSummary" label="这次改了什么" required><UInput v-model="candidate.changeSummary" class="w-full" /></UFormField>
+              <UButton type="submit" :loading="actionLoading">保存修改稿</UButton>
             </UForm>
           </UCard>
 
           <UCard>
-            <template #header><h2 class="font-semibold text-highlighted">版本差异</h2></template>
+            <template #header><h2 class="font-semibold text-highlighted">比较两个版本</h2></template>
             <div class="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
               <select v-model="comparison.base" class="native-control" aria-label="基础版本">
                 <option v-for="version in details.versions" :key="version.id" :value="version.id">{{ version.changeSummary }}</option>
@@ -292,7 +292,7 @@ function formatTime(timestamp: number): string {
             <template #header><h2 class="font-semibold text-error">永久删除</h2></template>
             <UButton v-if="!deletionImpact" color="error" variant="soft" :loading="actionLoading" @click="inspectDeletion">查看删除影响</UButton>
             <div v-else class="space-y-3 text-sm">
-              <p>将删除 {{ deletionImpact.versionCount }} 个版本、{{ deletionImpact.runHistory.runs }} 次运行、{{ deletionImpact.runHistory.tasks }} 个任务、{{ deletionImpact.runHistory.evidenceSnapshots }} 个证据快照、{{ deletionImpact.runHistory.documentSpecs }} 个规格修订、{{ deletionImpact.runHistory.artifactBlocks }} 个产物块及 {{ deletionImpact.runHistory.blockAttempts }} 次块尝试，并解除 {{ deletionImpact.relatedSources.length }} 项资料关系。共享资料和世界不会删除。</p>
+              <p>将删除 {{ deletionImpact.versionCount }} 条人物修改记录、{{ deletionImpact.runHistory.runs }} 次任务记录、{{ deletionImpact.runHistory.tasks }} 个后台任务、{{ deletionImpact.runHistory.documentSpecs }} 份内容规划、{{ deletionImpact.runHistory.artifactBlocks }} 个内容块及 {{ deletionImpact.runHistory.blockAttempts }} 次尝试，并解除 {{ deletionImpact.relatedSources.length }} 项资料关系。共享资料和世界不会删除。</p>
               <label class="flex items-start gap-2"><input v-model="deletionConfirmed" type="checkbox" class="mt-1"><span>我确认永久删除此人物，恢复只能依赖事先备份。</span></label>
               <UButton color="error" :disabled="!deletionConfirmed" :loading="actionLoading" @click="deletePersona">永久删除人物</UButton>
             </div>

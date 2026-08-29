@@ -71,7 +71,7 @@ async function submitRun(): Promise<void> {
 
 <template>
   <div>
-    <ContentPageHeader title="创作工作台" description="场景只进入本次运行快照；人物与证据版本在创建时固定。">
+    <ContentPageHeader title="创作工作台" description="选择人物并说明任务。临时场景只影响这一次，不会改写人物设定。">
       <UButton to="/history" color="neutral" variant="ghost">运行历史</UButton>
     </ContentPageHeader>
 
@@ -85,16 +85,16 @@ async function submitRun(): Promise<void> {
           <UFormField label="任务类型" required>
             <select v-model="form.task" class="native-control" aria-label="任务类型"><option value="interest">判断人物兴趣</option><option value="generation">结构化图文创作</option></select>
           </UFormField>
-          <UFormField label="已发布人物" required>
-            <select v-model="form.personaId" class="native-control" aria-label="已发布人物">
+          <UFormField label="使用的人物" description="只显示已经确认使用人物设定的对象。" required>
+            <select v-model="form.personaId" class="native-control" aria-label="使用的人物">
               <option value="" disabled>请选择人物</option><option v-for="persona in personas" :key="persona.id" :value="persona.id">{{ persona.name }}</option>
             </select>
           </UFormField>
-          <UFormField label="参数方案">
-            <select v-model="form.parameterProfileId" class="native-control" aria-label="参数方案"><option :value="null">系统默认</option><option v-for="profile in profiles" :key="profile.id" :value="profile.id">{{ profile.name }} v{{ profile.version }}</option></select>
+          <UFormField label="生成设置">
+            <select v-model="form.parameterProfileId" class="native-control" aria-label="生成设置"><option :value="null">系统默认</option><option v-for="profile in profiles" :key="profile.id" :value="profile.id">{{ profile.name }} v{{ profile.version }}</option></select>
           </UFormField>
-          <UFormField v-if="form.task === 'generation'" label="格式模板">
-            <select v-model="form.formatTemplateId" class="native-control" aria-label="格式模板"><option :value="null">默认文档结构</option><option v-for="template in templates" :key="template.id" :value="template.id">{{ template.name }} v{{ template.version }}</option></select>
+          <UFormField v-if="form.task === 'generation'" label="内容格式">
+            <select v-model="form.formatTemplateId" class="native-control" aria-label="内容格式"><option :value="null">默认文档结构</option><option v-for="template in templates" :key="template.id" :value="template.id">{{ template.name }} v{{ template.version }}</option></select>
           </UFormField>
           <UFormField v-if="form.task === 'generation'" label="图片能力">
             <label class="flex items-start gap-3 rounded-md border border-default p-3 text-sm">
@@ -109,7 +109,7 @@ async function submitRun(): Promise<void> {
       </UCard>
 
       <UCard>
-        <template #header><div><h2 class="font-semibold text-highlighted">临时场景</h2><p class="mt-1 text-sm text-muted">可选，不写回人物版本。</p></div></template>
+        <template #header><div><h2 class="font-semibold text-highlighted">这次任务中的临时场景</h2><p class="mt-1 text-sm text-muted">可选，只影响本次判断或创作，不会保存进人物设定。</p></div></template>
         <div class="grid gap-4 md:grid-cols-2">
           <UFormField label="年龄阶段"><UInput v-model="form.scene.ageStage" class="w-full" /></UFormField>
           <UFormField label="地点"><UInput v-model="form.scene.location" class="w-full" /></UFormField>
@@ -120,7 +120,7 @@ async function submitRun(): Promise<void> {
       </UCard>
 
       <UButton type="submit" size="lg" :disabled="!textCapability?.configured || personas.length === 0" :loading="loading">
-        {{ form.task === 'interest' ? '开始兴趣判断' : '生成文档规格' }}
+        {{ form.task === 'interest' ? '开始判断' : '开始规划内容' }}
       </UButton>
     </form>
   </div>

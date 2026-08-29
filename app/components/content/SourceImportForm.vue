@@ -75,8 +75,8 @@ function submitFile(event: FormSubmitEvent<typeof fileState>): void {
       <template #header><div><h2 class="font-semibold text-highlighted">粘贴文本</h2><p class="mt-1 text-sm text-muted">适合短资料或人工整理后的事实。</p></div></template>
       <UForm :schema="createSourceSchema" :state="pasteState" class="space-y-4" @submit="submitPaste">
         <UFormField name="name" label="资料名称" required><UInput v-model="pasteState.name" class="w-full" :disabled="loading" /></UFormField>
-        <UFormField name="role" label="资料角色" required>
-          <USelect v-model="pasteState.role" class="w-full" :items="[{ label: '原著事实', value: 'canon_fact' }, { label: '普通参考', value: 'reference' }, { label: '表达样例', value: 'style_sample' }]" :disabled="loading" />
+        <UFormField name="role" label="资料用途" description="决定 AI 应该怎样理解这份资料。" required>
+          <USelect v-model="pasteState.role" class="w-full" :items="[{ label: '原作中的确定事实', value: 'canon_fact' }, { label: '背景参考', value: 'reference' }, { label: '写作风格参考', value: 'style_sample' }]" :disabled="loading" />
         </UFormField>
         <UFormField name="content" label="正文" required><UTextarea v-model="pasteState.content" class="w-full" :rows="9" autoresize :disabled="loading" /></UFormField>
         <UButton type="submit" :loading="loading">导入粘贴文本</UButton>
@@ -87,8 +87,8 @@ function submitFile(event: FormSubmitEvent<typeof fileState>): void {
       <template #header><div><h2 class="font-semibold text-highlighted">上传文件</h2><p class="mt-1 text-sm text-muted">仅 UTF-8 TXT、MD，最大 2 MB；不解析 HTML。</p></div></template>
       <UForm :schema="importSourceFileMetadataSchema" :state="fileState" class="space-y-4" @submit="submitFile">
         <UFormField name="name" label="资料名称" required><UInput v-model="fileState.name" class="w-full" :disabled="loading" /></UFormField>
-        <UFormField name="role" label="资料角色" required>
-          <USelect v-model="fileState.role" class="w-full" :items="[{ label: '原著事实', value: 'canon_fact' }, { label: '普通参考', value: 'reference' }, { label: '表达样例', value: 'style_sample' }]" :disabled="loading" />
+        <UFormField name="role" label="资料用途" description="决定 AI 应该怎样理解这份资料。" required>
+          <USelect v-model="fileState.role" class="w-full" :items="[{ label: '原作中的确定事实', value: 'canon_fact' }, { label: '背景参考', value: 'reference' }, { label: '写作风格参考', value: 'style_sample' }]" :disabled="loading" />
         </UFormField>
         <UFormField label="文件" required>
           <input type="file" accept=".txt,.md,.markdown,text/plain,text/markdown" class="native-control" :disabled="loading" @change="selectFile">

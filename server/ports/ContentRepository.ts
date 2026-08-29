@@ -104,6 +104,14 @@ export interface PersonaRunHistoryStatistics {
   blockAttempts: number
 }
 
+/** 世界版本删除前需要检查的持久化引用数量。 */
+export interface WorldVersionDeletionReferences {
+  /** 直接从该版本继续修改形成的后续版本数。 */
+  childVersions: number
+  /** 已把该版本世界设定复制为运行证据的历史任务数。 */
+  runs: number
+}
+
 /** 阶段二人物、世界与资料的持久化端口。 */
 export interface ContentRepository {
   /** @returns 按更新时间倒序的人物。 */
@@ -151,6 +159,10 @@ export interface ContentRepository {
   publishWorldVersion(worldId: string, versionId: string, timestamp: number): Promise<boolean>
   /** @param worldId 世界标识。 @param versionId 已发布版本标识。 @param timestamp 更新时间。 @returns 回滚是否成功。 */
   rollbackWorld(worldId: string, versionId: string, timestamp: number): Promise<boolean>
+  /** @param versionId 世界版本标识。 @returns 后续版本与历史任务的引用数量。 */
+  getWorldVersionDeletionReferences(versionId: string): Promise<WorldVersionDeletionReferences>
+  /** @param versionId 世界版本标识。 @param timestamp 删除时间。 @returns 满足安全条件时删除的版本数。 */
+  deleteWorldVersion(versionId: string, timestamp: number): Promise<number>
   /** @param worldId 世界标识。 @returns 关联人物。 */
   listWorldPersonas(worldId: string): Promise<PersonaRecord[]>
   /** @param worldId 世界标识。 @returns 关联资料。 */

@@ -104,7 +104,7 @@ function handleSubmit(event: FormSubmitEvent<CreatePersonaInput>): void {
       </UFormField>
     </div>
 
-    <USeparator label="不可变人物快照" />
+    <USeparator label="人物详细设定" />
     <div class="grid gap-5 md:grid-cols-2">
       <UFormField name="snapshot.summary" label="人物定位" required class="md:col-span-2">
         <UTextarea v-model="state.snapshot.summary" class="w-full" autoresize :disabled="loading" />
@@ -138,7 +138,7 @@ function handleSubmit(event: FormSubmitEvent<CreatePersonaInput>): void {
     <p v-if="errorMessage" class="text-sm text-error" role="alert">{{ errorMessage }}</p>
     <div class="flex justify-end gap-2">
       <UButton to="/personas" color="neutral" variant="ghost">取消</UButton>
-      <UButton type="submit" :loading="loading">保存候选人物</UButton>
+      <UButton type="submit" :loading="loading">保存人物修改稿</UButton>
     </div>
   </UForm>
 </template>

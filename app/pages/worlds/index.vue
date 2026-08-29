@@ -12,7 +12,7 @@ const loading = shallowRef(false)
 const errorMessage = shallowRef<string | null>(null)
 
 /**
- * 创建世界后进入详情页，由用户明确发布初始候选版本。
+ * 创建世界后进入详情页，由用户明确确认并使用初始修改稿。
  * @param input 已通过共享 Schema 校验的世界输入。
  * @returns 请求和导航结束时完成。
  */
@@ -34,7 +34,7 @@ async function createWorld(input: CreateWorldInput): Promise<void> {
 
 <template>
   <div>
-    <ContentPageHeader title="世界设定" description="世界不是人物创建前置条件；正文通过不可变版本维护。">
+    <ContentPageHeader title="世界设定" description="世界是多个相关人物共用的背景；人物也可以不关联任何世界。">
       <UButton icon="i-lucide-plus" @click="showCreate = !showCreate">{{ showCreate ? '收起表单' : '创建世界' }}</UButton>
     </ContentPageHeader>
 
@@ -49,12 +49,12 @@ async function createWorld(input: CreateWorldInput): Promise<void> {
         <template #header>
           <div class="flex items-start justify-between gap-3">
             <h2 class="font-semibold text-highlighted">{{ world.name }}</h2>
-            <UBadge :color="world.activeVersionId ? 'success' : 'warning'" variant="subtle">{{ world.activeVersionId ? '已发布' : '待发布' }}</UBadge>
+            <UBadge :color="world.activeVersionId ? 'success' : 'warning'" variant="subtle">{{ world.activeVersionId ? '正在使用' : '待确认' }}</UBadge>
           </div>
         </template>
         <p class="min-h-10 text-sm text-muted">{{ world.summary || '未填写摘要' }}</p>
         <div class="mt-4 flex gap-4 text-xs text-muted">
-          <span>{{ world.personaCount }} 个人物</span><span>{{ world.versionCount }} 个版本</span><span>{{ world.sourceCount }} 项资料</span>
+          <span>{{ world.personaCount }} 个人物</span><span>{{ world.versionCount }} 条修改记录</span><span>{{ world.sourceCount }} 项资料</span>
         </div>
         <template #footer><UButton :to="`/worlds/${world.id}`" color="neutral" variant="soft" block>查看与维护</UButton></template>
       </UCard>

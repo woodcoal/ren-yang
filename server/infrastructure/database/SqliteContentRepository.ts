@@ -15,6 +15,7 @@ import type {
   CreateWorldRecord,
   PersonaRunHistoryStatistics,
   SourceLinkRecord,
+  WorldVersionDeletionReferences,
 } from '../../ports/ContentRepository'
 import { insertAuditEvent } from './AuditSql'
 
@@ -318,6 +319,53 @@ export class SqliteContentRepository implements ContentRepository {
         targetId: worldId, details: { versionId }, timestamp,
       })
       return true
+    })()
+  }
+
+  /**
+   * 统计会因删除世界版本而失去追溯依据的记录。
+   * @param versionId 待删除世界版本 UUID。
+   * @returns 直接后续版本数和引用该版本的历史任务数。
+   */
+  async getWorldVersionDeletionReferences(versionId: string): Promise<WorldVersionDeletionReferences> {
+    const row = asRow(this.client.prepare(`
+      SELECT
+        (SELECT COUNT(*) FROM world_versions WHERE parent_version_id = ?) AS child_versions,
+        (SELECT COUNT(DISTINCT run_id) FROM evidence_snapshots
+          WHERE json_valid(metadata_json) = 1
+            AND json_extract(metadata_json, '$.worldVersionId') = ?) AS runs
+    `).get(versionId, versionId))
+    return {
+      childVersions: Number(row.child_versions),
+      runs: Number(row.runs),
+    }
+  }
+
+  /**
+   * 在同一事务中再次核对安全条件并永久删除世界版本。
+   * @param versionId 待删除世界版本 UUID。
+   * @param timestamp 删除时间。
+   * @returns 满足全部条件时为 1，否则为 0。
+   */
+  async deleteWorldVersion(versionId: string, timestamp: number): Promise<number> {
+    return this.client.transaction(() => {
+      // 条件写入删除语句，避免检查完成后版本被发布或产生新引用的竞态。
+      const changes = this.client.prepare(`
+        DELETE FROM world_versions
+        WHERE id = ?
+          AND NOT EXISTS (SELECT 1 FROM worlds WHERE active_version_id = world_versions.id)
+          AND NOT EXISTS (SELECT 1 FROM world_versions AS child WHERE child.parent_version_id = world_versions.id)
+          AND NOT EXISTS (
+            SELECT 1 FROM evidence_snapshots
+            WHERE json_valid(metadata_json) = 1
+              AND json_extract(metadata_json, '$.worldVersionId') = world_versions.id
+          )
+      `).run(versionId).changes
+      if (changes === 1) insertAuditEvent(this.client, {
+        actor: 'administrator', action: 'world_version_deleted', targetType: 'world_version',
+        targetId: versionId, timestamp,
+      })
+      return changes
     })()
   }
 

@@ -78,7 +78,7 @@ async function createPersona(input: CreatePersonaInput): Promise<void> {
 
 <template>
   <div>
-    <ContentPageHeader title="创建人物" description="资料和世界均可选；资料型人物必须选择至少一项资料。" />
+    <ContentPageHeader title="创建人物" description="可以完全原创，也可以选择一个共同世界和参考资料帮助 AI 整理人设。" />
     <div class="space-y-6">
       <ContentPersonaDraftAssistant
         :worlds="worlds"
@@ -91,14 +91,14 @@ async function createPersona(input: CreatePersonaInput): Promise<void> {
       <UAlert
         v-if="draftWarnings.length"
         color="warning"
-        title="草稿已生成，但部分上下文被截断"
+        title="草稿已生成，但部分参考内容过长"
         :description="draftWarnings.join('；')"
       />
       <UCard>
         <template #header>
           <div>
-            <h2 class="font-semibold text-highlighted">结构化候选档案</h2>
-            <p class="mt-1 text-sm text-muted">逐项检查后保存；保存仍只是候选版本，需要另行发布。</p>
+            <h2 class="font-semibold text-highlighted">检查人物设定</h2>
+            <p class="mt-1 text-sm text-muted">逐项检查后保存为修改稿，再到人物详情页确认使用。</p>
           </div>
         </template>
       <ContentPersonaForm

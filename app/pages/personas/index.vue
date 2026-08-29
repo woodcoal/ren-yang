@@ -16,7 +16,7 @@ const originLabels: Record<PersonaSummary['origin'], string> = {
 
 <template>
   <div>
-    <ContentPageHeader title="人物" description="人物元数据可编辑；档案通过候选、发布和回滚维护，不覆盖历史版本。">
+    <ContentPageHeader title="人物" description="管理人物设定、共同世界和参考资料；每次修改都会留下记录，方便恢复。">
       <UButton to="/personas/new" icon="i-lucide-plus">创建人物</UButton>
     </ContentPageHeader>
 
@@ -30,13 +30,13 @@ const originLabels: Record<PersonaSummary['origin'], string> = {
               <p class="mt-1 text-xs text-muted">{{ originLabels[persona.origin] }} · {{ persona.worldName || '独立人物' }}</p>
             </div>
             <UBadge :color="persona.activeVersionId ? 'success' : 'warning'" variant="subtle">
-              {{ persona.activeVersionId ? '已发布' : '待发布' }}
+              {{ persona.activeVersionId ? '正在使用' : '待确认' }}
             </UBadge>
           </div>
         </template>
-        <p class="min-h-10 text-sm text-muted">{{ persona.currentSummary || '尚无已发布人物摘要' }}</p>
+        <p class="min-h-10 text-sm text-muted">{{ persona.currentSummary || '还没有确认使用的人物设定' }}</p>
         <div class="mt-4 flex gap-4 text-xs text-muted">
-          <span>{{ persona.versionCount }} 个版本</span>
+          <span>{{ persona.versionCount }} 条修改记录</span>
           <span>{{ persona.sourceCount }} 项资料</span>
         </div>
         <template #footer>

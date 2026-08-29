@@ -196,6 +196,86 @@ describe('人物、世界与资料管理闭环', () => {
     await expect(service.deleteWorld(world.world.id)).resolves.toBeUndefined()
   })
 
+  it('只允许删除非当前、无后续修改且未被历史任务使用的世界版本', async () => {
+    const world = await service.createWorld({
+      name: '浮岛纪元',
+      summary: '世界版本删除约束测试',
+      snapshot: { content: '初始规则。' },
+      changeSummary: '初始版本',
+    })
+    const initialVersion = world.versions[0]!
+    await service.publishWorldVersion(initialVersion.id)
+
+    const usedVersion = await service.createWorldVersion(world.world.id, {
+      baseVersionId: initialVersion.id,
+      snapshot: { content: '曾被任务使用的规则。' },
+      changeSummary: '历史任务使用版本',
+    })
+    await service.publishWorldVersion(usedVersion.id)
+    const activeVersion = await service.createWorldVersion(world.world.id, {
+      baseVersionId: initialVersion.id,
+      snapshot: { content: '当前规则。' },
+      changeSummary: '当前版本',
+    })
+    await service.publishWorldVersion(activeVersion.id)
+
+    const persona = await service.createPersona({
+      name: '测试人物',
+      origin: 'original',
+      worldId: null,
+      sourceIds: [],
+      snapshot: BASE_PERSONA_SNAPSHOT,
+      changeSummary: '建立人物',
+    })
+    const personaVersion = persona.versions[0]!
+    await service.publishPersonaVersion(personaVersion.id)
+    const runId = '00000000-0000-4000-8000-000000000090'
+    database.getClient().prepare(`
+      INSERT INTO generation_runs (
+        id, kind, persona_version_id, status, input_json, parameter_snapshot_json,
+        model_snapshot_json, prompt_version, context_provider, created_at, updated_at, completed_at
+      ) VALUES (?, 'interest_assessment', ?, 'succeeded', '{}', '{}', '{}', 'test-v1', 'sqlite_fts5', ?, ?, ?)
+    `).run(runId, personaVersion.id, clock.timestamp, clock.timestamp, clock.timestamp)
+    database.getClient().prepare(`
+      INSERT INTO evidence_snapshots (
+        id, run_id, role, content, content_hash, rank, metadata_json, created_at
+      ) VALUES (?, ?, 'user_setting', ?, ?, 0, ?, ?)
+    `).run(
+      '00000000-0000-4000-8000-000000000091',
+      runId,
+      JSON.stringify(usedVersion.snapshot),
+      'a'.repeat(64),
+      JSON.stringify({ worldVersionId: usedVersion.id }),
+      clock.timestamp,
+    )
+
+    await expect(service.deleteWorldVersion(activeVersion.id)).rejects.toMatchObject<ApplicationError>({
+      code: 'RESOURCE_IN_USE',
+      statusCode: 409,
+    })
+    await expect(service.deleteWorldVersion(initialVersion.id)).rejects.toMatchObject<ApplicationError>({
+      code: 'RESOURCE_IN_USE',
+      statusCode: 409,
+    })
+    await expect(service.deleteWorldVersion(usedVersion.id)).rejects.toMatchObject<ApplicationError>({
+      code: 'RESOURCE_IN_USE',
+      statusCode: 409,
+    })
+
+    const disposableVersion = await service.createWorldVersion(world.world.id, {
+      baseVersionId: activeVersion.id,
+      snapshot: { content: '明显错误的未使用规则。' },
+      changeSummary: '错误版本',
+    })
+    await expect(service.deleteWorldVersion(disposableVersion.id)).resolves.toBeUndefined()
+    await expect(service.getWorld(world.world.id)).resolves.not.toMatchObject({
+      versions: expect.arrayContaining([expect.objectContaining({ id: disposableVersion.id })]),
+    })
+    expect(database.getClient().prepare(`
+      SELECT action FROM audit_events WHERE target_id = ? ORDER BY created_at DESC
+    `).all(disposableVersion.id)).toEqual([{ action: 'world_version_deleted' }])
+  })
+
   it('导入 UTF-8 Markdown、生成切片、执行中文 FTS5 检索并安全删除文件', async () => {
     const imported = await service.importSourceFile({
       name: '学院设定',
