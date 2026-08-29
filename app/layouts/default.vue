@@ -4,22 +4,10 @@ import type { ApiResponse, AuthenticationSessionResult } from '#shared/types/api
 import type { SystemCapabilitiesResult, SystemHealthResult } from '#shared/types/system'
 import { getApiErrorMessage } from '../utils/apiError'
 
-/** 工作台主导航。 */
-const navigation = [
-  { label: '仪表盘', to: '/', icon: 'i-lucide-layout-dashboard' },
-  { label: '创作', to: '/workbench', icon: 'i-lucide-sparkles' },
-  { label: '任务记录', to: '/history', icon: 'i-lucide-history' },
-  { label: '反馈与调整', to: '/feedback', icon: 'i-lucide-git-pull-request' },
-  { label: '人物', to: '/personas', icon: 'i-lucide-users' },
-  { label: '世界设定', to: '/worlds', icon: 'i-lucide-globe-2' },
-  { label: '资料', to: '/sources', icon: 'i-lucide-library' },
-  { label: '内容格式', to: '/templates', icon: 'i-lucide-layout-template' },
-  { label: '生成设置', to: '/parameter-profiles', icon: 'i-lucide-sliders-horizontal' },
-  { label: '系统设置', to: '/settings', icon: 'i-lucide-settings' },
-]
-
 const logoutLoading = shallowRef(false)
 const logoutError = shallowRef<string | null>(null)
+const sidebarCollapsed = shallowRef(false)
+const mobileNavigationOpen = shallowRef(false)
 const [{ data: sessionData }, { data: healthData, refresh: refreshHealth }, { data: capabilityData }] = await Promise.all([
   useFetch<ApiResponse<AuthenticationSessionResult>>('/api/v1/auth/session'),
   useFetch<ApiResponse<SystemHealthResult>>('/api/v1/system/health'),
@@ -27,6 +15,8 @@ const [{ data: sessionData }, { data: healthData, refresh: refreshHealth }, { da
 ])
 /** 全局任务数量刷新计时器。 */
 const healthRefreshTimer = shallowRef<ReturnType<typeof setInterval> | null>(null)
+/** 桌面侧栏状态的本机存储键。 */
+const sidebarStorageKey = 'renyang.sidebar.collapsed'
 
 /** @returns 启动低频健康状态刷新，避免布局持久存在时任务数量过期。 */
 function startHealthRefresh(): void {
@@ -41,7 +31,41 @@ function stopHealthRefresh(): void {
   healthRefreshTimer.value = null
 }
 
-onMounted(startHealthRefresh)
+/**
+ * 从本机恢复侧栏偏好并启动健康状态刷新。
+ * @returns 无返回值。
+ */
+function initializeLayout(): void {
+  sidebarCollapsed.value = window.localStorage.getItem(sidebarStorageKey) === 'true'
+  startHealthRefresh()
+}
+
+/**
+ * 切换桌面侧栏宽度并保存到本机浏览器。
+ * @returns 无返回值。
+ */
+function toggleSidebar(): void {
+  sidebarCollapsed.value = !sidebarCollapsed.value
+  window.localStorage.setItem(sidebarStorageKey, String(sidebarCollapsed.value))
+}
+
+/**
+ * 打开移动端导航抽屉。
+ * @returns 无返回值。
+ */
+function openMobileNavigation(): void {
+  mobileNavigationOpen.value = true
+}
+
+/**
+ * 关闭移动端导航抽屉。
+ * @returns 无返回值。
+ */
+function closeMobileNavigation(): void {
+  mobileNavigationOpen.value = false
+}
+
+onMounted(initializeLayout)
 onUnmounted(stopHealthRefresh)
 
 /**
@@ -65,51 +89,37 @@ async function logout(): Promise<void> {
 </script>
 
 <template>
-  <div class="min-h-screen bg-default lg:grid lg:grid-cols-[15rem_1fr]">
-    <aside class="border-b border-default bg-elevated/40 lg:min-h-screen lg:border-b-0 lg:border-r">
-      <div class="flex h-16 items-center justify-between px-5 lg:block lg:h-auto lg:px-6 lg:py-7">
-        <NuxtLink to="/" class="block">
-          <p class="font-semibold text-highlighted">
-            人样
-          </p>
-          <p class="text-xs text-muted">
-            人物模拟与创作工作台
-          </p>
-        </NuxtLink>
-        <UColorModeButton class="lg:hidden" aria-label="切换颜色模式" />
-      </div>
+  <div class="app-shell" :class="{ 'app-shell--collapsed': sidebarCollapsed }">
+    <a class="skip-link" href="#main-content">跳到主要内容</a>
+    <ShellAppSidebar
+      :collapsed="sidebarCollapsed"
+      :mobile-open="mobileNavigationOpen"
+      :username="sessionData?.data.administrator?.username || ''"
+      :task-queue="healthData?.data.taskQueue || null"
+      :capabilities="capabilityData?.data || null"
+      @navigate="closeMobileNavigation"
+    />
+    <button
+      v-if="mobileNavigationOpen"
+      class="sidebar-backdrop"
+      type="button"
+      aria-label="关闭导航"
+      @click="closeMobileNavigation"
+    />
 
-      <nav class="flex gap-1 overflow-x-auto px-3 pb-3 lg:block lg:space-y-1 lg:px-3" aria-label="主导航">
-        <UButton
-          v-for="item in navigation"
-          :key="item.to"
-          :to="item.to"
-          :icon="item.icon"
-          color="neutral"
-          variant="ghost"
-          class="shrink-0 justify-start"
-        >
-          {{ item.label }}
-        </UButton>
-      </nav>
-    </aside>
-
-    <div class="min-w-0">
-      <header class="flex min-h-16 flex-wrap items-center justify-end gap-2 border-b border-default px-4 py-2 sm:px-6">
-        <span v-if="logoutError" class="mr-auto text-sm text-error" role="alert">{{ logoutError }}</span>
-        <SystemNavigationStatus
-          v-if="sessionData?.data.administrator && healthData?.data && capabilityData?.data"
-          class="mr-auto"
-          :username="sessionData.data.administrator.username"
-          :task-queue="healthData.data.taskQueue"
-          :capabilities="capabilityData.data"
-        />
-        <UColorModeButton class="hidden lg:inline-flex" aria-label="切换颜色模式" />
-        <UButton color="neutral" variant="ghost" :loading="logoutLoading" @click="logout">
-          退出
-        </UButton>
-      </header>
-      <main class="px-4 py-7 sm:px-6 lg:px-8">
+    <div class="app-main">
+      <ShellAppTopbar
+        :sidebar-collapsed="sidebarCollapsed"
+        :username="sessionData?.data.administrator?.username || ''"
+        :task-queue="healthData?.data.taskQueue || null"
+        :capabilities="capabilityData?.data || null"
+        :logout-loading="logoutLoading"
+        :logout-error="logoutError"
+        @toggle-sidebar="toggleSidebar"
+        @open-mobile-navigation="openMobileNavigation"
+        @logout="logout"
+      />
+      <main id="main-content" class="app-page" tabindex="-1">
         <slot />
       </main>
     </div>

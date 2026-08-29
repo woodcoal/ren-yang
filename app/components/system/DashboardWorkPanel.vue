@@ -33,6 +33,13 @@ const statusLabels: Partial<Record<RunSummary['status'], string>> = {
   planning: '规划中', awaiting_confirmation: '等待确认', queued: '排队中', running: '执行中',
 }
 
+/** 人物建立方式的中文标签。 */
+const originLabels: Record<PersonaSummary['origin'], string> = {
+  original: '原创建立',
+  source_based: '根据资料建立',
+  hybrid: '原创与资料结合',
+}
+
 /**
  * 返回运行输入的单行预览。
  * @param run 活动运行摘要。
@@ -42,55 +49,110 @@ function inputPreview(run: RunSummary): string {
   const input = 'content' in run.input ? run.input.content : run.input.requirement
   return input.length > 60 ? `${input.slice(0, 60)}…` : input
 }
+
+/**
+ * 把时间戳格式化为便于扫描的本地日期时间。
+ * @param timestamp UTC Unix 毫秒时间戳。
+ * @returns 使用当前浏览器时区的简短日期时间。
+ */
+function formatDateTime(timestamp: number): string {
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(timestamp)
+}
 </script>
 
 <template>
-  <div class="grid gap-6 xl:grid-cols-2">
-    <UCard>
-      <template #header>
-        <div class="flex items-center justify-between gap-3">
-          <h2 class="font-semibold text-highlighted">最近人物</h2>
-          <UButton to="/personas" color="neutral" variant="link" size="sm">查看全部</UButton>
+  <div>
+    <section class="content-section" aria-labelledby="dashboard-priority-heading">
+      <div class="section-heading">
+        <div class="section-heading-copy">
+          <p class="eyebrow">01 · 优先处理</p>
+          <h2 id="dashboard-priority-heading">需要你作决定</h2>
+          <p>反馈和人物修改建议在确认前不会改变后续任务。</p>
         </div>
-      </template>
-      <div v-if="recentPersonas.length" class="space-y-2">
-        <NuxtLink v-for="persona in recentPersonas" :key="persona.id" :to="`/personas/${persona.id}`" class="block rounded-md border border-default p-3 hover:bg-elevated">
-          <div class="flex items-center justify-between gap-3">
-            <p class="font-medium text-highlighted">{{ persona.name }}</p>
-            <UBadge :color="persona.activeVersionId ? 'success' : 'warning'" variant="subtle">{{ persona.activeVersionId ? '正在使用' : '只有修改稿' }}</UBadge>
-          </div>
-          <p class="mt-1 line-clamp-2 text-sm text-muted">{{ persona.currentSummary || '尚无已发布人物摘要' }}</p>
-        </NuxtLink>
+        <NuxtLink to="/feedback" class="section-link">进入学习中心</NuxtLink>
       </div>
-      <p v-else class="py-6 text-center text-sm text-muted">尚未创建人物。</p>
-    </UCard>
 
-    <UCard>
-      <template #header>
-        <div class="flex flex-wrap items-center justify-between gap-2">
-          <h2 class="font-semibold text-highlighted">待处理工作</h2>
-          <div class="flex gap-2">
-            <UBadge color="neutral" variant="subtle">活动运行 {{ activeRuns.length }}</UBadge>
-            <UBadge :color="pendingFeedbackTotal ? 'warning' : 'neutral'" variant="subtle">待处理反馈 {{ pendingFeedbackTotal }}</UBadge>
+      <div v-if="pendingFeedbackTotal" class="log-list">
+        <article v-if="pendingFeedbackCount" class="log-row">
+          <span class="log-row-meta">反馈分类</span>
+          <div class="log-row-main">
+            <NuxtLink to="/feedback" class="log-row-title">确认反馈会影响哪一部分</NuxtLink>
+            <span class="log-row-description">系统建议仅作参考，需要你确认是本次结果、人物变化还是人物设定问题。</span>
           </div>
-        </div>
-      </template>
-      <div v-if="activeRuns.length" class="space-y-2">
-        <NuxtLink v-for="run in activeRuns" :key="run.id" :to="`/runs/${run.id}`" class="block rounded-md border border-default p-3 hover:bg-elevated">
-          <div class="flex items-center justify-between gap-3">
-            <p class="font-medium text-highlighted">{{ run.personaName }}</p>
-            <UBadge color="neutral" variant="subtle">{{ statusLabels[run.status] }}</UBadge>
+          <span class="log-row-end"><UBadge color="warning" variant="subtle">待处理 {{ pendingFeedbackCount }}</UBadge></span>
+        </article>
+        <article v-if="pendingProposalCount" class="log-row">
+          <span class="log-row-meta">人物修改稿</span>
+          <div class="log-row-main">
+            <NuxtLink to="/feedback" class="log-row-title">审阅人物版本修改建议</NuxtLink>
+            <span class="log-row-description">修改稿需要经过差异检查和效果评测，发布后才会用于新任务。</span>
           </div>
-          <p class="mt-1 line-clamp-2 text-sm text-muted">{{ inputPreview(run) }}</p>
-        </NuxtLink>
+          <span class="log-row-end"><UBadge color="warning" variant="subtle">待处理 {{ pendingProposalCount }}</UBadge></span>
+        </article>
       </div>
-      <p v-else class="py-6 text-center text-sm text-muted">当前没有活动运行。</p>
-      <template #footer>
-        <div class="flex flex-wrap gap-2">
-          <UButton to="/history" color="neutral" variant="soft">运行历史</UButton>
-          <UButton to="/feedback" color="neutral" variant="soft">反馈与版本</UButton>
+      <div v-else class="content-notice">
+        <UIcon name="i-lucide-circle-check" class="content-notice-icon" aria-hidden="true" />
+        <div class="content-notice-copy">
+          <strong>当前没有需要确认的学习事项</strong>
+          <p>新的反馈或人物修改建议出现后，会在这里等待处理。</p>
         </div>
-      </template>
-    </UCard>
+      </div>
+    </section>
+
+    <section class="content-section" aria-labelledby="dashboard-active-heading">
+      <div class="section-heading">
+        <div class="section-heading-copy">
+          <p class="eyebrow">02 · 正在进行</p>
+          <h2 id="dashboard-active-heading">继续任务</h2>
+          <p>规划、等待确认、排队和执行中的任务集中在这里。</p>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <UBadge color="neutral" variant="subtle">活动运行 {{ activeRuns.length }}</UBadge>
+          <UBadge :color="pendingFeedbackTotal ? 'warning' : 'neutral'" variant="subtle">待处理反馈 {{ pendingFeedbackTotal }}</UBadge>
+          <NuxtLink to="/history" class="section-link">查看全部任务</NuxtLink>
+        </div>
+      </div>
+
+      <div v-if="activeRuns.length" class="log-list">
+        <article v-for="run in activeRuns" :key="run.id" class="log-row">
+          <span class="log-row-meta">{{ formatDateTime(run.updatedAt) }}</span>
+          <div class="log-row-main">
+            <NuxtLink :to="`/runs/${run.id}`" class="log-row-title">{{ run.personaName }} · {{ run.kind === 'interest_assessment' ? '兴趣判断' : '内容创作' }}</NuxtLink>
+            <span class="log-row-description">{{ inputPreview(run) }}</span>
+          </div>
+          <span class="log-row-end"><UBadge color="neutral" variant="subtle">{{ statusLabels[run.status] }}</UBadge></span>
+        </article>
+      </div>
+      <p v-else class="empty-log-row">当前没有活动运行，可以从新建任务开始。</p>
+    </section>
+
+    <section class="content-section" aria-labelledby="dashboard-personas-heading">
+      <div class="section-heading">
+        <div class="section-heading-copy">
+          <p class="eyebrow">03 · 人物空间</p>
+          <h2 id="dashboard-personas-heading">最近使用的人物</h2>
+          <p>人物是否已有发布版本，决定了能否直接发起任务。</p>
+        </div>
+        <NuxtLink to="/personas" class="section-link">查看人物列表</NuxtLink>
+      </div>
+
+      <div v-if="recentPersonas.length" class="archive-panel-grid">
+        <article v-for="persona in recentPersonas" :key="persona.id" class="archive-panel">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <span class="log-row-meta">{{ originLabels[persona.origin] }}</span>
+            <UBadge :color="persona.activeVersionId ? 'success' : 'warning'" variant="subtle">{{ persona.activeVersionId ? '可执行任务' : '只有修改稿' }}</UBadge>
+          </div>
+          <h3 class="mt-4">
+            <NuxtLink :to="`/personas/${persona.id}`" class="log-row-title">{{ persona.name }}</NuxtLink>
+          </h3>
+          <p class="mt-2 text-sm">{{ persona.currentSummary || '尚无已发布人物摘要' }}</p>
+          <p class="mt-3 text-xs">版本 {{ persona.versionCount }} · 资料 {{ persona.sourceCount }} · {{ persona.worldName || '未关联世界' }}</p>
+          <NuxtLink :to="`/personas/${persona.id}`" class="section-link mt-3">进入人物工作区</NuxtLink>
+        </article>
+      </div>
+      <p v-else class="empty-log-row">尚未创建人物。</p>
+    </section>
   </div>
 </template>

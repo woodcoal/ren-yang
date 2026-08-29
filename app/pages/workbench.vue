@@ -71,7 +71,7 @@ async function submitRun(): Promise<void> {
 
 <template>
   <div>
-    <ContentPageHeader title="创作工作台" description="选择人物并说明任务。临时场景只影响这一次，不会改写人物设定。">
+    <ContentPageHeader title="新建任务" description="选择人物并说明任务。临时场景只影响这一次，不会改写人物设定。">
       <UButton to="/history" color="neutral" variant="ghost">运行历史</UButton>
     </ContentPageHeader>
 

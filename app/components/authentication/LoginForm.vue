@@ -43,7 +43,8 @@ function handleSubmit(event: FormSubmitEvent<LoginInput>): void {
   >
     <UFormField
       name="username"
-      label="用户名"
+      label="管理员名称"
+      description="仅用于识别这台设备上的唯一管理员。"
       required
     >
       <UInput
@@ -56,7 +57,8 @@ function handleSubmit(event: FormSubmitEvent<LoginInput>): void {
 
     <UFormField
       name="password"
-      label="密码"
+      label="管理员密码"
+      description="可使用密码管理器填充或粘贴密码。"
       required
     >
       <UInput
@@ -70,7 +72,7 @@ function handleSubmit(event: FormSubmitEvent<LoginInput>): void {
 
     <p
       v-if="errorMessage"
-      class="text-sm text-error"
+      class="rounded-[var(--radius-control)] border border-error/30 bg-error/10 p-3 text-sm text-error"
       role="alert"
     >
       {{ errorMessage }}
@@ -81,7 +83,7 @@ function handleSubmit(event: FormSubmitEvent<LoginInput>): void {
       block
       :loading="loading"
     >
-      登录
+      登录并进入工作台
     </UButton>
   </UForm>
 </template>

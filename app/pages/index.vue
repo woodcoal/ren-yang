@@ -51,9 +51,12 @@ async function refreshDashboard(): Promise<void> {
 <template>
   <div>
     <ContentPageHeader
-      title="仪表盘"
-      description="集中查看人物、世界、资料、进行中的任务和外部能力状态。"
-    />
+      title="今日工作"
+      description="待处理事项、活动任务和会影响工作的系统问题按优先级排列。"
+    >
+      <UButton to="/history" color="neutral" variant="outline">查看任务记录</UButton>
+      <UButton to="/workbench" icon="i-lucide-plus">新建任务</UButton>
+    </ContentPageHeader>
 
     <UAlert
       v-if="summaryError"
@@ -64,49 +67,61 @@ async function refreshDashboard(): Promise<void> {
       :actions="[{ label: '全部重试', onClick: refreshDashboard }]"
     />
 
-    <div class="mb-7 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-      <UCard v-for="item in [
+    <div class="metric-strip" aria-label="工作台资源摘要">
+      <div v-for="item in [
         { label: '人物', value: counts.personas, to: '/personas' },
         { label: '世界设定', value: counts.worlds, to: '/worlds' },
-        { label: '资料', value: counts.sources, to: '/sources' },
+        { label: '资料库', value: counts.sources, to: '/sources' },
         { label: '后台任务', value: health?.taskQueue.total ?? 0, to: '/history' },
-      ]" :key="item.label">
-        <p class="text-sm text-muted">{{ item.label }}</p>
-        <p class="mt-2 text-3xl font-semibold text-highlighted">{{ item.value }}</p>
-        <UButton :to="item.to" color="neutral" variant="link" class="mt-2 px-0">进入管理</UButton>
-      </UCard>
+      ]" :key="item.label" class="metric-cell">
+        <span class="metric-value">{{ item.value }}</span>
+        <span class="metric-label">{{ item.label }}</span>
+        <NuxtLink :to="item.to" class="metric-link">进入管理</NuxtLink>
+      </div>
     </div>
 
     <SystemDashboardWorkPanel
-      class="mb-6"
       :personas="personas"
       :runs="runs"
       :pending-feedback-count="pendingFeedbackCount"
       :pending-proposal-count="pendingProposalCount"
     />
 
-    <div class="grid gap-6 xl:grid-cols-2">
-      <SystemStatusPanel
-        v-if="health"
-        :health="health"
-      />
+    <section class="content-section" aria-labelledby="dashboard-system-heading">
+      <div class="section-heading">
+        <div class="section-heading-copy">
+          <p class="eyebrow">04 · 系统影响</p>
+          <h2 id="dashboard-system-heading">只在这里展开技术状态</h2>
+          <p>SQLite、后台任务和模型能力不会挤占日常工作区域。</p>
+        </div>
+      </div>
 
-      <UAlert
-        v-else
-        color="error"
-        title="无法读取系统状态"
-        :description="healthError ? '健康检查请求失败' : '健康检查没有返回数据'"
-        :actions="[{ label: '重试', onClick: () => refreshHealth() }]"
-      />
+      <details class="system-details">
+        <summary>查看完整系统状态</summary>
+        <div class="system-details-content">
+          <SystemStatusPanel
+            v-if="health"
+            :health="health"
+          />
 
-      <SystemCapabilityStatusPanel v-if="capabilities" :capabilities="capabilities" />
-      <UAlert
-        v-else
-        color="error"
-        title="无法读取外部能力状态"
-        :description="capabilityError ? '能力状态请求失败' : '能力状态没有返回数据'"
-        :actions="[{ label: '重试', onClick: () => refreshCapabilities() }]"
-      />
-    </div>
+          <UAlert
+            v-else
+            color="error"
+            title="无法读取系统状态"
+            :description="healthError ? '健康检查请求失败' : '健康检查没有返回数据'"
+            :actions="[{ label: '重试', onClick: () => refreshHealth() }]"
+          />
+
+          <SystemCapabilityStatusPanel v-if="capabilities" :capabilities="capabilities" />
+          <UAlert
+            v-else
+            color="error"
+            title="无法读取外部能力状态"
+            :description="capabilityError ? '能力状态请求失败' : '能力状态没有返回数据'"
+            :actions="[{ label: '重试', onClick: () => refreshCapabilities() }]"
+          />
+        </div>
+      </details>
+    </section>
   </div>
 </template>

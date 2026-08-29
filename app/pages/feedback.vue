@@ -111,7 +111,7 @@ function formatTime(timestamp: number): string {
 
 <template>
   <div>
-    <ContentPageHeader title="反馈与人物调整" description="反馈不会直接改写人物。系统先整理修改建议、检查效果和风险，再由规则或人工确认是否使用。" />
+    <ContentPageHeader title="学习中心" description="反馈不会直接改写人物。系统先整理修改建议、检查效果和风险，再由规则或人工确认是否使用。" />
     <UAlert v-if="actionError" class="mb-5" color="error" title="操作失败" :description="actionError" />
     <UAlert v-if="actionMessage" class="mb-5" color="success" title="操作完成" :description="actionMessage" />
 

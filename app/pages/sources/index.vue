@@ -78,7 +78,7 @@ async function runImport(action: () => Promise<void>): Promise<void> {
 
 <template>
   <div>
-    <ContentPageHeader title="资料" description="集中保存人物和世界会参考的内容；同一份资料可以重复用于多个人物或世界。">
+    <ContentPageHeader title="资料库" description="集中保存人物和世界会参考的内容；同一份资料可以重复用于多个人物或世界。">
       <UButton icon="i-lucide-plus" @click="showImport = !showImport">{{ showImport ? '收起导入' : '导入资料' }}</UButton>
     </ContentPageHeader>
     <ContentSourceImportForm v-if="showImport" class="mb-7" :loading="loading" :error-message="errorMessage" @paste="createPastedSource" @file="importFile" />

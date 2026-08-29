@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+import { getPageRouteContext } from '../../utils/navigation'
+
 /** 页面标题属性。 */
 interface Props {
   /** 页面主标题。 */
@@ -7,21 +10,31 @@ interface Props {
   description: string
 }
 
-defineProps<Props>()
+const props = defineProps<Props>()
+const route = useRoute()
+
+/** 当前页面所属分组和稳定路由标识。 */
+const routeContext = computed(() => getPageRouteContext(route.path))
 </script>
 
 <template>
-  <div class="mb-7 flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
-    <div>
-      <h1 class="text-2xl font-semibold text-highlighted">
-        {{ title }}
-      </h1>
-      <p class="mt-1 max-w-3xl text-sm text-muted">
-        {{ description }}
-      </p>
-    </div>
-    <div class="flex shrink-0 gap-2">
-      <slot />
-    </div>
+  <div class="page-heading">
+    <nav class="page-breadcrumbs" aria-label="面包屑">
+      <span>{{ routeContext.section }}</span>
+      <UIcon name="i-lucide-chevron-right" aria-hidden="true" />
+      <strong>{{ props.title }}</strong>
+    </nav>
+    <header class="page-heading-header">
+      <div class="page-heading-copy">
+        <code class="page-route-code">ROUTE {{ routeContext.routeCode }}</code>
+        <h1 class="page-title">
+          {{ title }}
+        </h1>
+        <p class="page-description">{{ description }}</p>
+      </div>
+      <div v-if="$slots.default" class="page-actions">
+        <slot />
+      </div>
+    </header>
   </div>
 </template>

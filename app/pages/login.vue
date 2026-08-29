@@ -34,22 +34,20 @@ async function handleLogin(input: LoginInput): Promise<void> {
 </script>
 
 <template>
-  <UCard>
-    <template #header>
-      <div>
-        <h1 class="text-xl font-semibold text-highlighted">
-          管理员登录
-        </h1>
-        <p class="mt-1 text-sm text-muted">
-          本地访问同样需要验证身份。
-        </p>
-      </div>
-    </template>
+  <section class="auth-form-panel" aria-labelledby="login-form-title">
+    <p class="eyebrow">登录</p>
+    <h2 id="login-form-title">验证本机管理员</h2>
+    <p class="auth-form-introduction">请输入此设备上已设置的唯一管理员身份和密码。</p>
 
     <AuthenticationLoginForm
       :loading="loading"
       :error-message="errorMessage"
       @submit="handleLogin"
     />
-  </UCard>
+
+    <div class="auth-local-help">
+      <strong>无法恢复管理员密码？</strong>
+      <p>请在运行人样的本机终端中使用管理员密码重置命令。系统不提供在线重置链接。</p>
+    </div>
+  </section>
 </template>

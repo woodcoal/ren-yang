@@ -39,7 +39,7 @@ function formatTime(timestamp: number): string { return new Date(timestamp).toLo
 
 <template>
   <div>
-    <ContentPageHeader title="内容格式" description="规定生成内容的结构和段落数量，例如文章、报告或图文卡片；不会改变人物性格。" />
+    <ContentPageHeader title="内容模板" description="规定生成内容的结构和段落数量，例如文章、报告或图文卡片；不会改变人物性格。" />
     <div class="grid gap-6 xl:grid-cols-[26rem_minmax(0,1fr)]">
       <UCard>
         <template #header><div><h2 class="font-semibold text-highlighted">新建内容格式</h2><p class="mt-1 text-sm text-muted">同名再次保存会生成一条新记录，旧任务仍保留原来的格式。</p></div></template>

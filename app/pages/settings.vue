@@ -84,7 +84,7 @@ function formatTime(timestamp: number): string {
 
 <template>
   <div>
-    <ContentPageHeader title="系统设置" description="能力开关和凭据由部署环境提供；浏览器只显示非敏感状态并执行显式检测或重建。" />
+    <ContentPageHeader title="系统中心" description="查看模型、资料检索、备份和审计状态；浏览器只显示非敏感配置。" />
     <UAlert v-if="actionError" class="mb-5" color="error" title="操作失败" :description="actionError" />
     <UAlert v-if="actionMessage" class="mb-5" color="success" title="操作完成" :description="actionMessage" />
     <UAlert v-if="capabilityError || statusError || auditError || sessionError" class="mb-5" color="error" title="系统数据加载失败" />

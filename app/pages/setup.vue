@@ -34,22 +34,20 @@ async function handleSetup(input: SetupAdministratorInput): Promise<void> {
 </script>
 
 <template>
-  <UCard>
-    <template #header>
-      <div>
-        <h1 class="text-xl font-semibold text-highlighted">
-          首次设置
-        </h1>
-        <p class="mt-1 text-sm text-muted">
-          创建唯一管理员。此操作只允许从应用所在机器完成。
-        </p>
-      </div>
-    </template>
+  <section class="auth-form-panel" aria-labelledby="setup-form-title">
+    <p class="eyebrow">首次设置</p>
+    <h2 id="setup-form-title">准备本机工作台</h2>
+    <p class="auth-form-introduction">创建这台设备上的唯一管理员。此操作只允许从应用所在机器完成。</p>
 
     <AuthenticationSetupForm
       :loading="loading"
       :error-message="errorMessage"
       @submit="handleSetup"
     />
-  </UCard>
+
+    <div class="auth-local-help">
+      <strong>设置完成后</strong>
+      <p>你可以建立人物、整理资料并开始任务；任何会影响后续任务的内容仍需人工确认。</p>
+    </div>
+  </section>
 </template>

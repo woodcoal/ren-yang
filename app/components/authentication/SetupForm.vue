@@ -47,7 +47,7 @@ function handleSubmit(event: FormSubmitEvent<SetupAdministratorInput>): void {
   >
     <UFormField
       name="username"
-      label="管理员用户名"
+      label="管理员名称"
       description="3–50 个文字、数字、下划线或短横线。"
       required
     >
@@ -90,7 +90,7 @@ function handleSubmit(event: FormSubmitEvent<SetupAdministratorInput>): void {
 
     <p
       v-if="errorMessage"
-      class="text-sm text-error"
+      class="rounded-[var(--radius-control)] border border-error/30 bg-error/10 p-3 text-sm text-error"
       role="alert"
     >
       {{ errorMessage }}
@@ -101,7 +101,7 @@ function handleSubmit(event: FormSubmitEvent<SetupAdministratorInput>): void {
       block
       :loading="loading"
     >
-      创建管理员
+      完成设置并进入工作台
     </UButton>
   </UForm>
 </template>

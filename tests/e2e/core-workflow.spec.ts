@@ -36,24 +36,42 @@ test('首次设置、人物发布、文档确认及三格式导出形成可复�
   await expect(page).toHaveURL(/\/setup$/)
   await waitForHydration(page)
 
-  await page.getByLabel('管理员用户名').fill(ADMINISTRATOR.username)
+  await page.getByLabel('管理员名称').fill(ADMINISTRATOR.username)
   await page.getByLabel('管理员密码', { exact: true }).fill(ADMINISTRATOR.password)
   await page.getByLabel('确认密码').fill(ADMINISTRATOR.password)
-  await page.getByRole('button', { name: '创建管理员', exact: true }).click()
-  await expect(page.getByRole('heading', { name: '仪表盘', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '完成设置并进入工作台', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '今日工作', exact: true })).toBeVisible()
 
-  await page.getByRole('button', { name: '退出', exact: true }).click()
+  await page.getByRole('button', { name: '退出登录', exact: true }).click()
   await expect(page).toHaveURL(/\/login$/)
-  await page.getByLabel('用户名').fill(ADMINISTRATOR.username)
-  await page.getByLabel('密码', { exact: true }).fill(ADMINISTRATOR.password)
-  await page.getByRole('button', { name: '登录', exact: true }).click()
-  await expect(page.getByRole('heading', { name: '仪表盘', exact: true })).toBeVisible()
-  await expect(page.getByLabel('账户与系统状态')).toContainText('e2e_admin')
-  await expect(page.getByLabel('账户与系统状态')).toContainText('文本可用')
+  await page.getByLabel('管理员名称').fill(ADMINISTRATOR.username)
+  await page.getByLabel('管理员密码', { exact: true }).fill(ADMINISTRATOR.password)
+  await page.getByRole('button', { name: '登录并进入工作台', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '今日工作', exact: true })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'e2e_admin', exact: true })).toBeVisible()
+  await expect(page.getByText('文本模型可用', { exact: true })).toBeVisible()
+
+  // 全局命令导航只检索现有页面，并支持标准键盘打开与关闭方式。
+  await page.keyboard.press('Control+k')
+  await expect(page.getByRole('heading', { name: '前往页面', exact: true })).toBeVisible()
+  await page.getByLabel('搜索后台页面').fill('内容模板')
+  await expect(page.getByRole('button', { name: /内容模板/ })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('heading', { name: '前往页面', exact: true })).toBeHidden()
+
+  // 移动端使用抽屉导航，关闭后页面仍不能产生横向溢出。
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.getByRole('button', { name: '打开导航', exact: true }).click()
+  await expect(page.getByRole('navigation', { name: '主导航' })).toBeVisible()
+  await page.getByRole('button', { name: '关闭导航', exact: true }).click()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  await page.setViewportSize({ width: 1280, height: 720 })
+
+  await page.getByText('查看完整系统状态', { exact: true }).click()
   await expect(page.getByRole('heading', { name: '外部能力', exact: true })).toBeVisible()
 
   // 先创建可复用资料，再从世界详情直接关联，覆盖新的世界资料管理入口。
-  await page.getByRole('link', { name: '资料', exact: true }).click()
+  await page.getByRole('link', { name: '资料库', exact: true }).click()
   await page.getByRole('button', { name: '导入资料', exact: true }).click()
   const pasteForm = page.locator('form').filter({ has: page.getByRole('button', { name: '导入粘贴文本', exact: true }) })
   await pasteForm.getByLabel('资料名称').fill('浮岛背景资料')
@@ -100,7 +118,7 @@ test('首次设置、人物发布、文档确认及三格式导出形成可复�
   await page.getByRole('button', { name: '确认并使用', exact: true }).click()
   await expect(page.getByText('修改稿已确认，之后的新任务将使用这一版', { exact: true })).toBeVisible()
 
-  await page.getByRole('link', { name: '创作', exact: true }).click()
+  await page.getByRole('link', { name: '新建任务', exact: true }).click()
   await page.getByLabel('任务类型').selectOption('generation')
   await page.getByLabel('使用的人物').selectOption({ label: '林默' })
   await page.getByLabel('创作要求').fill('用人物风格介绍学院课程，并输出 HTML、Markdown 和 Txt。')
@@ -120,7 +138,7 @@ test('首次设置、人物发布、文档确认及三格式导出形成可复�
   await downloadArtifact(page, '下载 Markdown', 'md')
   await downloadArtifact(page, '下载 TXT', 'txt')
 
-  await page.getByRole('link', { name: '系统设置', exact: true }).click()
+  await page.getByRole('link', { name: '系统中心', exact: true }).click()
   await expect(page.getByRole('heading', { name: '账户安全', exact: true })).toBeVisible()
   await expect(page.getByText('当前管理员', { exact: true }).locator('..')).toContainText(ADMINISTRATOR.username)
   await expect(page.getByText('系统默认运行限制', { exact: true })).toBeVisible()

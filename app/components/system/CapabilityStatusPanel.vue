@@ -34,7 +34,7 @@ const capabilityItems = computed(() => [
     label: '上下文检索',
     status: props.capabilities.contextProvider === 'openviking' ? 'OpenViking 语义检索' : 'SQLite FTS5 本地检索',
     impact: props.capabilities.contextProvider === 'openviking'
-      ? '远端不可用时当前运行会明确失败，不会静默降级'
+      ? '新任务创建前若远端不可用会改用 SQLite FTS5；已经创建的任务保持原检索方式'
       : 'OpenViking 未启用，完整主流程仍可运行',
     color: props.capabilities.contextProvider === 'openviking' ? 'success' as const : 'neutral' as const,
   },
