@@ -6,6 +6,7 @@ import {
   type ConfirmFeedbackClassificationInput,
   type CreateEvaluationCaseInput,
   type SubmitFeedbackInput,
+  type UpdatePersonaMemoryStatusInput,
 } from '../../../shared/schemas/feedback'
 import type {
   CandidateMemoryView,
@@ -13,6 +14,7 @@ import type {
   EvaluationResultView,
   EvaluationRunView,
   FeedbackView,
+  PersonaMemoryView,
   RevisionProposalView,
   CreatedEvaluationRun,
 } from '../../../shared/types/feedback'
@@ -24,6 +26,7 @@ import type {
 } from '../../domain/feedback/FeedbackModels'
 import { assessRevisionRisk, decideRevisionPublication } from '../../domain/feedback/RevisionPolicy'
 import type { Clock } from '../../ports/Clock'
+import type { ContextSyncTaskQueue } from '../../ports/ContextSyncTaskQueue'
 import type { FeedbackAggregate, FeedbackRepository } from '../../ports/FeedbackRepository'
 import type { IdentifierGenerator } from '../../ports/IdentifierGenerator'
 import type { TextModelPort } from '../../ports/TextModelPort'
@@ -64,6 +67,8 @@ export interface FeedbackApplicationServiceDependencies {
   clock: Clock
   /** 是否允许评测通过后自动发布低风险提案。 */
   autoPublishLowRisk: boolean
+  /** OpenViking 启用时使用的反馈 Session 异步队列。 */
+  contextSyncQueue?: ContextSyncTaskQueue
 }
 
 /** 编排反馈归因、修订提案、人物评测和受控发布。 */
@@ -133,6 +138,14 @@ export class FeedbackApplicationService implements TaskHandler {
       },
     )
     if (!created) throw new ApplicationError('RESOURCE_NOT_FOUND', '反馈目标产物块不属于当前运行', 404)
+    if (this.dependencies.contextSyncQueue) {
+      await this.dependencies.contextSyncQueue.enqueueSessionSynchronization(
+        'feedback',
+        feedbackId,
+        this.dependencies.identifiers.create(),
+        this.dependencies.clock.now(),
+      )
+    }
     return toFeedbackView((await this.dependencies.repository.findFeedback(feedbackId))!)
   }
 
@@ -198,6 +211,29 @@ export class FeedbackApplicationService implements TaskHandler {
   async getCandidateMemory(feedbackId: string): Promise<CandidateMemoryView | null> {
     const value = await this.dependencies.repository.findCandidateMemory(feedbackId)
     return value ? { ...value } : null
+  }
+
+  /** @param personaId 人物 UUID。 @returns 全部候选、有效、废弃和拒绝记忆。 */
+  async listPersonaMemories(personaId: string): Promise<PersonaMemoryView[]> {
+    if (!await this.dependencies.repository.personaExists(personaId)) {
+      throw new ApplicationError('RESOURCE_NOT_FOUND', '人物不存在', 404)
+    }
+    return await this.dependencies.repository.listPersonaMemories(personaId)
+  }
+
+  /** @param personaId 人物 UUID。 @param memoryId 记忆标识。 @param input 新审核状态。 @returns 更新后记忆。 */
+  async updatePersonaMemoryStatus(
+    personaId: string,
+    input: UpdatePersonaMemoryStatusInput,
+  ): Promise<PersonaMemoryView> {
+    const changed = await this.dependencies.repository.updatePersonaMemoryStatus(
+      personaId,
+      input.memoryId,
+      input.status,
+      this.dependencies.clock.now(),
+    )
+    if (!changed) throw new ApplicationError('VERSION_CONFLICT', '记忆不存在或当前状态不能执行该操作', 409)
+    return (await this.dependencies.repository.listPersonaMemories(personaId)).find(memory => memory.id === input.memoryId)!
   }
 
   /**

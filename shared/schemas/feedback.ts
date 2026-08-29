@@ -5,6 +5,15 @@ export const feedbackTargetSchema = z.enum(['artifact', 'parameters', 'persona',
   error: '反馈目标无效',
 })
 
+/** 人物记忆人工审核输入。 */
+export const updatePersonaMemoryStatusSchema = z.object({
+  memoryId: z.string().trim().min(1, '记忆标识不能为空').max(2_000, '记忆标识过长'),
+  status: z.enum(['active', 'deprecated', 'rejected']),
+})
+
+/** 人物记忆人工审核输入类型。 */
+export type UpdatePersonaMemoryStatusInput = z.infer<typeof updatePersonaMemoryStatusSchema>
+
 /** 用户可以评价一次运行或其中一个具体产物块。 */
 export const submitFeedbackSchema = z.object({
   content: z.string().trim().min(1, '反馈内容不能为空').max(10_000, '反馈内容不能超过 10000 字'),

@@ -161,6 +161,12 @@ describe('反馈、提案、评测与发布闭环', () => {
     expect(JSON.parse(String(rows[1]!.snapshot_json))).toMatchObject({ expressionStyle: '简洁克制。回答时明确提到证据。' })
     expect(database.getClient().prepare('SELECT active_version_id FROM personas WHERE id = ?').get(IDS.persona))
       .toEqual({ active_version_id: published.candidateVersionId })
+    await expect(service.listPersonaMemories(IDS.persona)).resolves.toMatchObject([{
+      content: '以后回答时明确提到证据。', status: 'active', sourceType: 'feedback',
+    }])
+    expect(database.getClient().prepare(`
+      SELECT content FROM persona_learning_fts WHERE persona_id = ? AND entity_type = 'memory'
+    `).all(IDS.persona)).toEqual([{ content: '以后回答时明确提到证据。' }])
   })
 
   it('身份事实属于高风险，即使评测通过且启用自动发布仍等待人工确认', async () => {

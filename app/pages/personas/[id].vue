@@ -8,6 +8,7 @@ import {
   type UpdatePersonaInput,
 } from '#shared/schemas/content'
 import type { ApiResponse } from '#shared/types/api'
+import type { PersonaMemoryView } from '#shared/types/feedback'
 import type {
   DeletionImpact,
   PersonaDetails,
@@ -23,8 +24,12 @@ const [{ data, error, refresh }, { data: worldData }] = await Promise.all([
   useFetch<ApiResponse<PersonaDetails>>(`/api/v1/personas/${personaId}`),
   useFetch<ApiResponse<WorldSummary[]>>('/api/v1/worlds'),
 ])
+const { data: memoryData, refresh: refreshMemories } = await useFetch<ApiResponse<PersonaMemoryView[]>>(
+  `/api/v1/personas/${personaId}/memories`,
+)
 const details = computed(() => data.value?.data ?? null)
 const worlds = computed(() => worldData.value?.data ?? [])
+const memories = computed(() => memoryData.value?.data ?? [])
 const actionLoading = shallowRef(false)
 const actionError = shallowRef<string | null>(null)
 const actionMessage = shallowRef<string | null>(null)
@@ -144,6 +149,23 @@ async function deletePersona(): Promise<void> {
   await runAction(null, async () => {
     await $fetch(`/api/v1/personas/${personaId}`, { method: 'DELETE' })
     await navigateTo('/personas')
+  })
+}
+
+/**
+ * 人工确认、停用、恢复或拒绝一条人物记忆。
+ * @param memoryId 本地或 OpenViking 派生记忆标识。
+ * @param status 目标审核状态。
+ * @returns 请求完成时结束。
+ */
+async function updateMemoryStatus(
+  memoryId: string,
+  status: 'active' | 'deprecated' | 'rejected',
+): Promise<void> {
+  const message = status === 'active' ? '这条记忆已用于之后的新任务' : status === 'deprecated' ? '这条记忆已停用' : '这条候选记忆已拒绝'
+  await runAction(message, async () => {
+    await $fetch(`/api/v1/personas/${personaId}/memories`, { method: 'PATCH', body: { memoryId, status } })
+    await refreshMemories()
   })
 }
 
@@ -286,6 +308,30 @@ function formatTime(timestamp: number): string {
               <UButton v-for="source in details.sources" :key="source.id" :to="`/sources/${source.id}`" color="neutral" variant="soft" block class="justify-start">{{ source.name }}</UButton>
             </div>
             <p v-else class="text-sm text-muted">未关联资料。可在资料详情中建立关联。</p>
+          </UCard>
+
+          <UCard>
+            <template #header>
+              <div><h2 class="font-semibold text-highlighted">人物记忆</h2><p class="mt-1 text-sm text-muted">系统整理出的内容先等待确认，只有“正在使用”的记忆会影响新任务。</p></div>
+            </template>
+            <div v-if="memories.length" class="space-y-3">
+              <div v-for="memory in memories" :key="memory.id" class="rounded-md border border-default p-3">
+                <div class="flex items-center justify-between gap-2">
+                  <UBadge :color="memory.status === 'active' ? 'success' : memory.status === 'candidate' ? 'warning' : 'neutral'" variant="subtle">
+                    {{ memory.status === 'active' ? '正在使用' : memory.status === 'candidate' ? '等待确认' : memory.status === 'deprecated' ? '已停用' : '已拒绝' }}
+                  </UBadge>
+                  <span class="text-xs text-muted">{{ memory.sourceType === 'openviking_session' ? '交流整理' : memory.sourceType === 'feedback' ? '长期反馈' : '手动记录' }}</span>
+                </div>
+                <p class="mt-2 whitespace-pre-wrap text-sm text-muted">{{ memory.content }}</p>
+                <div class="mt-3 flex flex-wrap gap-2">
+                  <UButton v-if="memory.status === 'candidate'" size="xs" :loading="actionLoading" @click="updateMemoryStatus(memory.id, 'active')">确认使用</UButton>
+                  <UButton v-if="memory.status === 'candidate'" size="xs" color="neutral" variant="soft" :loading="actionLoading" @click="updateMemoryStatus(memory.id, 'rejected')">拒绝</UButton>
+                  <UButton v-if="memory.status === 'active'" size="xs" color="neutral" variant="soft" :loading="actionLoading" @click="updateMemoryStatus(memory.id, 'deprecated')">停用</UButton>
+                  <UButton v-if="memory.status === 'deprecated'" size="xs" :loading="actionLoading" @click="updateMemoryStatus(memory.id, 'active')">恢复使用</UButton>
+                </div>
+              </div>
+            </div>
+            <p v-else class="text-sm text-muted">还没有人物记忆。明确提交的长期反馈或交流整理结果会显示在这里。</p>
           </UCard>
 
           <UCard>

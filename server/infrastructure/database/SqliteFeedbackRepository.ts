@@ -1,7 +1,9 @@
 import type { Database as BetterSqliteDatabase } from 'better-sqlite3'
+import { createHash } from 'node:crypto'
 import { personaSnapshotSchema } from '../../../shared/schemas/content'
 import { textModelParametersSchema } from '../../../shared/schemas/generation'
 import type { FeedbackTarget } from '../../../shared/schemas/feedback'
+import type { PersonaMemoryView } from '../../../shared/types/feedback'
 import type { TextModelSnapshot } from '../../domain/generation/GenerationModels'
 import type {
   CandidateMemoryRecord,
@@ -208,6 +210,21 @@ export class SqliteFeedbackRepository implements FeedbackRepository {
         INSERT INTO candidate_memories (id, feedback_id, persona_id, content, status, proposal_id, created_at)
         SELECT ?, id, ?, content, 'promoted', ?, ? FROM feedback_events WHERE id = ?
       `).run(command.memoryId, command.personaId, command.proposalId, command.timestamp, command.feedbackId)
+      const memory = this.client.prepare('SELECT content FROM feedback_events WHERE id = ?').get(command.feedbackId) as { content: string }
+      this.client.prepare(`
+        INSERT INTO persona_memories (
+          id, persona_id, content, content_hash, memory_type, status,
+          source_type, source_id, remote_uri, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, 'feedback', 'candidate', 'feedback', ?, NULL, ?, ?)
+      `).run(
+        command.memoryId,
+        command.personaId,
+        memory.content,
+        createHash('sha256').update(memory.content).digest('hex'),
+        command.feedbackId,
+        command.timestamp,
+        command.timestamp,
+      )
       this.client.prepare(`
         INSERT INTO feedback_resolutions (feedback_id, target_type, resolution_json, confirmed_at)
         VALUES (?, 'persona', ?, ?)
@@ -414,6 +431,9 @@ export class SqliteFeedbackRepository implements FeedbackRepository {
         UPDATE revision_proposals SET status = 'published', decision_reason = ?, updated_at = ? WHERE id = ?
       `).run(reason, timestamp, proposalId)
       this.client.prepare(`UPDATE candidate_memories SET status = 'promoted' WHERE proposal_id = ?`).run(proposalId)
+      this.client.prepare(`UPDATE persona_memories SET status = 'active', updated_at = ? WHERE id IN (
+        SELECT id FROM candidate_memories WHERE proposal_id = ?
+      )`).run(timestamp, proposalId)
       insertAuditEvent(this.client, {
         actor, action: 'revision_proposal_published', targetType: 'revision_proposal',
         targetId: proposalId, details: { personaId: String(data.persona_id), candidateVersionId: String(data.candidate_version_id) }, timestamp,
@@ -436,6 +456,9 @@ export class SqliteFeedbackRepository implements FeedbackRepository {
         UPDATE revision_proposals SET status = 'rejected', decision_reason = ?, updated_at = ? WHERE id = ?
       `).run(reason, timestamp, proposalId)
       this.client.prepare(`UPDATE candidate_memories SET status = 'rejected' WHERE proposal_id = ?`).run(proposalId)
+      this.client.prepare(`UPDATE persona_memories SET status = 'rejected', updated_at = ? WHERE id IN (
+        SELECT id FROM candidate_memories WHERE proposal_id = ?
+      )`).run(timestamp, proposalId)
       insertAuditEvent(this.client, {
         actor: 'administrator', action: 'revision_proposal_rejected', targetType: 'revision_proposal',
         targetId: proposalId, details: { candidateVersionId }, timestamp,
@@ -458,6 +481,35 @@ export class SqliteFeedbackRepository implements FeedbackRepository {
   async findCandidateMemory(feedbackId: string): Promise<CandidateMemoryRecord | null> {
     const value = this.client.prepare('SELECT * FROM candidate_memories WHERE feedback_id = ?').get(feedbackId)
     return value ? toCandidateMemory(value) : null
+  }
+
+  /** @param personaId 人物 UUID。 @returns 新记忆在前的全部本地审核事实。 */
+  async listPersonaMemories(personaId: string): Promise<PersonaMemoryView[]> {
+    return this.client.prepare(`
+      SELECT * FROM persona_memories WHERE persona_id = ? ORDER BY created_at DESC, id DESC
+    `).all(personaId).map(toPersonaMemory)
+  }
+
+  /** @param personaId 人物 UUID。 @param memoryId 记忆标识。 @param status 新状态。 @param timestamp 更新时间。 @returns 合法转换是否成功。 */
+  async updatePersonaMemoryStatus(
+    personaId: string,
+    memoryId: string,
+    status: 'active' | 'deprecated' | 'rejected',
+    timestamp: number,
+  ): Promise<boolean> {
+    const allowedFrom = status === 'active' ? ['candidate', 'deprecated'] : status === 'deprecated' ? ['active'] : ['candidate']
+    const placeholders = allowedFrom.map(() => '?').join(', ')
+    return this.client.transaction(() => {
+      const changed = this.client.prepare(`
+        UPDATE persona_memories SET status = ?, updated_at = ?
+        WHERE id = ? AND persona_id = ? AND status IN (${placeholders})
+      `).run(status, timestamp, memoryId, personaId, ...allowedFrom).changes === 1
+      if (changed) insertAuditEvent(this.client, {
+        actor: 'administrator', action: 'persona_memory_status_changed', targetType: 'persona_memory',
+        targetId: memoryId, details: { personaId, status }, timestamp,
+      })
+      return changed
+    }).immediate()
   }
 }
 
@@ -490,6 +542,23 @@ function row(value: unknown): Record<string, unknown> {
 /** @param value SQLite 可空值。 @returns 字符串或 null。 */
 function nullableString(value: unknown): string | null {
   return value === null || value === undefined ? null : String(value)
+}
+
+/** @param value SQLite 人物记忆行。 @returns 管理界面公开记忆。 */
+function toPersonaMemory(value: unknown): PersonaMemoryView {
+  const data = row(value)
+  return {
+    id: String(data.id),
+    personaId: String(data.persona_id),
+    content: String(data.content),
+    memoryType: String(data.memory_type),
+    status: data.status as PersonaMemoryView['status'],
+    sourceType: data.source_type as PersonaMemoryView['sourceType'],
+    sourceId: nullableString(data.source_id),
+    remoteUri: nullableString(data.remote_uri),
+    createdAt: Number(data.created_at),
+    updatedAt: Number(data.updated_at),
+  }
 }
 
 /** @param value 0 到 1 的分数。 @returns 避免 SQLite 浮点差异的百万分整数。 */

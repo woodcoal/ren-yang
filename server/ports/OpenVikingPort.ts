@@ -1,10 +1,17 @@
 import type { OpenVikingCapabilityView } from '../../shared/types/context'
-import type { ContextSourceDocument } from './ContextIndexRepository'
+import type {
+  ContextSessionExchange,
+  ContextSourceProjection,
+  DerivedMemoryDocument,
+} from './ContextIndexRepository'
+import type { ContextSyncRecordView } from '../../shared/types/context'
 
 /** OpenViking 健康检查的统一业务结果。 */
 export interface OpenVikingHealthResult {
   healthy: boolean
   version: string | null
+  /** 动态世界 User 隔离要求服务端处于 Trusted 模式。 */
+  authMode: 'trusted'
 }
 
 /** OpenViking 索引维护端口，不向应用层暴露远端响应类型。 */
@@ -13,12 +20,14 @@ export interface OpenVikingPort {
   getCapability(): OpenVikingCapabilityView
   /** @returns 远端健康状态。 */
   checkHealth(): Promise<OpenVikingHealthResult>
-  /** @returns 删除人样专属远端根目录；不存在视为成功。 */
-  resetIndex(): Promise<void>
-  /** @param sourceId 已从 SQLite 删除的资料 UUID。 @returns 删除对应远端资源后结束；不存在视为成功。 */
-  deleteSource(sourceId: string): Promise<void>
-  /** @param source SQLite 资料完整事实。 @returns 实际远端 URI。 */
-  synchronizeSource(source: ContextSourceDocument): Promise<string>
+  /** @returns 清理旧版账号共享目录；不存在视为成功。 */
+  resetLegacyIndex(): Promise<void>
+  /** @param record SQLite 保存的精确投影身份和 URI。 @returns 删除结束；不存在视为成功。 */
+  deleteProjection(record: ContextSyncRecordView): Promise<void>
+  /** @param projection SQLite 当前资料投影。 @returns 实际远端 URI。 */
+  synchronizeProjection(projection: ContextSourceProjection): Promise<string>
+  /** @param exchange SQLite 已保存交流。 @returns 提交完成后从 Peer 同步出的候选记忆。 */
+  synchronizeSession(exchange: ContextSessionExchange): Promise<DerivedMemoryDocument[]>
 }
 
 /** OpenViking HTTP、结构或能力异常。 */

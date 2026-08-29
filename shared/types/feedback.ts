@@ -61,6 +61,30 @@ export interface CandidateMemoryView {
   createdAt: number
 }
 
+/** 管理界面可审核的人物记忆。 */
+export interface PersonaMemoryView {
+  /** 本地记忆标识。 */
+  id: string
+  /** 所属人物 UUID。 */
+  personaId: string
+  /** 完整记忆正文。 */
+  content: string
+  /** OpenViking 或本地业务类型。 */
+  memoryType: string
+  /** 只有 active 会参与后续检索。 */
+  status: 'candidate' | 'active' | 'deprecated' | 'rejected'
+  /** 记忆来源。 */
+  sourceType: 'openviking_session' | 'feedback' | 'manual'
+  /** 本地来源 UUID。 */
+  sourceId: string | null
+  /** OpenViking 派生记忆精确 URI。 */
+  remoteUri: string | null
+  /** 创建时间。 */
+  createdAt: number
+  /** 最近更新时间。 */
+  updatedAt: number
+}
+
 /** 人物修订提案及发布门禁状态。 */
 export interface RevisionProposalView {
   /** 提案 UUID。 */

@@ -233,9 +233,11 @@ function seedReferencedData(): void {
     VALUES (?, ?, ?, 'image/png', ?, ?, '学院主图', 1000)
   `).run(IDS.asset, IDS.attempt, `assets/${IDS.asset}.png`, IMAGE_BYTES.byteLength, hash(IMAGE_BYTES))
   client.prepare(`
-    INSERT INTO context_sync_records (id, source_id, provider, remote_uri, content_hash, status, error, created_at, updated_at)
-    VALUES (?, ?, 'openviking', 'viking://resources/test', ?, 'synchronized', NULL, 1000, 1000)
-  `).run(IDS.sync, IDS.source, hash(SOURCE_BYTES))
+    INSERT INTO context_sync_records (
+      id, source_id, scope_type, scope_id, user_id, peer_id,
+      provider, remote_uri, content_hash, status, error, created_at, updated_at
+    ) VALUES (?, ?, 'persona', ?, ?, ?, 'openviking', 'viking://~/peers/persona-test/resources/ren-yang/test.md', ?, 'synchronized', NULL, 1000, 1000)
+  `).run(IDS.sync, IDS.source, IDS.persona, `standalone-${IDS.persona}`, `persona-${IDS.persona}`, hash(SOURCE_BYTES))
 }
 
 /**

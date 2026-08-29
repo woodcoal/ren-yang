@@ -36,10 +36,10 @@ const reindexConfirmed = shallowRef(false)
 /** @returns 主动检测外部上下文服务，不改变开关或索引。 */
 async function checkProvider(): Promise<void> {
   await executeAction(async () => {
-    const response = await $fetch<ApiResponse<{ healthy: boolean, version: string | null }>>('/api/v1/system/providers/check', {
+    const response = await $fetch<ApiResponse<{ healthy: boolean, version: string | null, authMode: 'trusted' }>>('/api/v1/system/providers/check', {
       method: 'POST', body: { provider: 'openviking' },
     })
-    actionMessage.value = `服务健康，版本 ${response.data.version ?? '未知'}`
+    actionMessage.value = `服务正常，版本 ${response.data.version ?? '未知'}，世界隔离模式已生效`
   })
 }
 
@@ -111,7 +111,7 @@ function formatTime(timestamp: number): string {
           <div><dt class="text-xs text-muted">新运行提供器</dt><dd class="mt-1 font-medium">{{ contextProvider }}</dd></div>
           <div><dt class="text-xs text-muted">服务来源</dt><dd class="mt-1 break-all font-medium">{{ capability.endpointOrigin ?? '未配置' }}</dd></div>
         </dl>
-        <UAlert class="mt-5" color="neutral" title="本地资料始终是原始数据" description="关闭 OpenViking 不会删除本地资料；以后可以随时从本地资料重新建立搜索内容。启用后如果服务不可用，新任务会明确失败，不会偷偷换成另一种搜索方式。" />
+        <UAlert class="mt-5" color="neutral" title="SQLite 始终保存原始数据" description="OpenViking 不可用时，新任务会改用本地全文搜索；远端同步任务会保留并在服务恢复后重试。已经创建的任务不会中途更换搜索方式。" />
         <div class="mt-5 flex flex-wrap gap-2">
           <UButton :loading="actionLoading" color="neutral" variant="soft" @click="checkProvider">检测服务</UButton>
         </div>

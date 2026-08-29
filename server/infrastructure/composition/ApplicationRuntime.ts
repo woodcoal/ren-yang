@@ -138,6 +138,9 @@ export class ApplicationRuntime {
     const contextRepository = new SqliteContextIndexRepository(this.sqlite.getClient())
     const openVikingOptions = options.openViking ?? { enabled: false, endpoint: '', apiKey: '', timeoutMs: 60_000 }
     const openViking = new OpenVikingHttpContextProvider({ ...openVikingOptions, repository: contextRepository })
+    const contextSyncQueue = openVikingOptions.enabled
+      ? new SqliteContextSyncTaskQueue(this.sqlite.getClient())
+      : undefined
     const contextProvider = new SwitchableContextProvider(
       new SqliteContextProvider(this.sqlite.getClient()),
       openViking,
@@ -150,7 +153,7 @@ export class ApplicationRuntime {
       sourceProcessor,
       sourceFiles: new LocalSourceFileStorage(options.dataDirectory, storageCapacity),
       imageAssets,
-      contextSyncQueue: openVikingOptions.enabled ? new SqliteContextSyncTaskQueue(this.sqlite.getClient()) : undefined,
+      contextSyncQueue,
     })
     this.generationService = new GenerationApplicationService({
       runs: new SqliteRunRepository(this.sqlite.getClient()),
@@ -162,6 +165,7 @@ export class ApplicationRuntime {
       identifiers,
       clock: this.clock,
       sourceProcessor,
+      contextSyncQueue,
     })
     this.feedbackService = new FeedbackApplicationService({
       repository: new SqliteFeedbackRepository(this.sqlite.getClient()),
@@ -169,12 +173,14 @@ export class ApplicationRuntime {
       identifiers,
       clock: this.clock,
       autoPublishLowRisk: options.feedback?.autoPublishLowRisk ?? false,
+      contextSyncQueue,
     })
     this.contextSynchronizationService = new ContextSynchronizationApplicationService({
       repository: contextRepository,
       openViking,
       identifiers,
       clock: this.clock,
+      taskQueue: contextSyncQueue,
     })
     this.backupService = new BackupApplicationService(new LocalBackupManager(
       options.dataDirectory,
@@ -207,6 +213,7 @@ export class ApplicationRuntime {
    * @returns 无返回值。
    */
   async start(): Promise<void> {
+    await this.contextSynchronizationService.recoverPendingTasks()
     await this.worker.start()
   }
 

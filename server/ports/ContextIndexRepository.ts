@@ -17,16 +17,119 @@ export interface ContextSourceScope {
   priority: number
 }
 
+/** SQLite 资料向一个 OpenViking User 或 Peer 产生的独立投影。 */
+export interface ContextSourceProjection {
+  /** SQLite 资料事实。 */
+  source: ContextSourceDocument
+  /** 世界资料写入 User，人物资料写入 Peer。 */
+  scopeType: 'world' | 'persona'
+  /** 世界或人物 UUID。 */
+  scopeId: string
+  /** OpenViking 世界 User。 */
+  userId: string
+  /** 人物 Peer；世界投影为空。 */
+  peerId: string | null
+  /** 数值越小，检索优先级越高。 */
+  priority: number
+}
+
+/** 一次人物检索允许访问的精确远端目标。 */
+export interface ContextRemoteSearchScope {
+  /** 当前人物所在世界或独立人物对应的 OpenViking User。 */
+  userId: string
+  /** 当前人物对应的 OpenViking Peer。 */
+  peerId: string
+  /** 仅包含 SQLite 当前有效范围且同步成功的 URI。 */
+  targets: Array<{
+    /** SQLite 资料 UUID；人物记忆不是资料，因此为空。 */
+    sourceId: string | null
+    /** 资料角色或有效人物记忆。 */
+    role: ContextSourceScope['role'] | 'memory'
+    /** 数值越小越优先。 */
+    priority: number
+    /** SQLite 允许本次检索使用的精确 URI。 */
+    remoteUri: string
+  }>
+}
+
+/** 待写入人物 Peer Session 的 SQLite 交流事实。 */
+export interface ContextSessionExchange {
+  /** 本地来源类型。 */
+  sourceType: 'run' | 'feedback'
+  /** 生成运行或反馈 UUID。 */
+  sourceId: string
+  /** 人物 UUID。 */
+  personaId: string
+  /** OpenViking 世界 User。 */
+  userId: string
+  /** OpenViking 人物 Peer。 */
+  peerId: string
+  /** 远端稳定 Session UUID。 */
+  sessionId: string
+  /** 用户输入。 */
+  userContent: string
+  /** 人物响应或反馈上下文。 */
+  assistantContent: string
+  /** 是否允许只提取 Peer events 候选记忆。 */
+  extractMemory: boolean
+}
+
+/** OpenViking 自动提取后同步回 SQLite 的候选记忆。 */
+export interface DerivedMemoryDocument {
+  /** OpenViking 精确 URI。 */
+  remoteUri: string
+  /** 记忆类型目录。 */
+  memoryType: string
+  /** 完整可见正文。 */
+  content: string
+  /** 正文 SHA-256。 */
+  contentHash: string
+}
+
+/** 尚无远端 URI 但已由 SQLite 审核生效的成长或记忆。 */
+export interface ActiveLocalLearning {
+  /** 成长或记忆。 */
+  role: 'growth' | 'memory'
+  /** 完整正文。 */
+  content: string
+  /** 正文 SHA-256。 */
+  contentHash: string
+}
+
+/** 启动补偿扫描发现的 Session 本地来源。 */
+export interface PendingContextSessionSource {
+  /** 生成运行或反馈。 */
+  sourceType: 'run' | 'feedback'
+  /** 对应 SQLite 事实 UUID。 */
+  sourceId: string
+}
+
 /** SQLite 上下文同步记录和资料目录端口。 */
 export interface ContextIndexRepository {
   /** @returns 全部 SQLite 资料正文；SQLite 始终是唯一事实源。 */
   listSourceDocuments(): Promise<ContextSourceDocument[]>
   /** @param sourceId 资料 UUID。 @returns 当前完整 SQLite 资料；不存在时返回 null。 */
   findSourceDocument(sourceId: string): Promise<ContextSourceDocument | null>
+  /** @param sourceId 可选资料 UUID；为空时返回全部当前关联投影。 @returns SQLite 可重建投影。 */
+  listSourceProjections(sourceId?: string): Promise<ContextSourceProjection[]>
   /** @param personaId 人物 UUID。 @param worldId 可选世界 UUID。 @returns 允许当前运行检索的资料范围。 */
   listSourceScopes(personaId: string, worldId: string | null): Promise<ContextSourceScope[]>
+  /** @param personaId 人物 UUID。 @param worldId 可选世界 UUID。 @returns 同一 User 下可检索的精确远端范围。 */
+  findRemoteSearchScope(personaId: string, worldId: string | null): Promise<ContextRemoteSearchScope | null>
+  /** @param personaId 人物 UUID。 @returns 尚无远端投影但已生效的成长和记忆。 */
+  listActiveLocalLearning(personaId: string): Promise<ActiveLocalLearning[]>
+  /** @param sourceType 本地交流类型。 @param sourceId 本地 UUID。 @returns 完整交流事实或 null。 */
+  findSessionExchange(sourceType: 'run' | 'feedback', sourceId: string): Promise<ContextSessionExchange | null>
+  /** @returns 尚未成功写入 OpenViking 的全部终态运行和反馈来源。 */
+  listPendingSessionSources(): Promise<PendingContextSessionSource[]>
+  /** @param exchange 本地交流。 @param status 投影状态。 @param error 可选脱敏错误。 @param timestamp 更新时间。 @returns 无返回值。 */
+  saveSessionState(exchange: ContextSessionExchange, status: 'pending' | 'failed', error: string | null, timestamp: number): Promise<void>
+  /** @param exchange 已成功同步的交流。 @param memories OpenViking 派生候选。 @param timestamp 同步时间。 @returns 无返回值。 */
+  saveSessionResult(exchange: ContextSessionExchange, memories: DerivedMemoryDocument[], timestamp: number): Promise<void>
   /** @returns 全部 OpenViking 同步记录。 */
   listSyncRecords(): Promise<ContextSyncRecordView[]>
   /** @param record 完整同步事实。 @returns 无返回值。 */
   saveSyncRecord(record: ContextSyncRecordView): Promise<void>
+  /** @param id 已完成远端删除的投影记录 UUID。 @returns 无返回值。 */
+  deleteSyncRecord(id: string): Promise<void>
 }

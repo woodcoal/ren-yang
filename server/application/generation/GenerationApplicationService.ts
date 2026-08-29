@@ -34,12 +34,13 @@ import type { Clock } from '../../ports/Clock'
 import type { ContentRepository } from '../../ports/ContentRepository'
 import type { ContextProvider } from '../../ports/ContextProvider'
 import { ContextProviderError } from '../../ports/ContextProvider'
+import type { ContextSyncTaskQueue } from '../../ports/ContextSyncTaskQueue'
 import type { IdentifierGenerator } from '../../ports/IdentifierGenerator'
 import type { ImageAssetStorage } from '../../ports/ImageAssetStorage'
 import type { ImageModelPort } from '../../ports/ImageModelPort'
 import { ImageModelError } from '../../ports/ImageModelPort'
 import { StorageCapacityError } from '../../ports/StorageCapacity'
-import type { RunListFilter, RunRepository } from '../../ports/RunRepository'
+import type { NewEvidenceSnapshot, RunListFilter, RunRepository } from '../../ports/RunRepository'
 import type { SourceContentProcessor } from '../../ports/SourceContentPorts'
 import type { TaskHandler } from '../../ports/TaskPorts'
 import { TaskExecutionError } from '../../ports/TaskPorts'
@@ -95,6 +96,8 @@ export interface GenerationApplicationServiceDependencies {
   identifiers: IdentifierGenerator
   clock: Clock
   sourceProcessor: SourceContentProcessor
+  /** OpenViking 启用时使用的 Session 异步队列。 */
+  contextSyncQueue?: ContextSyncTaskQueue
 }
 
 /** 编排运行创建、查询、规格确认和 Worker 模型执行。 */
@@ -382,6 +385,7 @@ export class GenerationApplicationService implements TaskHandler {
       else if (job.type === 'execute_document') await this.executeDocument(runId)
       else if (job.type === 'execute_block') await this.executeSingleBlock(runId, readBlockId(job.payloadJson))
       else throw new Error(`未注册任务类型：${job.type}`)
+      await this.enqueueRunSessionIfTerminal(runId)
     }
     catch (error: unknown) {
       const responseUsage = error instanceof TextResponseUsageError ? error.usage : null
@@ -394,9 +398,23 @@ export class GenerationApplicationService implements TaskHandler {
       }
       else {
         await this.dependencies.runs.failRun(runId, normalized.code, normalized.message, this.dependencies.clock.now())
+        await this.enqueueRunSessionIfTerminal(runId)
       }
       throw new TaskExecutionError(`${normalized.code}：${normalized.message}`, normalized.retryable)
     }
+  }
+
+  /** @param runId 可能已结束的运行 UUID。 @returns 终态运行的 Session 任务排队完成时结束。 */
+  private async enqueueRunSessionIfTerminal(runId: string): Promise<void> {
+    if (!this.dependencies.contextSyncQueue) return
+    const run = await this.dependencies.runs.findRun(runId)
+    if (!run || !['succeeded', 'partial', 'failed'].includes(run.status)) return
+    await this.dependencies.contextSyncQueue.enqueueSessionSynchronization(
+      'run',
+      runId,
+      this.dependencies.identifiers.create(),
+      this.dependencies.clock.now(),
+    )
   }
 
   /** @param kind 运行类型。 @param personaId 人物 UUID。 @param input 固定输入。 @param scene 场景。 @param profileId 参数方案。 @param templateId 格式模板。 @returns 已创建运行。 */
@@ -415,9 +433,9 @@ export class GenerationApplicationService implements TaskHandler {
     const parameters = await this.resolveParameters(profileId)
     if (templateId) await this.requireFormatTemplate(templateId)
     const query = 'content' in input ? input.content : input.requirement
-    let candidates
+    let contextSearch
     try {
-      candidates = await this.dependencies.context.search({ personaId, worldId: persona.worldId, query, limit: parameters.maxEvidenceChunks })
+      contextSearch = await this.dependencies.context.search({ personaId, worldId: persona.worldId, query, limit: parameters.maxEvidenceChunks })
     }
     catch (error: unknown) {
       if (error instanceof ContextProviderError) {
@@ -429,7 +447,7 @@ export class GenerationApplicationService implements TaskHandler {
     const taskId = this.dependencies.identifiers.create()
     const timestamp = this.dependencies.clock.now()
     const userSettingContent = JSON.stringify(version.snapshot)
-    const userSettings = [
+    const userSettings: NewEvidenceSnapshot[] = [
       {
         id: this.dependencies.identifiers.create(), sourceId: null, chunkId: null, role: 'user_setting' as const,
         content: userSettingContent, contentHash: this.dependencies.sourceProcessor.hash(userSettingContent),
@@ -455,10 +473,10 @@ export class GenerationApplicationService implements TaskHandler {
       personaVersionId: version.id, formatTemplateId: templateId, parameterProfileId: profileId,
       status: kind === 'interest_assessment' ? 'queued' : 'planning', input, scene, parameters, model, imageModel,
       promptVersion: GENERATION_PROMPT_VERSION,
-      contextProvider: this.dependencies.context.getProvider(),
+      contextProvider: contextSearch.provider,
       evidence: [
         ...userSettings,
-        ...candidates.map((candidate, index) => ({ id: this.dependencies.identifiers.create(), sourceId: candidate.sourceId, chunkId: candidate.chunkId, role: candidate.role, content: candidate.content, contentHash: candidate.contentHash, rank: index + userSettings.length, metadata: { heading: candidate.heading, priority: candidate.priority } })),
+        ...contextSearch.candidates.map((candidate, index) => ({ id: this.dependencies.identifiers.create(), sourceId: candidate.sourceId, chunkId: candidate.chunkId, role: candidate.role, content: candidate.content, contentHash: candidate.contentHash, rank: index + userSettings.length, metadata: { heading: candidate.heading, priority: candidate.priority } })),
       ],
       timestamp,
     })

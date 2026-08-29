@@ -24,11 +24,11 @@ export class SqliteContextProvider implements ContextProvider {
    * @param request 目标范围、自然语言任务和结果上限。
    * @returns 去重后的证据候选。
    */
-  async search(request: EvidenceSearchRequest): Promise<EvidenceCandidate[]> {
-    if (request.limit === 0) return []
+  async search(request: EvidenceSearchRequest) {
+    if (request.limit === 0) return { provider: 'sqlite_fts5' as const, candidates: [] }
     const ftsQuery = buildFtsQuery(request.query)
-    if (!ftsQuery) return []
-    const rows = this.client.prepare(`
+    if (!ftsQuery) return { provider: 'sqlite_fts5' as const, candidates: [] }
+    const sourceRows = this.client.prepare(`
       WITH linked_sources AS (
         SELECT source_id, MIN(priority) AS priority
         FROM (
@@ -49,8 +49,27 @@ export class SqliteContextProvider implements ContextProvider {
         WHEN 'canon_fact' THEN 0 WHEN 'style_sample' THEN 1 ELSE 2 END,
         linked_sources.priority, bm25(source_chunks_fts), source_chunks.ordinal
       LIMIT ?
-    `).all(request.personaId, request.worldId ?? '', ftsQuery, request.limit)
-    return rows.map(toEvidenceCandidate)
+    `).all(request.personaId, request.worldId ?? '', ftsQuery, request.limit).map(toEvidenceCandidate)
+    const learningRows = this.client.prepare(`
+      SELECT persona_learning_fts.entity_type, persona_learning_fts.entity_id,
+        persona_learning_fts.content,
+        CASE persona_learning_fts.entity_type
+          WHEN 'memory' THEN persona_memories.content_hash
+          ELSE persona_growth_records.content_hash
+        END AS content_hash
+      FROM persona_learning_fts
+      LEFT JOIN persona_memories ON persona_learning_fts.entity_type = 'memory'
+        AND persona_memories.id = persona_learning_fts.entity_id
+      LEFT JOIN persona_growth_records ON persona_learning_fts.entity_type = 'growth'
+        AND persona_growth_records.id = persona_learning_fts.entity_id
+      WHERE persona_learning_fts MATCH ? AND persona_learning_fts.persona_id = ?
+      ORDER BY bm25(persona_learning_fts), persona_learning_fts.entity_id
+      LIMIT ?
+    `).all(ftsQuery, request.personaId, request.limit).map(toLearningCandidate)
+    return {
+      provider: 'sqlite_fts5' as const,
+      candidates: [...learningRows, ...sourceRows].slice(0, request.limit),
+    }
   }
 }
 
@@ -91,5 +110,19 @@ function toEvidenceCandidate(value: unknown): EvidenceCandidate {
     content: String(row.content),
     contentHash: String(row.content_hash),
     priority: Number(row.priority),
+  }
+}
+
+/** @param value SQLite 人物成长或记忆全文检索行。 @returns 不伪装成资料外键的证据候选。 */
+function toLearningCandidate(value: unknown): EvidenceCandidate {
+  const row = value as Record<string, unknown>
+  return {
+    sourceId: null,
+    chunkId: null,
+    role: row.entity_type as 'growth' | 'memory',
+    heading: row.entity_type === 'growth' ? '有效成长' : '有效记忆',
+    content: String(row.content),
+    contentHash: String(row.content_hash),
+    priority: 0,
   }
 }

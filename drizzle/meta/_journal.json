@@ -43,6 +43,13 @@
       "when": 1787964349036,
       "tag": "0005_silent_skreet",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1787982600000,
+      "tag": "0006_openviking_projection_memory",
+      "breakpoints": true
     }
   ]
 }

@@ -8,4 +8,13 @@ export interface ContextSyncTaskQueue {
    * @returns 无返回值。
    */
   enqueueSourceSynchronization(sourceId: string, taskId: string, timestamp: number): Promise<void>
+  /**
+   * 为一项 SQLite 交流创建持久 Session 同步任务。
+   * @param sourceType 生成运行或反馈。
+   * @param sourceId 本地事实 UUID。
+   * @param taskId 新任务 UUID。
+   * @param timestamp 创建时间。
+   * @returns 无返回值。
+   */
+  enqueueSessionSynchronization(sourceType: 'run' | 'feedback', sourceId: string, taskId: string, timestamp: number): Promise<void>
 }

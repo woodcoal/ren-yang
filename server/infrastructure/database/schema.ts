@@ -310,7 +310,7 @@ export const evidenceSnapshots = sqliteTable(
   },
   table => [
     index('evidence_snapshots_run_rank_index').on(table.runId, table.rank),
-    check('evidence_snapshots_role_check', sql`${table.role} IN ('user_setting', 'canon_fact', 'reference', 'style_sample')`),
+    check('evidence_snapshots_role_check', sql`${table.role} IN ('user_setting', 'canon_fact', 'reference', 'style_sample', 'growth', 'memory')`),
     check('evidence_snapshots_hash_check', sql`length(${table.contentHash}) = 64`),
     check('evidence_snapshots_rank_check', sql`${table.rank} >= 0`),
   ],
@@ -525,6 +525,79 @@ export const candidateMemories = sqliteTable(
   ],
 )
 
+/** 经人工门禁管理的人物成长事实；只有 active 状态可参与检索。 */
+export const personaGrowthRecords = sqliteTable(
+  'persona_growth_records',
+  {
+    id: text('id').primaryKey(),
+    personaId: text('persona_id').notNull().references(() => personas.id, { onDelete: 'cascade' }),
+    content: text('content').notNull(),
+    contentHash: text('content_hash').notNull(),
+    status: text('status').notNull().default('candidate'),
+    sourceType: text('source_type').notNull(),
+    sourceId: text('source_id'),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  table => [
+    index('persona_growth_records_persona_status_index').on(table.personaId, table.status),
+    check('persona_growth_records_status_check', sql`${table.status} IN ('candidate', 'active', 'deprecated', 'rejected')`),
+    check('persona_growth_records_source_type_check', sql`${table.sourceType} IN ('feedback', 'memory', 'manual')`),
+    check('persona_growth_records_content_check', sql`length(trim(${table.content})) > 0`),
+    check('persona_growth_records_hash_check', sql`length(${table.contentHash}) = 64`),
+  ],
+)
+
+/** SQLite 管理的全部人物记忆，包括 OpenViking 派生但尚未审核的候选。 */
+export const personaMemories = sqliteTable(
+  'persona_memories',
+  {
+    id: text('id').primaryKey(),
+    personaId: text('persona_id').notNull().references(() => personas.id, { onDelete: 'cascade' }),
+    content: text('content').notNull(),
+    contentHash: text('content_hash').notNull(),
+    memoryType: text('memory_type').notNull(),
+    status: text('status').notNull().default('candidate'),
+    sourceType: text('source_type').notNull(),
+    sourceId: text('source_id'),
+    remoteUri: text('remote_uri'),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  table => [
+    index('persona_memories_persona_status_index').on(table.personaId, table.status),
+    uniqueIndex('persona_memories_remote_uri_unique').on(table.remoteUri),
+    check('persona_memories_status_check', sql`${table.status} IN ('candidate', 'active', 'deprecated', 'rejected')`),
+    check('persona_memories_source_type_check', sql`${table.sourceType} IN ('openviking_session', 'feedback', 'manual')`),
+    check('persona_memories_content_check', sql`length(trim(${table.content})) > 0`),
+    check('persona_memories_hash_check', sql`length(${table.contentHash}) = 64`),
+  ],
+)
+
+/** 本地交流向 OpenViking 世界 User Session 投影的持久状态。 */
+export const openVikingSessionRecords = sqliteTable(
+  'openviking_session_records',
+  {
+    id: text('id').primaryKey(),
+    sourceType: text('source_type').notNull(),
+    sourceId: text('source_id').notNull(),
+    personaId: text('persona_id').notNull(),
+    userId: text('user_id').notNull(),
+    peerId: text('peer_id').notNull(),
+    remoteSessionId: text('remote_session_id').notNull(),
+    status: text('status').notNull(),
+    error: text('error'),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  table => [
+    uniqueIndex('openviking_session_records_source_unique').on(table.sourceType, table.sourceId),
+    index('openviking_session_records_status_index').on(table.status, table.updatedAt),
+    check('openviking_session_records_source_type_check', sql`${table.sourceType} IN ('run', 'feedback')`),
+    check('openviking_session_records_status_check', sql`${table.status} IN ('pending', 'synchronized', 'failed')`),
+  ],
+)
+
 /** 人物维护的固定回归评测用例。 */
 export const evaluationCases = sqliteTable(
   'evaluation_cases',
@@ -603,7 +676,11 @@ export const contextSyncRecords = sqliteTable(
   'context_sync_records',
   {
     id: text('id').primaryKey(),
-    sourceId: text('source_id').notNull().references(() => sourceMaterials.id, { onDelete: 'cascade' }),
+    sourceId: text('source_id').notNull(),
+    scopeType: text('scope_type').notNull(),
+    scopeId: text('scope_id').notNull(),
+    userId: text('user_id').notNull(),
+    peerId: text('peer_id'),
     provider: text('provider').notNull(),
     remoteUri: text('remote_uri'),
     contentHash: text('content_hash').notNull(),
@@ -613,9 +690,10 @@ export const contextSyncRecords = sqliteTable(
     updatedAt: integer('updated_at').notNull(),
   },
   table => [
-    uniqueIndex('context_sync_records_source_provider_unique').on(table.sourceId, table.provider),
+    uniqueIndex('context_sync_records_projection_unique').on(table.sourceId, table.scopeType, table.scopeId, table.provider),
     index('context_sync_records_provider_status_index').on(table.provider, table.status),
     check('context_sync_records_provider_check', sql`${table.provider} IN ('openviking')`),
+    check('context_sync_records_scope_type_check', sql`${table.scopeType} IN ('world', 'persona')`),
     check('context_sync_records_status_check', sql`${table.status} IN ('pending', 'synchronized', 'failed')`),
     check('context_sync_records_hash_check', sql`length(${table.contentHash}) = 64`),
   ],
@@ -648,6 +726,9 @@ export const databaseSchema = {
   feedbackResolutions,
   revisionProposals,
   candidateMemories,
+  personaGrowthRecords,
+  personaMemories,
+  openVikingSessionRecords,
   evaluationCases,
   evaluationRuns,
   evaluationResults,

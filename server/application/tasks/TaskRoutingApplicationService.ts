@@ -22,7 +22,7 @@ export class TaskRoutingApplicationService implements TaskHandler {
    */
   async execute(job: TaskJob): Promise<void> {
     if (job.type === 'evaluate_proposal') await this.feedback.execute(job)
-    else if (job.type === 'sync_context_source') await this.contextSynchronization.execute(job)
+    else if (job.type === 'sync_context_source' || job.type === 'sync_openviking_session') await this.contextSynchronization.execute(job)
     else await this.generation.execute(job)
   }
 }

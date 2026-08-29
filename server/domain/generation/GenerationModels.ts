@@ -61,7 +61,7 @@ export interface EvidenceSnapshotRecord {
   runId: string
   sourceId: string | null
   chunkId: string | null
-  role: 'user_setting' | 'canon_fact' | 'reference' | 'style_sample'
+  role: 'user_setting' | 'canon_fact' | 'reference' | 'style_sample' | 'growth' | 'memory'
   content: string
   contentHash: string
   rank: number

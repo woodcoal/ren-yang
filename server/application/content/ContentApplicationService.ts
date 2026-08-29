@@ -131,6 +131,7 @@ export class ContentApplicationService {
       sourceIds,
       timestamp: this.dependencies.clock.now(),
     })
+    await this.enqueueSourceSynchronizations(sourceIds)
     return await this.getPersona(personaId)
   }
 
@@ -141,9 +142,13 @@ export class ContentApplicationService {
    * @returns 更新后人物详情。
    */
   async updatePersona(personaId: string, input: UpdatePersonaInput): Promise<PersonaDetails> {
-    await this.requirePersona(personaId)
+    const persona = await this.requirePersona(personaId)
     await this.requireOptionalWorld(input.worldId)
+    const sources = persona.worldId === input.worldId
+      ? []
+      : await this.dependencies.repository.listPersonaSources(personaId)
     await this.dependencies.repository.updatePersona(personaId, input.name, input.worldId, this.dependencies.clock.now())
+    await this.enqueueSourceSynchronizations(sources.map(source => source.id))
     return await this.getPersona(personaId)
   }
 
@@ -254,8 +259,12 @@ export class ContentApplicationService {
    */
   async deletePersona(personaId: string): Promise<void> {
     await this.requirePersona(personaId)
-    const runIds = await this.dependencies.repository.listPersonaRunIds(personaId)
+    const [runIds, sources] = await Promise.all([
+      this.dependencies.repository.listPersonaRunIds(personaId),
+      this.dependencies.repository.listPersonaSources(personaId),
+    ])
     await this.dependencies.repository.deletePersona(personaId, this.dependencies.clock.now())
+    await this.enqueueSourceSynchronizations(sources.map(source => source.id))
     if (this.dependencies.imageAssets) await this.dependencies.imageAssets.deleteRunAssets(runIds)
   }
 
@@ -454,7 +463,9 @@ export class ContentApplicationService {
     if (!impact.canDelete) {
       throw new ApplicationError('RESOURCE_IN_USE', impact.blockers[0]!, 409, { impact })
     }
+    const sources = await this.dependencies.repository.listWorldSources(worldId)
     await this.dependencies.repository.deleteWorld(worldId, this.dependencies.clock.now())
+    await this.enqueueSourceSynchronizations(sources.map(source => source.id))
   }
 
   /**
@@ -589,6 +600,11 @@ export class ContentApplicationService {
     )
   }
 
+  /** @param sourceIds 需要重新展开投影的资料 UUID。 @returns 全部持久任务创建完成时结束。 */
+  private async enqueueSourceSynchronizations(sourceIds: string[]): Promise<void> {
+    for (const sourceId of new Set(sourceIds)) await this.enqueueSourceSynchronization(sourceId)
+  }
+
   /**
    * 建立或更新资料与人物/世界关联。
    * @param sourceId 资料 UUID。
@@ -604,6 +620,7 @@ export class ContentApplicationService {
       await this.requireWorld(input.targetId)
     }
     await this.dependencies.repository.linkSource(sourceId, input.targetType, input.targetId, input.priority)
+    await this.enqueueSourceSynchronization(sourceId)
     return await this.getSource(sourceId)
   }
 
@@ -619,6 +636,7 @@ export class ContentApplicationService {
     if (removed !== 1) {
       throw new ApplicationError('RESOURCE_NOT_FOUND', '资料关联不存在', 404)
     }
+    await this.enqueueSourceSynchronization(sourceId)
     return await this.getSource(sourceId)
   }
 

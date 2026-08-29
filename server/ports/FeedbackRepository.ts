@@ -94,4 +94,8 @@ export interface FeedbackRepository {
   sourceExists(sourceId: string): Promise<boolean>
   /** @param feedbackId 反馈 UUID。 @returns 关联的候选记忆或 null。 */
   findCandidateMemory(feedbackId: string): Promise<CandidateMemoryRecord | null>
+  /** @param personaId 人物 UUID。 @returns 新记忆在前的全部审核状态。 */
+  listPersonaMemories(personaId: string): Promise<import('../../shared/types/feedback').PersonaMemoryView[]>
+  /** @param personaId 人物 UUID。 @param memoryId 记忆标识。 @param status 新状态。 @param timestamp 更新时间。 @returns 是否按状态机更新。 */
+  updatePersonaMemoryStatus(personaId: string, memoryId: string, status: 'active' | 'deprecated' | 'rejected', timestamp: number): Promise<boolean>
 }
