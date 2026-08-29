@@ -382,6 +382,12 @@ describe('人物、世界与资料管理闭环', () => {
     })).resolves.toEqual({ sourceIds: [first.source.id, second.source.id], isEnabled: false })
     await expect(service.getSource(first.source.id)).resolves.toMatchObject({ source: { isEnabled: false } })
     await expect(service.getSource(second.source.id)).resolves.toMatchObject({ source: { isEnabled: false } })
+
+    await expect(service.updateSourcesStatus({
+      sourceIds: [first.source.id, second.source.id], isEnabled: true,
+    })).resolves.toEqual({ sourceIds: [first.source.id, second.source.id], isEnabled: true })
+    await expect(service.getSource(first.source.id)).resolves.toMatchObject({ source: { isEnabled: true } })
+    await expect(service.getSource(second.source.id)).resolves.toMatchObject({ source: { isEnabled: true } })
   })
 
   it('资料分页返回稳定页序、总数并修正超界页码', async () => {
