@@ -13,7 +13,7 @@ interface Props {
 const props = defineProps<Props>()
 const route = useRoute()
 
-/** 当前页面所属分组和稳定路由标识。 */
+/** 当前页面所属导航分组。 */
 const routeContext = computed(() => getPageRouteContext(route.path))
 </script>
 
@@ -26,7 +26,6 @@ const routeContext = computed(() => getPageRouteContext(route.path))
     </nav>
     <header class="page-heading-header">
       <div class="page-heading-copy">
-        <code class="page-route-code">ROUTE {{ routeContext.routeCode }}</code>
         <h1 class="page-title">
           {{ title }}
         </h1>

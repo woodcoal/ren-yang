@@ -55,13 +55,9 @@ test('首次设置、人物发布、文档确认及三格式导出形成可复�
   await page.getByLabel('界面主题').selectOption('ocean')
   await expect.poll(() => page.locator('html').getAttribute('data-theme')).toBe('ocean')
 
-  // 全局命令导航只检索现有页面，并支持标准键盘打开与关闭方式。
-  await page.keyboard.press('Control+k')
-  await expect(page.getByRole('heading', { name: '前往页面', exact: true })).toBeVisible()
-  await page.getByLabel('搜索后台页面').fill('内容模板')
-  await expect(page.getByRole('button', { name: /内容模板/ })).toBeVisible()
-  await page.keyboard.press('Escape')
-  await expect(page.getByRole('heading', { name: '前往页面', exact: true })).toBeHidden()
+  // 顶部不再重复提供页面搜索，页面标题也不显示面向开发者的路由代码。
+  await expect(page.getByText('查找页面或功能', { exact: true })).toHaveCount(0)
+  await expect(page.locator('.page-route-code')).toHaveCount(0)
 
   // 移动端使用抽屉导航，关闭后页面仍不能产生横向溢出。
   await page.setViewportSize({ width: 390, height: 844 })

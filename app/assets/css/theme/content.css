@@ -42,18 +42,6 @@
   min-width: 0;
 }
 
-.page-route-code {
-  display: inline-flex;
-  margin-bottom: 0.75rem;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--app-muted);
-  font-family: var(--font-mono);
-  font-size: 0.625rem;
-  letter-spacing: 0.035em;
-}
-
 .page-title {
   margin: 0;
   color: var(--app-fg);

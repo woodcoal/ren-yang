@@ -278,24 +278,6 @@
   display: none;
 }
 
-.topbar-command-button {
-  min-width: min(22.5rem, 34vw);
-  justify-content: space-between;
-  color: var(--app-muted);
-}
-
-.topbar-command-label {
-  margin-right: auto;
-}
-
-.topbar-shortcut {
-  padding: 0.125rem 0.375rem;
-  border: 1px solid var(--app-border);
-  color: var(--app-muted);
-  font-family: var(--font-mono);
-  font-size: 0.625rem;
-}
-
 /* 主题选择器以可见名称表达当前主题，色点不承担独立语义。 */
 .theme-control {
   display: inline-flex;
@@ -381,70 +363,6 @@
   font-size: 0.8125rem;
 }
 
-.command-panel {
-  padding: 1rem;
-}
-
-.command-results {
-  max-height: min(28rem, 58vh);
-  margin-top: 0.75rem;
-  overflow-y: auto;
-  border: 1px solid var(--app-border);
-  border-radius: var(--radius-control);
-}
-
-.command-result {
-  display: grid;
-  width: 100%;
-  min-height: 4.5rem;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.75rem 1rem;
-  border: 0;
-  border-bottom: 1px solid var(--app-border);
-  background: var(--app-surface-raised);
-  color: var(--app-fg);
-  text-align: left;
-}
-
-.command-result:last-child {
-  border-bottom: 0;
-}
-
-.command-result:hover,
-.command-result:focus-visible {
-  background: var(--app-surface-soft);
-}
-
-.command-result-icon {
-  width: 1.125rem;
-  height: 1.125rem;
-  color: var(--app-accent-strong);
-}
-
-.command-result-copy strong,
-.command-result-copy span {
-  display: block;
-}
-
-.command-result-copy span {
-  margin-top: 0.1875rem;
-  color: var(--app-muted);
-  font-size: 0.75rem;
-}
-
-.command-result code {
-  color: var(--app-muted);
-  font-size: 0.6875rem;
-}
-
-.command-empty {
-  padding: 2rem 1rem;
-  color: var(--app-muted);
-  text-align: center;
-}
-
 .sidebar-backdrop {
   display: none;
 }
@@ -452,10 +370,6 @@
 @media (max-width: 72rem) {
   .topbar-account span {
     display: none;
-  }
-
-  .topbar-command-button {
-    min-width: 15rem;
   }
 }
 
@@ -525,15 +439,6 @@
     gap: 0.375rem;
   }
 
-  .topbar-command-button {
-    width: 2.75rem;
-    min-width: 2.75rem;
-    padding: 0;
-    justify-content: center;
-  }
-
-  .topbar-command-label,
-  .topbar-shortcut,
   .topbar-status-link span,
   .topbar-account {
     display: none;
@@ -549,13 +454,5 @@
     position: absolute;
     width: 2.75rem;
     opacity: 0;
-  }
-
-  .command-result {
-    grid-template-columns: auto minmax(0, 1fr);
-  }
-
-  .command-result code {
-    display: none;
   }
 }
