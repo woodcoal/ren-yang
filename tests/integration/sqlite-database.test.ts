@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { DrizzleAdministratorRepository } from '../../server/infrastructure/database/DrizzleAdministratorRepository'
@@ -22,30 +22,6 @@ function createDatabase(): SqliteDatabase {
     migrationsDirectory: resolve(process.cwd(), 'drizzle'),
   })
   return database
-}
-
-/**
- * 创建只包含阶段四迁移的目录，用于验证真实增量升级。
- * @param root 测试独占根目录。
- * @returns 旧迁移目录绝对路径。
- */
-function createStageFourMigrations(root: string): string {
-  const migrations = resolve(root, 'old-migrations')
-  const metadata = resolve(migrations, 'meta')
-  mkdirSync(metadata, { recursive: true })
-  for (const name of ['0000_initial_foundation.sql', '0001_jazzy_rage.sql', '0002_premium_nocturne.sql', '0003_image-artifacts.sql']) {
-    copyFileSync(resolve(process.cwd(), 'drizzle', name), resolve(migrations, name))
-  }
-  const journal = JSON.parse(readFileSync(resolve(process.cwd(), 'drizzle/meta/_journal.json'), 'utf8')) as {
-    version: string
-    dialect: string
-    entries: Array<{ idx: number }>
-  }
-  writeFileSync(resolve(metadata, '_journal.json'), JSON.stringify({
-    ...journal,
-    entries: journal.entries.filter(entry => entry.idx <= 3),
-  }))
-  return migrations
 }
 
 afterEach(() => {
@@ -74,6 +50,27 @@ describe('SqliteDatabase', () => {
       ORDER BY name
     `).all()
     expect(tables).toEqual([{ name: 'administrators' }, { name: 'task_jobs' }])
+    expect(current.getClient().prepare(`SELECT COUNT(*) AS count FROM __drizzle_migrations`).get()).toEqual({ count: 1 })
+    expect(current.getClient().prepare(`
+      SELECT name FROM sqlite_master
+      WHERE sql LIKE 'CREATE VIRTUAL TABLE%' OR type = 'trigger'
+      ORDER BY name
+    `).all()).toEqual([
+      { name: 'generation_runs_task_jobs_delete' },
+      { name: 'growth_records_learning_fts_delete' },
+      { name: 'growth_records_learning_fts_insert' },
+      { name: 'growth_records_learning_fts_update' },
+      { name: 'learning_fts' },
+      { name: 'memory_records_learning_fts_delete' },
+      { name: 'memory_records_learning_fts_insert' },
+      { name: 'memory_records_learning_fts_update' },
+      { name: 'source_chunks_fts' },
+      { name: 'source_chunks_fts_delete' },
+      { name: 'source_chunks_fts_insert' },
+      { name: 'source_chunks_fts_update' },
+      { name: 'task_jobs_run_insert_check' },
+      { name: 'task_jobs_run_update_check' },
+    ])
   })
 
   it('数据库唯一约束阻止创建第二名管理员', async () => {
@@ -174,76 +171,4 @@ describe('SqliteDatabase', () => {
       .toEqual({ status: 'failed', attempt_count: 2 })
   })
 
-  it('方案 A 升级只保留管理员凭据并清空旧业务数据后建立统一心智表', async () => {
-    temporaryDirectory = mkdtempSync(resolve(tmpdir(), 'ren-yang-sqlite-upgrade-test-'))
-    const oldMigrations = createStageFourMigrations(temporaryDirectory)
-    database = new SqliteDatabase({ dataDirectory: temporaryDirectory, migrationsDirectory: oldMigrations })
-    const client = database.getClient()
-    client.prepare(`
-      INSERT INTO administrators (id, username, password_hash, credential_version, created_at, updated_at)
-      VALUES ('administrator', 'admin', '保留的密码哈希', 1, 1000, 1000)
-    `).run()
-    client.prepare(`INSERT INTO personas (id, name, origin, created_at, updated_at) VALUES ('persona-1', '林默', 'original', 1000, 1000)`).run()
-    client.prepare(`
-      INSERT INTO persona_versions (id, persona_id, status, snapshot_json, change_summary, published_at, created_at)
-      VALUES ('version-1', 'persona-1', 'published', '{}', '初始版本', 1000, 1000)
-    `).run()
-    client.prepare(`
-      INSERT INTO generation_runs (
-        id, kind, persona_version_id, status, input_json, parameter_snapshot_json,
-        model_snapshot_json, prompt_version, context_provider, created_at, updated_at, completed_at
-      ) VALUES ('run-1', 'artifact_generation', 'version-1', 'succeeded', '{"requirement":"测试"}',
-        '{"temperature":0.4,"maxOutputTokens":2048,"timeoutMs":60000,"maxEvidenceChunks":8,"maxTextBlocks":12}',
-        '{"provider":"openai_compatible","model":"test","endpointOrigin":"https://model.test"}',
-        'text-v1', 'sqlite_fts5', 1000, 2000, 2000)
-    `).run()
-    client.prepare(`
-      INSERT INTO document_specs (id, run_id, revision, status, spec_json, confirmed_at, created_at)
-      VALUES ('spec-1', 'run-1', 1, 'confirmed',
-        '{"title":"标题","summary":"摘要","blocks":[{"key":"body","role":"paragraph","instruction":"正文","acceptanceCriteria":["准确"],"dependsOn":[]}]}',
-        1100, 1000)
-    `).run()
-    client.prepare(`INSERT INTO artifact_documents (id, run_id, selected_spec_id, created_at, updated_at) VALUES ('document-1', 'run-1', 'spec-1', 1100, 2000)`).run()
-    client.prepare(`
-      INSERT INTO artifact_blocks (
-        id, document_id, spec_key, ordinal, type, role, spec_json, status,
-        selected_attempt_id, is_locked, created_at, updated_at
-      ) VALUES ('block-1', 'document-1', 'body', 0, 'text', 'paragraph',
-        '{"key":"body","role":"paragraph","instruction":"正文","acceptanceCriteria":["准确"],"dependsOn":[]}',
-        'succeeded', 'attempt-1', 1, 1100, 2000)
-    `).run()
-    client.prepare(`
-      INSERT INTO block_attempts (
-        id, block_id, attempt_no, status, input_snapshot_json, output_text, usage_json, created_at, completed_at
-      ) VALUES ('attempt-1', 'block-1', 1, 'succeeded', '{}', '旧版正文', '{}', 1200, 2000)
-    `).run()
-    client.prepare(`
-      INSERT INTO image_assets (
-        id, attempt_id, relative_path, media_type, size_bytes, content_hash, alt_text, created_at
-      ) VALUES ('asset-1', 'attempt-1', 'assets/asset-1.png', 'image/png', 1024, ?, '旧版图片', 2000)
-    `).run('a'.repeat(64))
-    database.close()
-
-    database = new SqliteDatabase({ dataDirectory: temporaryDirectory, migrationsDirectory: resolve(process.cwd(), 'drizzle') })
-    const upgraded = database.getClient()
-    expect(upgraded.prepare(`SELECT id, username, password_hash FROM administrators`).get()).toEqual({
-      id: 'administrator', username: 'admin', password_hash: '保留的密码哈希',
-    })
-    const clearedBusinessTables = [
-      'personas', 'worlds', 'generation_runs', 'artifact_blocks', 'block_attempts', 'image_assets',
-      'feedback_events', 'evaluation_cases', 'context_sync_records', 'soul_drafts', 'soul_versions',
-      'persona_feedback_sources', 'growth_records', 'growth_revisions',
-      'persona_operation_records', 'memory_records', 'memory_revisions',
-    ]
-    for (const table of clearedBusinessTables) {
-      expect(upgraded.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get(), `${table} 应为空`).toEqual({ count: 0 })
-    }
-    expect(upgraded.prepare(`
-      SELECT name FROM sqlite_master WHERE type = 'table' AND name IN (
-        'persona_versions', 'world_versions', 'revision_proposals', 'candidate_memories',
-        'evaluation_runs', 'evaluation_results', 'persona_growth_records', 'persona_memories'
-      )
-    `).all()).toEqual([])
-    expect(upgraded.prepare(`PRAGMA foreign_key_check`).all()).toEqual([])
-  })
 })
