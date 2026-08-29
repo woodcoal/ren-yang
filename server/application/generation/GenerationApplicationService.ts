@@ -1,5 +1,10 @@
 import { ZodError } from 'zod'
-import { worldSnapshotSchema } from '../../../shared/schemas/content'
+import {
+  personaDraftSchema,
+  worldSnapshotSchema,
+  type GeneratePersonaDraftInput,
+} from '../../../shared/schemas/content'
+import type { PersonaDraftView } from '../../../shared/types/content'
 import {
   documentSpecSchema,
   interestAssessmentSchema,
@@ -44,6 +49,7 @@ import {
   buildDocumentPlanPrompt,
   buildImagePrompt,
   buildInterestPrompt,
+  buildPersonaDraftPrompt,
   buildTextBlockPrompt,
   GENERATION_PROMPT_VERSION,
   type PromptContext,
@@ -66,6 +72,12 @@ const DEFAULT_FORMAT_TEMPLATE = {
   minimumBlocks: 1,
   maximumBlocks: 8,
 }
+
+/** 人物草稿单项资料最多发送给模型的字符数。 */
+const PERSONA_DRAFT_SOURCE_CHARACTER_LIMIT = 5_000
+
+/** 人物草稿世界设定最多发送给模型的字符数。 */
+const PERSONA_DRAFT_WORLD_CHARACTER_LIMIT = 10_000
 
 /** 生成应用服务依赖。 */
 export interface GenerationApplicationServiceDependencies {
@@ -104,6 +116,58 @@ export class GenerationApplicationService implements TaskHandler {
         : { configured: false, provider: 'openai_compatible_images' as const, model: null, endpointOrigin: null },
       openViking,
       contextProvider: this.dependencies.context.getProvider(),
+    }
+  }
+
+  /**
+   * 把自然语言、可选世界和参考资料整理为待人工确认的人物草稿。
+   * @param input 已校验的草稿生成输入。
+   * @returns 不写入数据库的结构化草稿及非阻断截断提示。
+   */
+  async generatePersonaDraft(input: GeneratePersonaDraftInput): Promise<PersonaDraftView> {
+    if (!this.dependencies.model.getConfiguredModel()) {
+      throw new ApplicationError('CAPABILITY_DISABLED', '文本模型尚未配置，不能生成人物草稿', 422)
+    }
+    const sourceIds = [...new Set(input.sourceIds)]
+    if (input.origin === 'source_based' && sourceIds.length === 0) {
+      throw new ApplicationError('SOURCE_REQUIRED', '资料型人物至少需要选择一项参考资料', 422)
+    }
+
+    const warnings: string[] = []
+    let world = null
+    if (input.worldId) {
+      const worldRecord = await this.dependencies.content.findWorld(input.worldId)
+      if (!worldRecord) throw new ApplicationError('RESOURCE_NOT_FOUND', '世界设定不存在', 404)
+      if (!worldRecord.activeVersionId) {
+        throw new ApplicationError('WORLD_VERSION_NOT_ACTIVE', '所选世界设定尚无已发布版本', 409)
+      }
+      const version = await this.dependencies.content.findWorldVersion(worldRecord.activeVersionId)
+      if (!version || version.status !== 'published') {
+        throw new ApplicationError('WORLD_VERSION_NOT_ACTIVE', '所选世界设定当前版本不可用', 409)
+      }
+      const content = version.snapshot.content.slice(0, PERSONA_DRAFT_WORLD_CHARACTER_LIMIT)
+      world = { content }
+      if (content.length < version.snapshot.content.length) warnings.push('世界设定较长，生成人物草稿时仅使用前 10000 字')
+    }
+
+    const sources = await Promise.all(sourceIds.map(async (sourceId) => {
+      const source = await this.dependencies.content.findSource(sourceId)
+      if (!source) throw new ApplicationError('RESOURCE_NOT_FOUND', '所选参考资料不存在', 404)
+      const content = source.contentText.slice(0, PERSONA_DRAFT_SOURCE_CHARACTER_LIMIT)
+      if (content.length < source.contentText.length) warnings.push(`资料“${source.name}”较长，生成人物草稿时仅使用前 5000 字`)
+      return { name: source.name, role: source.role, content }
+    }))
+    sources.sort((left, right) => sourceRoleRank(left.role) - sourceRoleRank(right.role) || left.name.localeCompare(right.name, 'zh-CN'))
+
+    const prompt = buildPersonaDraftPrompt(input.prompt, input.origin, world, sources)
+    try {
+      const { output } = await this.generateValidated(prompt, DEFAULT_TEXT_PARAMETERS, 'persona_draft', value => personaDraftSchema.parse(value))
+      return { ...output, warnings }
+    }
+    catch (error: unknown) {
+      const normalized = normalizeExecutionError(error)
+      const statusCode = normalized.code === 'CAPABILITY_DISABLED' ? 422 : normalized.code === 'MODEL_OUTPUT_INVALID' ? 502 : 503
+      throw new ApplicationError(normalized.code, normalized.message, statusCode)
     }
   }
 
@@ -733,4 +797,11 @@ function normalizeExecutionError(error: unknown): { code: string, message: strin
   if (error instanceof ApplicationError) return { code: error.code, message: error.message, retryable: false }
   if (error instanceof ZodError) return { code: 'MODEL_OUTPUT_INVALID', message: '模型结构化输出未通过校验', retryable: true }
   return { code: 'RUN_EXECUTION_FAILED', message: error instanceof Error ? error.message.slice(0, 500) : '运行执行失败', retryable: true }
+}
+
+/** @param role 资料业务角色。 @returns 数值越小表示人物草稿提示中的事实优先级越高。 */
+function sourceRoleRank(role: 'canon_fact' | 'reference' | 'style_sample'): number {
+  if (role === 'canon_fact') return 0
+  if (role === 'reference') return 1
+  return 2
 }

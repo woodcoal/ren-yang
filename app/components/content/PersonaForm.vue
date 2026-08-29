@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { FormSubmitEvent } from '@nuxt/ui'
-import { reactive } from 'vue'
+import { reactive, watch } from 'vue'
 import { createPersonaSchema, type CreatePersonaInput } from '#shared/schemas/content'
 import type { SourceSummary, WorldSummary } from '#shared/types/content'
 
@@ -14,9 +14,11 @@ interface Props {
   loading: boolean
   /** 服务端返回的安全错误消息。 */
   errorMessage: string | null
+  /** AI 生成或其他入口提供的完整初始候选值。 */
+  initialValue?: CreatePersonaInput | null
 }
 
-defineProps<Props>()
+const props = defineProps<Props>()
 
 const emit = defineEmits<{
   /** Schema 校验通过后提交完整人物输入。 */
@@ -41,6 +43,25 @@ const state = reactive<CreatePersonaInput>({
   },
   changeSummary: '建立初始人物档案',
 })
+
+watch(() => props.initialValue, (value) => {
+  if (!value) return
+  applyInitialValue(value)
+}, { immediate: true })
+
+/**
+ * 用新的完整候选值替换表单字段，并复制数组与快照以避免修改属性对象。
+ * @param value 页面提供的已校验初始候选值。
+ * @returns 无返回值。
+ */
+function applyInitialValue(value: CreatePersonaInput): void {
+  state.name = value.name
+  state.origin = value.origin
+  state.worldId = value.worldId ?? null
+  state.sourceIds = [...value.sourceIds]
+  state.snapshot = { ...value.snapshot }
+  state.changeSummary = value.changeSummary
+}
 
 /**
  * 上送 Nuxt UI 已通过共享 Schema 校验的数据。

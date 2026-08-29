@@ -18,6 +18,20 @@ export const personaSnapshotSchema = z.object({
   constraints: z.string().trim().max(20_000, '约束不能超过 20000 字'),
 })
 
+/** 从自然语言生成人物候选草稿的输入。 */
+export const generatePersonaDraftSchema = z.object({
+  prompt: z.string().trim().min(1, '自然语言人设不能为空').max(20_000, '自然语言人设不能超过 20000 字'),
+  origin: personaOriginSchema,
+  worldId: z.string().uuid('世界标识无效').nullable().optional(),
+  sourceIds: z.array(z.string().uuid('资料标识无效')).max(8, '一次最多使用 8 项参考资料').default([]),
+})
+
+/** 文本模型返回且仍需用户确认的人物候选草稿。 */
+export const personaDraftSchema = z.object({
+  name: z.string().trim().min(1, '人物名称不能为空').max(100, '人物名称不能超过 100 字'),
+  snapshot: personaSnapshotSchema,
+})
+
 /** 世界设定快照校验。 */
 export const worldSnapshotSchema = z.object({
   content: z.string().trim().min(1, '世界设定正文不能为空').max(100_000, '世界设定正文不能超过 100000 字'),
@@ -122,6 +136,8 @@ export const compareVersionsSchema = z.object({
 })
 
 export type CreatePersonaInput = z.infer<typeof createPersonaSchema>
+export type GeneratePersonaDraftInput = z.infer<typeof generatePersonaDraftSchema>
+export type PersonaDraft = z.infer<typeof personaDraftSchema>
 export type UpdatePersonaInput = z.infer<typeof updatePersonaSchema>
 export type CreatePersonaVersionInput = z.infer<typeof createPersonaVersionSchema>
 export type CreateWorldInput = z.infer<typeof createWorldSchema>

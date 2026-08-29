@@ -18,6 +18,16 @@ export interface PersonaSnapshot {
   constraints: string
 }
 
+/** 自然语言生成但尚未保存的人物候选草稿。 */
+export interface PersonaDraftView {
+  /** 模型建议的人物名称。 */
+  name: string
+  /** 模型建议的结构化人物快照。 */
+  snapshot: PersonaSnapshot
+  /** 参考资料被截断等不影响人工继续编辑的提示。 */
+  warnings: string[]
+}
+
 /** 世界设定的完整不可变快照。 */
 export interface WorldSnapshot {
   /** 世界规则与背景正文。 */

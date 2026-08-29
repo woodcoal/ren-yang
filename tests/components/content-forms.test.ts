@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { flushPromises } from '@vue/test-utils'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
+import PersonaDraftAssistant from '../../app/components/content/PersonaDraftAssistant.vue'
 import PersonaForm from '../../app/components/content/PersonaForm.vue'
 import SourceImportForm from '../../app/components/content/SourceImportForm.vue'
 import WorldForm from '../../app/components/content/WorldForm.vue'
@@ -26,6 +27,56 @@ describe('阶段二内容表单', () => {
         snapshot: expect.objectContaining({ summary: '谨慎的档案管理员' }),
       }),
     ]])
+  })
+
+  it('AI 草稿助手提交自然语言与选中的参考资料，但不直接创建人物', async () => {
+    const sourceId = '00000000-0000-4000-8000-000000000001'
+    const wrapper = await mountSuspended(PersonaDraftAssistant, {
+      props: {
+        worlds: [],
+        sources: [{
+          id: sourceId, name: '学院资料', role: 'canon_fact', inputType: 'paste', contentHash: 'a'.repeat(64),
+          contentText: '学院事实', originalFilePath: null, chunkCount: 1, linkCount: 0, createdAt: 1_000, updatedAt: 1_000,
+        }],
+        textModelConfigured: true,
+        loading: false,
+        errorMessage: null,
+      },
+    })
+    await wrapper.get('textarea').setValue('创建一名谨慎的档案员')
+    await wrapper.get('select[multiple]').setValue(sourceId)
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.emitted('generate')).toEqual([[
+      expect.objectContaining({ prompt: '创建一名谨慎的档案员', origin: 'original', sourceIds: [sourceId] }),
+    ]])
+    expect(wrapper.emitted('submit')).toBeUndefined()
+  })
+
+  it('结构化表单收到 AI 草稿后完整替换字段并仍需用户提交', async () => {
+    const initialValue = {
+      name: '林默',
+      origin: 'original' as const,
+      worldId: null,
+      sourceIds: [],
+      snapshot: {
+        summary: '谨慎的档案管理员', identityFacts: '', interests: '古代文献', valuesAndMotivations: '重视证据',
+        expressionStyle: '冷静简洁', appearance: '', visualStyle: '', constraints: '未知事实必须说明不知道',
+      },
+      changeSummary: '根据自然语言生成初始候选档案',
+    }
+    const wrapper = await mountSuspended(PersonaForm, {
+      props: { worlds: [], sources: [], loading: false, errorMessage: null, initialValue },
+    })
+    await flushPromises()
+
+    expect(wrapper.emitted('submit')).toBeUndefined()
+    expect((wrapper.findAll('input')[0]!.element as HTMLInputElement).value).toBe('林默')
+    expect((wrapper.findAll('textarea')[7]!.element as HTMLTextAreaElement).value).toBe('未知事实必须说明不知道')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(wrapper.emitted('submit')?.[0]?.[0]).toEqual(initialValue)
   })
 
   it('世界表单阻止空正文提交', async () => {

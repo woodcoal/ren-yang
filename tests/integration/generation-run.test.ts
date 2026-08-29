@@ -36,6 +36,8 @@ class TestClock implements Clock {
 class FixedTextModel implements TextModelPort {
   /** 每类结构已调用次数。 */
   public readonly calls = new Map<string, number>()
+  /** 最近一次各类结构请求，供提示边界断言。 */
+  public readonly requests = new Map<string, TextModelRequest>()
   /** 是否让第一次兴趣输出故意无效。 */
   public invalidInterestOnce = false
   /** 是否持续返回无效兴趣结构。 */
@@ -56,6 +58,22 @@ class FixedTextModel implements TextModelPort {
   async generateStructured(request: TextModelRequest): Promise<TextModelResponse> {
     const call = (this.calls.get(request.responseSchemaName) ?? 0) + 1
     this.calls.set(request.responseSchemaName, call)
+    this.requests.set(request.responseSchemaName, request)
+    if (request.responseSchemaName === 'persona_draft') {
+      return response({
+        name: '林默',
+        snapshot: {
+          summary: '谨慎的学院档案员',
+          identityFacts: '负责整理学院档案。',
+          interests: '古代文献与档案。',
+          valuesAndMotivations: '重视可核验事实。',
+          expressionStyle: '冷静简洁。',
+          appearance: '',
+          visualStyle: '',
+          constraints: '资料不足时明确说明未知。',
+        },
+      })
+    }
     if (request.responseSchemaName === 'interest_assessment') {
       if (this.interestRateLimitsRemaining > 0) {
         this.interestRateLimitsRemaining -= 1
@@ -200,6 +218,28 @@ afterEach(() => {
 })
 
 describe('阶段三纯文本运行', () => {
+  it('从自然语言和选定资料生成不落库的结构化人物候选草稿', async () => {
+    const before = database.getClient().prepare('SELECT COUNT(*) AS count FROM personas').get()
+    const draft = await generation.generatePersonaDraft({
+      prompt: '创建一名谨慎的学院档案员，回答必须简短。',
+      origin: 'source_based',
+      worldId: null,
+      sourceIds: [sourceId, sourceId],
+    })
+
+    expect(draft).toMatchObject({
+      name: '林默',
+      snapshot: { summary: '谨慎的学院档案员', constraints: '资料不足时明确说明未知。' },
+      warnings: [],
+    })
+    const request = model.requests.get('persona_draft')!
+    expect(request.userPrompt).toContain('创建一名谨慎的学院档案员')
+    expect(request.userPrompt).toContain('魔法学院课程包含古代文献研究与档案整理。')
+    expect(request.userPrompt.match(/学院原著事实/g)).toHaveLength(1)
+    expect(request.systemPrompt).toContain('原著事实只能来自 role=canon_fact')
+    expect(database.getClient().prepare('SELECT COUNT(*) AS count FROM personas').get()).toEqual(before)
+  })
+
   it('保存固定输入与证据快照并完成结构化兴趣判断', async () => {
     model.invalidInterestOnce = true
     const created = await generation.createInterestRun({
@@ -299,6 +339,8 @@ describe('阶段三纯文本运行', () => {
       sourceProcessor: new NodeSourceContentProcessor(new SystemIdentifierGenerator()),
     })
     await expect(disabled.createInterestRun({ personaId, content: '测试' })).rejects.toMatchObject({ code: 'CAPABILITY_DISABLED' })
+    await expect(disabled.generatePersonaDraft({ prompt: '测试人物', origin: 'original', sourceIds: [] }))
+      .rejects.toMatchObject({ code: 'CAPABILITY_DISABLED' })
     expect(database.getClient().prepare('SELECT COUNT(*) AS count FROM generation_runs').get()).toEqual({ count: 0 })
   })
 
