@@ -110,7 +110,6 @@ async function logout(): Promise<void> {
     <div class="app-main">
       <ShellAppTopbar
         :sidebar-collapsed="sidebarCollapsed"
-        :username="sessionData?.data.administrator?.username || ''"
         :task-queue="healthData?.data.taskQueue || null"
         :logout-loading="logoutLoading"
         :logout-error="logoutError"

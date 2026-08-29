@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { onMounted, shallowRef } from 'vue'
+import { computed, onMounted, shallowRef } from 'vue'
 
 /** 后台支持的视觉主题。 */
 type AppTheme = 'mist' | 'sand' | 'ocean' | 'sage'
 
-/** 主题选项使用可见文字表达含义，色点只提供视觉辅助。 */
+/** 主题选项保留可访问名称，顶部栏只显示对应颜色的图标。 */
 const themeOptions: Array<{ label: string, value: AppTheme }> = [
   { label: '雾白', value: 'mist' },
   { label: '暖砂', value: 'sand' },
@@ -13,6 +13,9 @@ const themeOptions: Array<{ label: string, value: AppTheme }> = [
 ]
 const selectedTheme = shallowRef<AppTheme>('mist')
 const themeStorageKey = 'renyang-theme'
+
+/** 当前主题的中文名称，用于浏览器提示和无障碍说明。 */
+const selectedThemeLabel = computed(() => themeOptions.find(option => option.value === selectedTheme.value)?.label ?? '雾白')
 
 /**
  * 将主题写入根节点和本机偏好。
@@ -39,9 +42,8 @@ onMounted(restoreTheme)
 </script>
 
 <template>
-  <label class="theme-control">
-    <span class="theme-swatch" :data-theme-swatch="selectedTheme" aria-hidden="true" />
-    <span class="visually-hidden">界面主题</span>
+  <label class="theme-control" :title="`界面主题：${selectedThemeLabel}`">
+    <UIcon name="i-lucide-palette" class="theme-icon" :data-theme-icon="selectedTheme" aria-hidden="true" />
     <select
       :value="selectedTheme"
       class="theme-select"

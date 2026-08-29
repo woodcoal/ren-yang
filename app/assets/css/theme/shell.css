@@ -278,45 +278,60 @@
   display: none;
 }
 
-/* 主题选择器以可见名称表达当前主题，色点不承担独立语义。 */
+/* 主题选择器只显示调色板图标，颜色表达当前主题，原生选择框负责交互。 */
 .theme-control {
+  position: relative;
   display: inline-flex;
+  width: 2.75rem;
   min-height: 2.75rem;
   align-items: center;
-  gap: 0.4375rem;
-  padding: 0 0.625rem;
-  border: 1px solid var(--app-border);
+  justify-content: center;
+  padding: 0;
+  border: 0;
   border-radius: var(--radius-control);
-  background: var(--app-surface-raised);
+  background: transparent;
   color: var(--app-fg);
 }
 
 .theme-control:hover {
-  border-color: var(--app-border-strong);
+  background: var(--app-surface-soft);
 }
 
 .theme-control:focus-within {
-  border-color: var(--app-accent);
   outline: 3px solid color-mix(in oklch, var(--app-accent) 18%, transparent);
   outline-offset: 2px;
 }
 
-.theme-swatch {
-  width: 0.625rem;
-  height: 0.625rem;
-  flex: 0 0 auto;
-  border: 1px solid color-mix(in oklch, var(--app-fg) 18%, transparent);
-  border-radius: 50%;
-  background: var(--app-accent);
+.theme-icon {
+  width: 1.125rem;
+  height: 1.125rem;
+}
+
+.theme-icon[data-theme-icon='mist'] {
+  color: oklch(52% 0.035 250);
+}
+
+.theme-icon[data-theme-icon='sand'] {
+  color: oklch(58% 0.12 72);
+}
+
+.theme-icon[data-theme-icon='ocean'] {
+  color: oklch(50% 0.13 245);
+}
+
+.theme-icon[data-theme-icon='sage'] {
+  color: oklch(48% 0.1 165);
 }
 
 .theme-select {
-  min-height: 2.625rem;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   border: 0;
   outline: 0;
   background: transparent;
-  color: inherit;
-  font-size: 0.75rem;
+  opacity: 0;
   cursor: pointer;
 }
 
@@ -365,12 +380,6 @@
 
 .sidebar-backdrop {
   display: none;
-}
-
-@media (max-width: 72rem) {
-  .topbar-account span {
-    display: none;
-  }
 }
 
 @media (max-width: 57.5rem) {
@@ -439,20 +448,7 @@
     gap: 0.375rem;
   }
 
-  .topbar-status-link span,
-  .topbar-account {
+  .topbar-status-link span {
     display: none;
-  }
-
-  .theme-control {
-    width: 2.75rem;
-    justify-content: center;
-    padding: 0;
-  }
-
-  .theme-select {
-    position: absolute;
-    width: 2.75rem;
-    opacity: 0;
   }
 }

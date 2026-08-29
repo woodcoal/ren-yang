@@ -5,8 +5,6 @@ import type { PublicTaskQueueStatus } from '#shared/types/system'
 interface Props {
   /** 桌面侧栏是否处于折叠状态。 */
   sidebarCollapsed: boolean
-  /** 当前管理员名称。 */
-  username: string
   /** 后台任务队列摘要；首次加载时可以为空。 */
   taskQueue: PublicTaskQueueStatus | null
   /** 退出请求是否正在进行。 */
@@ -55,9 +53,6 @@ const emit = defineEmits<{
         <span>{{ taskQueue?.total ? `${taskQueue.total} 项后台任务` : '后台队列空闲' }}</span>
       </NuxtLink>
       <ShellThemeSelector />
-      <UButton to="/settings" color="neutral" variant="ghost" icon="i-lucide-user-round" class="topbar-account">
-        <span>{{ username || '管理员' }}</span>
-      </UButton>
       <UButton
         color="neutral"
         variant="ghost"

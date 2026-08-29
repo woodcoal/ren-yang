@@ -19,22 +19,24 @@ describe('后台品牌与主题组件', () => {
     expect(wrapper.find('svg[viewBox="0 0 24 24"]').exists()).toBe(true)
   })
 
-  it('主题选择使用可见名称并把偏好同步到根节点和本机存储', async () => {
+  it('主题选择使用彩色图标并把偏好同步到根节点和本机存储', async () => {
     const wrapper = await mountSuspended(ThemeSelector)
     const select = wrapper.get('select[aria-label="界面主题"]')
 
     expect(select.findAll('option').map(option => option.text())).toEqual(['雾白', '暖砂', '海盐', '松岚'])
+    expect(wrapper.get('[data-theme-icon]').attributes('data-theme-icon')).toBe('mist')
     await select.setValue('ocean')
 
     expect(document.documentElement.dataset.theme).toBe('ocean')
     expect(window.localStorage.getItem('renyang-theme')).toBe('ocean')
+    expect(wrapper.get('[data-theme-icon]').attributes('data-theme-icon')).toBe('ocean')
+    expect(wrapper.get('.theme-control').attributes('title')).toBe('界面主题：海盐')
   })
 
-  it('顶部栏不再显示重复的页面搜索入口', async () => {
+  it('顶部栏不再显示重复的页面搜索和用户信息', async () => {
     const wrapper = await mountSuspended(AppTopbar, {
       props: {
         sidebarCollapsed: false,
-        username: 'admin',
         taskQueue: null,
         logoutLoading: false,
         logoutError: null,
@@ -43,6 +45,7 @@ describe('后台品牌与主题组件', () => {
 
     expect(wrapper.text()).not.toContain('查找页面或功能')
     expect(wrapper.find('.topbar-command-button').exists()).toBe(false)
+    expect(wrapper.find('.topbar-account').exists()).toBe(false)
   })
 
   it('页面标题保留面包屑但不再显示路由代码', async () => {

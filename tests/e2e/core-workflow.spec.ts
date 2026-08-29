@@ -48,12 +48,15 @@ test('首次设置、人物发布、文档确认及三格式导出形成可复�
   await page.getByLabel('管理员密码', { exact: true }).fill(ADMINISTRATOR.password)
   await page.getByRole('button', { name: '登录并进入工作台', exact: true }).click()
   await expect(page.getByRole('heading', { name: '先处理会影响后续创作的事', exact: true })).toBeVisible()
-  await expect(page.getByRole('link', { name: 'e2e_admin', exact: true })).toBeVisible()
+  await expect(page.locator('.app-sidebar').getByRole('link', { name: /e2e_admin/ })).toBeVisible()
   await expect(page.getByText('创作能力可用', { exact: true })).toBeVisible()
 
   // 四套主题只改变视觉令牌，选择结果会保存在本机并跨页面继续生效。
   await page.getByLabel('界面主题').selectOption('ocean')
   await expect.poll(() => page.locator('html').getAttribute('data-theme')).toBe('ocean')
+  await expect(page.locator('[data-theme-icon="ocean"]')).toBeVisible()
+  await expect(page.locator('.theme-control')).toHaveCSS('border-top-width', '0px')
+  await expect(page.locator('.app-topbar').getByText('e2e_admin', { exact: true })).toHaveCount(0)
 
   // 顶部不再重复提供页面搜索，页面标题也不显示面向开发者的路由代码。
   await expect(page.getByText('查找页面或功能', { exact: true })).toHaveCount(0)
