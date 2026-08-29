@@ -306,23 +306,21 @@ function skippedReasonLabel(reason: string | null): string {
           </UCard>
 
           <UCard>
-            <template #header><div><h2 class="font-semibold text-highlighted">运行反馈</h2><p class="mt-1 text-sm text-muted">原始反馈不会直接改写人物；先审查 AI 建议，再执行对应动作。</p></div></template>
+            <template #header><div><h2 class="font-semibold text-highlighted">运行反馈</h2><p class="mt-1 text-sm text-muted">原始反馈不会直接改写人物；确认“作为人物学习资料”后，仍需成长分析和人工审核。</p></div></template>
             <div class="space-y-5">
               <FeedbackForm :blocks="details.blocks" :loading="actionLoading" @submit="submitFeedback" />
-              <template v-if="pendingFeedback.length && personaVersion">
+              <template v-if="pendingFeedback.length">
                 <div v-for="item in pendingFeedback" :key="item.id" class="border-t border-default pt-5">
                   <p class="mb-3 whitespace-pre-wrap text-sm">{{ item.content }}</p>
                   <FeedbackClassificationReview
                     :feedback="item"
                     :blocks="details.blocks"
-                    :persona-snapshot="personaVersion.snapshot"
                     :sources="personaDetails?.sources ?? []"
                     :loading="actionLoading"
                     @confirm="confirmFeedback(item.id, $event)"
                   />
                 </div>
               </template>
-              <UAlert v-else-if="pendingFeedback.length" color="error" title="人物版本快照不可用" description="无法安全确认分类，请刷新运行详情后重试。" />
               <div v-if="runFeedback.some(item => item.confirmedTarget !== null)" class="border-t border-default pt-5">
                 <p class="mb-3 text-sm font-medium text-highlighted">已确认反馈</p>
                 <ul class="space-y-2 text-sm">

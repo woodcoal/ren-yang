@@ -73,11 +73,6 @@ export interface ApplicationRuntimeOptions {
     /** 供应商模型名称。 */
     model: string
   }
-  /** 反馈学习和自动发布设置。 */
-  feedback?: {
-    /** 评测通过后是否允许低风险提案自动发布。 */
-    autoPublishLowRisk: boolean
-  }
   /** 可选 OpenViking 上下文索引配置。 */
   openViking?: {
     /** 是否作为新运行的上下文提供器。 */
@@ -113,7 +108,7 @@ export class ApplicationRuntime {
   private readonly analysisService: AnalysisApplicationService
   /** 请求与 Worker 共用的生成应用服务。 */
   private readonly generationService: GenerationApplicationService
-  /** 请求与 Worker 共用的反馈和评测应用服务。 */
+  /** 请求间共享的反馈分类与人物学习资料应用服务。 */
   private readonly feedbackService: FeedbackApplicationService
   /** OpenViking 检测与重建应用服务。 */
   private readonly contextSynchronizationService: ContextSynchronizationApplicationService
@@ -213,7 +208,6 @@ export class ApplicationRuntime {
       model: textModel,
       identifiers,
       clock: this.clock,
-      autoPublishLowRisk: options.feedback?.autoPublishLowRisk ?? false,
       contextSyncQueue,
     })
     this.contextSynchronizationService = new ContextSynchronizationApplicationService({
@@ -233,7 +227,6 @@ export class ApplicationRuntime {
       taskJobRepository,
       taskHandler: new TaskRoutingApplicationService(
         this.generationService,
-        this.feedbackService,
         this.contextSynchronizationService,
         this.analysisService,
       ),

@@ -70,12 +70,11 @@ describe('系统管理组件', () => {
         }],
         runs: [activeRun, completedRun],
         pendingFeedbackCount: 2,
-        pendingProposalCount: 1,
       },
     })
 
     expect(wrapper.text()).toContain('活动运行 1')
-    expect(wrapper.text()).toContain('待处理反馈 3')
+    expect(wrapper.text()).toContain('待处理反馈 2')
     expect(wrapper.text()).toContain('林默')
     expect(wrapper.text()).not.toContain('已完成人物')
   })

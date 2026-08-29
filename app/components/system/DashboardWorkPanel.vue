@@ -11,8 +11,6 @@ interface Props {
   runs: RunSummary[]
   /** 尚未确认分类的反馈事件数量。 */
   pendingFeedbackCount: number
-  /** 尚未发布或拒绝的修订提案数量。 */
-  pendingProposalCount: number
 }
 
 const props = defineProps<Props>()
@@ -25,8 +23,8 @@ const recentPersonas = computed(() => [...props.personas]
 const activeRuns = computed(() => props.runs
   .filter(run => ['planning', 'awaiting_confirmation', 'queued', 'running'].includes(run.status))
   .slice(0, 5))
-/** 所有仍需管理员处理的反馈和提案合计。 */
-const pendingFeedbackTotal = computed(() => props.pendingFeedbackCount + props.pendingProposalCount)
+/** 所有仍需管理员确认用途的反馈数量。 */
+const pendingFeedbackTotal = computed(() => props.pendingFeedbackCount)
 
 /** 活动运行状态的中文标签。 */
 const statusLabels: Partial<Record<RunSummary['status'], string>> = {
@@ -69,7 +67,7 @@ function formatDateTime(timestamp: number): string {
         <div class="section-heading-copy">
           <p class="eyebrow">01 · 优先处理</p>
           <h2 id="dashboard-priority-heading">需要你作决定</h2>
-          <p>反馈和人物修改建议在确认前不会改变后续任务。</p>
+          <p>反馈只有在确认用途后才会执行一次性动作或成为人物学习资料。</p>
         </div>
         <NuxtLink to="/feedback" class="section-link">进入学习中心</NuxtLink>
       </div>
@@ -79,24 +77,16 @@ function formatDateTime(timestamp: number): string {
           <span class="log-row-meta">反馈分类</span>
           <div class="log-row-main">
             <NuxtLink to="/feedback" class="log-row-title">确认反馈会影响哪一部分</NuxtLink>
-            <span class="log-row-description">系统建议仅作参考，需要你确认是本次结果、人物变化还是人物设定问题。</span>
+            <span class="log-row-description">系统建议仅作参考，需要你确认是修正本次结果、记录参数建议、人物学习资料还是资料事实问题。</span>
           </div>
           <span class="log-row-end"><UBadge color="warning" variant="subtle">待处理 {{ pendingFeedbackCount }}</UBadge></span>
-        </article>
-        <article v-if="pendingProposalCount" class="log-row">
-          <span class="log-row-meta">人物修改稿</span>
-          <div class="log-row-main">
-            <NuxtLink to="/feedback" class="log-row-title">审阅人物版本修改建议</NuxtLink>
-            <span class="log-row-description">修改稿需要经过差异检查和效果评测，发布后才会用于新任务。</span>
-          </div>
-          <span class="log-row-end"><UBadge color="warning" variant="subtle">待处理 {{ pendingProposalCount }}</UBadge></span>
         </article>
       </div>
       <div v-else class="content-notice">
         <UIcon name="i-lucide-circle-check" class="content-notice-icon" aria-hidden="true" />
         <div class="content-notice-copy">
           <strong>当前没有需要确认的学习事项</strong>
-          <p>新的反馈或人物修改建议出现后，会在这里等待处理。</p>
+          <p>新的反馈出现后，会在这里等待用途确认。</p>
         </div>
       </div>
     </section>

@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import type { ApiResponse } from '#shared/types/api'
 import type { PersonaSummary, SourceSummary, WorldSummary } from '#shared/types/content'
-import type { FeedbackView, RevisionProposalView } from '#shared/types/feedback'
+import type { FeedbackView } from '#shared/types/feedback'
 import type { RunSummary } from '#shared/types/generation'
 import type { SystemCapabilitiesResult, SystemHealthResult } from '#shared/types/system'
 import SystemStatusPanel from '../components/system/SystemStatusPanel.vue'
@@ -14,7 +14,6 @@ const [
   { data: sourceData, error: sourceError, refresh: refreshSources },
   { data: runData, error: runError, refresh: refreshRuns },
   { data: feedbackData, error: feedbackError, refresh: refreshFeedback },
-  { data: proposalData, error: proposalError, refresh: refreshProposals },
   { data: capabilityData, error: capabilityError, refresh: refreshCapabilities },
 ] = await Promise.all([
   useFetch<ApiResponse<SystemHealthResult>>('/api/v1/system/health'),
@@ -23,7 +22,6 @@ const [
   useFetch<ApiResponse<SourceSummary[]>>('/api/v1/sources'),
   useFetch<ApiResponse<RunSummary[]>>('/api/v1/runs?limit=100'),
   useFetch<ApiResponse<FeedbackView[]>>('/api/v1/feedback'),
-  useFetch<ApiResponse<RevisionProposalView[]>>('/api/v1/revision-proposals'),
   useFetch<ApiResponse<SystemCapabilitiesResult>>('/api/v1/system/capabilities'),
 ])
 const health = computed(() => healthData.value?.data ?? null)
@@ -31,19 +29,18 @@ const capabilities = computed(() => capabilityData.value?.data ?? null)
 const personas = computed(() => personaData.value?.data ?? [])
 const runs = computed(() => runData.value?.data ?? [])
 const pendingFeedbackCount = computed(() => (feedbackData.value?.data ?? []).filter(item => item.confirmedTarget === null).length)
-const pendingProposalCount = computed(() => (proposalData.value?.data ?? []).filter(item => !['published', 'rejected'].includes(item.status)).length)
 const counts = computed(() => ({
   personas: personas.value.length,
   worlds: worldData.value?.data.length ?? 0,
   sources: sourceData.value?.data.length ?? 0,
 }))
-const summaryError = computed(() => personaError.value || worldError.value || sourceError.value || runError.value || feedbackError.value || proposalError.value)
+const summaryError = computed(() => personaError.value || worldError.value || sourceError.value || runError.value || feedbackError.value)
 
 /** @returns 并行刷新仪表盘全部只读数据。 */
 async function refreshDashboard(): Promise<void> {
   await Promise.all([
     refreshHealth(), refreshPersonas(), refreshWorlds(), refreshSources(), refreshRuns(),
-    refreshFeedback(), refreshProposals(), refreshCapabilities(),
+    refreshFeedback(), refreshCapabilities(),
   ])
 }
 </script>
@@ -84,7 +81,6 @@ async function refreshDashboard(): Promise<void> {
       :personas="personas"
       :runs="runs"
       :pending-feedback-count="pendingFeedbackCount"
-      :pending-proposal-count="pendingProposalCount"
     />
 
     <section class="content-section" aria-labelledby="dashboard-system-heading">

@@ -30,9 +30,6 @@ async function initializeApplicationRuntime(nitroApp: NitroApp): Promise<void> {
         apiKey: config.imageModel.apiKey,
         model: config.imageModel.model,
       },
-      feedback: {
-        autoPublishLowRisk: config.feedback.autoPublishLowRisk,
-      },
       openViking: {
         enabled: config.openViking.enabled,
         endpoint: config.openViking.endpoint,

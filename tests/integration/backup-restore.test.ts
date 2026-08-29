@@ -197,18 +197,23 @@ function seedReferencedData(): void {
     VALUES (?, ?, 0, '魔法学院', '魔法学院档案保存于北塔。', ?)
   `).run(IDS.chunk, IDS.source, hash('魔法学院档案保存于北塔。'))
   client.prepare(`
-    INSERT INTO personas (id, world_id, name, origin, active_version_id, created_at, updated_at)
+    INSERT INTO personas (id, world_id, name, origin, active_soul_version_id, created_at, updated_at)
     VALUES (?, NULL, '档案员', 'original', ?, 1000, 1000)
   `).run(IDS.persona, IDS.version)
   client.prepare(`
-    INSERT INTO persona_versions (id, persona_id, parent_version_id, status, snapshot_json, change_summary, published_at, created_at)
-    VALUES (?, ?, NULL, 'published', '{}', '初始版本', 1000, 1000)
-  `).run(IDS.version, IDS.persona)
+    INSERT INTO soul_versions (
+      id, subject_type, world_id, persona_id, parent_version_id, chapters_json, runtime_summary,
+      runtime_token_count, token_counter, change_summary, status, published_at, created_at
+    ) VALUES (?, 'persona', NULL, ?, NULL, ?, '谨慎的学院档案员。', 12, 'test', '初始版本', 'published', 1000, 1000)
+  `).run(IDS.version, IDS.persona, JSON.stringify([{
+    id: '00000000-0000-4000-8000-000000000012', title: '核心设定', content: '谨慎的学院档案员。', order: 0, required: true,
+  }]))
   client.prepare(`
     INSERT INTO generation_runs (
       id, kind, persona_version_id, status, input_json, parameter_snapshot_json, model_snapshot_json,
-      image_model_snapshot_json, prompt_version, context_provider, created_at, updated_at, completed_at
-    ) VALUES (?, 'artifact_generation', ?, 'succeeded', '{}', '{}', '{}', '{}', 'artifact-v2', 'sqlite_fts5', 1000, 1000, 1000)
+      image_model_snapshot_json, prompt_version, context_provider, prompt_context_snapshot_json,
+      created_at, updated_at, completed_at
+    ) VALUES (?, 'artifact_generation', ?, 'succeeded', '{}', '{}', '{}', '{}', 'artifact-v5', 'sqlite_fts5', NULL, 1000, 1000, 1000)
   `).run(IDS.run, IDS.version)
   client.prepare(`
     INSERT INTO document_specs (id, run_id, revision, status, spec_json, confirmed_at, created_at)
@@ -234,9 +239,9 @@ function seedReferencedData(): void {
   `).run(IDS.asset, IDS.attempt, `assets/${IDS.asset}.png`, IMAGE_BYTES.byteLength, hash(IMAGE_BYTES))
   client.prepare(`
     INSERT INTO context_sync_records (
-      id, source_id, scope_type, scope_id, user_id, peer_id,
-      provider, remote_uri, content_hash, status, error, created_at, updated_at
-    ) VALUES (?, ?, 'persona', ?, ?, ?, 'openviking', 'viking://~/peers/persona-test/resources/ren-yang/test.md', ?, 'synchronized', NULL, 1000, 1000)
+      id, entity_type, source_id, scope_type, scope_id, user_id, peer_id,
+      provider, remote_uri, content_hash, status, operation, error, created_at, updated_at
+    ) VALUES (?, 'source_material', ?, 'persona', ?, ?, ?, 'openviking', 'viking://~/peers/persona-test/resources/ren-yang/test.md', ?, 'synchronized', 'upsert', NULL, 1000, 1000)
   `).run(IDS.sync, IDS.source, IDS.persona, `standalone-${IDS.persona}`, `persona-${IDS.persona}`, hash(SOURCE_BYTES))
 }
 

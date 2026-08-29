@@ -800,103 +800,6 @@ export const feedbackResolutions = sqliteTable(
   table => [check('feedback_resolutions_target_check', sql`${table.targetType} IN ('artifact', 'parameters', 'persona', 'source_fact')`)],
 )
 
-/** 反馈产生且等待评测和发布的人物修订提案。 */
-export const revisionProposals = sqliteTable(
-  'revision_proposals',
-  {
-    id: text('id').primaryKey(),
-    feedbackId: text('feedback_id').notNull().references(() => feedbackEvents.id, { onDelete: 'cascade' }),
-    personaId: text('persona_id').notNull().references(() => personas.id, { onDelete: 'cascade' }),
-    baseVersionId: text('base_version_id').notNull().references(() => soulVersions.id, { onDelete: 'cascade' }),
-    candidateVersionId: text('candidate_version_id').notNull().references(() => soulVersions.id, { onDelete: 'cascade' }),
-    riskLevel: text('risk_level').notNull(),
-    status: text('status').notNull().default('awaiting_evaluation'),
-    patchesJson: text('patches_json').notNull(),
-    riskReasonsJson: text('risk_reasons_json').notNull(),
-    hasEvidenceConflict: integer('has_evidence_conflict').notNull().default(0),
-    latestEvaluationRunId: text('latest_evaluation_run_id'),
-    decisionReason: text('decision_reason'),
-    createdAt: integer('created_at').notNull(),
-    updatedAt: integer('updated_at').notNull(),
-  },
-  table => [
-    uniqueIndex('revision_proposals_feedback_unique').on(table.feedbackId),
-    uniqueIndex('revision_proposals_candidate_version_unique').on(table.candidateVersionId),
-    index('revision_proposals_persona_status_created_index').on(table.personaId, table.status, table.createdAt),
-    check('revision_proposals_risk_check', sql`${table.riskLevel} IN ('low', 'high', 'critical')`),
-    check('revision_proposals_status_check', sql`${table.status} IN ('awaiting_evaluation', 'evaluation_failed', 'ready', 'published', 'rejected')`),
-    check('revision_proposals_conflict_check', sql`${table.hasEvidenceConflict} IN (0, 1)`),
-  ],
-)
-
-/** 场景或明确长期反馈形成且已转入提案门禁的候选记忆。 */
-export const candidateMemories = sqliteTable(
-  'candidate_memories',
-  {
-    id: text('id').primaryKey(),
-    feedbackId: text('feedback_id').notNull().references(() => feedbackEvents.id, { onDelete: 'cascade' }),
-    personaId: text('persona_id').notNull().references(() => personas.id, { onDelete: 'cascade' }),
-    content: text('content').notNull(),
-    status: text('status').notNull().default('proposed'),
-    proposalId: text('proposal_id').references(() => revisionProposals.id, { onDelete: 'set null' }),
-    createdAt: integer('created_at').notNull(),
-  },
-  table => [
-    uniqueIndex('candidate_memories_feedback_unique').on(table.feedbackId),
-    check('candidate_memories_status_check', sql`${table.status} IN ('proposed', 'promoted', 'rejected')`),
-    check('candidate_memories_content_check', sql`length(trim(${table.content})) > 0`),
-  ],
-)
-
-/** 经人工门禁管理的人物成长事实；只有 active 状态可参与检索。 */
-export const personaGrowthRecords = sqliteTable(
-  'persona_growth_records',
-  {
-    id: text('id').primaryKey(),
-    personaId: text('persona_id').notNull().references(() => personas.id, { onDelete: 'cascade' }),
-    content: text('content').notNull(),
-    contentHash: text('content_hash').notNull(),
-    status: text('status').notNull().default('candidate'),
-    sourceType: text('source_type').notNull(),
-    sourceId: text('source_id'),
-    createdAt: integer('created_at').notNull(),
-    updatedAt: integer('updated_at').notNull(),
-  },
-  table => [
-    index('persona_growth_records_persona_status_index').on(table.personaId, table.status),
-    check('persona_growth_records_status_check', sql`${table.status} IN ('candidate', 'active', 'deprecated', 'rejected')`),
-    check('persona_growth_records_source_type_check', sql`${table.sourceType} IN ('feedback', 'memory', 'manual')`),
-    check('persona_growth_records_content_check', sql`length(trim(${table.content})) > 0`),
-    check('persona_growth_records_hash_check', sql`length(${table.contentHash}) = 64`),
-  ],
-)
-
-/** SQLite 管理的全部人物记忆，包括 OpenViking 派生但尚未审核的候选。 */
-export const personaMemories = sqliteTable(
-  'persona_memories',
-  {
-    id: text('id').primaryKey(),
-    personaId: text('persona_id').notNull().references(() => personas.id, { onDelete: 'cascade' }),
-    content: text('content').notNull(),
-    contentHash: text('content_hash').notNull(),
-    memoryType: text('memory_type').notNull(),
-    status: text('status').notNull().default('candidate'),
-    sourceType: text('source_type').notNull(),
-    sourceId: text('source_id'),
-    remoteUri: text('remote_uri'),
-    createdAt: integer('created_at').notNull(),
-    updatedAt: integer('updated_at').notNull(),
-  },
-  table => [
-    index('persona_memories_persona_status_index').on(table.personaId, table.status),
-    uniqueIndex('persona_memories_remote_uri_unique').on(table.remoteUri),
-    check('persona_memories_status_check', sql`${table.status} IN ('candidate', 'active', 'deprecated', 'rejected')`),
-    check('persona_memories_source_type_check', sql`${table.sourceType} IN ('openviking_session', 'feedback', 'manual')`),
-    check('persona_memories_content_check', sql`length(trim(${table.content})) > 0`),
-    check('persona_memories_hash_check', sql`length(${table.contentHash}) = 64`),
-  ],
-)
-
 /** 本地交流向 OpenViking 世界 User Session 投影的持久状态。 */
 export const openVikingSessionRecords = sqliteTable(
   'openviking_session_records',
@@ -972,55 +875,6 @@ export const evaluationCases = sqliteTable(
   ],
 )
 
-/** 一次提案评测的固定模型、参数、提示和汇总。 */
-export const evaluationRuns = sqliteTable(
-  'evaluation_runs',
-  {
-    id: text('id').primaryKey(),
-    proposalId: text('proposal_id').notNull().references(() => revisionProposals.id, { onDelete: 'cascade' }),
-    candidateVersionId: text('candidate_version_id').notNull().references(() => soulVersions.id, { onDelete: 'cascade' }),
-    status: text('status').notNull().default('queued'),
-    modelSnapshotJson: text('model_snapshot_json').notNull(),
-    parameterSnapshotJson: text('parameter_snapshot_json').notNull(),
-    promptVersion: text('prompt_version').notNull(),
-    passedCases: integer('passed_cases').notNull().default(0),
-    totalCases: integer('total_cases').notNull(),
-    errorCode: text('error_code'),
-    errorMessage: text('error_message'),
-    createdAt: integer('created_at').notNull(),
-    completedAt: integer('completed_at'),
-  },
-  table => [
-    index('evaluation_runs_proposal_created_index').on(table.proposalId, table.createdAt),
-    check('evaluation_runs_status_check', sql`${table.status} IN ('queued', 'running', 'passed', 'failed')`),
-    check('evaluation_runs_count_check', sql`${table.passedCases} >= 0 AND ${table.totalCases} > 0 AND ${table.passedCases} <= ${table.totalCases}`),
-  ],
-)
-
-/** 评测模型证据与确定性规则形成的逐用例结果。 */
-export const evaluationResults = sqliteTable(
-  'evaluation_results',
-  {
-    id: text('id').primaryKey(),
-    evaluationRunId: text('evaluation_run_id').notNull().references(() => evaluationRuns.id, { onDelete: 'cascade' }),
-    caseId: text('case_id').notNull().references(() => evaluationCases.id, { onDelete: 'restrict' }),
-    caseName: text('case_name').notNull(),
-    status: text('status').notNull(),
-    baseScore: integer('base_score_millionths').notNull(),
-    candidateScore: integer('candidate_score_millionths').notNull(),
-    baseOutput: text('base_output').notNull(),
-    candidateOutput: text('candidate_output').notNull(),
-    failuresJson: text('failures_json').notNull(),
-    reasoningSummary: text('reasoning_summary').notNull(),
-  },
-  table => [
-    uniqueIndex('evaluation_results_run_case_unique').on(table.evaluationRunId, table.caseId),
-    check('evaluation_results_status_check', sql`${table.status} IN ('passed', 'failed')`),
-    check('evaluation_results_base_score_check', sql`${table.baseScore} BETWEEN 0 AND 1000000`),
-    check('evaluation_results_candidate_score_check', sql`${table.candidateScore} BETWEEN 0 AND 1000000`),
-  ],
-)
-
 /** 可选上下文提供器对每项 SQLite 资料的可重建同步状态。 */
 export const contextSyncRecords = sqliteTable(
   'context_sync_records',
@@ -1089,14 +943,8 @@ export const databaseSchema = {
   feedbackEvents,
   feedbackSuggestions,
   feedbackResolutions,
-  revisionProposals,
-  candidateMemories,
-  personaGrowthRecords,
-  personaMemories,
   openVikingSessionRecords,
   openVikingDerivedMemories,
   evaluationCases,
-  evaluationRuns,
-  evaluationResults,
   contextSyncRecords,
 }

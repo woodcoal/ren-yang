@@ -47,7 +47,7 @@ export const appNavigationGroups: AppNavigationGroup[] = [
   {
     label: '学习与复盘',
     items: [
-      { label: '学习中心', to: '/feedback', icon: 'i-lucide-message-square-more', description: '审阅反馈、人物修改建议和候选记忆' },
+      { label: '学习中心', to: '/feedback', icon: 'i-lucide-message-square-more', description: '查看反馈记录并维护人物回归用例' },
     ],
   },
   {
@@ -70,7 +70,6 @@ const routeSectionRules: Array<{ prefix: string, section: string, routeCode: str
   { prefix: '/personas/', section: '人物空间', routeCode: '/personas/[id]' },
   { prefix: '/worlds/', section: '人物空间', routeCode: '/worlds/[id]' },
   { prefix: '/sources/', section: '人物空间', routeCode: '/sources/[id]' },
-  { prefix: '/evaluations/', section: '学习与复盘', routeCode: '/evaluations/[id]' },
 ]
 
 /**

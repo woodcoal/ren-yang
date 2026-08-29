@@ -231,14 +231,19 @@ describe('SqliteDatabase', () => {
     })
     const clearedBusinessTables = [
       'personas', 'worlds', 'generation_runs', 'artifact_blocks', 'block_attempts', 'image_assets',
-      'feedback_events', 'evaluation_runs', 'context_sync_records', 'soul_drafts', 'soul_versions',
+      'feedback_events', 'evaluation_cases', 'context_sync_records', 'soul_drafts', 'soul_versions',
       'persona_feedback_sources', 'growth_records', 'growth_revisions',
       'persona_operation_records', 'memory_records', 'memory_revisions',
     ]
     for (const table of clearedBusinessTables) {
       expect(upgraded.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get(), `${table} 应为空`).toEqual({ count: 0 })
     }
-    expect(upgraded.prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('persona_versions', 'world_versions')`).all()).toEqual([])
+    expect(upgraded.prepare(`
+      SELECT name FROM sqlite_master WHERE type = 'table' AND name IN (
+        'persona_versions', 'world_versions', 'revision_proposals', 'candidate_memories',
+        'evaluation_runs', 'evaluation_results', 'persona_growth_records', 'persona_memories'
+      )
+    `).all()).toEqual([])
     expect(upgraded.prepare(`PRAGMA foreign_key_check`).all()).toEqual([])
   })
 })

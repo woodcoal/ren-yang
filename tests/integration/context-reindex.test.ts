@@ -408,7 +408,7 @@ describe('OpenViking 可关闭索引与 SQLite 重建', () => {
     const ignoredHandler = { /** @returns 本测试不应调用该处理器。 */ execute: async () => { throw new Error('路由错误') } }
     const worker = new WorkerApplicationService({
       taskJobRepository: new SqliteTaskJobRepository(database.getClient()),
-      taskHandler: new TaskRoutingApplicationService(ignoredHandler, ignoredHandler, contextService),
+      taskHandler: new TaskRoutingApplicationService(ignoredHandler, contextService),
       clock,
       leaseDurationMs: 60_000,
     })
