@@ -15,6 +15,7 @@ import type { TextModelPort } from '../../ports/TextModelPort'
 import { TextModelError } from '../../ports/TextModelPort'
 import { ApplicationError } from '../errors/ApplicationError'
 import type { AiPromptApplicationService } from '../aiPrompts/AiPromptApplicationService'
+import type { SystemAiSettingsApplicationService } from '../systemAi/SystemAiSettingsApplicationService'
 
 /** 纯文本提炼不再要求模型额外生成摘要，任务页展示固定结果说明。 */
 const LEARNING_PROMPT_RESULT_SUMMARY = 'AI 已根据全部启用素材生成完整提示词草稿。'
@@ -50,6 +51,8 @@ export interface AnalysisApplicationServiceDependencies {
   identifiers: IdentifierGenerator
   /** 可测试时钟。 */
   clock: Clock
+  /** 系统内容分析参数；未提供时保持原固定参数，便于独立测试。 */
+  systemAiSettings?: Pick<SystemAiSettingsApplicationService, 'resolveParameters'>
 }
 
 /** 创建、执行和审核世界成长、人物成长及人物记忆 AI 迭代。 */
@@ -67,6 +70,9 @@ export class AnalysisApplicationService implements TaskHandler {
     const prepared = await this.prepareBatch(analysisType, subjectId, input.mode)
     const promptCode = analysisPromptCode(analysisType)
     const promptVersions = await this.dependencies.prompts.snapshotPublishedVersions([promptCode])
+    const parameters = this.dependencies.systemAiSettings
+      ? await this.dependencies.systemAiSettings.resolveParameters('contentAnalysis', ANALYSIS_PARAMETERS)
+      : { ...ANALYSIS_PARAMETERS }
     const batchId = this.dependencies.identifiers.create()
     const created = await this.dependencies.analysis.createBatch({
       id: batchId,
@@ -80,7 +86,7 @@ export class AnalysisApplicationService implements TaskHandler {
         ...prepared.baseline,
       ],
       model,
-      parameters: ANALYSIS_PARAMETERS,
+      parameters,
       promptVersion: promptVersions[promptCode]!,
       inputs: prepared.inputs,
       timestamp: this.dependencies.clock.now(),

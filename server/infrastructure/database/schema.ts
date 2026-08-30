@@ -42,6 +42,20 @@ export const auditEvents = sqliteTable(
   ],
 )
 
+/** 管理员可维护的唯一一份系统 AI 当前参数。 */
+export const systemAiSettings = sqliteTable(
+  'system_ai_settings',
+  {
+    id: text('id').primaryKey(),
+    valuesJson: text('values_json').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  table => [
+    check('system_ai_settings_singleton_check', sql`${table.id} = 'system_ai_settings'`),
+    check('system_ai_settings_values_json_check', sql`json_valid(${table.valuesJson})`),
+  ],
+)
+
 /** 同进程 Worker 使用的持久化任务表。 */
 export const taskJobs = sqliteTable(
   'task_jobs',
@@ -1107,6 +1121,7 @@ export const contextSyncRecords = sqliteTable(
 export const databaseSchema = {
   administrators,
   auditEvents,
+  systemAiSettings,
   taskJobs,
   worlds,
   personas,

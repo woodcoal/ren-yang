@@ -64,6 +64,13 @@
       "when": 1788336000000,
       "tag": "0008_remove_unused_evaluation_cases",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1788422400000,
+      "tag": "0009_system_ai_settings",
+      "breakpoints": true
     }
   ]
 }

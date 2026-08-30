@@ -10,6 +10,7 @@ import type { LearningApplicationService } from './learning/LearningApplicationS
 import type { AnalysisApplicationService } from './analysis/AnalysisApplicationService'
 import type { AiPromptApplicationService } from './aiPrompts/AiPromptApplicationService'
 import type { HistoryApplicationService } from './history/HistoryApplicationService'
+import type { SystemAiSettingsApplicationService } from './systemAi/SystemAiSettingsApplicationService'
 
 /** 每个 HTTP 请求能够访问的应用服务集合。 */
 export interface RequestApplicationServices {
@@ -37,4 +38,6 @@ export interface RequestApplicationServices {
   backup: BackupApplicationService
   /** 非敏感系统状态用例。 */
   system: SystemApplicationService
+  /** 系统内部 AI 操作的分场景参数设置用例。 */
+  systemAiSettings: SystemAiSettingsApplicationService
 }

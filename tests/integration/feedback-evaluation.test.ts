@@ -148,9 +148,10 @@ describe('反馈分类与人物成长素材闭环', () => {
 
   it('用户确认人物学习后创建可见成长素材，但不直接修改灵魂或已发布提示词', async () => {
     const queue = new RecordingContextSyncQueue()
-    const service = createService(new QueueTextModel([
+    const model = new QueueTextModel([
       { targetType: 'persona', confidence: 0.96, rationale: '用户明确要求形成长期学习资料' },
-    ]), queue)
+    ])
+    const service = createService(model, queue)
     const feedback = await service.submitFeedback(IDS.run, {
       content: '以后回答时明确提到证据。', blockId: null, rating: 'positive', isLongTerm: true, editedOutput: null,
     })
@@ -189,6 +190,10 @@ describe('反馈分类与人物成长素材闭环', () => {
     expect(database.getClient().prepare('SELECT COUNT(*) AS count FROM learning_prompt_versions').get()).toEqual({ count: 0 })
     expect(queue.feedbackIds).toEqual([feedback.id])
     expect(queue.sourceIds).toEqual([feedbackSourceId])
+    expect(model.requests[0]?.parameters.temperature).toBe(0.9)
+    expect(database.getClient().prepare(`
+      SELECT parameter_snapshot_json FROM feedback_suggestions WHERE feedback_id = ?
+    `).get(feedback.id)).toEqual({ parameter_snapshot_json: expect.stringContaining('"temperature":0.9') })
   })
 
   it('同一反馈只能确认一次，不能重复创建人物成长素材', async () => {
@@ -273,6 +278,10 @@ function createService(model: TextModelPort, contextSyncQueue?: ContextSyncTaskQ
     identifiers,
     clock,
     contextSyncQueue,
+    systemAiSettings: {
+      /** @param _operation 固定反馈分类场景。 @param defaults 业务安全参数。 @returns 覆盖温度后的完整参数。 */
+      resolveParameters: async (_operation, defaults) => ({ ...defaults, temperature: 0.9 }),
+    },
   })
 }
 

@@ -368,12 +368,17 @@ describe('人物、世界与资料管理闭环', () => {
       model,
       prompts: aiPrompts,
       tokenBudgets: { world: 2_500, persona: 3_500 },
+      systemAiSettings: {
+        /** @param _operation 固定内容分析场景。 @param defaults 业务安全参数。 @returns 覆盖温度后的完整参数。 */
+        resolveParameters: async (_operation, defaults) => ({ ...defaults, temperature: 0.6 }),
+      },
     })
 
     await expect(analyzedSoulService.analyzePrompt('persona', '谨慎的档案管理员。')).resolves.toEqual({
       promptText: '谨慎的档案管理员；资料不足时明确说明未知。',
     })
     expect(model.requests).toHaveLength(1)
+    expect(model.requests[0]?.parameters.temperature).toBe(0.6)
     expect(database.getClient().prepare('SELECT COUNT(*) AS count FROM personas').get()).toEqual({ count: 0 })
     expect(database.getClient().prepare('SELECT COUNT(*) AS count FROM worlds').get()).toEqual({ count: 0 })
     expect(database.getClient().prepare('SELECT COUNT(*) AS count FROM soul_drafts').get()).toEqual({ count: 0 })

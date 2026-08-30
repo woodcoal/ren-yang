@@ -12,6 +12,7 @@ import { TextModelError } from '../../ports/TextModelPort'
 import type { TokenCounter } from '../../ports/TokenCounter'
 import { ApplicationError } from '../errors/ApplicationError'
 import type { AiPromptApplicationService } from '../aiPrompts/AiPromptApplicationService'
+import type { SystemAiSettingsApplicationService } from '../systemAi/SystemAiSettingsApplicationService'
 import { buildSoulPromptAnalysisVariables, soulAnalysisPromptCode } from './SoulPromptBuilder'
 
 /** 灵魂文本整理使用的固定、低随机性模型参数。 */
@@ -64,6 +65,8 @@ export interface SoulApplicationServiceDependencies {
   prompts: Pick<AiPromptApplicationService, 'render'>
   /** 世界与人物灵魂提示词预算。 */
   tokenBudgets: SoulTokenBudgets
+  /** 系统内容分析参数；未提供时保持原固定参数，便于独立测试。 */
+  systemAiSettings?: Pick<SystemAiSettingsApplicationService, 'resolveParameters'>
 }
 
 /** 管理世界与人物共用的当前灵魂、不可变历史版本和旧草稿兼容流程。 */
@@ -317,10 +320,13 @@ export class SoulApplicationService {
       soulAnalysisPromptCode(subjectType),
       buildSoulPromptAnalysisVariables(promptText),
     )
+    const parameters = this.dependencies.systemAiSettings
+      ? await this.dependencies.systemAiSettings.resolveParameters('contentAnalysis', SOUL_ANALYSIS_PARAMETERS)
+      : { ...SOUL_ANALYSIS_PARAMETERS }
     try {
       const response = await model.generateStructured({
         ...prompt,
-        parameters: SOUL_ANALYSIS_PARAMETERS,
+        parameters,
         responseSchemaName: 'soul_prompt_analysis',
       })
       return normalizeSoulSnapshot(analyzedSoulPromptSchema.parse(response.structuredOutput))

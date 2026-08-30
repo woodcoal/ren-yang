@@ -51,7 +51,6 @@ async function submitRun(): Promise<void> {
     const common = {
       personaId: form.personaId,
       scene: { ...form.scene },
-      parameterProfileId: form.parameterProfileId,
     }
     const isInterestTask = form.task === 'interest'
     const response = await runWithAiLoading({
@@ -64,7 +63,7 @@ async function submitRun(): Promise<void> {
       ? await $fetch<ApiResponse<CreatedRun>>('/api/v1/interest-runs', { method: 'POST', body: { ...common, content: form.content } })
       : await $fetch<ApiResponse<CreatedRun>>('/api/v1/generation-runs', {
           method: 'POST',
-          body: { ...common, requirement: form.content, formatTemplateId: form.formatTemplateId, includeImages: form.includeImages },
+          body: { ...common, requirement: form.content, parameterProfileId: form.parameterProfileId, formatTemplateId: form.formatTemplateId, includeImages: form.includeImages },
         }))
     await navigateTo(`/runs/${response.data.runId}`)
   }
@@ -105,7 +104,7 @@ async function submitRun(): Promise<void> {
               <option value="" disabled>请选择人物</option><option v-for="persona in personas" :key="persona.id" :value="persona.id">{{ persona.name }}</option>
             </select>
           </UFormField>
-          <UFormField label="生成设置">
+          <UFormField v-if="form.task === 'generation'" label="生成设置">
             <select v-model="form.parameterProfileId" class="native-control" aria-label="生成设置"><option :value="null">系统默认</option><option v-for="profile in profiles" :key="profile.id" :value="profile.id">{{ profile.name }} v{{ profile.version }}</option></select>
           </UFormField>
           <UFormField v-if="form.task === 'generation'" label="内容格式">
@@ -135,7 +134,7 @@ async function submitRun(): Promise<void> {
       </section>
 
       <div class="sticky-action-bar">
-        <p class="text-sm text-muted">提交后会锁定本次人物版本、上下文和生成设置，并进入任务详情。</p>
+        <p class="text-sm text-muted">提交后会锁定本次人物版本、上下文和对应 AI 参数，并进入任务详情。</p>
         <UButton type="submit" size="lg" :disabled="!textCapability?.configured || personas.length === 0" :loading="loading">
           {{ form.task === 'interest' ? '确认并开始判断' : '确认并开始规划' }}
         </UButton>

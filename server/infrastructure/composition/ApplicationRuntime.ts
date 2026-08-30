@@ -48,6 +48,8 @@ import { AiPromptApplicationService } from '../../application/aiPrompts/AiPrompt
 import { SqliteAiPromptRepository } from '../database/SqliteAiPromptRepository'
 import { HistoryApplicationService } from '../../application/history/HistoryApplicationService'
 import { SqliteHistoryRepository } from '../database/SqliteHistoryRepository'
+import { SystemAiSettingsApplicationService } from '../../application/systemAi/SystemAiSettingsApplicationService'
+import { SqliteSystemAiSettingsRepository } from '../database/SqliteSystemAiSettingsRepository'
 
 /** 应用运行时组合配置。 */
 export interface ApplicationRuntimeOptions {
@@ -130,6 +132,8 @@ export class ApplicationRuntime {
   private readonly worker: InternalWorker
   /** 请求间可安全共享的系统应用服务。 */
   private readonly systemService: SystemApplicationService
+  /** 请求与各 AI 业务服务共用的系统 AI 参数设置。 */
+  private readonly systemAiSettingsService: SystemAiSettingsApplicationService
 
   /**
    * 创建并连接阶段一所需的全部运行时对象。
@@ -149,6 +153,10 @@ export class ApplicationRuntime {
     }
     this.administratorRepository = new DrizzleAdministratorRepository(this.sqlite.db)
     const identifiers = new SystemIdentifierGenerator()
+    this.systemAiSettingsService = new SystemAiSettingsApplicationService({
+      repository: new SqliteSystemAiSettingsRepository(this.sqlite.getClient()),
+      clock: this.clock,
+    })
     const contentRepository = new SqliteContentRepository(this.sqlite.getClient())
     this.aiPromptService = new AiPromptApplicationService({
       repository: new SqliteAiPromptRepository(this.sqlite.getClient()),
@@ -195,6 +203,7 @@ export class ApplicationRuntime {
       souls: contentRepository,
       identifiers,
       clock: this.clock,
+      systemAiSettings: this.systemAiSettingsService,
       tokenCounter,
       model: textModel,
       prompts: this.aiPromptService,
@@ -218,6 +227,7 @@ export class ApplicationRuntime {
       prompts: this.aiPromptService,
       identifiers,
       clock: this.clock,
+      systemAiSettings: this.systemAiSettingsService,
     })
     this.generationService = new GenerationApplicationService({
       runs: new SqliteRunRepository(this.sqlite.getClient()),
@@ -233,6 +243,7 @@ export class ApplicationRuntime {
       tokenCounter,
       learning: learningRepository,
       contextSyncQueue,
+      systemAiSettings: this.systemAiSettingsService,
     })
     this.historyService = new HistoryApplicationService({
       history: new SqliteHistoryRepository(this.sqlite.getClient()),
@@ -244,6 +255,7 @@ export class ApplicationRuntime {
       identifiers,
       clock: this.clock,
       contextSyncQueue,
+      systemAiSettings: this.systemAiSettingsService,
     })
     this.contextSynchronizationService = new ContextSynchronizationApplicationService({
       repository: contextRepository,
@@ -312,6 +324,7 @@ export class ApplicationRuntime {
       contextSynchronization: this.contextSynchronizationService,
       backup: this.backupService,
       system: this.systemService,
+      systemAiSettings: this.systemAiSettingsService,
     }
   }
 

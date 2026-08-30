@@ -57,6 +57,7 @@ import type { TokenCounter } from '../../ports/TokenCounter'
 import { TextModelError } from '../../ports/TextModelPort'
 import { ApplicationError } from '../errors/ApplicationError'
 import type { AiPromptApplicationService } from '../aiPrompts/AiPromptApplicationService'
+import type { SystemAiSettingsApplicationService } from '../systemAi/SystemAiSettingsApplicationService'
 import {
   buildDocumentPlanPromptVariables,
   buildImagePromptVariables,
@@ -126,6 +127,8 @@ export interface GenerationApplicationServiceDependencies {
   learning: Pick<LearningRepository, 'findLearningPromptWorkspace' | 'createPersonaOperationRecord'>
   /** OpenViking 启用时使用的 Session 异步队列。 */
   contextSyncQueue?: ContextSyncTaskQueue
+  /** 系统内部 AI 操作的分场景参数；未提供时保持原固定参数，便于独立测试。 */
+  systemAiSettings?: Pick<SystemAiSettingsApplicationService, 'resolveParameters'>
 }
 
 /** 编排运行创建、查询、规格确认和 Worker 模型执行。 */
@@ -200,11 +203,12 @@ export class GenerationApplicationService implements TaskHandler {
       buildPersonaDraftPromptVariables(input.prompt, world, sources),
     )
     const retryVersions = await this.dependencies.prompts.snapshotPublishedVersions([GENERATION_PROMPT_CODES.jsonRetry])
+    const parameters = await this.resolveSystemParameters('draftGeneration', DEFAULT_TEXT_PARAMETERS)
     try {
       const { output } = await this.generateValidated(
         prompt,
         retryVersions[GENERATION_PROMPT_CODES.jsonRetry]!,
-        DEFAULT_TEXT_PARAMETERS,
+        parameters,
         'persona_draft',
         value => personaDraftSchema.parse(value),
       )
@@ -232,10 +236,11 @@ export class GenerationApplicationService implements TaskHandler {
         buildWorldDraftPromptVariables(input.prompt),
       )
       const retryVersions = await this.dependencies.prompts.snapshotPublishedVersions([GENERATION_PROMPT_CODES.jsonRetry])
+      const parameters = await this.resolveSystemParameters('draftGeneration', DEFAULT_TEXT_PARAMETERS)
       const { output } = await this.generateValidated(
         prompt,
         retryVersions[GENERATION_PROMPT_CODES.jsonRetry]!,
-        DEFAULT_TEXT_PARAMETERS,
+        parameters,
         'world_draft',
         value => worldDraftSchema.parse(value),
       )
@@ -266,7 +271,7 @@ export class GenerationApplicationService implements TaskHandler {
 
   /** @param input 兴趣判断输入。 @returns 已入队运行与任务标识。 */
   async createInterestRun(input: CreateInterestRunInput): Promise<CreatedRun> {
-    return await this.createRun('interest_assessment', input.personaId, { content: input.content }, input.scene ?? null, input.parameterProfileId ?? null, null)
+    return await this.createRun('interest_assessment', input.personaId, { content: input.content }, input.scene ?? null, null, null)
   }
 
   /** @param input 文档规划输入。 @returns 处于规划状态的运行与任务标识。 */
@@ -510,7 +515,9 @@ export class GenerationApplicationService implements TaskHandler {
     if (!persona.isEnabled) throw new ApplicationError('RESOURCE_DISABLED', '人物已禁用，不能创建新任务', 409)
     if (!persona.activeVersionId) throw new ApplicationError('PERSONA_VERSION_NOT_ACTIVE', '人物当前灵魂版本缺失，请重新保存灵魂提示词', 409)
     const version = await this.requirePublishedPersonaVersion(persona.activeVersionId, persona.id)
-    const parameters = await this.resolveParameters(profileId)
+    const parameters = kind === 'interest_assessment'
+      ? await this.resolveSystemParameters('interestAnalysis', DEFAULT_TEXT_PARAMETERS)
+      : await this.resolveProfileParameters(profileId)
     const template = templateId ? await this.requireFormatTemplate(templateId) : { spec: DEFAULT_FORMAT_TEMPLATE }
     const linkedWorld = persona.worldId ? await this.dependencies.content.findWorld(persona.worldId) : null
     const world = linkedWorld?.isEnabled ? linkedWorld : null
@@ -1278,11 +1285,26 @@ export class GenerationApplicationService implements TaskHandler {
   }
 
   /** @param id 参数方案 UUID 或 null。 @returns 最终参数快照。 */
-  private async resolveParameters(id: string | null): Promise<TextModelParameters> {
+  private async resolveProfileParameters(id: string | null): Promise<TextModelParameters> {
     if (!id) return { ...DEFAULT_TEXT_PARAMETERS }
     const value = await this.dependencies.runs.findParameterProfile(id)
     if (!value || !value.isActive) throw new ApplicationError('RESOURCE_NOT_FOUND', '参数方案不存在或已停用', 404)
     return value.values
+  }
+
+  /**
+   * 合并指定系统 AI 场景的可配置供应商参数与业务固定安全参数。
+   * @param operation 草稿生成或兴趣分析场景。
+   * @param defaults 调用方定义的完整默认与安全参数。
+   * @returns 解析后的完整文本模型参数；未注入设置服务时返回默认值副本。
+   */
+  private async resolveSystemParameters(
+    operation: 'draftGeneration' | 'interestAnalysis',
+    defaults: TextModelParameters,
+  ): Promise<TextModelParameters> {
+    return this.dependencies.systemAiSettings
+      ? await this.dependencies.systemAiSettings.resolveParameters(operation, defaults)
+      : { ...defaults }
   }
 
   /** @param id 格式模板 UUID。 @returns 有效模板。 */

@@ -28,6 +28,8 @@ import type { PersonaSnapshot } from '../../shared/types/content'
 import type { DocumentSpec } from '../../shared/schemas/generation'
 import type { AiPromptApplicationService } from '../../server/application/aiPrompts/AiPromptApplicationService'
 import { createTestAiPromptService } from '../support/createTestAiPromptService'
+import { SystemAiSettingsApplicationService } from '../../server/application/systemAi/SystemAiSettingsApplicationService'
+import { SqliteSystemAiSettingsRepository } from '../../server/infrastructure/database/SqliteSystemAiSettingsRepository'
 
 /** 测试固定时钟。 */
 class TestClock implements Clock {
@@ -194,6 +196,8 @@ let sourceId: string
 let testClock: TestClock
 /** 使用真实迁移模板的测试提示词目录。 */
 let aiPrompts: AiPromptApplicationService
+/** 测试运行实际读取的系统 AI 分场景参数。 */
+let systemAiSettings: SystemAiSettingsApplicationService
 
 beforeEach(async () => {
   directory = mkdtempSync(resolve(tmpdir(), 'ren-yang-generation-test-'))
@@ -240,11 +244,16 @@ beforeEach(async () => {
   })
   model = new FixedTextModel()
   imageModel = new FixedImageModel()
+  systemAiSettings = new SystemAiSettingsApplicationService({
+    repository: new SqliteSystemAiSettingsRepository(database.getClient()),
+    clock: testClock,
+  })
   generation = new GenerationApplicationService({
     runs: new SqliteRunRepository(database.getClient()), content: contentRepository,
     context: new SqliteContextProvider(database.getClient()), model, prompts: aiPrompts, imageModel, imageAssets,
     identifiers, clock: testClock, sourceProcessor: processor,
     tokenCounter: new ConservativeTokenCounter(), learning: learningRepository,
+    systemAiSettings,
   })
   worker = new WorkerApplicationService({
     taskJobRepository: new SqliteTaskJobRepository(database.getClient()), taskHandler: generation,
@@ -286,6 +295,9 @@ describe('阶段三纯文本运行', () => {
 
   it('从自然语言生成不落库的结构化世界候选草稿', async () => {
     const before = database.getClient().prepare('SELECT COUNT(*) AS count FROM worlds').get()
+    const settings = await systemAiSettings.getSettings()
+    settings.values.draftGeneration.temperature = 0.8
+    await systemAiSettings.updateSettings(settings.values)
     model.invalidWorldMetaOnce = true
     const draft = await generation.generateWorldDraft({ prompt: '创建一个人类生活在浮空岛屿、依靠风帆船往来的世界。' })
 
@@ -300,6 +312,7 @@ describe('阶段三纯文本运行', () => {
     expect(request.systemPrompt).toContain('promptText 是实际进入人物任务提示词')
     expect(request.systemPrompt).toContain('禁止写入返回内容')
     expect(model.calls.get('world_draft')).toBe(2)
+    expect(model.requests.get('world_draft')?.parameters.temperature).toBe(0.8)
     expect(JSON.stringify(draft)).not.toContain('候选草稿')
     expect(database.getClient().prepare('SELECT COUNT(*) AS count FROM worlds').get()).toEqual(before)
   })
@@ -318,7 +331,6 @@ describe('阶段三纯文本运行', () => {
       personaId,
       content: '魔法学院课程是否值得参加？',
       scene: { ageStage: '', location: '图书馆', currentGoal: '', emotion: '', event: '' },
-      parameterProfileId: null,
     })
 
     await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: true })
@@ -399,39 +411,38 @@ describe('阶段三纯文本运行', () => {
     expect(details.evidence.some(item => typeof item.metadata.worldVersionId === 'string')).toBe(false)
   })
 
-  it('调用前按固定提示字符上限失败且不请求模型', async () => {
+  it('兴趣分析忽略图文生成设置并保存独立系统参数快照', async () => {
     const profile = await generation.createParameterProfile({
       name: '极小提示上限',
       values: { ...DEFAULT_TEXT_PARAMETERS, maxPromptCharacters: 1_000 },
     })
-    const beforeCalls = model.calls.get('interest_assessment') ?? 0
-    const created = await generation.createInterestRun({
-      personaId,
-      content: '长内容'.repeat(500),
-      parameterProfileId: profile.id,
-    })
+    const settings = await systemAiSettings.getSettings()
+    settings.values.interestAnalysis.temperature = 0.1
+    await systemAiSettings.updateSettings(settings.values)
+    const created = await generation.createInterestRun({ personaId, content: '长内容'.repeat(500) })
 
-    await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: false })
-    const failed = await generation.getRun(created.runId)
-    expect(failed.run).toMatchObject({ status: 'failed', errorCode: 'TASK_LIMIT_EXCEEDED', usage: null })
-    expect(model.calls.get('interest_assessment') ?? 0).toBe(beforeCalls)
+    const details = await generation.getRun(created.runId)
+    expect(profile.values.maxPromptCharacters).toBe(1_000)
+    expect(details.run.parameters).toMatchObject({ temperature: 0.1, maxPromptCharacters: 120_000 })
+    expect(database.getClient().prepare('SELECT parameter_profile_id FROM generation_runs WHERE id = ?').get(created.runId))
+      .toEqual({ parameter_profile_id: null })
   })
 
-  it('供应商报告用量超过运行总 Token 上限时保存用量并停止重试', async () => {
+  it('兴趣分析不会继承图文生成设置的总 Token 上限', async () => {
     const profile = await generation.createParameterProfile({
       name: '小型 Token 预算',
       values: { ...DEFAULT_TEXT_PARAMETERS, maxTotalTokens: 64 },
     })
     model.usage = { inputTokens: 70, outputTokens: 30, totalTokens: 100 }
-    const created = await generation.createInterestRun({ personaId, content: '学院课程', parameterProfileId: profile.id })
+    const created = await generation.createInterestRun({ personaId, content: '学院课程' })
 
-    await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: false })
-    const failed = await generation.getRun(created.runId)
-    expect(failed.run).toMatchObject({
-      status: 'failed', errorCode: 'TASK_LIMIT_EXCEEDED',
+    await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: true })
+    const completed = await generation.getRun(created.runId)
+    expect(profile.values.maxTotalTokens).toBe(64)
+    expect(completed.run).toMatchObject({
+      status: 'succeeded', errorCode: null, parameters: { maxTotalTokens: 50_000 },
       usage: { inputTokens: 70, outputTokens: 30, totalTokens: 100 },
     })
-    expect(failed.tasks[0]).toMatchObject({ attemptCount: 1, status: 'failed' })
   })
 
   it('规划规格后必须确认，确认后串行生成并保存独立块尝试', async () => {
@@ -463,7 +474,7 @@ describe('阶段三纯文本运行', () => {
   })
 
   it('排队运行可协作取消且不会再被 Worker 领取', async () => {
-    const created = await generation.createInterestRun({ personaId, content: '魔法学院课程', parameterProfileId: null })
+    const created = await generation.createInterestRun({ personaId, content: '魔法学院课程' })
     await generation.cancelRun(created.runId)
     expect((await generation.getRun(created.runId)).run.status).toBe('canceled')
     await expect(worker.executeNext()).resolves.toMatchObject({ handled: false })

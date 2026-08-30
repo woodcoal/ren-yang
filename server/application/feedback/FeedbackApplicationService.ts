@@ -13,6 +13,7 @@ import type { TextModelPort } from '../../ports/TextModelPort'
 import { TextModelError } from '../../ports/TextModelPort'
 import { ApplicationError } from '../errors/ApplicationError'
 import type { AiPromptApplicationService } from '../aiPrompts/AiPromptApplicationService'
+import type { SystemAiSettingsApplicationService } from '../systemAi/SystemAiSettingsApplicationService'
 import {
   buildFeedbackClassificationVariables,
   FEEDBACK_CLASSIFICATION_PROMPT_CODE,
@@ -56,6 +57,8 @@ export interface FeedbackApplicationServiceDependencies {
   clock: Clock
   /** OpenViking 启用时使用的 Session 与反馈资料投影队列。 */
   contextSyncQueue?: ContextSyncTaskQueue
+  /** 系统反馈分类参数；未提供时保持原固定参数，便于独立测试。 */
+  systemAiSettings?: Pick<SystemAiSettingsApplicationService, 'resolveParameters'>
 }
 
 /** 编排反馈归因、一次性动作和显式人物成长素材创建。 */
@@ -92,11 +95,14 @@ export class FeedbackApplicationService {
         editedOutput: input.editedOutput ?? null,
       }),
     )
+    const parameters = this.dependencies.systemAiSettings
+      ? await this.dependencies.systemAiSettings.resolveParameters('feedbackClassification', FEEDBACK_MODEL_PARAMETERS)
+      : { ...FEEDBACK_MODEL_PARAMETERS }
     let suggestion
     try {
       const response = await this.dependencies.model.generateStructured({
         ...prompt,
-        parameters: FEEDBACK_MODEL_PARAMETERS,
+        parameters,
         responseSchemaName: 'feedback_classification',
       })
       suggestion = feedbackClassificationSuggestionSchema.parse(response.structuredOutput)
@@ -122,7 +128,7 @@ export class FeedbackApplicationService {
         feedbackId,
         ...suggestion,
         modelSnapshot: model,
-        parameterSnapshot: FEEDBACK_MODEL_PARAMETERS,
+        parameterSnapshot: parameters,
         promptVersion: prompt.versionId,
         createdAt: timestamp,
       },

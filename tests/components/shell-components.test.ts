@@ -73,5 +73,6 @@ describe('后台品牌与主题组件', () => {
     const systemGroup = appNavigationGroups.find(group => group.label === '系统')
 
     expect(systemGroup?.items).toContainEqual({ label: '提示词', to: '/prompts', icon: 'i-lucide-braces' })
+    expect(systemGroup?.items).toContainEqual({ label: '系统 AI', to: '/system-ai-settings', icon: 'i-lucide-cpu' })
   })
 })

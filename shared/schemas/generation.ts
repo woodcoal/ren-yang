@@ -78,7 +78,6 @@ export const createInterestRunSchema = z.object({
   personaId: z.string().uuid('人物标识无效'),
   content: z.string().trim().min(1, '待判断内容不能为空').max(50_000),
   scene: sceneContextSchema.optional(),
-  parameterProfileId: z.string().uuid('参数方案标识无效').nullable().optional(),
 })
 
 /** 文档规划运行输入。 */
