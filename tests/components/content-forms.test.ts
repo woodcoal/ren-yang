@@ -5,8 +5,8 @@ import PersonaDraftAssistant from '../../app/components/content/PersonaDraftAssi
 import PersonaForm from '../../app/components/content/PersonaForm.vue'
 import QuickCreateSubjectModal from '../../app/components/content/QuickCreateSubjectModal.vue'
 import SourceImportForm from '../../app/components/content/SourceImportForm.vue'
+import SubjectSourceManager from '../../app/components/content/SubjectSourceManager.vue'
 import WorldForm from '../../app/components/content/WorldForm.vue'
-import WorldSourceManager from '../../app/components/content/WorldSourceManager.vue'
 import SoulWorkspace from '../../app/components/content/SoulWorkspace.vue'
 
 /**
@@ -53,6 +53,9 @@ describe('阶段二内容表单', () => {
     await flushPromises()
     expect(document.body.textContent).toContain('AI 正在生成世界初始设定')
     expect(document.body.textContent).toContain('请保持当前页面开启，不要重复提交')
+    expect(document.querySelector('[data-subject-creation-overlay]')?.className).toContain('fixed')
+    expect(document.querySelector('[data-subject-creation-overlay]')?.className).toContain('z-[9999]')
+    expect(document.querySelector('[data-subject-creation-spinner]')?.className).toContain('animate-spin')
     expect(document.querySelector('textarea')).toBeNull()
   })
 
@@ -182,7 +185,7 @@ describe('阶段二内容表单', () => {
     expect(wrapper.emitted('publish')).toBeUndefined()
   })
 
-  it('世界资料区可直接加入已有资料或解除关联', async () => {
+  it('人物与世界共用资料区通过弹窗搜索加入，并在确认后解除关联', async () => {
     const linkedSource = {
       id: '00000000-0000-4000-8000-000000000001', name: '现有资料', role: 'canon_fact' as const,
       inputType: 'paste' as const, contentHash: 'a'.repeat(64), contentText: '已加入正文', originalFilePath: null,
@@ -193,16 +196,58 @@ describe('阶段二内容表单', () => {
       id: '00000000-0000-4000-8000-000000000002', name: '待加入资料', role: 'reference' as const,
       contentText: '待加入正文', linkCount: 0,
     }
-    const wrapper = await mountSuspended(WorldSourceManager, {
-      props: { linkedSources: [linkedSource], allSources: [linkedSource, availableSource], loading: false, errorMessage: null },
+    const wrapper = await mountSuspended(SubjectSourceManager, {
+      props: {
+        subjectType: 'persona', subjectName: '档案员', linkedSources: [linkedSource],
+        allSources: [linkedSource, availableSource], loading: false, errorMessage: null,
+      },
     })
 
     expect(wrapper.text()).toContain('解除关联不会删除资料本身')
-    await wrapper.findAll('button').find(button => button.text() === '加入')!.trigger('click')
-    await wrapper.get('button[aria-label="从世界中移除资料"]').trigger('click')
+    await wrapper.findAll('button').find(button => button.text() === '导入资料')!.trigger('click')
+    await flushPromises()
+    const sourcePicker = document.querySelector<HTMLInputElement>('input[aria-label="选择已有资料"]')
+    expect(sourcePicker).toBeDefined()
+    await new DOMWrapper(sourcePicker!).setValue('待加入')
+    await flushPromises()
+    const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')]
+      .find(element => element.textContent?.includes('待加入资料'))
+    expect(option).toBeDefined()
+    await new DOMWrapper(option!).trigger('click')
+    await flushPromises()
+    const importButton = [...document.querySelectorAll<HTMLButtonElement>('button')]
+      .find(button => button.textContent?.trim() === '加入所选资料')
+    expect(importButton).toBeDefined()
+    await new DOMWrapper(importButton!).trigger('click')
+    await wrapper.get('button[aria-label="解除资料关联：现有资料"]').trigger('click')
+    await flushPromises()
 
-    expect(wrapper.emitted('link')).toEqual([[availableSource.id]])
+    expect(wrapper.emitted('unlink')).toBeUndefined()
+    expect(document.body.textContent).toContain('确认解除资料关联')
+    const confirmButton = [...document.querySelectorAll<HTMLButtonElement>('button')]
+      .find(button => button.textContent?.trim() === '确认解除')
+    expect(confirmButton).toBeDefined()
+    await new DOMWrapper(confirmButton!).trigger('click')
+
+    expect(wrapper.emitted('link')).toEqual([[[availableSource.id]]])
     expect(wrapper.emitted('unlink')).toEqual([[linkedSource.id]])
+
+    await wrapper.findAll('button').find(button => button.text() === '新建资料')!.trigger('click')
+    await flushPromises()
+    expect(document.body.textContent).toContain('创建后会自动加入当前人物“档案员”')
+    const createModal = [...document.querySelectorAll<HTMLElement>('[role="dialog"]')]
+      .find(element => element.textContent?.includes('新建资料'))
+    expect(createModal).toBeDefined()
+    const createForms = createModal!.querySelectorAll('form')
+    const createName = createForms[0]!.querySelector<HTMLInputElement>('input[type="text"]')
+    const createContent = createForms[0]!.querySelector<HTMLTextAreaElement>('textarea')
+    expect(createName).toBeDefined()
+    expect(createContent).toBeDefined()
+    await new DOMWrapper(createName!).setValue('新建人物资料')
+    await new DOMWrapper(createContent!).setValue('创建后应由详情页固定关联当前人物。')
+    await new DOMWrapper(createForms[0]!).trigger('submit')
+    await flushPromises()
+    expect(wrapper.emitted('paste')?.[0]?.[0]).toEqual(expect.objectContaining({ name: '新建人物资料' }))
   })
 
   it('文件资料表单要求用户明确选择文件', async () => {

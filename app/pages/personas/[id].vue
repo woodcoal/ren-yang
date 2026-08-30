@@ -1,21 +1,23 @@
 <script setup lang="ts">
 import type { FormSubmitEvent } from '@nuxt/ui'
 import { computed, reactive, shallowRef } from 'vue'
-import type { SaveSoulDraftInput, UpdatePersonaInput } from '#shared/schemas/content'
+import type { CreateSourceWithTargetsInput, SaveSoulDraftInput, UpdatePersonaInput } from '#shared/schemas/content'
 import { updatePersonaSchema } from '#shared/schemas/content'
 import type { ApiResponse } from '#shared/types/api'
-import type { DeletionImpact, PersonaDetails, SoulWorkspaceView, WorldSummary } from '#shared/types/content'
+import type { DeletionImpact, PersonaDetails, SoulWorkspaceView, SourceDetails, SourceSummary, WorldSummary } from '#shared/types/content'
 import type { PersonaGrowthWorkspaceView, PersonaMemoryWorkspaceView } from '#shared/types/learning'
 import type { AnalysisBatchView, ProposedLearningContentView } from '#shared/types/analysis'
+import type { SourceFileSubmission } from '../../components/content/SourceImportForm.vue'
 import { getApiErrorMessage } from '../../utils/apiError'
 
-type PersonaTab = 'overview' | 'soul' | 'growth' | 'memory' | 'relations'
+type PersonaTab = 'overview' | 'soul' | 'growth' | 'memory' | 'sources' | 'relations'
 
 const personaId = String(useRoute().params.id)
 const [
   { data, error, refresh },
   { data: soulData, refresh: refreshSoul },
   { data: worldData },
+  { data: sourceData, refresh: refreshSources },
   { data: growthData, refresh: refreshGrowth },
   { data: memoryData, refresh: refreshMemory },
   { data: growthAnalysisData, refresh: refreshGrowthAnalysis },
@@ -24,6 +26,7 @@ const [
   useFetch<ApiResponse<PersonaDetails>>(`/api/v1/personas/${personaId}`),
   useFetch<ApiResponse<SoulWorkspaceView>>(`/api/v1/personas/${personaId}/soul`),
   useFetch<ApiResponse<WorldSummary[]>>('/api/v1/worlds'),
+  useFetch<ApiResponse<SourceSummary[]>>('/api/v1/sources'),
   useFetch<ApiResponse<PersonaGrowthWorkspaceView>>(`/api/v1/personas/${personaId}/growth`),
   useFetch<ApiResponse<PersonaMemoryWorkspaceView>>(`/api/v1/personas/${personaId}/memories`),
   useFetch<ApiResponse<AnalysisBatchView | null>>('/api/v1/analysis-batches/latest', { query: { analysisType: 'persona_growth', subjectId: personaId } }),
@@ -33,6 +36,7 @@ const [
 const details = computed(() => data.value?.data ?? null)
 const soul = computed(() => soulData.value?.data ?? null)
 const worlds = computed(() => worldData.value?.data ?? [])
+const allSources = computed(() => sourceData.value?.data ?? [])
 const growthWorkspace = computed(() => growthData.value?.data ?? { feedbackSources: [], growth: [] })
 const memoryWorkspace = computed(() => memoryData.value?.data ?? { operationRecords: [], memories: [] })
 const growthAnalysis = computed(() => growthAnalysisData.value?.data ?? null)
@@ -42,7 +46,8 @@ const tabs: Array<{ id: PersonaTab, label: string }> = [
   { id: 'soul', label: '灵魂' },
   { id: 'growth', label: '成长' },
   { id: 'memory', label: '记忆' },
-  { id: 'relations', label: '世界与资料' },
+  { id: 'sources', label: '资料' },
+  { id: 'relations', label: '基本信息与管理' },
 ]
 const selectedTab = shallowRef<PersonaTab>('overview')
 const metadata = reactive<UpdatePersonaInput>({
@@ -212,6 +217,94 @@ async function reviewAnalysisProposal(target: 'growth' | 'memory', decision: {
     if (target === 'growth') await Promise.all([refreshGrowthAnalysis(), refreshGrowth()])
     else await Promise.all([refreshMemoryAnalysis(), refreshMemory()])
   })
+}
+
+/**
+ * 把选中的已有资料依次关联到当前人物。
+ * @param sourceIds 资料 UUID 列表。
+ * @returns 全部关联和详情刷新完成时结束。
+ */
+async function linkSources(sourceIds: string[]): Promise<void> {
+  await runAction(`${sourceIds.length} 项资料已加入这个人物`, async () => {
+    try {
+      for (const sourceId of sourceIds) {
+        await $fetch(`/api/v1/sources/${sourceId}/links`, {
+          method: 'POST',
+          body: { targetType: 'persona', targetId: personaId, priority: 100 },
+        })
+      }
+    }
+    finally {
+      // 单项接口可能在批量处理中途失败，仍需刷新已成功写入的关联。
+      await Promise.all([refresh(), refreshSources()])
+    }
+  })
+}
+
+/**
+ * 解除资料与人物的关系，不删除资料正文。
+ * @param sourceId 资料 UUID。
+ * @returns 解除和详情刷新完成时结束。
+ */
+async function unlinkSource(sourceId: string): Promise<void> {
+  await runAction('资料已移出这个人物，资料本身仍保留', async () => {
+    await $fetch(`/api/v1/sources/${sourceId}/links/${encodeURIComponent(`persona:${personaId}`)}`, { method: 'DELETE' })
+    await Promise.all([refresh(), refreshSources()])
+  })
+}
+
+/**
+ * 创建粘贴文本资料并立即关联当前人物。
+ * @param input 已校验资料输入。
+ * @returns 创建和详情刷新完成时结束。
+ */
+async function createPastedSource(input: CreateSourceWithTargetsInput): Promise<void> {
+  await runAction('新资料已创建并加入这个人物', async () => {
+    await $fetch<ApiResponse<SourceDetails>>('/api/v1/sources', {
+      method: 'POST',
+      body: { ...input, targets: [{ targetType: 'persona', targetId: personaId }] },
+    })
+    await Promise.all([refresh(), refreshSources()])
+  })
+}
+
+/**
+ * 逐个上传文件资料并在创建时关联当前人物。
+ * @param input 共用用途和带独立名称的文件列表。
+ * @returns 全部文件处理和详情刷新完成时结束。
+ */
+async function importSourceFile(input: SourceFileSubmission): Promise<void> {
+  actionLoading.value = true
+  actionError.value = null
+  actionMessage.value = null
+  let succeeded = 0
+  const failures: string[] = []
+  try {
+    for (const item of input.files) {
+      const body = new FormData()
+      body.set('name', item.name)
+      body.set('role', input.role)
+      body.set('targets', JSON.stringify([{ targetType: 'persona', targetId: personaId }]))
+      body.set('file', item.file)
+      try {
+        await $fetch<ApiResponse<SourceDetails>>('/api/v1/sources/files', { method: 'POST', body })
+        succeeded += 1
+      }
+      catch (requestError: unknown) {
+        failures.push(`${item.file.name}：${getApiErrorMessage(requestError, '导入失败')}`)
+      }
+    }
+    if (succeeded > 0) await Promise.all([refresh(), refreshSources()])
+    if (failures.length > 0) {
+      actionError.value = `成功 ${succeeded} 个，失败 ${failures.length} 个。${failures.join('；')}`
+    }
+    else {
+      actionMessage.value = `${succeeded} 个新资料已创建并加入这个人物`
+    }
+  }
+  finally {
+    actionLoading.value = false
+  }
 }
 
 /**
@@ -389,6 +482,20 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
         </div>
       </div>
 
+      <ContentSubjectSourceManager
+        v-else-if="selectedTab === 'sources'"
+        subject-type="persona"
+        :subject-name="details.persona.name"
+        :linked-sources="details.sources"
+        :all-sources="allSources"
+        :loading="actionLoading"
+        :error-message="actionError"
+        @link="linkSources"
+        @unlink="unlinkSource"
+        @paste="createPastedSource"
+        @file="importSourceFile"
+      />
+
       <div v-else class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
         <div class="space-y-6">
           <UCard>
@@ -400,13 +507,6 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
               </UFormField>
               <div class="md:col-span-2"><UButton type="submit" :loading="actionLoading">保存基本信息</UButton></div>
             </UForm>
-          </UCard>
-          <UCard>
-            <template #header><div><h2 class="font-semibold text-highlighted">参考资料</h2><p class="mt-1 text-sm text-muted">普通参考资料帮助当前任务取证，不会自动变成人物成长。</p></div></template>
-            <div v-if="details.sources.length" class="grid gap-3 sm:grid-cols-2">
-              <NuxtLink v-for="source in details.sources" :key="source.id" :to="`/sources/${source.id}`" class="rounded-lg border border-default p-3"><p class="font-medium text-highlighted">{{ source.name }}</p><p class="mt-1 line-clamp-2 text-sm text-muted">{{ source.contentText }}</p></NuxtLink>
-            </div>
-            <p v-else class="text-sm text-muted">当前没有直接关联的参考资料。</p>
           </UCard>
         </div>
         <UCard>

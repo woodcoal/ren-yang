@@ -36,7 +36,7 @@ const tabs: Array<{ id: WorldTab, label: string }> = [
   { id: 'overview', label: '概览' },
   { id: 'soul', label: '灵魂' },
   { id: 'growth', label: '成长' },
-  { id: 'sources', label: '世界资料' },
+  { id: 'sources', label: '资料' },
   { id: 'relations', label: '人物与管理' },
 ]
 const selectedTab = shallowRef<WorldTab>('overview')
@@ -167,17 +167,24 @@ async function reviewWorldGrowthProposal(decision: {
 }
 
 /**
- * 把已有资料关联到当前世界。
- * @param sourceId 资料 UUID。
- * @returns 关联和刷新完成时结束。
+ * 把选中的已有资料依次关联到当前世界。
+ * @param sourceIds 资料 UUID 列表。
+ * @returns 全部关联和刷新完成时结束。
  */
-async function linkSource(sourceId: string): Promise<void> {
-  await runAction('资料已加入这个世界', async () => {
-    await $fetch(`/api/v1/sources/${sourceId}/links`, {
-      method: 'POST',
-      body: { targetType: 'world', targetId: worldId, priority: 100 },
-    })
-    await Promise.all([refresh(), refreshSources()])
+async function linkSources(sourceIds: string[]): Promise<void> {
+  await runAction(`${sourceIds.length} 项资料已加入这个世界`, async () => {
+    try {
+      for (const sourceId of sourceIds) {
+        await $fetch(`/api/v1/sources/${sourceId}/links`, {
+          method: 'POST',
+          body: { targetType: 'world', targetId: worldId, priority: 100 },
+        })
+      }
+    }
+    finally {
+      // 单项接口可能在批量处理中途失败，仍需刷新已成功写入的关联。
+      await Promise.all([refresh(), refreshSources()])
+    }
   })
 }
 
@@ -394,8 +401,9 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
         </div>
       </div>
 
-      <ContentWorldSourceManager v-else-if="selectedTab === 'sources'" :linked-sources="details.sources"
-        :all-sources="allSources" :loading="actionLoading" :error-message="actionError" @link="linkSource"
+      <ContentSubjectSourceManager v-else-if="selectedTab === 'sources'" subject-type="world"
+        :subject-name="details.world.name" :linked-sources="details.sources"
+        :all-sources="allSources" :loading="actionLoading" :error-message="actionError" @link="linkSources"
         @unlink="unlinkSource" @paste="createPastedSource" @file="importSourceFile" />
 
       <div v-else class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">

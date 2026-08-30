@@ -55,13 +55,7 @@ function handleSubmit(event: FormSubmitEvent<SubjectInitializationInput>): void 
   <UModal v-model:open="open" :title="title" :description="description" :dismissible="!loading" :close="!loading">
     <slot />
     <template #body>
-      <div v-if="loading" class="flex min-h-64 flex-col items-center justify-center px-4 text-center" role="status" aria-live="polite">
-        <UIcon name="i-lucide-loader-circle" class="mb-5 size-10 animate-spin text-primary" aria-hidden="true" />
-        <strong class="text-base text-highlighted">{{ processingTitle }}</strong>
-        <p class="mt-2 max-w-md text-sm leading-6 text-muted">生成和结构校验可能需要几十秒，请保持当前页面开启，不要重复提交。</p>
-        <p class="mt-1 max-w-md text-sm leading-6 text-muted">处理完成后会自动进入{{ processingDestination }}继续调整。</p>
-      </div>
-      <UForm v-else :schema="subjectInitializationSchema" :state="state" class="space-y-4" @submit="handleSubmit">
+      <UForm v-if="!loading" :schema="subjectInitializationSchema" :state="state" class="space-y-4" @submit="handleSubmit">
         <UFormField name="prompt" :label="fieldLabel" required>
           <UTextarea
             v-model="state.prompt"
@@ -87,4 +81,23 @@ function handleSubmit(event: FormSubmitEvent<SubjectInitializationInput>): void 
       </UForm>
     </template>
   </UModal>
+
+  <Teleport to="body">
+    <div
+      v-if="loading"
+      data-subject-creation-overlay
+      class="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-default/95 px-6 text-center backdrop-blur-sm"
+      role="status"
+      aria-live="assertive"
+      aria-busy="true"
+    >
+      <div class="relative mb-7 flex size-20 items-center justify-center" aria-hidden="true">
+        <span class="absolute inset-0 animate-ping rounded-full bg-primary/20" />
+        <UIcon data-subject-creation-spinner name="i-lucide-loader-circle" class="relative size-14 animate-spin text-primary" />
+      </div>
+      <strong class="text-xl text-highlighted">{{ processingTitle }}</strong>
+      <p class="mt-3 max-w-lg text-sm leading-6 text-muted">生成和结构校验可能需要几十秒，请保持当前页面开启，不要重复提交。</p>
+      <p class="mt-1 max-w-lg text-sm leading-6 text-muted">处理完成后会自动进入{{ processingDestination }}继续调整。</p>
+    </div>
+  </Teleport>
 </template>
