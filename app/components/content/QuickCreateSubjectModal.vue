@@ -86,7 +86,7 @@ function handleSubmit(event: FormSubmitEvent<SubjectInitializationInput>): void 
     <div
       v-if="loading"
       data-subject-creation-overlay
-      class="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-default/95 px-6 text-center backdrop-blur-sm"
+      class="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-default/55 px-6 text-center backdrop-blur-md"
       role="status"
       aria-live="assertive"
       aria-busy="true"

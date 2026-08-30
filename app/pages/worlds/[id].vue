@@ -201,6 +201,18 @@ async function unlinkSource(sourceId: string): Promise<void> {
 }
 
 /**
+ * 修改资料全局启用状态，并刷新世界资料卡。
+ * @param input 资料 UUID 与目标启用状态。
+ * @returns 状态请求和资料刷新完成时结束。
+ */
+async function updateLinkedSourceStatus(input: { sourceId: string, isEnabled: boolean }): Promise<void> {
+  await runAction(input.isEnabled ? '资料已启用' : '资料已禁用', async () => {
+    await $fetch(`/api/v1/sources/${input.sourceId}/status`, { method: 'PATCH', body: { isEnabled: input.isEnabled } })
+    await Promise.all([refresh(), refreshSources()])
+  })
+}
+
+/**
  * 创建粘贴资料并立即关联当前世界。
  * @param input 已校验资料输入。
  * @returns 创建和关联完成时结束。
@@ -404,7 +416,7 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
       <ContentSubjectSourceManager v-else-if="selectedTab === 'sources'" subject-type="world"
         :subject-name="details.world.name" :linked-sources="details.sources"
         :all-sources="allSources" :loading="actionLoading" :error-message="actionError" @link="linkSources"
-        @unlink="unlinkSource" @paste="createPastedSource" @file="importSourceFile" />
+        @unlink="unlinkSource" @status="updateLinkedSourceStatus" @paste="createPastedSource" @file="importSourceFile" />
 
       <div v-else class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
         <div class="space-y-6">

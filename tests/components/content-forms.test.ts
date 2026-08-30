@@ -55,6 +55,8 @@ describe('阶段二内容表单', () => {
     expect(document.body.textContent).toContain('请保持当前页面开启，不要重复提交')
     expect(document.querySelector('[data-subject-creation-overlay]')?.className).toContain('fixed')
     expect(document.querySelector('[data-subject-creation-overlay]')?.className).toContain('z-[9999]')
+    expect(document.querySelector('[data-subject-creation-overlay]')?.className).toContain('bg-default/55')
+    expect(document.querySelector('[data-subject-creation-overlay]')?.className).toContain('backdrop-blur-md')
     expect(document.querySelector('[data-subject-creation-spinner]')?.className).toContain('animate-spin')
     expect(document.querySelector('textarea')).toBeNull()
   })
@@ -204,6 +206,22 @@ describe('阶段二内容表单', () => {
     })
 
     expect(wrapper.text()).toContain('解除关联不会删除资料本身')
+    expect(wrapper.get('a[aria-label="查看资料详情：现有资料"]').attributes('href')).toBe(`/sources/${linkedSource.id}`)
+    await wrapper.get('button[aria-label="禁用资料：现有资料"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.emitted('status')).toBeUndefined()
+    expect(document.body.textContent).toContain('确认禁用资料')
+    const confirmDisableButton = [...document.querySelectorAll<HTMLButtonElement>('button')]
+      .find(button => button.textContent?.trim() === '确认禁用')
+    expect(confirmDisableButton).toBeDefined()
+    await new DOMWrapper(confirmDisableButton!).trigger('click')
+    await flushPromises()
+    expect(wrapper.emitted('status')).toEqual([[{ sourceId: linkedSource.id, isEnabled: false }]])
+
+    await wrapper.setProps({ linkedSources: [{ ...linkedSource, isEnabled: false }] })
+    await wrapper.get('button[aria-label="启用资料：现有资料"]').trigger('click')
+    expect(wrapper.emitted('status')?.[1]).toEqual([{ sourceId: linkedSource.id, isEnabled: true }])
+
     await wrapper.findAll('button').find(button => button.text() === '导入资料')!.trigger('click')
     await flushPromises()
     const sourcePicker = document.querySelector<HTMLInputElement>('input[aria-label="选择已有资料"]')
@@ -248,6 +266,19 @@ describe('阶段二内容表单', () => {
     await new DOMWrapper(createForms[0]!).trigger('submit')
     await flushPromises()
     expect(wrapper.emitted('paste')?.[0]?.[0]).toEqual(expect.objectContaining({ name: '新建人物资料' }))
+
+    await wrapper.setProps({ loading: true })
+    await wrapper.setProps({ loading: false, errorMessage: null })
+    await flushPromises()
+    expect([...document.querySelectorAll<HTMLElement>('[role="dialog"]')]
+      .some(element => element.textContent?.includes('新建资料'))).toBe(false)
+
+    await wrapper.findAll('button').find(button => button.text() === '新建资料')!.trigger('click')
+    await flushPromises()
+    const reopenedCreateModal = [...document.querySelectorAll<HTMLElement>('[role="dialog"]')]
+      .find(element => element.textContent?.includes('新建资料'))
+    expect(reopenedCreateModal?.querySelector<HTMLInputElement>('input[type="text"]')?.value).toBe('')
+    expect(reopenedCreateModal?.querySelector<HTMLTextAreaElement>('textarea')?.value).toBe('')
   })
 
   it('文件资料表单要求用户明确选择文件', async () => {

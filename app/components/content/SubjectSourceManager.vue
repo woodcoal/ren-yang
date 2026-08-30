@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, shallowRef } from 'vue'
+import { computed, ref, shallowRef, watch } from 'vue'
 import type { CreateSourceWithTargetsInput } from '#shared/schemas/content'
 import type { SourceSummary } from '#shared/types/content'
 import type { SourceFileSubmission } from './SourceImportForm.vue'
@@ -36,6 +36,8 @@ const emit = defineEmits<{
   link: [sourceIds: string[]]
   /** 请求解除单项资料与当前对象的关系，但不删除资料。 */
   unlink: [sourceId: string]
+  /** 请求修改资料的全局启用状态。 */
+  status: [input: { sourceId: string, isEnabled: boolean }]
   /** 请求创建粘贴文本资料并自动加入当前对象。 */
   paste: [input: CreateSourceWithTargetsInput]
   /** 请求上传文件资料并自动加入当前对象。 */
@@ -50,13 +52,12 @@ const importModalOpen = shallowRef(false)
 const selectedSourceIds = ref<string[]>([])
 /** 等待用户确认解除关联的资料。 */
 const pendingUnlinkSource = shallowRef<SourceSummary | null>(null)
-
-/** 资料用途对应的通俗中文名称。 */
-const roleLabels: Record<SourceSummary['role'], string> = {
-  canon_fact: '原作事实',
-  reference: '背景参考',
-  style_sample: '写作风格参考',
-}
+/** 等待用户确认全局禁用的资料。 */
+const pendingDisableSource = shallowRef<SourceSummary | null>(null)
+/** 资料创建表单实例序号；递增后强制生成空白表单。 */
+const sourceFormKey = shallowRef(0)
+/** 是否正在等待一次资料创建请求完成。 */
+const createSubmissionPending = shallowRef(false)
 
 /** 当前对象类型的通俗中文名称。 */
 const subjectTypeLabel = computed(() => props.subjectType === 'persona' ? '人物' : '世界')
@@ -79,6 +80,16 @@ const availableSourceOptions = computed<SourceOption[]>(() => {
 function openImportModal(): void {
   selectedSourceIds.value = []
   importModalOpen.value = true
+}
+
+/**
+ * 打开一份全新的资料创建表单。
+ * @returns 无返回值。
+ */
+function openCreateModal(): void {
+  sourceFormKey.value += 1
+  createSubmissionPending.value = false
+  createModalOpen.value = true
 }
 
 /**
@@ -118,6 +129,73 @@ function confirmUnlink(): void {
   emit('unlink', pendingUnlinkSource.value.id)
   pendingUnlinkSource.value = null
 }
+
+/**
+ * 根据资料当前状态决定直接启用或先确认禁用。
+ * @param source 用户准备修改状态的资料。
+ * @returns 无返回值。
+ */
+function requestSourceStatusChange(source: SourceSummary): void {
+  if (source.isEnabled) {
+    pendingDisableSource.value = source
+    return
+  }
+  emit('status', { sourceId: source.id, isEnabled: true })
+}
+
+/**
+ * 关闭资料禁用确认框且不执行写操作。
+ * @returns 无返回值。
+ */
+function cancelDisableSource(): void {
+  pendingDisableSource.value = null
+}
+
+/**
+ * 用户确认后发出资料全局禁用事件。
+ * @returns 无返回值。
+ */
+function confirmDisableSource(): void {
+  if (!pendingDisableSource.value || props.loading) return
+  emit('status', { sourceId: pendingDisableSource.value.id, isEnabled: false })
+  pendingDisableSource.value = null
+}
+
+/**
+ * 提交粘贴文本资料，并标记当前创建弹窗等待父页处理结果。
+ * @param input 已校验的粘贴文本资料。
+ * @returns 无返回值。
+ */
+function submitPastedSource(input: CreateSourceWithTargetsInput): void {
+  createSubmissionPending.value = true
+  emit('paste', input)
+}
+
+/**
+ * 提交文件资料，并标记当前创建弹窗等待父页处理结果。
+ * @param input 已校验的批量文件资料。
+ * @returns 无返回值。
+ */
+function submitSourceFiles(input: SourceFileSubmission): void {
+  createSubmissionPending.value = true
+  emit('file', input)
+}
+
+/**
+ * 在一次创建请求结束后根据父页错误状态关闭或保留弹窗。
+ * @param loading 当前加载状态。
+ * @param previousLoading 上一次加载状态。
+ * @returns 无返回值。
+ */
+function handleLoadingChange(loading: boolean, previousLoading: boolean): void {
+  if (loading || !previousLoading || !createSubmissionPending.value) return
+  createSubmissionPending.value = false
+  if (props.errorMessage) return
+  createModalOpen.value = false
+  sourceFormKey.value += 1
+}
+
+watch(() => props.loading, handleLoadingChange)
 </script>
 
 <template>
@@ -128,41 +206,28 @@ function confirmUnlink(): void {
         <p class="mt-1 text-sm text-muted">这些资料可供当前{{ subjectTypeLabel }}处理任务时检索。解除关联不会删除资料本身。</p>
       </div>
       <div class="flex flex-wrap gap-2">
-        <UButton icon="i-lucide-file-plus-2" color="neutral" variant="soft" @click="createModalOpen = true">新建资料</UButton>
+        <UButton icon="i-lucide-file-plus-2" color="neutral" variant="soft" @click="openCreateModal">新建资料</UButton>
         <UButton icon="i-lucide-folder-input" @click="openImportModal">导入资料</UButton>
       </div>
     </div>
 
     <div v-if="props.linkedSources.length" class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-      <UCard v-for="source in props.linkedSources" :key="source.id">
-        <div class="flex items-start gap-3">
-          <div class="min-w-0 flex-1">
-            <NuxtLink :to="`/sources/${source.id}`" class="block truncate font-medium text-highlighted hover:text-primary">{{ source.name }}</NuxtLink>
-            <div class="mt-2 flex flex-wrap items-center gap-2">
-              <UBadge color="neutral" variant="subtle">{{ roleLabels[source.role] }}</UBadge>
-              <UBadge :color="source.isEnabled ? 'success' : 'neutral'" variant="subtle">{{ source.isEnabled ? '已启用' : '已禁用' }}</UBadge>
-            </div>
-            <p class="mt-3 line-clamp-3 text-sm leading-6 text-muted">{{ source.contentText }}</p>
-          </div>
-          <UButton
-            icon="i-lucide-unlink"
-            :aria-label="`解除资料关联：${source.name}`"
-            color="error"
-            variant="ghost"
-            size="xs"
-            :disabled="props.loading"
-            @click="requestUnlink(source)"
-          />
-        </div>
-      </UCard>
+      <ContentSubjectSourceCard
+        v-for="source in props.linkedSources"
+        :key="source.id"
+        :source="source"
+        :loading="props.loading"
+        @status="requestSourceStatusChange"
+        @unlink="requestUnlink"
+      />
     </div>
     <div v-else class="content-empty-state">
       <div><strong>还没有关联资料</strong><p class="mt-1 text-sm text-muted">可以新建资料，或从资料库导入已有资料。</p></div>
     </div>
 
-    <UModal v-model:open="createModalOpen" title="新建资料" :description="`创建后会自动加入当前${subjectTypeLabel}“${props.subjectName}”。`" scrollable :ui="{ content: 'max-w-6xl' }">
+    <UModal v-model:open="createModalOpen" title="新建资料" :description="`创建后会自动加入当前${subjectTypeLabel}“${props.subjectName}”。`" scrollable :dismissible="!props.loading" :close="!props.loading" :ui="{ content: 'max-w-6xl' }">
       <template #body>
-        <ContentSourceImportForm :loading="props.loading" :error-message="props.errorMessage" @paste="emit('paste', $event)" @file="emit('file', $event)" />
+        <ContentSourceImportForm :key="sourceFormKey" :loading="props.loading" :error-message="props.errorMessage" @paste="submitPastedSource" @file="submitSourceFiles" />
       </template>
     </UModal>
 
@@ -204,6 +269,18 @@ function confirmUnlink(): void {
         <div class="flex w-full justify-end gap-2">
           <UButton color="neutral" variant="ghost" :disabled="props.loading" @click="cancelUnlink">取消</UButton>
           <UButton color="error" :loading="props.loading" @click="confirmUnlink">确认解除</UButton>
+        </div>
+      </template>
+    </UModal>
+
+    <UModal :open="pendingDisableSource !== null" title="确认禁用资料" description="禁用是资料的全局状态，不会删除正文或使用关系。" :dismissible="!props.loading" :close="false">
+      <template #body>
+        <p class="text-sm text-muted">确定禁用“{{ pendingDisableSource?.name }}”吗？禁用后，所有人物和世界都不会再使用这项资料。</p>
+      </template>
+      <template #footer>
+        <div class="flex w-full justify-end gap-2">
+          <UButton color="neutral" variant="ghost" :disabled="props.loading" @click="cancelDisableSource">取消</UButton>
+          <UButton color="error" :loading="props.loading" @click="confirmDisableSource">确认禁用</UButton>
         </div>
       </template>
     </UModal>
