@@ -181,10 +181,7 @@ function formatTime(timestamp: number | null): string {
 
 /** @param snapshot 不可变人物版本快照。 @returns 按固定顺序展示的中文字段。 */
 function toPersonaSnapshotFields(snapshot: PersonaSnapshot): Array<{ label: string, value: string }> {
-  return [
-    { label: '实际使用的灵魂摘要', value: snapshot.runtimeSummary },
-    ...snapshot.chapters.map(chapter => ({ label: chapter.title, value: chapter.content })),
-  ]
+  return [{ label: '实际使用的灵魂提示词', value: snapshot.promptText }]
 }
 
 /** @param category 运行上下文分类。 @returns 后台通俗分类名称。 */

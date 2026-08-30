@@ -22,16 +22,7 @@ const emit = defineEmits<{
 const state = reactive<CreateWorldInput>({
   name: '',
   summary: '',
-  snapshot: {
-    chapters: [{
-      id: '00000000-0000-4000-8000-000000000002',
-      title: '基本规则与背景',
-      content: '',
-      order: 0,
-      required: true,
-    }],
-    runtimeSummary: '',
-  },
+  snapshot: { promptText: '' },
   changeSummary: '建立初始世界',
 })
 
@@ -55,7 +46,9 @@ function handleSubmit(event: FormSubmitEvent<CreateWorldInput>): void {
         <UInput v-model="state.summary" class="w-full" :disabled="loading" />
       </UFormField>
     </div>
-    <ContentSoulChapterEditor v-model="state.snapshot" subject-type="world" :disabled="loading" />
+    <UFormField name="snapshot.promptText" label="灵魂提示词" description="这段文本会在发布后直接进入人物任务。" required>
+      <UTextarea v-model="state.snapshot.promptText" class="w-full" :rows="14" autoresize :disabled="loading" />
+    </UFormField>
     <UFormField name="changeSummary" label="这次写了什么" description="方便以后在修改记录中辨认。" required>
       <UInput v-model="state.changeSummary" class="w-full" :disabled="loading" />
     </UFormField>

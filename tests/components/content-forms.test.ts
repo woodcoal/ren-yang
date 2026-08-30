@@ -68,8 +68,7 @@ describe('阶段二内容表单', () => {
     const inputs = wrapper.findAll('input')
     const textareas = wrapper.findAll('textarea')
     await inputs[0]!.setValue('林默')
-    await textareas[0]!.setValue('谨慎的档案管理员')
-    await textareas[1]!.setValue('谨慎的档案管理员，资料不足时说明未知。')
+    await textareas[0]!.setValue('谨慎的档案管理员，资料不足时说明未知。')
     await wrapper.get('form').trigger('submit')
     await flushPromises()
 
@@ -79,10 +78,7 @@ describe('阶段二内容表单', () => {
         origin: 'original',
         worldId: null,
         sourceIds: [],
-        snapshot: expect.objectContaining({
-          chapters: [expect.objectContaining({ title: '核心人设', content: '谨慎的档案管理员' })],
-          runtimeSummary: '谨慎的档案管理员，资料不足时说明未知。',
-        }),
+        snapshot: { promptText: '谨慎的档案管理员，资料不足时说明未知。' },
       }),
     ]])
   })
@@ -118,13 +114,7 @@ describe('阶段二内容表单', () => {
       origin: 'original' as const,
       worldId: null,
       sourceIds: [],
-      snapshot: {
-        chapters: [{
-          id: '00000000-0000-4000-8000-000000000001', title: '核心人设',
-          content: '谨慎的档案管理员，喜欢古代文献并重视证据。', order: 0, required: true,
-        }],
-        runtimeSummary: '谨慎的档案管理员，冷静简洁，未知事实必须说明不知道。',
-      },
+      snapshot: { promptText: '谨慎的档案管理员，冷静简洁，未知事实必须说明不知道。' },
       changeSummary: '根据自然语言生成初始候选档案',
     }
     const wrapper = await mountSuspended(PersonaForm, {
@@ -134,7 +124,7 @@ describe('阶段二内容表单', () => {
 
     expect(wrapper.emitted('submit')).toBeUndefined()
     expect((wrapper.findAll('input')[0]!.element as HTMLInputElement).value).toBe('林默')
-    expect((wrapper.findAll('textarea')[1]!.element as HTMLTextAreaElement).value).toBe(initialValue.snapshot.runtimeSummary)
+    expect((wrapper.findAll('textarea')[0]!.element as HTMLTextAreaElement).value).toBe(initialValue.snapshot.promptText)
     await wrapper.get('form').trigger('submit')
     await flushPromises()
     expect(wrapper.emitted('submit')?.[0]?.[0]).toEqual(initialValue)
@@ -149,17 +139,13 @@ describe('阶段二内容表单', () => {
     await flushPromises()
 
     expect(wrapper.emitted('submit')).toBeUndefined()
-    expect(wrapper.text()).toContain('章节正文不能为空')
-    expect(wrapper.text()).toContain('运行摘要不能为空')
+    expect(wrapper.text()).toContain('灵魂提示词不能为空')
     expect(wrapper.text()).toContain('简短说明')
-    expect(wrapper.text()).toContain('只有这里会进入新任务提示词')
+    expect(wrapper.text()).toContain('直接进入人物任务')
   })
 
-  it('灵魂历史版本只能复制为修改稿，发布动作与保存动作分开', async () => {
-    const snapshot = {
-      chapters: [{ id: '00000000-0000-4000-8000-000000000001', title: '规则', content: '当前正文', order: 0, required: true }],
-      runtimeSummary: '当前摘要',
-    }
+  it('灵魂使用单文本弹窗，可选择原文保存或自动分析且不会直接发布', async () => {
+    const snapshot = { promptText: '当前灵魂提示词' }
     const wrapper = await mountSuspended(SoulWorkspace, {
       props: {
         loading: false,
@@ -182,6 +168,35 @@ describe('阶段二内容表单', () => {
     })
 
     expect(wrapper.text()).toContain('历史版本只读')
+    await wrapper.findAll('button').find(button => button.text() === '修改灵魂')!.trigger('click')
+    await flushPromises()
+    const promptTextarea = document.querySelector<HTMLTextAreaElement>('[data-soul-prompt-form] textarea')
+    expect(promptTextarea).toBeDefined()
+    expect(promptTextarea!.value).toBe('当前灵魂提示词')
+    await new DOMWrapper(promptTextarea!).setValue('  用户原始灵魂文本  ')
+    const saveButton = [...document.querySelectorAll<HTMLButtonElement>('button')]
+      .find(button => button.textContent?.trim() === '保存修改稿')
+    expect(saveButton).toBeDefined()
+    await new DOMWrapper(saveButton!).trigger('click')
+    await flushPromises()
+    expect(wrapper.emitted('save')?.[0]).toEqual([{
+      baseVersionId: '00000000-0000-4000-8000-000000000001',
+      snapshot: { promptText: '用户原始灵魂文本' },
+      autoAnalyze: false,
+    }])
+    expect(wrapper.emitted('publish')).toBeUndefined()
+
+    const analyzeCheckbox = document.querySelector<HTMLElement>('[data-soul-auto-analyze]')
+    expect(analyzeCheckbox).toBeDefined()
+    await new DOMWrapper(analyzeCheckbox!).trigger('click')
+    const analyzeButton = [...document.querySelectorAll<HTMLButtonElement>('button')]
+      .find(button => button.textContent?.trim() === '分析并保存修改稿')
+    expect(analyzeButton).toBeDefined()
+    await new DOMWrapper(analyzeButton!).trigger('click')
+    await flushPromises()
+    expect(wrapper.emitted('save')?.[1]?.[0]).toMatchObject({ autoAnalyze: true })
+    expect(wrapper.emitted('publish')).toBeUndefined()
+
     await wrapper.findAll('button').find(button => button.text() === '复制为修改稿')!.trigger('click')
     expect(wrapper.emitted('from-version')).toEqual([['00000000-0000-4000-8000-000000000001']])
     expect(wrapper.emitted('publish')).toBeUndefined()

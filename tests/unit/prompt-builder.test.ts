@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { buildSoulPromptAnalysisPrompt } from '../../server/application/content/SoulPromptBuilder'
 import { buildDocumentPlanPrompt, buildInterestPrompt, buildWorldDraftPrompt, GENERATION_PROMPT_VERSION } from '../../server/application/generation/PromptBuilder'
 
 describe('真实模型提示契约', () => {
@@ -54,8 +55,17 @@ describe('真实模型提示契约', () => {
     expect(prompt.userPrompt).toContain('浮岛与风帆船构成的世界')
     expect(prompt.systemPrompt).toContain('用户明确描述是唯一事实来源')
     expect(prompt.systemPrompt).toContain('name、summary 和 snapshot')
-    expect(prompt.systemPrompt).toContain('chapters 和 runtimeSummary')
+    expect(prompt.systemPrompt).toContain('promptText')
     expect(prompt.systemPrompt).toContain('禁止写入返回内容')
     expect(prompt.systemPrompt).not.toContain('当前结果只是待用户编辑确认的候选草稿')
+  })
+
+  it('灵魂自动分析只允许整理表达并要求单文本结果', () => {
+    const prompt = buildSoulPromptAnalysisPrompt('persona', '谨慎的档案管理员。')
+
+    expect(prompt.systemPrompt).toContain('不得新增、推测或补全任何设定')
+    expect(prompt.systemPrompt).toContain('只能包含 promptText 字符串字段')
+    expect(prompt.systemPrompt).toContain('禁止写入候选、确认、发布、AI 生成')
+    expect(prompt.userPrompt).toContain('谨慎的档案管理员。')
   })
 })

@@ -171,6 +171,7 @@ export class ApplicationRuntime {
       identifiers,
       clock: this.clock,
       tokenCounter,
+      model: textModel,
       tokenBudgets: { world: 2_500, persona: 3_500 },
     })
     this.learningService = new LearningApplicationService({

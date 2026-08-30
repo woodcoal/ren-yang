@@ -842,7 +842,7 @@ export class ContentApplicationService {
     return {
       ...persona,
       worldName: world?.name ?? null,
-      currentSummary: active?.snapshot.runtimeSummary ?? null,
+      currentSummary: active?.snapshot.promptText ?? null,
       versionCount: versions.length,
       sourceCount: sources.length,
     }
@@ -868,7 +868,7 @@ export class ContentApplicationService {
     const active = versions.find(version => version.id === world.activeVersionId)
     return {
       ...world,
-      currentContent: active?.snapshot.runtimeSummary ?? null,
+      currentContent: active?.snapshot.promptText ?? null,
       versionCount: versions.length,
       personaCount: personas.length,
       sourceCount: sources.length,
@@ -920,24 +920,19 @@ export class ContentApplicationService {
 }
 
 /**
- * 生成两个灵魂快照的章节和运行摘要差异。
+ * 生成两个单文本灵魂快照的提示词差异。
  * @param before 基础快照。
  * @param after 目标快照。
  * @returns 仅含变化字段的稳定顺序列表。
  */
 function diffSoulSnapshots(before: PersonaSnapshot, after: PersonaSnapshot): VersionFieldDiff[] {
   const differences: VersionFieldDiff[] = []
-  const beforeChapters = JSON.stringify(before.chapters)
-  const afterChapters = JSON.stringify(after.chapters)
-  if (beforeChapters !== afterChapters) {
-    differences.push({ field: 'chapters', label: '灵魂章节', before: beforeChapters, after: afterChapters })
-  }
-  if (before.runtimeSummary !== after.runtimeSummary) {
+  if (before.promptText !== after.promptText) {
     differences.push({
-      field: 'runtimeSummary',
-      label: '运行摘要',
-      before: before.runtimeSummary,
-      after: after.runtimeSummary,
+      field: 'promptText',
+      label: '灵魂提示词',
+      before: before.promptText,
+      after: after.promptText,
     })
   }
   return differences

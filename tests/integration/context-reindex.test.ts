@@ -346,9 +346,9 @@ describe('OpenViking 可关闭索引与 SQLite 重建', () => {
     `).run(personaId, versionId)
     database.getClient().prepare(`
       INSERT INTO soul_versions (
-        id, subject_type, world_id, persona_id, chapters_json, runtime_summary,
+        id, subject_type, world_id, persona_id, prompt_text,
         runtime_token_count, token_counter, change_summary, status, published_at, created_at
-      ) VALUES (?, 'persona', NULL, ?, '[]', '测试人物', 4, 'test', '建立人物', 'published', 1000, 1000)
+      ) VALUES (?, 'persona', NULL, ?, '测试人物', 4, 'test', '建立人物', 'published', 1000, 1000)
     `).run(versionId, personaId)
     database.getClient().prepare(`
       INSERT INTO generation_runs (

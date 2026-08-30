@@ -1,23 +1,7 @@
-/** 灵魂中的一段可自由编排内容。 */
-export interface SoulChapter {
-  /** 跨草稿与版本保持稳定的章节 UUID。 */
-  id: string
-  /** 供用户辨认的章节标题。 */
-  title: string
-  /** 章节完整正文。 */
-  content: string
-  /** 从零开始且连续的展示顺序。 */
-  order: number
-  /** 是否属于运行摘要不得遗漏的核心内容。 */
-  required: boolean
-}
-
-/** 世界与人物共用的完整灵魂内容。 */
+/** 世界与人物共用的单文本灵魂快照。 */
 export interface SoulSnapshot {
-  /** 用于管理、编辑和追溯的有序自由章节。 */
-  chapters: SoulChapter[]
-  /** 受预算约束且实际进入模型提示词的稳定摘要。 */
-  runtimeSummary: string
+  /** 受预算约束且直接进入模型提示词的完整灵魂文本。 */
+  promptText: string
 }
 
 /** 人物灵魂的完整不可变快照。 */
@@ -27,7 +11,7 @@ export type PersonaSnapshot = SoulSnapshot
 export interface PersonaDraftView {
   /** 模型建议的人物名称。 */
   name: string
-  /** 模型建议的结构化人物快照。 */
+  /** 模型建议的单文本人物灵魂。 */
   snapshot: PersonaSnapshot
   /** 参考资料被截断等不影响人工继续编辑的提示。 */
   warnings: string[]
@@ -42,7 +26,7 @@ export interface WorldDraftView {
   name: string
   /** 只用于后台辨认的简短说明。 */
   summary: string
-  /** 模型建议的结构化世界快照。 */
+  /** 模型建议的单文本世界灵魂。 */
   snapshot: WorldSnapshot
 }
 
@@ -80,7 +64,7 @@ export interface SoulVersionView {
   status: 'published' | 'archived' | 'rejected'
   /** 发布时完整灵魂快照。 */
   snapshot: SoulSnapshot
-  /** 运行摘要发布时 Token 数。 */
+  /** 灵魂提示词发布时 Token 数。 */
   runtimeTokenCount: number
   /** 发布时使用的计数器说明。 */
   tokenCounter: string
@@ -120,7 +104,7 @@ export interface PersonaSummary {
   origin: 'original' | 'source_based' | 'hybrid'
   /** 当前已发布版本 UUID。 */
   activeVersionId: string | null
-  /** 当前已发布灵魂的运行摘要。 */
+  /** 当前已发布灵魂提示词的列表预览。 */
   currentSummary: string | null
   /** 是否允许人物参与后续新任务。 */
   isEnabled: boolean
@@ -186,7 +170,7 @@ export interface WorldSummary {
   summary: string
   /** 当前已发布版本 UUID。 */
   activeVersionId: string | null
-  /** 当前已发布世界灵魂的运行摘要。 */
+  /** 当前已发布世界灵魂提示词的列表预览。 */
   currentContent: string | null
   /** 是否允许世界参与后续新任务。 */
   isEnabled: boolean

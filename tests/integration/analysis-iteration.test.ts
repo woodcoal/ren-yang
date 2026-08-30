@@ -118,8 +118,7 @@ beforeEach(async () => {
   const world = await content.createWorld({
     name: '水城世界', summary: '',
     snapshot: {
-      chapters: [{ id: '70000000-0000-4000-8000-000000000001', title: '规则', content: '城邦文明依赖河网。', order: 0, required: true }],
-      runtimeSummary: '城邦文明依赖河网。',
+      promptText: '城邦文明依赖河网。',
     },
     changeSummary: '建立世界',
   })

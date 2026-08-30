@@ -202,12 +202,10 @@ function seedReferencedData(): void {
   `).run(IDS.persona, IDS.version)
   client.prepare(`
     INSERT INTO soul_versions (
-      id, subject_type, world_id, persona_id, parent_version_id, chapters_json, runtime_summary,
+      id, subject_type, world_id, persona_id, parent_version_id, prompt_text,
       runtime_token_count, token_counter, change_summary, status, published_at, created_at
-    ) VALUES (?, 'persona', NULL, ?, NULL, ?, '谨慎的学院档案员。', 12, 'test', '初始版本', 'published', 1000, 1000)
-  `).run(IDS.version, IDS.persona, JSON.stringify([{
-    id: '00000000-0000-4000-8000-000000000012', title: '核心设定', content: '谨慎的学院档案员。', order: 0, required: true,
-  }]))
+    ) VALUES (?, 'persona', NULL, ?, NULL, ?, 12, 'test', '初始版本', 'published', 1000, 1000)
+  `).run(IDS.version, IDS.persona, '谨慎的学院档案员。')
   client.prepare(`
     INSERT INTO generation_runs (
       id, kind, persona_version_id, status, input_json, parameter_snapshot_json, model_snapshot_json,

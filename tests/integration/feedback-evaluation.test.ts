@@ -91,16 +91,9 @@ class RecordingContextSyncQueue implements ContextSyncTaskQueue {
   }
 }
 
-/** 测试使用的自由章节人物灵魂。 */
+/** 测试使用的单文本人物灵魂。 */
 const BASE_SNAPSHOT: PersonaSnapshot = {
-  chapters: [{
-    id: '00000000-0000-4000-8000-000000000020',
-    title: '核心设定',
-    content: '谨慎的档案管理员，重视证据。',
-    order: 0,
-    required: true,
-  }],
-  runtimeSummary: '谨慎的档案管理员；资料不足时说明未知。',
+  promptText: '谨慎的档案管理员；资料不足时说明未知。',
 }
 
 /** 测试固定业务 UUID。 */
@@ -281,10 +274,10 @@ function seedPublishedPersonaAndRun(): void {
   `).run(IDS.persona, IDS.version)
   client.prepare(`
     INSERT INTO soul_versions (
-      id, subject_type, world_id, persona_id, parent_version_id, chapters_json, runtime_summary,
+      id, subject_type, world_id, persona_id, parent_version_id, prompt_text,
       runtime_token_count, token_counter, change_summary, status, published_at, created_at
-    ) VALUES (?, 'persona', NULL, ?, NULL, ?, ?, 20, 'test', '初始版本', 'published', 1000, 1000)
-  `).run(IDS.version, IDS.persona, JSON.stringify(BASE_SNAPSHOT.chapters), BASE_SNAPSHOT.runtimeSummary)
+    ) VALUES (?, 'persona', NULL, ?, NULL, ?, 20, 'test', '初始版本', 'published', 1000, 1000)
+  `).run(IDS.version, IDS.persona, BASE_SNAPSHOT.promptText)
   client.prepare(`
     INSERT INTO generation_runs (
       id, kind, persona_version_id, status, input_json, scene_json, parameter_snapshot_json,

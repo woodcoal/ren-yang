@@ -390,7 +390,7 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
           <template #header>
             <h2 class="font-semibold text-highlighted">当前世界状态</h2>
           </template>
-          <p class="whitespace-pre-wrap text-sm leading-6 text-muted">{{ soul.activeVersion?.snapshot.runtimeSummary ||
+          <p class="whitespace-pre-wrap text-sm leading-6 text-muted">{{ soul.activeVersion?.snapshot.promptText ||
             '世界还没有发布灵魂。发布前，关联人物的新任务不会读取世界。' }}</p>
           <UButton class="mt-4" color="neutral" variant="soft" @click="selectTab('soul')">查看和编辑世界灵魂</UButton>
         </UCard>
@@ -399,7 +399,7 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
             <h2 class="font-semibold text-highlighted">世界如何变化</h2>
           </template>
           <div class="space-y-3 text-sm text-muted">
-            <p>灵魂保存稳定的世界规则和受限运行摘要。</p>
+            <p>灵魂保存会直接进入新任务的稳定世界提示词。</p>
             <p>成长从已启用的世界资料中分析，候选仍需人工确认。</p>
             <p>世界没有人物式记忆，不会从人物处理过程反向形成长期规则。</p>
           </div>

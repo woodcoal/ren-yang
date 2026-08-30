@@ -73,7 +73,7 @@ export class AnalysisApplicationService implements TaskHandler {
       mode: input.mode,
       baselineSoulVersionId: prepared.soul.id,
       baseline: [
-        { type: 'soul', id: prepared.soul.id, runtimeSummary: prepared.soul.snapshot.runtimeSummary },
+        { type: 'soul', id: prepared.soul.id, promptText: prepared.soul.snapshot.promptText },
         ...prepared.baseline,
       ],
       model,

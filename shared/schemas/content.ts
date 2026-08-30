@@ -21,19 +21,9 @@ export const personaOriginSchema = z.enum(['original', 'source_based', 'hybrid']
 /** 资料角色校验。 */
 export const sourceRoleSchema = z.enum(['canon_fact', 'reference', 'style_sample'], { error: '资料角色无效' })
 
-/** 单个自由灵魂章节校验。 */
-export const soulChapterSchema = z.object({
-  id: z.string().uuid('章节标识无效'),
-  title: z.string().trim().min(1, '章节标题不能为空').max(100, '章节标题不能超过 100 字'),
-  content: z.string().trim().min(1, '章节正文不能为空').max(50_000, '单个章节不能超过 50000 字'),
-  order: z.number().int('章节顺序必须是整数').min(0, '章节顺序不能小于 0'),
-  required: z.boolean(),
-})
-
 /** 世界与人物共用的灵魂快照校验。 */
 export const soulSnapshotSchema = z.object({
-  chapters: z.array(soulChapterSchema).min(1, '至少需要一个灵魂章节').max(50, '灵魂章节不能超过 50 个'),
-  runtimeSummary: z.string().trim().min(1, '运行摘要不能为空').max(50_000, '运行摘要不能超过 50000 字'),
+  promptText: z.string().trim().min(1, '灵魂提示词不能为空').max(50_000, '灵魂提示词不能超过 50000 字'),
 })
 
 /** 人物灵魂快照校验。 */
@@ -56,10 +46,7 @@ export const personaDraftSchema = z.object({
   name: z.string().trim().min(1, '人物名称不能为空').max(100, '人物名称不能超过 100 字'),
   snapshot: personaSnapshotSchema,
 }).superRefine((value, context) => {
-  rejectInitializationMetaText([
-    value.snapshot.runtimeSummary,
-    ...value.snapshot.chapters.flatMap(chapter => [chapter.title, chapter.content]),
-  ], context)
+  rejectInitializationMetaText([value.snapshot.promptText], context)
 })
 
 /** 从自然语言生成世界候选草稿的输入。 */
@@ -74,11 +61,7 @@ export const worldDraftSchema = z.object({
   summary: z.string().trim().max(2_000, '世界摘要不能超过 2000 字'),
   snapshot: worldSnapshotSchema,
 }).superRefine((value, context) => {
-  rejectInitializationMetaText([
-    value.summary,
-    value.snapshot.runtimeSummary,
-    ...value.snapshot.chapters.flatMap(chapter => [chapter.title, chapter.content]),
-  ], context)
+  rejectInitializationMetaText([value.summary, value.snapshot.promptText], context)
 })
 
 /** 创建人物及其初始候选版本的输入。 */
@@ -163,8 +146,11 @@ export const rollbackWorldSchema = z.object({
 export const saveSoulDraftSchema = z.object({
   baseVersionId: z.string().uuid('基础版本标识无效').nullable(),
   snapshot: soulSnapshotSchema,
-  changeSummary: z.string().trim().min(1, '修改说明不能为空').max(500, '修改说明不能超过 500 字'),
+  autoAnalyze: z.boolean().default(false),
 })
+
+/** 模型整理灵魂提示词后的结构化响应。 */
+export const analyzedSoulPromptSchema = soulSnapshotSchema
 
 /** 从历史版本建立可编辑灵魂草稿的输入。 */
 export const createSoulDraftFromVersionSchema = z.object({

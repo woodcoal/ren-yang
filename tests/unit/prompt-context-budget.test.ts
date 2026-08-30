@@ -84,6 +84,6 @@ describe('提示词分层 Token 预算', () => {
       worldSoulTokens: 0,
       personaSoulTokens: 801,
       candidates: [],
-    })).toThrow('人物灵魂运行摘要超过人物灵魂预算')
+    })).toThrow('人物灵魂提示词超过人物灵魂预算')
   })
 })

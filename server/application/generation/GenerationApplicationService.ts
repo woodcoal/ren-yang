@@ -178,10 +178,10 @@ export class GenerationApplicationService implements TaskHandler {
       if (!version || version.status !== 'published') {
         throw new ApplicationError('WORLD_VERSION_NOT_ACTIVE', '所选世界当前版本不可用', 409)
       }
-      const runtimeSummary = version.snapshot.runtimeSummary.slice(0, PERSONA_DRAFT_WORLD_CHARACTER_LIMIT)
-      world = { chapters: version.snapshot.chapters, runtimeSummary }
-      if (runtimeSummary.length < version.snapshot.runtimeSummary.length) {
-        warnings.push('世界运行摘要较长，生成人物草稿时仅使用前 10000 字')
+      const promptText = version.snapshot.promptText.slice(0, PERSONA_DRAFT_WORLD_CHARACTER_LIMIT)
+      world = { promptText }
+      if (promptText.length < version.snapshot.promptText.length) {
+        warnings.push('世界灵魂提示词较长，生成人物草稿时仅使用前 10000 字')
       }
     }
 
@@ -509,9 +509,9 @@ export class GenerationApplicationService implements TaskHandler {
     const tokenCounterModel = model.model
     const fixedInputTokens = this.countPromptTokens(tokenCounterModel, fixedPrompt)
     const worldSoulCount = activeWorldVersion
-      ? this.dependencies.tokenCounter.count(tokenCounterModel, activeWorldVersion.snapshot.runtimeSummary)
+      ? this.dependencies.tokenCounter.count(tokenCounterModel, activeWorldVersion.snapshot.promptText)
       : { tokens: 0, mode: 'estimated' as const, counter: 'none' }
-    const personaSoulCount = this.dependencies.tokenCounter.count(tokenCounterModel, version.snapshot.runtimeSummary)
+    const personaSoulCount = this.dependencies.tokenCounter.count(tokenCounterModel, version.snapshot.promptText)
     const prepared = await this.preparePromptBudgetCandidates(
       effectivePersona,
       contextSearch.candidates,

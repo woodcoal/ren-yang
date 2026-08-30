@@ -74,14 +74,10 @@ class FixedTextModel implements TextModelPort {
       const result = {
         name: '林默',
         snapshot: {
-          chapters: [
-            { id: '50000000-0000-4000-8000-000000000001', title: '身份与倾向', content: '谨慎的学院档案员，负责整理学院档案，重视可核验事实。', order: 0, required: true },
-            { id: '50000000-0000-4000-8000-000000000002', title: '表达与边界', content: '冷静简洁；资料不足时明确说明未知。', order: 1, required: true },
-          ],
-          runtimeSummary: '谨慎的学院档案员；重视可核验事实；冷静简洁；资料不足时明确说明未知。',
+          promptText: '谨慎的学院档案员；重视可核验事实；冷静简洁；资料不足时明确说明未知。',
         },
       }
-      if (this.invalidPersonaMetaOnce && call === 1) result.snapshot.runtimeSummary = '该设定仅为待用户编辑确认的候选草稿，尚未发布。'
+      if (this.invalidPersonaMetaOnce && call === 1) result.snapshot.promptText = '该设定仅为待用户编辑确认的候选草稿，尚未发布。'
       return response(result, this.usage)
     }
     if (request.responseSchemaName === 'world_draft') {
@@ -89,14 +85,10 @@ class FixedTextModel implements TextModelPort {
         name: '浮岛纪元',
         summary: '浮空岛屿与风帆航路构成的架空世界。',
         snapshot: {
-          chapters: [
-            { id: '60000000-0000-4000-8000-000000000001', title: '世界背景', content: '人类定居在浮空岛屿，依靠风帆船往来。', order: 0, required: true },
-            { id: '60000000-0000-4000-8000-000000000002', title: '核心规则', content: '航路受季风与浮石能量约束。', order: 1, required: true },
-          ],
-          runtimeSummary: '人类定居浮空岛屿，依靠风帆船与受季风约束的航路往来。',
+          promptText: '人类定居浮空岛屿，依靠风帆船与受季风约束的航路往来。',
         },
       }
-      if (this.invalidWorldMetaOnce && call === 1) result.snapshot.runtimeSummary = '该设定仅为候选草稿，尚未发布，也不代表已影响任何人物。'
+      if (this.invalidWorldMetaOnce && call === 1) result.snapshot.promptText = '该设定仅为候选草稿，尚未发布，也不代表已影响任何人物。'
       return response(result, this.usage)
     }
     if (request.responseSchemaName === 'interest_assessment') {
@@ -182,11 +174,7 @@ function readEvidence(prompt: string): Array<{ id: string, role: string }> {
 }
 
 const PERSONA_SNAPSHOT: PersonaSnapshot = {
-  chapters: [
-    { id: '50000000-0000-4000-8000-000000000003', title: '核心人设', content: '热爱知识的学院观察员，关注课程与图书馆，重视求证。', order: 0, required: true },
-    { id: '50000000-0000-4000-8000-000000000004', title: '表达与边界', content: '冷静简洁；资料不足时说明未知。', order: 1, required: true },
-  ],
-  runtimeSummary: '热爱知识的学院观察员；重视求证；冷静简洁；资料不足时说明未知。',
+  promptText: '热爱知识的学院观察员；重视求证；冷静简洁；资料不足时说明未知。',
 }
 
 let directory: string
@@ -263,7 +251,7 @@ describe('阶段三纯文本运行', () => {
 
     expect(draft).toMatchObject({
       name: '林默',
-      snapshot: { runtimeSummary: expect.stringContaining('谨慎的学院档案员') },
+      snapshot: { promptText: expect.stringContaining('谨慎的学院档案员') },
       warnings: [],
     })
     const request = model.requests.get('persona_draft')!
@@ -285,12 +273,12 @@ describe('阶段三纯文本运行', () => {
     expect(draft).toMatchObject({
       name: '浮岛纪元',
       summary: expect.stringContaining('浮空岛屿'),
-      snapshot: { runtimeSummary: expect.stringContaining('季风') },
+      snapshot: { promptText: expect.stringContaining('季风') },
     })
     const request = model.requests.get('world_draft')!
     expect(request.userPrompt).toContain('人类生活在浮空岛屿')
     expect(request.systemPrompt).toContain('字段必须为 name、summary 和 snapshot')
-    expect(request.systemPrompt).toContain('runtimeSummary 是实际进入人物任务提示词')
+    expect(request.systemPrompt).toContain('promptText 是实际进入人物任务提示词')
     expect(request.systemPrompt).toContain('禁止写入返回内容')
     expect(model.calls.get('world_draft')).toBe(2)
     expect(JSON.stringify(draft)).not.toContain('候选草稿')
@@ -349,8 +337,7 @@ describe('阶段三纯文本运行', () => {
     const world = await contentService.createWorld({
       name: '暂时停用的世界', summary: '',
       snapshot: {
-        chapters: [{ id: '60000000-0000-4000-8000-000000000099', title: '世界规则', content: '所有课程必须在浮岛进行。', order: 0, required: true }],
-        runtimeSummary: '所有课程必须在浮岛进行。',
+        promptText: '所有课程必须在浮岛进行。',
       },
       changeSummary: '建立世界',
     })

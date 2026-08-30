@@ -69,14 +69,12 @@ export class SqliteContentRepository implements ContentRepository, SoulRepositor
       `).run(record.id, record.worldId, record.name, record.origin, record.timestamp, record.timestamp)
       this.client.prepare(`
         INSERT INTO soul_drafts (
-          id, subject_type, persona_id, base_version_id, chapters_json, runtime_summary,
-          change_summary, created_at, updated_at
-        ) VALUES (?, 'persona', ?, NULL, ?, ?, ?, ?, ?)
+          id, subject_type, persona_id, base_version_id, prompt_text, change_summary, created_at, updated_at
+        ) VALUES (?, 'persona', ?, NULL, ?, ?, ?, ?)
       `).run(
         record.draftId,
         record.id,
-        JSON.stringify(record.snapshot.chapters),
-        record.snapshot.runtimeSummary,
+        record.snapshot.promptText,
         record.changeSummary,
         record.timestamp,
         record.timestamp,
@@ -233,14 +231,12 @@ export class SqliteContentRepository implements ContentRepository, SoulRepositor
       `).run(record.id, record.name, record.summary, record.timestamp, record.timestamp)
       this.client.prepare(`
         INSERT INTO soul_drafts (
-          id, subject_type, world_id, base_version_id, chapters_json, runtime_summary,
-          change_summary, created_at, updated_at
-        ) VALUES (?, 'world', ?, NULL, ?, ?, ?, ?, ?)
+          id, subject_type, world_id, base_version_id, prompt_text, change_summary, created_at, updated_at
+        ) VALUES (?, 'world', ?, NULL, ?, ?, ?, ?)
       `).run(
         record.draftId,
         record.id,
-        JSON.stringify(record.snapshot.chapters),
-        record.snapshot.runtimeSummary,
+        record.snapshot.promptText,
         record.changeSummary,
         record.timestamp,
         record.timestamp,
@@ -387,17 +383,16 @@ export class SqliteContentRepository implements ContentRepository, SoulRepositor
       `).run(draft.subjectType, draft.subjectId)
       this.client.prepare(`
         INSERT INTO soul_drafts (
-          id, subject_type, world_id, persona_id, base_version_id, chapters_json,
-          runtime_summary, change_summary, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          id, subject_type, world_id, persona_id, base_version_id, prompt_text,
+          change_summary, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         draft.id,
         draft.subjectType,
         draft.subjectType === 'world' ? draft.subjectId : null,
         draft.subjectType === 'persona' ? draft.subjectId : null,
         draft.baseVersionId,
-        JSON.stringify(draft.snapshot.chapters),
-        draft.snapshot.runtimeSummary,
+        draft.snapshot.promptText,
         draft.changeSummary,
         draft.createdAt,
         draft.updatedAt,
@@ -469,18 +464,17 @@ export class SqliteContentRepository implements ContentRepository, SoulRepositor
       }
       this.client.prepare(`
         INSERT INTO soul_versions (
-          id, subject_type, world_id, persona_id, parent_version_id, chapters_json,
-          runtime_summary, runtime_token_count, token_counter, change_summary,
+          id, subject_type, world_id, persona_id, parent_version_id, prompt_text,
+          runtime_token_count, token_counter, change_summary,
           status, published_at, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'published', ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'published', ?, ?)
       `).run(
         version.id,
         version.subjectType,
         version.subjectType === 'world' ? version.subjectId : null,
         version.subjectType === 'persona' ? version.subjectId : null,
         version.parentVersionId,
-        JSON.stringify(version.snapshot.chapters),
-        version.snapshot.runtimeSummary,
+        version.snapshot.promptText,
         version.runtimeTokenCount,
         version.tokenCounter,
         version.changeSummary,
@@ -843,10 +837,7 @@ function toPersonaVersion(value: unknown): PersonaVersionRecord {
     personaId: String(row.persona_id),
     parentVersionId: row.parent_version_id === null ? null : String(row.parent_version_id),
     status: row.status as PersonaVersionRecord['status'],
-    snapshot: soulSnapshotSchema.parse({
-      chapters: JSON.parse(String(row.chapters_json)),
-      runtimeSummary: String(row.runtime_summary),
-    }),
+    snapshot: soulSnapshotSchema.parse({ promptText: String(row.prompt_text) }),
     runtimeTokenCount: Number(row.runtime_token_count),
     tokenCounter: String(row.token_counter),
     changeSummary: String(row.change_summary),
@@ -877,10 +868,7 @@ function toWorldVersion(value: unknown): WorldVersionRecord {
     worldId: String(row.world_id),
     parentVersionId: row.parent_version_id === null ? null : String(row.parent_version_id),
     status: row.status as WorldVersionRecord['status'],
-    snapshot: soulSnapshotSchema.parse({
-      chapters: JSON.parse(String(row.chapters_json)),
-      runtimeSummary: String(row.runtime_summary),
-    }),
+    snapshot: soulSnapshotSchema.parse({ promptText: String(row.prompt_text) }),
     runtimeTokenCount: Number(row.runtime_token_count),
     tokenCounter: String(row.token_counter),
     changeSummary: String(row.change_summary),
@@ -902,10 +890,7 @@ function toSoulDraft(value: unknown): SoulDraftRecord {
     subjectType,
     subjectId: String(subjectType === 'world' ? row.world_id : row.persona_id),
     baseVersionId: row.base_version_id === null ? null : String(row.base_version_id),
-    snapshot: soulSnapshotSchema.parse({
-      chapters: JSON.parse(String(row.chapters_json)),
-      runtimeSummary: String(row.runtime_summary),
-    }),
+    snapshot: soulSnapshotSchema.parse({ promptText: String(row.prompt_text) }),
     changeSummary: String(row.change_summary),
     createdAt: Number(row.created_at),
     updatedAt: Number(row.updated_at),
@@ -926,10 +911,7 @@ function toSoulVersion(value: unknown): SoulVersionRecord {
     subjectId: String(subjectType === 'world' ? row.world_id : row.persona_id),
     parentVersionId: row.parent_version_id === null ? null : String(row.parent_version_id),
     status: row.status as SoulVersionRecord['status'],
-    snapshot: soulSnapshotSchema.parse({
-      chapters: JSON.parse(String(row.chapters_json)),
-      runtimeSummary: String(row.runtime_summary),
-    }),
+    snapshot: soulSnapshotSchema.parse({ promptText: String(row.prompt_text) }),
     runtimeTokenCount: Number(row.runtime_token_count),
     tokenCounter: String(row.token_counter),
     changeSummary: String(row.change_summary),

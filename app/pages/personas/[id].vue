@@ -436,7 +436,7 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
       <div v-if="selectedTab === 'overview'" class="grid gap-6 xl:grid-cols-2">
         <UCard>
           <template #header><h2 class="font-semibold text-highlighted">当前人物状态</h2></template>
-          <p class="whitespace-pre-wrap text-sm leading-6 text-muted">{{ soul.activeVersion?.snapshot.runtimeSummary || '人物还没有发布灵魂。完善并发布灵魂后，才能稳定模拟这个人物。' }}</p>
+          <p class="whitespace-pre-wrap text-sm leading-6 text-muted">{{ soul.activeVersion?.snapshot.promptText || '人物还没有发布灵魂。完善并发布灵魂后，才能稳定模拟这个人物。' }}</p>
           <UButton class="mt-4" color="neutral" variant="soft" @click="selectTab('soul')">查看和编辑灵魂</UButton>
         </UCard>
         <UCard>

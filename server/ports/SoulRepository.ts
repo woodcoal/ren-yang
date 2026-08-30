@@ -6,7 +6,7 @@ export interface PublishSoulDraftRecord {
   draftId: string
   /** 新不可变灵魂版本标识。 */
   versionId: string
-  /** 发布时运行摘要 Token 数。 */
+  /** 发布时灵魂提示词 Token 数。 */
   runtimeTokenCount: number
   /** 发布时计数器与模型说明。 */
   tokenCounter: string

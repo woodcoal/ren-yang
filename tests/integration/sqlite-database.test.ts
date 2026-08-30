@@ -50,7 +50,7 @@ describe('SqliteDatabase', () => {
       ORDER BY name
     `).all()
     expect(tables).toEqual([{ name: 'administrators' }, { name: 'task_jobs' }])
-    expect(current.getClient().prepare(`SELECT COUNT(*) AS count FROM __drizzle_migrations`).get()).toEqual({ count: 3 })
+    expect(current.getClient().prepare(`SELECT COUNT(*) AS count FROM __drizzle_migrations`).get()).toEqual({ count: 4 })
     expect(current.getClient().prepare(`PRAGMA table_info(source_materials)`).all()).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'is_enabled', notnull: 1, dflt_value: '1' }),
     ]))
@@ -139,6 +139,58 @@ describe('SqliteDatabase', () => {
     expect(database.getClient().prepare('SELECT name, is_enabled FROM worlds').get()).toEqual({
       name: '旧世界', is_enabled: 1,
     })
+    expect(database.getClient().prepare('PRAGMA foreign_key_check').all()).toEqual([])
+  })
+
+  it('灵魂单文本迁移保留旧运行摘要并移除旧结构字段', () => {
+    temporaryDirectory = mkdtempSync(resolve(tmpdir(), 'ren-yang-soul-prompt-upgrade-test-'))
+    const oldMigrationsDirectory = resolve(temporaryDirectory, 'old-drizzle')
+    mkdirSync(resolve(oldMigrationsDirectory, 'meta'), { recursive: true })
+    for (const migration of ['0000_baseline.sql', '0001_source_material_status.sql', '0002_persona_world_status.sql']) {
+      copyFileSync(resolve(process.cwd(), `drizzle/${migration}`), resolve(oldMigrationsDirectory, migration))
+    }
+    writeFileSync(resolve(oldMigrationsDirectory, 'meta/_journal.json'), JSON.stringify({
+      version: '7', dialect: 'sqlite', entries: [
+        { idx: 0, version: '6', when: 1788028900254, tag: '0000_baseline', breakpoints: true },
+        { idx: 1, version: '6', when: 1788036380272, tag: '0001_source_material_status', breakpoints: true },
+        { idx: 2, version: '6', when: 1788042164727, tag: '0002_persona_world_status', breakpoints: true },
+      ],
+    }))
+
+    database = new SqliteDatabase({ dataDirectory: temporaryDirectory, migrationsDirectory: oldMigrationsDirectory })
+    database.getClient().prepare(`
+      INSERT INTO worlds (id, name, summary, active_soul_version_id, created_at, updated_at)
+      VALUES ('world-1', '旧世界', '迁移前世界', 'version-1', 1000, 1000)
+    `).run()
+    database.getClient().prepare(`
+      INSERT INTO soul_versions (
+        id, subject_type, world_id, persona_id, parent_version_id, chapters_json, runtime_summary,
+        runtime_token_count, token_counter, change_summary, status, published_at, created_at
+      ) VALUES ('version-1', 'world', 'world-1', NULL, NULL, '[{"id":"chapter-1"}]', '旧世界发布提示词。',
+        8, 'test', '旧发布版本', 'published', 1000, 1000)
+    `).run()
+    database.getClient().prepare(`
+      INSERT INTO soul_drafts (
+        id, subject_type, world_id, persona_id, base_version_id, chapters_json, runtime_summary,
+        change_summary, created_at, updated_at
+      ) VALUES ('draft-1', 'world', 'world-1', NULL, 'version-1', '[{"id":"chapter-2"}]',
+        '旧世界草稿提示词。', '旧修改稿', 2000, 2000)
+    `).run()
+    database.close()
+
+    database = new SqliteDatabase({ dataDirectory: temporaryDirectory, migrationsDirectory: resolve(process.cwd(), 'drizzle') })
+    expect(database.getClient().prepare('SELECT prompt_text FROM soul_versions WHERE id = ?').get('version-1')).toEqual({
+      prompt_text: '旧世界发布提示词。',
+    })
+    expect(database.getClient().prepare('SELECT prompt_text FROM soul_drafts WHERE id = ?').get('draft-1')).toEqual({
+      prompt_text: '旧世界草稿提示词。',
+    })
+    for (const table of ['soul_versions', 'soul_drafts']) {
+      const columns = database.getClient().prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>
+      expect(columns.map(column => column.name)).toContain('prompt_text')
+      expect(columns.map(column => column.name)).not.toContain('chapters_json')
+      expect(columns.map(column => column.name)).not.toContain('runtime_summary')
+    }
     expect(database.getClient().prepare('PRAGMA foreign_key_check').all()).toEqual([])
   })
 

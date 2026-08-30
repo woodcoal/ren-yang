@@ -13,6 +13,7 @@ import { SqliteAuditRepository } from '../../server/infrastructure/database/Sqli
 import { ConservativeTokenCounter } from '../../server/infrastructure/model/ConservativeTokenCounter'
 import type { Clock } from '../../server/ports/Clock'
 import type { IdentifierGenerator } from '../../server/ports/IdentifierGenerator'
+import type { TextModelPort, TextModelRequest, TextModelResponse } from '../../server/ports/TextModelPort'
 import type { PersonaSnapshot } from '../../shared/types/content'
 import { listSourcesPageSchema, listSubjectsPageSchema } from '../../shared/schemas/content'
 
@@ -45,25 +46,57 @@ class MutableClock implements Clock {
   }
 }
 
+/** 返回固定结构结果并记录调用的灵魂整理测试模型。 */
+class RecordingTextModel implements TextModelPort {
+  /** 收到的全部模型请求，用于确认手动模式不会调用模型。 */
+  public readonly requests: TextModelRequest[] = []
+
+  /**
+   * 创建固定结果模型。
+   * @param structuredOutput 每次调用返回的结构化结果。
+   * @param configured 是否声明模型已配置。
+   */
+  constructor(
+    private readonly structuredOutput: unknown,
+    private readonly configured = true,
+  ) {}
+
+  /**
+   * 返回测试模型的非敏感配置快照。
+   * @returns 已配置时返回固定快照，否则返回 null。
+   */
+  getConfiguredModel() {
+    return this.configured
+      ? { provider: 'openai_compatible' as const, model: 'soul-test-model', endpointOrigin: 'https://model.test' }
+      : null
+  }
+
+  /**
+   * 记录灵魂整理请求并返回预设结果。
+   * @param request 应用服务构造的结构化模型请求。
+   * @returns 固定结构化输出及零用量测试数据。
+   */
+  async generateStructured(request: TextModelRequest): Promise<TextModelResponse> {
+    this.requests.push(request)
+    return {
+      structuredOutput: this.structuredOutput,
+      usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+    }
+  }
+}
+
 /** 基础人物档案。 */
 const BASE_PERSONA_SNAPSHOT: PersonaSnapshot = {
-  chapters: [
-    { id: '00000000-0000-4000-8000-000000000101', title: '核心人设', content: '谨慎的档案管理员，重视证据。', order: 0, required: true },
-    { id: '00000000-0000-4000-8000-000000000102', title: '表达与边界', content: '表达简洁克制；资料不足时说明未知。', order: 1, required: true },
-  ],
-  runtimeSummary: '谨慎的档案管理员，重视证据；表达简洁克制，资料不足时说明未知。',
+  promptText: '谨慎的档案管理员，重视证据；表达简洁克制，资料不足时说明未知。',
 }
 
 /**
- * 创建单章节世界灵魂测试快照。
- * @param content 世界规则正文和运行摘要。
+ * 创建单文本世界灵魂测试快照。
+ * @param content 世界规则提示词。
  * @returns 可直接提交的世界灵魂快照。
  */
 function createWorldSnapshot(content: string) {
-  return {
-    chapters: [{ id: '00000000-0000-4000-8000-000000000201', title: '基本规则', content, order: 0, required: true }],
-    runtimeSummary: content,
-  }
+  return { promptText: content }
 }
 
 /** 当前测试数据目录。 */
@@ -146,17 +179,17 @@ describe('人物、世界与资料管理闭环', () => {
     const initialVersion = await soulService.publishDraft('persona', created.persona.id)
     await soulService.saveDraft('persona', created.persona.id, {
       baseVersionId: initialVersion.id,
-      snapshot: { ...BASE_PERSONA_SNAPSHOT, runtimeSummary: '谨慎的档案管理员；表达冷静、简短，避免修辞。' },
-      changeSummary: '收紧表达风格',
+      snapshot: { promptText: '谨慎的档案管理员；表达冷静、简短，避免修辞。' },
+      autoAnalyze: false,
     })
     clock.timestamp = 3_000
     const changedVersion = await soulService.publishDraft('persona', created.persona.id)
 
     const differences = await service.comparePersonaVersions(initialVersion.id, changedVersion.id)
     expect(differences).toEqual([{
-      field: 'runtimeSummary',
-      label: '运行摘要',
-      before: BASE_PERSONA_SNAPSHOT.runtimeSummary,
+      field: 'promptText',
+      label: '灵魂提示词',
+      before: BASE_PERSONA_SNAPSHOT.promptText,
       after: '谨慎的档案管理员；表达冷静、简短，避免修辞。',
     }])
 
@@ -165,6 +198,114 @@ describe('人物、世界与资料管理闭环', () => {
     expect(afterCopy.activeVersion?.id).toBe(changedVersion.id)
     expect(afterCopy.draft).toMatchObject({ baseVersionId: initialVersion.id, snapshot: BASE_PERSONA_SNAPSHOT })
     expect(afterCopy.versions).toHaveLength(2)
+  })
+
+  it('手动保存灵魂只移除首尾空白且不调用模型', async () => {
+    const created = await service.createPersona({
+      name: '手动整理测试人物',
+      origin: 'original',
+      worldId: null,
+      sourceIds: [],
+      snapshot: BASE_PERSONA_SNAPSHOT,
+      changeSummary: '建立人物',
+    })
+    const model = new RecordingTextModel({ promptText: '模型不应被调用。' })
+    const manualSoulService = new SoulApplicationService({
+      content: new SqliteContentRepository(database.getClient()),
+      souls: new SqliteContentRepository(database.getClient()),
+      identifiers: new SequentialIdentifierGenerator(),
+      clock,
+      tokenCounter: new ConservativeTokenCounter(),
+      model,
+      tokenBudgets: { world: 2_500, persona: 3_500 },
+    })
+
+    const draft = await manualSoulService.saveDraft('persona', created.persona.id, {
+      baseVersionId: null,
+      snapshot: { promptText: '  第一段。\n\n  第二段。  ' },
+      autoAnalyze: false,
+    })
+
+    expect(draft.snapshot.promptText).toBe('第一段。\n\n  第二段。')
+    expect(draft.changeSummary).toBe('手动修改灵魂提示词')
+    expect(model.requests).toEqual([])
+  })
+
+  it('自动分析把模型整理结果保存为未发布草稿', async () => {
+    const created = await service.createWorld({
+      name: '自动整理测试世界',
+      summary: '',
+      snapshot: createWorldSnapshot('旧世界规则。'),
+      changeSummary: '建立世界',
+    })
+    const model = new RecordingTextModel({ promptText: '所有城市位于浮岛；远行依赖风帆船。' })
+    const analyzedSoulService = new SoulApplicationService({
+      content: new SqliteContentRepository(database.getClient()),
+      souls: new SqliteContentRepository(database.getClient()),
+      identifiers: new SequentialIdentifierGenerator(),
+      clock,
+      tokenCounter: new ConservativeTokenCounter(),
+      model,
+      tokenBudgets: { world: 2_500, persona: 3_500 },
+    })
+
+    const draft = await analyzedSoulService.saveDraft('world', created.world.id, {
+      baseVersionId: null,
+      snapshot: { promptText: '城市在天上，坐船出门。' },
+      autoAnalyze: true,
+    })
+    const workspace = await analyzedSoulService.getSoul('world', created.world.id)
+
+    expect(draft).toMatchObject({
+      snapshot: { promptText: '所有城市位于浮岛；远行依赖风帆船。' },
+      changeSummary: 'AI 整理灵魂提示词',
+    })
+    expect(workspace.activeVersion).toBeNull()
+    expect(workspace.draft?.snapshot).toEqual(draft.snapshot)
+    expect(model.requests).toHaveLength(1)
+    expect(model.requests[0]?.userPrompt).toContain('城市在天上，坐船出门。')
+  })
+
+  it('自动分析不可用或输出无效时不覆盖原草稿', async () => {
+    const created = await service.createPersona({
+      name: '失败保护测试人物',
+      origin: 'original',
+      worldId: null,
+      sourceIds: [],
+      snapshot: BASE_PERSONA_SNAPSHOT,
+      changeSummary: '建立人物',
+    })
+    const originalDraft = await soulService.getSoul('persona', created.persona.id)
+    const repository = new SqliteContentRepository(database.getClient())
+    /**
+     * 创建使用指定测试模型的灵魂应用服务。
+     * @param model 待验证的固定模型端口。
+     * @returns 共享当前测试数据库的灵魂应用服务。
+     */
+    const createAnalyzedSoulService = (model: TextModelPort) => new SoulApplicationService({
+      content: repository,
+      souls: repository,
+      identifiers: new SequentialIdentifierGenerator(),
+      clock,
+      tokenCounter: new ConservativeTokenCounter(),
+      model,
+      tokenBudgets: { world: 2_500, persona: 3_500 },
+    })
+
+    await expect(createAnalyzedSoulService(new RecordingTextModel({}, false)).saveDraft('persona', created.persona.id, {
+      baseVersionId: null,
+      snapshot: { promptText: '不应保存的输入一。' },
+      autoAnalyze: true,
+    })).rejects.toMatchObject<ApplicationError>({ code: 'CAPABILITY_DISABLED', statusCode: 422 })
+    await expect(createAnalyzedSoulService(new RecordingTextModel({ promptText: '   ' })).saveDraft('persona', created.persona.id, {
+      baseVersionId: null,
+      snapshot: { promptText: '不应保存的输入二。' },
+      autoAnalyze: true,
+    })).rejects.toMatchObject<ApplicationError>({ code: 'MODEL_OUTPUT_INVALID', statusCode: 502 })
+    await expect(soulService.getSoul('persona', created.persona.id)).resolves.toMatchObject({
+      draft: { id: originalDraft.draft?.id, snapshot: BASE_PERSONA_SNAPSHOT },
+      activeVersion: null,
+    })
   })
 
   it('资料型人物必须有关联资料，原创和混合型不强制资料', async () => {
@@ -192,8 +333,7 @@ describe('人物、世界与资料管理闭环', () => {
       name: '浮岛纪元',
       summary: '以浮岛航行为核心的架空世界',
       snapshot: {
-        chapters: [{ id: '00000000-0000-4000-8000-000000000201', title: '基本规则', content: '所有城市位于浮岛，远行依赖风帆船。', order: 0, required: true }],
-        runtimeSummary: '所有城市位于浮岛，远行依赖风帆船。',
+        promptText: '所有城市位于浮岛，远行依赖风帆船。',
       },
       changeSummary: '建立世界',
     })
@@ -231,13 +371,13 @@ describe('人物、世界与资料管理闭环', () => {
     await soulService.saveDraft('world', world.world.id, {
       baseVersionId: initialVersion.id,
       snapshot: createWorldSnapshot('曾被任务使用的规则。'),
-      changeSummary: '历史任务使用版本',
+      autoAnalyze: false,
     })
     const usedVersion = await soulService.publishDraft('world', world.world.id)
     await soulService.saveDraft('world', world.world.id, {
       baseVersionId: initialVersion.id,
       snapshot: createWorldSnapshot('当前规则。'),
-      changeSummary: '当前版本',
+      autoAnalyze: false,
     })
     const activeVersion = await soulService.publishDraft('world', world.world.id)
 
@@ -286,13 +426,13 @@ describe('人物、世界与资料管理闭环', () => {
     await soulService.saveDraft('world', world.world.id, {
       baseVersionId: activeVersion.id,
       snapshot: createWorldSnapshot('明显错误的未使用规则。'),
-      changeSummary: '错误版本',
+      autoAnalyze: false,
     })
     const disposableVersion = await soulService.publishDraft('world', world.world.id)
     await soulService.saveDraft('world', world.world.id, {
       baseVersionId: activeVersion.id,
       snapshot: createWorldSnapshot('替代后的当前规则。'),
-      changeSummary: '替代错误版本',
+      autoAnalyze: false,
     })
     await soulService.publishDraft('world', world.world.id)
     await expect(service.deleteWorldVersion(disposableVersion.id)).resolves.toBeUndefined()

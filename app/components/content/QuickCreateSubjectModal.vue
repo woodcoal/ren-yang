@@ -71,7 +71,7 @@ function handleSubmit(event: FormSubmitEvent<SubjectInitializationInput>): void 
           color="neutral"
           variant="subtle"
           title="创建后仍是待确认草稿"
-          description="AI 会自动整理名称、灵魂章节和运行摘要，但不会自动发布；进入详情后可以继续修改。"
+          description="AI 会自动整理名称和灵魂提示词，但不会自动发布；进入详情后可以继续修改。"
         />
         <UAlert v-if="errorMessage" color="error" title="创建失败" :description="errorMessage" />
         <div class="flex justify-end gap-2">

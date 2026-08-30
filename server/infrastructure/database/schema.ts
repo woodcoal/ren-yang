@@ -120,8 +120,7 @@ export const soulDrafts = sqliteTable(
     worldId: text('world_id').references(() => worlds.id, { onDelete: 'cascade' }),
     personaId: text('persona_id').references(() => personas.id, { onDelete: 'cascade' }),
     baseVersionId: text('base_version_id'),
-    chaptersJson: text('chapters_json').notNull(),
-    runtimeSummary: text('runtime_summary').notNull(),
+    promptText: text('prompt_text').notNull(),
     changeSummary: text('change_summary').notNull(),
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull(),
@@ -134,7 +133,7 @@ export const soulDrafts = sqliteTable(
       (${table.subjectType} = 'world' AND ${table.worldId} IS NOT NULL AND ${table.personaId} IS NULL)
       OR (${table.subjectType} = 'persona' AND ${table.personaId} IS NOT NULL AND ${table.worldId} IS NULL)
     )`),
-    check('soul_drafts_runtime_summary_not_empty_check', sql`length(trim(${table.runtimeSummary})) > 0`),
+    check('soul_drafts_prompt_text_not_empty_check', sql`length(trim(${table.promptText})) > 0`),
   ],
 )
 
@@ -147,8 +146,7 @@ export const soulVersions = sqliteTable(
     worldId: text('world_id').references(() => worlds.id, { onDelete: 'cascade' }),
     personaId: text('persona_id').references(() => personas.id, { onDelete: 'cascade' }),
     parentVersionId: text('parent_version_id'),
-    chaptersJson: text('chapters_json').notNull(),
-    runtimeSummary: text('runtime_summary').notNull(),
+    promptText: text('prompt_text').notNull(),
     runtimeTokenCount: integer('runtime_token_count').notNull(),
     tokenCounter: text('token_counter').notNull(),
     changeSummary: text('change_summary').notNull(),
@@ -165,7 +163,7 @@ export const soulVersions = sqliteTable(
       OR (${table.subjectType} = 'persona' AND ${table.personaId} IS NOT NULL AND ${table.worldId} IS NULL)
     )`),
     check('soul_versions_status_check', sql`${table.status} IN ('published', 'archived', 'rejected')`),
-    check('soul_versions_runtime_summary_not_empty_check', sql`length(trim(${table.runtimeSummary})) > 0`),
+    check('soul_versions_prompt_text_not_empty_check', sql`length(trim(${table.promptText})) > 0`),
     check('soul_versions_runtime_token_count_check', sql`${table.runtimeTokenCount} >= 0`),
   ],
 )

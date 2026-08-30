@@ -1,19 +1,47 @@
-import type { CreateSoulDraftFromVersionInput, SaveSoulDraftInput } from '../../../shared/schemas/content'
-import type { SoulDraftView, SoulVersionView, SoulWorkspaceView } from '../../../shared/types/content'
+import { analyzedSoulPromptSchema, type CreateSoulDraftFromVersionInput, type SaveSoulDraftInput } from '../../../shared/schemas/content'
+import type { TextModelParameters } from '../../../shared/schemas/generation'
+import type { SoulDraftView, SoulSnapshot, SoulVersionView, SoulWorkspaceView } from '../../../shared/types/content'
 import type { SoulDraftRecord, SoulSubjectType, SoulVersionRecord } from '../../domain/content/ContentModels'
-import { normalizeSoulSnapshot, SoulStructureError } from '../../domain/content/SoulRules'
+import { normalizeSoulSnapshot } from '../../domain/content/SoulRules'
 import type { Clock } from '../../ports/Clock'
 import type { ContentRepository } from '../../ports/ContentRepository'
 import type { IdentifierGenerator } from '../../ports/IdentifierGenerator'
 import type { SoulRepository } from '../../ports/SoulRepository'
+import type { TextModelPort } from '../../ports/TextModelPort'
+import { TextModelError } from '../../ports/TextModelPort'
 import type { TokenCounter } from '../../ports/TokenCounter'
 import { ApplicationError } from '../errors/ApplicationError'
+import { buildSoulPromptAnalysisPrompt } from './SoulPromptBuilder'
+
+/** 灵魂文本整理使用的固定、低随机性模型参数。 */
+const SOUL_ANALYSIS_PARAMETERS: TextModelParameters = {
+  temperature: 0.2,
+  maxOutputTokens: 4_096,
+  timeoutMs: 60_000,
+  maxEvidenceChunks: 0,
+  maxTextBlocks: 1,
+  maxImageBlocks: 0,
+  maxPromptCharacters: 70_000,
+  maxTotalTokens: 10_000,
+  maxBlockAttempts: 1,
+  contextWindowTokens: 32_768,
+  reservedOutputTokens: 8_192,
+  safetyMarginTokens: 2_048,
+  worldBudgetTokens: 5_000,
+  worldSoulBudgetTokens: 2_500,
+  worldGrowthBudgetTokens: 2_500,
+  personaBudgetTokens: 9_000,
+  personaSoulBudgetTokens: 3_500,
+  personaGrowthBudgetTokens: 2_500,
+  personaMemoryBudgetTokens: 3_000,
+  sourceBudgetTokens: 0,
+}
 
 /** 灵魂发布时使用的最小预算配置。 */
 export interface SoulTokenBudgets {
-  /** 世界灵魂运行摘要最多可占 Token。 */
+  /** 世界灵魂提示词最多可占 Token。 */
   world: number
-  /** 人物灵魂运行摘要最多可占 Token。 */
+  /** 人物灵魂提示词最多可占 Token。 */
   persona: number
 }
 
@@ -29,7 +57,9 @@ export interface SoulApplicationServiceDependencies {
   clock: Clock
   /** 发布时 Token 计数端口。 */
   tokenCounter: TokenCounter
-  /** 世界与人物运行摘要预算。 */
+  /** 可选执行灵魂文本整理的模型端口。 */
+  model?: TextModelPort
+  /** 世界与人物灵魂提示词预算。 */
   tokenBudgets: SoulTokenBudgets
 }
 
@@ -66,23 +96,16 @@ export class SoulApplicationService {
    * 创建或覆盖指定对象当前唯一灵魂草稿。
    * @param subjectType 对象类型。
    * @param subjectId 对象 UUID。
-   * @param input 基础版本、完整章节、运行摘要和修改说明。
+   * @param input 基础版本、单文本提示词和可选自动整理标记。
    * @returns 保存后的草稿。
    */
   async saveDraft(subjectType: SoulSubjectType, subjectId: string, input: SaveSoulDraftInput): Promise<SoulDraftView> {
     await this.requireSubject(subjectType, subjectId)
     await this.requireOptionalBaseVersion(subjectType, subjectId, input.baseVersionId)
     const existing = await this.dependencies.souls.findSoulDraft(subjectType, subjectId)
-    let snapshot
-    try {
-      snapshot = normalizeSoulSnapshot(input.snapshot)
-    }
-    catch (error: unknown) {
-      if (error instanceof SoulStructureError) {
-        throw new ApplicationError('INVALID_SOUL_STRUCTURE', error.message, 422)
-      }
-      throw error
-    }
+    const snapshot = input.autoAnalyze
+      ? await this.analyzePrompt(subjectType, input.snapshot.promptText)
+      : normalizeSoulSnapshot(input.snapshot)
     const timestamp = this.dependencies.clock.now()
     const draft = await this.dependencies.souls.saveSoulDraft({
       id: existing?.id ?? this.dependencies.identifiers.create(),
@@ -90,7 +113,7 @@ export class SoulApplicationService {
       subjectId,
       baseVersionId: input.baseVersionId,
       snapshot,
-      changeSummary: input.changeSummary,
+      changeSummary: input.autoAnalyze ? 'AI 整理灵魂提示词' : '手动修改灵魂提示词',
       createdAt: existing?.createdAt ?? timestamp,
       updatedAt: timestamp,
     })
@@ -125,11 +148,19 @@ export class SoulApplicationService {
   ): Promise<SoulDraftView> {
     await this.requireSubject(subjectType, subjectId)
     const version = await this.requireOwnedVersion(subjectType, subjectId, input.versionId)
-    return await this.saveDraft(subjectType, subjectId, {
+    const existing = await this.dependencies.souls.findSoulDraft(subjectType, subjectId)
+    const timestamp = this.dependencies.clock.now()
+    const draft = await this.dependencies.souls.saveSoulDraft({
+      id: existing?.id ?? this.dependencies.identifiers.create(),
+      subjectType,
+      subjectId,
       baseVersionId: version.id,
-      snapshot: version.snapshot,
+      snapshot: normalizeSoulSnapshot(version.snapshot),
       changeSummary: `基于“${version.changeSummary}”继续修改`,
+      createdAt: existing?.createdAt ?? timestamp,
+      updatedAt: timestamp,
     })
+    return toSoulDraftView(draft)
   }
 
   /**
@@ -144,12 +175,12 @@ export class SoulApplicationService {
     if (!draft) {
       throw new ApplicationError('SOUL_DRAFT_NOT_FOUND', '当前没有可发布的灵魂草稿', 404)
     }
-    const count = this.dependencies.tokenCounter.count(null, draft.snapshot.runtimeSummary)
+    const count = this.dependencies.tokenCounter.count(null, draft.snapshot.promptText)
     const budget = this.dependencies.tokenBudgets[subjectType]
     if (count.tokens > budget) {
       throw new ApplicationError(
         'SOUL_TOKEN_BUDGET_EXCEEDED',
-        `运行摘要预计 ${count.tokens} Token，超过当前 ${budget} Token 限制，请先压缩摘要`,
+        `灵魂提示词预计 ${count.tokens} Token，超过当前 ${budget} Token 限制，请先精简文本`,
         422,
       )
     }
@@ -215,6 +246,35 @@ export class SoulApplicationService {
       throw new ApplicationError('VERSION_CONFLICT', '基础灵魂版本不属于当前对象', 409)
     }
     return version
+  }
+
+  /**
+   * 使用文本模型把用户原始灵魂整理为不增加事实的标准化纯文本。
+   * @param subjectType 世界或人物，用于选择整理侧重点。
+   * @param promptText 用户输入的原始灵魂提示词。
+   * @returns 已校验并规范化的单文本灵魂快照。
+   */
+  private async analyzePrompt(subjectType: SoulSubjectType, promptText: string): Promise<SoulSnapshot> {
+    const model = this.dependencies.model
+    if (!model?.getConfiguredModel()) {
+      throw new ApplicationError('CAPABILITY_DISABLED', '文本模型尚未配置，不能自动分析灵魂提示词', 422)
+    }
+    const prompt = buildSoulPromptAnalysisPrompt(subjectType, promptText)
+    try {
+      const response = await model.generateStructured({
+        ...prompt,
+        parameters: SOUL_ANALYSIS_PARAMETERS,
+        responseSchemaName: 'soul_prompt_analysis',
+      })
+      return normalizeSoulSnapshot(analyzedSoulPromptSchema.parse(response.structuredOutput))
+    }
+    catch (error: unknown) {
+      if (error instanceof TextModelError) {
+        const statusCode = error.code === 'CAPABILITY_DISABLED' ? 422 : error.code === 'MODEL_OUTPUT_INVALID' ? 502 : 503
+        throw new ApplicationError(error.code, error.message, statusCode)
+      }
+      throw new ApplicationError('MODEL_OUTPUT_INVALID', '模型返回的灵魂提示词格式无效', 502)
+    }
   }
 }
 

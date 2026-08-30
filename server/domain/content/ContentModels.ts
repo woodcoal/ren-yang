@@ -27,7 +27,7 @@ export interface SoulDraftRecord {
   subjectId: string
   /** 草稿基于的已发布版本。 */
   baseVersionId: string | null
-  /** 当前可编辑灵魂快照。 */
+  /** 当前可编辑的单文本灵魂快照。 */
   snapshot: SoulSnapshot
   /** 本次修改说明。 */
   changeSummary: string
@@ -49,9 +49,9 @@ export interface SoulVersionRecord {
   parentVersionId: string | null
   /** 版本生命周期状态。 */
   status: VersionStatus
-  /** 发布时的完整灵魂快照。 */
+  /** 发布时的单文本灵魂快照。 */
   snapshot: SoulSnapshot
-  /** 运行摘要的发布时 Token 数。 */
+  /** 灵魂提示词的发布时 Token 数。 */
   runtimeTokenCount: number
   /** 发布时使用的计数器和模型说明。 */
   tokenCounter: string

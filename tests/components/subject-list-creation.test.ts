@@ -8,12 +8,10 @@ import PersonasPage from '../../app/pages/personas/index.vue'
 import WorldsPage from '../../app/pages/worlds/index.vue'
 
 const personaSnapshot = {
-  chapters: [{ id: '50000000-0000-4000-8000-000000000001', title: '核心人设', content: '谨慎的档案员。', order: 0, required: true }],
-  runtimeSummary: '谨慎的档案员，重视证据。',
+  promptText: '谨慎的档案员，重视证据。',
 }
 const worldSnapshot = {
-  chapters: [{ id: '60000000-0000-4000-8000-000000000001', title: '核心规则', content: '浮岛依靠浮石能量稳定。', order: 0, required: true }],
-  runtimeSummary: '人类生活在依靠浮石能量稳定的浮岛。',
+  promptText: '人类生活在依靠浮石能量稳定的浮岛。',
 }
 const personaDraftRequests: unknown[] = []
 const personaCreateRequests: unknown[] = []

@@ -31,16 +31,7 @@ const state = reactive<CreatePersonaInput>({
   origin: 'original',
   worldId: null,
   sourceIds: [],
-  snapshot: {
-    chapters: [{
-      id: '00000000-0000-4000-8000-000000000001',
-      title: '核心人设',
-      content: '',
-      order: 0,
-      required: true,
-    }],
-    runtimeSummary: '',
-  },
+  snapshot: { promptText: '' },
   changeSummary: '建立初始人物档案',
 })
 
@@ -59,10 +50,7 @@ function applyInitialValue(value: CreatePersonaInput): void {
   state.origin = value.origin
   state.worldId = value.worldId ?? null
   state.sourceIds = [...value.sourceIds]
-  state.snapshot = {
-    chapters: value.snapshot.chapters.map(chapter => ({ ...chapter })),
-    runtimeSummary: value.snapshot.runtimeSummary,
-  }
+  state.snapshot = { promptText: value.snapshot.promptText }
   state.changeSummary = value.changeSummary
 }
 
@@ -103,7 +91,9 @@ function handleSubmit(event: FormSubmitEvent<CreatePersonaInput>): void {
     </div>
 
     <USeparator label="人物灵魂" />
-    <ContentSoulChapterEditor v-model="state.snapshot" subject-type="persona" :disabled="loading" />
+    <UFormField name="snapshot.promptText" label="灵魂提示词" description="这段文本会在发布后直接进入人物任务。" required>
+      <UTextarea v-model="state.snapshot.promptText" class="w-full" :rows="14" autoresize :disabled="loading" />
+    </UFormField>
     <UFormField name="changeSummary" label="这次建立了什么" description="方便以后在灵魂版本记录中辨认。" required>
       <UInput v-model="state.changeSummary" class="w-full" :disabled="loading" />
     </UFormField>

@@ -23,9 +23,9 @@ export interface PromptBudgetSelectionInput {
   parameters: TextModelParameters
   /** 无可选成长、记忆和资料时，初始提示已经使用的 Token。 */
   fixedInputTokens: number
-  /** 世界灵魂运行摘要 Token；没有世界灵魂时为零。 */
+  /** 世界灵魂提示词 Token；没有世界灵魂时为零。 */
   worldSoulTokens: number
-  /** 人物灵魂运行摘要 Token。 */
+  /** 人物灵魂提示词 Token。 */
   personaSoulTokens: number
   /** 已经过 SQLite 范围和状态校验，且按相关性排列的候选。 */
   candidates: PromptBudgetCandidate[]
@@ -52,10 +52,10 @@ export interface PromptBudgetSelectionResult {
 export function selectPromptContextByBudget(input: PromptBudgetSelectionInput): PromptBudgetSelectionResult {
   const parameters = input.parameters
   const availableInputTokens = parameters.contextWindowTokens - parameters.reservedOutputTokens - parameters.safetyMarginTokens
-  if (input.worldSoulTokens > parameters.worldSoulBudgetTokens) throw new Error('世界灵魂运行摘要超过世界灵魂预算')
-  if (input.worldSoulTokens > parameters.worldBudgetTokens) throw new Error('世界灵魂运行摘要超过世界总预算')
-  if (input.personaSoulTokens > parameters.personaSoulBudgetTokens) throw new Error('人物灵魂运行摘要超过人物灵魂预算')
-  if (input.personaSoulTokens > parameters.personaBudgetTokens) throw new Error('人物灵魂运行摘要超过人物总预算')
+  if (input.worldSoulTokens > parameters.worldSoulBudgetTokens) throw new Error('世界灵魂提示词超过世界灵魂预算')
+  if (input.worldSoulTokens > parameters.worldBudgetTokens) throw new Error('世界灵魂提示词超过世界总预算')
+  if (input.personaSoulTokens > parameters.personaSoulBudgetTokens) throw new Error('人物灵魂提示词超过人物灵魂预算')
+  if (input.personaSoulTokens > parameters.personaBudgetTokens) throw new Error('人物灵魂提示词超过人物总预算')
   if (input.fixedInputTokens > availableInputTokens) throw new Error('系统规则、任务和不可省略灵魂已经超过可用输入预算')
 
   const used = {

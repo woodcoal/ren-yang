@@ -97,7 +97,7 @@ describe('成长与记忆事实管理闭环', () => {
   it('世界资料可批量启停，成长候选必须人工确认后生效', async () => {
     const world = await content.createWorld({
       name: '测试世界', summary: '',
-      snapshot: { chapters: [{ id: '20000000-0000-4000-8000-000000000001', title: '规则', content: '基础规则', order: 0, required: true }], runtimeSummary: '基础规则' },
+      snapshot: { promptText: '基础规则' },
       changeSummary: '建立世界',
     })
     const source = await content.createPastedSource({ name: '世界资料', role: 'canon_fact', content: '城邦依水而建。' })
@@ -179,8 +179,7 @@ async function createPersona(): Promise<{ id: string }> {
   const created = await content.createPersona({
     name: '测试人物', origin: 'original', worldId: null, sourceIds: [],
     snapshot: {
-      chapters: [{ id: '20000000-0000-4000-8000-000000000002', title: '人设', content: '重视事实。', order: 0, required: true }],
-      runtimeSummary: '重视事实。',
+      promptText: '重视事实。',
     },
     changeSummary: '建立人物',
   })
