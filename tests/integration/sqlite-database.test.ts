@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { DrizzleAdministratorRepository } from '../../server/infrastructure/database/DrizzleAdministratorRepository'
@@ -50,7 +50,9 @@ describe('SqliteDatabase', () => {
       ORDER BY name
     `).all()
     expect(tables).toEqual([{ name: 'administrators' }, { name: 'task_jobs' }])
-    expect(current.getClient().prepare(`SELECT COUNT(*) AS count FROM __drizzle_migrations`).get()).toEqual({ count: 10 })
+    expect(current.getClient().prepare(`
+      SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations
+    `).get()).toEqual({ count: 1, version: 1788422400000 })
     expect(current.getClient().prepare(`
       SELECT COUNT(*) AS count FROM ai_prompts WHERE active_version_id IS NOT NULL
     `).get()).toEqual({ count: 14 })
@@ -86,200 +88,44 @@ describe('SqliteDatabase', () => {
     ])
   })
 
-  it('增量迁移保留旧资料并把原有数据设为启用', () => {
-    temporaryDirectory = mkdtempSync(resolve(tmpdir(), 'ren-yang-sqlite-upgrade-test-'))
-    const oldMigrationsDirectory = resolve(temporaryDirectory, 'old-drizzle')
-    mkdirSync(resolve(oldMigrationsDirectory, 'meta'), { recursive: true })
-    copyFileSync(resolve(process.cwd(), 'drizzle/0000_baseline.sql'), resolve(oldMigrationsDirectory, '0000_baseline.sql'))
-    writeFileSync(resolve(oldMigrationsDirectory, 'meta/_journal.json'), JSON.stringify({
-      version: '7',
-      dialect: 'sqlite',
-      entries: [{ idx: 0, version: '6', when: 1788028900254, tag: '0000_baseline', breakpoints: true }],
-    }))
-
-    database = new SqliteDatabase({ dataDirectory: temporaryDirectory, migrationsDirectory: oldMigrationsDirectory })
-    database.getClient().prepare(`
+  it('已完成压平前全部迁移的旧数据库不会重复执行单一基线', () => {
+    const current = createDatabase()
+    const client = current.getClient()
+    client.prepare(`
       INSERT INTO source_materials (
         id, name, role, input_type, content_hash, content_text, original_file_path, created_at, updated_at
-      ) VALUES ('source-1', '旧资料', 'reference', 'paste', ?, '迁移前正文。', NULL, 1000, 1000)
+      ) VALUES ('source-1', '旧资料', 'reference', 'paste', ?, '压平前正文。', NULL, 1000, 1000)
     `).run('a'.repeat(64))
-    database.close()
+    client.prepare(`DELETE FROM __drizzle_migrations`).run()
+    const insertMigration = client.prepare(`
+      INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)
+    `)
+    const versions = [
+      1788028900254,
+      1788036380272,
+      1788042164727,
+      1788075317577,
+      1788081200000,
+      1788084800000,
+      1788163200000,
+      1788249600000,
+      1788336000000,
+      1788422400000,
+    ]
+    versions.forEach((version, index) => insertMigration.run(`legacy-${index}`, version))
+    current.close()
+    database = null
 
-    database = new SqliteDatabase({ dataDirectory: temporaryDirectory, migrationsDirectory: resolve(process.cwd(), 'drizzle') })
+    database = new SqliteDatabase({
+      dataDirectory: temporaryDirectory!,
+      migrationsDirectory: resolve(process.cwd(), 'drizzle'),
+    })
     expect(database.getClient().prepare(`
       SELECT name, content_text, is_enabled FROM source_materials WHERE id = 'source-1'
-    `).get()).toEqual({ name: '旧资料', content_text: '迁移前正文。', is_enabled: 1 })
-    expect(database.getClient().prepare('PRAGMA foreign_key_check').all()).toEqual([])
-  })
-
-  it('人物与世界状态迁移保留旧对象和关联并默认启用', () => {
-    temporaryDirectory = mkdtempSync(resolve(tmpdir(), 'ren-yang-subject-status-upgrade-test-'))
-    const oldMigrationsDirectory = resolve(temporaryDirectory, 'old-drizzle')
-    mkdirSync(resolve(oldMigrationsDirectory, 'meta'), { recursive: true })
-    copyFileSync(resolve(process.cwd(), 'drizzle/0000_baseline.sql'), resolve(oldMigrationsDirectory, '0000_baseline.sql'))
-    copyFileSync(resolve(process.cwd(), 'drizzle/0001_source_material_status.sql'), resolve(oldMigrationsDirectory, '0001_source_material_status.sql'))
-    writeFileSync(resolve(oldMigrationsDirectory, 'meta/_journal.json'), JSON.stringify({
-      version: '7', dialect: 'sqlite', entries: [
-        { idx: 0, version: '6', when: 1788028900254, tag: '0000_baseline', breakpoints: true },
-        { idx: 1, version: '6', when: 1788036380272, tag: '0001_source_material_status', breakpoints: true },
-      ],
-    }))
-
-    database = new SqliteDatabase({ dataDirectory: temporaryDirectory, migrationsDirectory: oldMigrationsDirectory })
-    database.getClient().prepare(`
-      INSERT INTO worlds (id, name, summary, created_at, updated_at)
-      VALUES ('world-1', '旧世界', '迁移前世界', 1000, 1000)
-    `).run()
-    database.getClient().prepare(`
-      INSERT INTO personas (id, world_id, name, origin, created_at, updated_at)
-      VALUES ('persona-1', 'world-1', '旧人物', 'original', 1000, 1000)
-    `).run()
-    database.close()
-
-    database = new SqliteDatabase({ dataDirectory: temporaryDirectory, migrationsDirectory: resolve(process.cwd(), 'drizzle') })
-    expect(database.getClient().prepare('SELECT name, world_id, is_enabled FROM personas').get()).toEqual({
-      name: '旧人物', world_id: 'world-1', is_enabled: 1,
-    })
-    expect(database.getClient().prepare('SELECT name, is_enabled FROM worlds').get()).toEqual({
-      name: '旧世界', is_enabled: 1,
-    })
-    expect(database.getClient().prepare('PRAGMA foreign_key_check').all()).toEqual([])
-  })
-
-  it('保存即生效迁移保留旧版本并把现有草稿提升为当前历史版本', () => {
-    temporaryDirectory = mkdtempSync(resolve(tmpdir(), 'ren-yang-soul-prompt-upgrade-test-'))
-    const oldMigrationsDirectory = resolve(temporaryDirectory, 'old-drizzle')
-    mkdirSync(resolve(oldMigrationsDirectory, 'meta'), { recursive: true })
-    for (const migration of ['0000_baseline.sql', '0001_source_material_status.sql', '0002_persona_world_status.sql']) {
-      copyFileSync(resolve(process.cwd(), `drizzle/${migration}`), resolve(oldMigrationsDirectory, migration))
-    }
-    writeFileSync(resolve(oldMigrationsDirectory, 'meta/_journal.json'), JSON.stringify({
-      version: '7', dialect: 'sqlite', entries: [
-        { idx: 0, version: '6', when: 1788028900254, tag: '0000_baseline', breakpoints: true },
-        { idx: 1, version: '6', when: 1788036380272, tag: '0001_source_material_status', breakpoints: true },
-        { idx: 2, version: '6', when: 1788042164727, tag: '0002_persona_world_status', breakpoints: true },
-      ],
-    }))
-
-    database = new SqliteDatabase({ dataDirectory: temporaryDirectory, migrationsDirectory: oldMigrationsDirectory })
-    database.getClient().prepare(`
-      INSERT INTO worlds (id, name, summary, active_soul_version_id, created_at, updated_at)
-      VALUES ('world-1', '旧世界', '迁移前世界', 'version-1', 1000, 1000)
-    `).run()
-    database.getClient().prepare(`
-      INSERT INTO soul_versions (
-        id, subject_type, world_id, persona_id, parent_version_id, chapters_json, runtime_summary,
-        runtime_token_count, token_counter, change_summary, status, published_at, created_at
-      ) VALUES ('version-1', 'world', 'world-1', NULL, NULL, '[{"id":"chapter-1"}]', '旧世界发布提示词。',
-        8, 'test', '旧发布版本', 'published', 1000, 1000)
-    `).run()
-    database.getClient().prepare(`
-      INSERT INTO soul_drafts (
-        id, subject_type, world_id, persona_id, base_version_id, chapters_json, runtime_summary,
-        change_summary, created_at, updated_at
-      ) VALUES ('draft-1', 'world', 'world-1', NULL, 'version-1', '[{"id":"chapter-2"}]',
-        '旧世界草稿提示词。', '旧修改稿', 2000, 2000)
-    `).run()
-    database.close()
-
-    database = new SqliteDatabase({ dataDirectory: temporaryDirectory, migrationsDirectory: resolve(process.cwd(), 'drizzle') })
-    expect(database.getClient().prepare('SELECT prompt_text FROM soul_versions WHERE id = ?').get('version-1')).toEqual({
-      prompt_text: '旧世界发布提示词。',
-    })
+    `).get()).toEqual({ name: '旧资料', content_text: '压平前正文。', is_enabled: 1 })
     expect(database.getClient().prepare(`
-      SELECT prompt_text, parent_version_id, token_counter FROM soul_versions WHERE id = ?
-    `).get('draft-1')).toEqual({
-      prompt_text: '旧世界草稿提示词。', parent_version_id: 'version-1', token_counter: 'utf8-bytes-v1:migration',
-    })
-    expect(database.getClient().prepare('SELECT active_soul_version_id FROM worlds WHERE id = ?').get('world-1')).toEqual({
-      active_soul_version_id: 'draft-1',
-    })
-    expect(database.getClient().prepare('SELECT COUNT(*) AS count FROM soul_versions WHERE world_id = ?').get('world-1'))
-      .toEqual({ count: 2 })
-    expect(database.getClient().prepare('SELECT COUNT(*) AS count FROM soul_drafts').get()).toEqual({ count: 0 })
-    for (const table of ['soul_versions', 'soul_drafts']) {
-      const columns = database.getClient().prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>
-      expect(columns.map(column => column.name)).toContain('prompt_text')
-      expect(columns.map(column => column.name)).not.toContain('chapters_json')
-      expect(columns.map(column => column.name)).not.toContain('runtime_summary')
-    }
-    expect(database.getClient().prepare('PRAGMA foreign_key_check').all()).toEqual([])
-  })
-
-  it('学习提示词迁移把旧来源和候选转为素材，并合并旧有效成长与记忆', () => {
-    temporaryDirectory = mkdtempSync(resolve(tmpdir(), 'ren-yang-learning-prompt-upgrade-test-'))
-    const oldMigrationsDirectory = resolve(temporaryDirectory, 'old-drizzle')
-    mkdirSync(resolve(oldMigrationsDirectory, 'meta'), { recursive: true })
-    for (const migration of [
-      '0000_baseline.sql', '0001_source_material_status.sql', '0002_persona_world_status.sql',
-      '0003_soul_prompt_text.sql', '0004_soul_save_immediately.sql',
-    ]) {
-      copyFileSync(resolve(process.cwd(), `drizzle/${migration}`), resolve(oldMigrationsDirectory, migration))
-    }
-    writeFileSync(resolve(oldMigrationsDirectory, 'meta/_journal.json'), JSON.stringify({
-      version: '7', dialect: 'sqlite', entries: [
-        { idx: 0, version: '6', when: 1788028900254, tag: '0000_baseline', breakpoints: true },
-        { idx: 1, version: '6', when: 1788036380272, tag: '0001_source_material_status', breakpoints: true },
-        { idx: 2, version: '6', when: 1788042164727, tag: '0002_persona_world_status', breakpoints: true },
-        { idx: 3, version: '6', when: 1788075317577, tag: '0003_soul_prompt_text', breakpoints: true },
-        { idx: 4, version: '6', when: 1788081200000, tag: '0004_soul_save_immediately', breakpoints: true },
-      ],
-    }))
-
-    database = new SqliteDatabase({ dataDirectory: temporaryDirectory, migrationsDirectory: oldMigrationsDirectory })
-    const client = database.getClient()
-    client.prepare(`INSERT INTO worlds (id, name, summary, is_enabled, created_at, updated_at) VALUES ('world-1', '旧世界', '', 1, 1000, 2000)`).run()
-    client.prepare(`INSERT INTO personas (id, world_id, name, origin, is_enabled, created_at, updated_at) VALUES ('persona-1', 'world-1', '旧人物', 'original', 1, 1000, 2000)`).run()
-    client.prepare(`
-      INSERT INTO source_materials (
-        id, name, role, input_type, content_hash, content_text, original_file_path, is_enabled, created_at, updated_at
-      ) VALUES ('source-1', '旧世界资料', 'reference', 'paste', ?, '旧世界资料正文。', NULL, 1, 1000, 1000)
-    `).run('1'.repeat(64))
-    client.prepare(`INSERT INTO world_sources (world_id, source_id, priority, is_enabled, updated_at) VALUES ('world-1', 'source-1', 10, 1, 1000)`).run()
-    client.prepare(`
-      INSERT INTO growth_records (
-        id, subject_type, world_id, persona_id, current_revision_id, status, superseded_by_id, created_at, updated_at
-      ) VALUES
-        ('growth-active', 'world', 'world-1', NULL, 'growth-revision-active', 'active', NULL, 1000, 1000),
-        ('growth-candidate', 'world', 'world-1', NULL, 'growth-revision-candidate', 'candidate', NULL, 1100, 1100)
-    `).run()
-    client.prepare(`
-      INSERT INTO growth_revisions (
-        id, growth_id, revision_no, content, content_hash, scope, importance, conflict_summary, created_by, created_at
-      ) VALUES
-        ('growth-revision-active', 'growth-active', 1, '旧有效世界成长。', ?, '所有新任务', 5, NULL, 'user', 1000),
-        ('growth-revision-candidate', 'growth-candidate', 1, '旧候选世界成长。', ?, '所有新任务', 3, NULL, 'user', 1100)
-    `).run('2'.repeat(64), '3'.repeat(64))
-    client.prepare(`
-      INSERT INTO memory_records (
-        id, persona_id, current_revision_id, memory_type, status, superseded_by_id,
-        openviking_uri, created_at, updated_at
-      ) VALUES ('memory-active', 'persona-1', 'memory-revision-active', 'experience', 'active', NULL, NULL, 1200, 1200)
-    `).run()
-    client.prepare(`
-      INSERT INTO memory_revisions (
-        id, memory_id, revision_no, content, content_hash, scope, importance,
-        independent_evidence_count, conflict_summary, created_by, created_at
-      ) VALUES ('memory-revision-active', 'memory-active', 1, '旧有效人物记忆。', ?, '所有新任务', 4, 2, NULL, 'analysis', 1200)
-    `).run('4'.repeat(64))
-    database.close()
-
-    database = new SqliteDatabase({ dataDirectory: temporaryDirectory, migrationsDirectory: resolve(process.cwd(), 'drizzle') })
-    expect(database.getClient().prepare(`
-      SELECT title, source_type, importance FROM growth_materials WHERE world_id = 'world-1' ORDER BY source_type, title
-    `).all()).toEqual([
-      { title: '迁移的旧成长候选', source_type: 'legacy', importance: 3 },
-      { title: '旧世界资料', source_type: 'source_material', importance: 3 },
-    ])
-    expect(database.getClient().prepare(`
-      SELECT learning_prompts.prompt_type, learning_prompt_versions.prompt_text, learning_prompt_versions.created_by
-      FROM learning_prompts
-      INNER JOIN learning_prompt_versions ON learning_prompt_versions.id = learning_prompts.active_version_id
-      ORDER BY learning_prompts.prompt_type
-    `).all()).toEqual([
-      { prompt_type: 'persona_memory', prompt_text: '旧有效人物记忆。', created_by: 'migration' },
-      { prompt_type: 'world_growth', prompt_text: '旧有效世界成长。', created_by: 'migration' },
-    ])
+      SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations
+    `).get()).toEqual({ count: 10, version: 1788422400000 })
     expect(database.getClient().prepare('PRAGMA foreign_key_check').all()).toEqual([])
   })
 

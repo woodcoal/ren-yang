@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "14a40d17-dac4-4245-95c2-f2309ce0d856",
+  "id": "ba1231eb-f944-4cb1-b2fe-8f2d64b1c15c",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "administrators": {
@@ -78,6 +78,305 @@
         }
       }
     },
+    "ai_prompt_drafts": {
+      "name": "ai_prompt_drafts",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "prompt_code": {
+          "name": "prompt_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "base_version_id": {
+          "name": "base_version_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "system_prompt_template": {
+          "name": "system_prompt_template",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "user_prompt_template": {
+          "name": "user_prompt_template",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "change_summary": {
+          "name": "change_summary",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "ai_prompt_drafts_code_unique": {
+          "name": "ai_prompt_drafts_code_unique",
+          "columns": [
+            "prompt_code"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "ai_prompt_drafts_prompt_code_ai_prompts_code_fk": {
+          "name": "ai_prompt_drafts_prompt_code_ai_prompts_code_fk",
+          "tableFrom": "ai_prompt_drafts",
+          "tableTo": "ai_prompts",
+          "columnsFrom": [
+            "prompt_code"
+          ],
+          "columnsTo": [
+            "code"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "ai_prompt_drafts_user_template_check": {
+          "name": "ai_prompt_drafts_user_template_check",
+          "value": "length(trim(\"ai_prompt_drafts\".\"user_prompt_template\")) > 0"
+        },
+        "ai_prompt_drafts_summary_check": {
+          "name": "ai_prompt_drafts_summary_check",
+          "value": "length(trim(\"ai_prompt_drafts\".\"change_summary\")) > 0"
+        }
+      }
+    },
+    "ai_prompt_versions": {
+      "name": "ai_prompt_versions",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "prompt_code": {
+          "name": "prompt_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "version_no": {
+          "name": "version_no",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "system_prompt_template": {
+          "name": "system_prompt_template",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "user_prompt_template": {
+          "name": "user_prompt_template",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "change_summary": {
+          "name": "change_summary",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "published_at": {
+          "name": "published_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "ai_prompt_versions_code_number_unique": {
+          "name": "ai_prompt_versions_code_number_unique",
+          "columns": [
+            "prompt_code",
+            "version_no"
+          ],
+          "isUnique": true
+        },
+        "ai_prompt_versions_code_published_index": {
+          "name": "ai_prompt_versions_code_published_index",
+          "columns": [
+            "prompt_code",
+            "published_at"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "ai_prompt_versions_prompt_code_ai_prompts_code_fk": {
+          "name": "ai_prompt_versions_prompt_code_ai_prompts_code_fk",
+          "tableFrom": "ai_prompt_versions",
+          "tableTo": "ai_prompts",
+          "columnsFrom": [
+            "prompt_code"
+          ],
+          "columnsTo": [
+            "code"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "ai_prompt_versions_number_check": {
+          "name": "ai_prompt_versions_number_check",
+          "value": "\"ai_prompt_versions\".\"version_no\" > 0"
+        },
+        "ai_prompt_versions_user_template_check": {
+          "name": "ai_prompt_versions_user_template_check",
+          "value": "length(trim(\"ai_prompt_versions\".\"user_prompt_template\")) > 0"
+        },
+        "ai_prompt_versions_summary_check": {
+          "name": "ai_prompt_versions_summary_check",
+          "value": "length(trim(\"ai_prompt_versions\".\"change_summary\")) > 0"
+        }
+      }
+    },
+    "ai_prompts": {
+      "name": "ai_prompts",
+      "columns": {
+        "code": {
+          "name": "code",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "category": {
+          "name": "category",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "variables_json": {
+          "name": "variables_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "active_version_id": {
+          "name": "active_version_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "ai_prompts_category_name_index": {
+          "name": "ai_prompts_category_name_index",
+          "columns": [
+            "category",
+            "name"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "ai_prompts_code_check": {
+          "name": "ai_prompts_code_check",
+          "value": "length(trim(\"ai_prompts\".\"code\")) > 0"
+        },
+        "ai_prompts_name_check": {
+          "name": "ai_prompts_name_check",
+          "value": "length(trim(\"ai_prompts\".\"name\")) > 0"
+        },
+        "ai_prompts_kind_check": {
+          "name": "ai_prompts_kind_check",
+          "value": "\"ai_prompts\".\"kind\" IN ('text', 'image')"
+        },
+        "ai_prompts_variables_json_check": {
+          "name": "ai_prompts_variables_json_check",
+          "value": "json_valid(\"ai_prompts\".\"variables_json\")"
+        }
+      }
+    },
     "analysis_batch_inputs": {
       "name": "analysis_batch_inputs",
       "columns": {
@@ -129,6 +428,14 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
+        },
+        "importance": {
+          "name": "importance",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 3
         },
         "is_new": {
           "name": "is_new",
@@ -193,11 +500,15 @@
       "checkConstraints": {
         "analysis_batch_inputs_type_check": {
           "name": "analysis_batch_inputs_type_check",
-          "value": "\"analysis_batch_inputs\".\"input_type\" IN ('world_source', 'persona_feedback_source', 'persona_operation_record', 'openviking_memory')"
+          "value": "\"analysis_batch_inputs\".\"input_type\" IN ('growth_material', 'persona_operation_record', 'persona_external_record', 'world_source', 'persona_feedback_source', 'openviking_memory')"
         },
         "analysis_batch_inputs_hash_check": {
           "name": "analysis_batch_inputs_hash_check",
           "value": "length(\"analysis_batch_inputs\".\"content_hash\") = 64"
+        },
+        "analysis_batch_inputs_importance_check": {
+          "name": "analysis_batch_inputs_importance_check",
+          "value": "\"analysis_batch_inputs\".\"importance\" BETWEEN 1 AND 5"
         },
         "analysis_batch_inputs_new_check": {
           "name": "analysis_batch_inputs_new_check",
@@ -1140,128 +1451,6 @@
         }
       }
     },
-    "evaluation_cases": {
-      "name": "evaluation_cases",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "persona_id": {
-          "name": "persona_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "category": {
-          "name": "category",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "prompt": {
-          "name": "prompt",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "expected_change": {
-          "name": "expected_change",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "assertions_json": {
-          "name": "assertions_json",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "is_active": {
-          "name": "is_active",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": 1
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "evaluation_cases_persona_name_unique": {
-          "name": "evaluation_cases_persona_name_unique",
-          "columns": [
-            "persona_id",
-            "name"
-          ],
-          "isUnique": true
-        },
-        "evaluation_cases_persona_active_index": {
-          "name": "evaluation_cases_persona_active_index",
-          "columns": [
-            "persona_id",
-            "is_active"
-          ],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "evaluation_cases_persona_id_personas_id_fk": {
-          "name": "evaluation_cases_persona_id_personas_id_fk",
-          "tableFrom": "evaluation_cases",
-          "tableTo": "personas",
-          "columnsFrom": [
-            "persona_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {
-        "evaluation_cases_name_check": {
-          "name": "evaluation_cases_name_check",
-          "value": "length(trim(\"evaluation_cases\".\"name\")) > 0"
-        },
-        "evaluation_cases_category_check": {
-          "name": "evaluation_cases_category_check",
-          "value": "\"evaluation_cases\".\"category\" IN ('behavior', 'style', 'safety')"
-        },
-        "evaluation_cases_expected_change_check": {
-          "name": "evaluation_cases_expected_change_check",
-          "value": "\"evaluation_cases\".\"expected_change\" IN ('improve', 'retain')"
-        },
-        "evaluation_cases_active_check": {
-          "name": "evaluation_cases_active_check",
-          "value": "\"evaluation_cases\".\"is_active\" IN (0, 1)"
-        }
-      }
-    },
     "evidence_snapshots": {
       "name": "evidence_snapshots",
       "columns": {
@@ -1973,6 +2162,217 @@
         }
       }
     },
+    "growth_materials": {
+      "name": "growth_materials",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "subject_type": {
+          "name": "subject_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "world_id": {
+          "name": "world_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "persona_id": {
+          "name": "persona_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "content_snapshot": {
+          "name": "content_snapshot",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "content_hash": {
+          "name": "content_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source_type": {
+          "name": "source_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source_id": {
+          "name": "source_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "source_hash": {
+          "name": "source_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "importance": {
+          "name": "importance",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 3
+        },
+        "is_enabled": {
+          "name": "is_enabled",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 1
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "growth_materials_world_enabled_index": {
+          "name": "growth_materials_world_enabled_index",
+          "columns": [
+            "world_id",
+            "is_enabled",
+            "updated_at"
+          ],
+          "isUnique": false
+        },
+        "growth_materials_persona_enabled_index": {
+          "name": "growth_materials_persona_enabled_index",
+          "columns": [
+            "persona_id",
+            "is_enabled",
+            "updated_at"
+          ],
+          "isUnique": false
+        },
+        "growth_materials_world_source_unique": {
+          "name": "growth_materials_world_source_unique",
+          "columns": [
+            "world_id",
+            "source_id"
+          ],
+          "isUnique": true,
+          "where": "\"growth_materials\".\"subject_type\" = 'world' AND \"growth_materials\".\"source_type\" = 'source_material'"
+        },
+        "growth_materials_persona_source_unique": {
+          "name": "growth_materials_persona_source_unique",
+          "columns": [
+            "persona_id",
+            "source_id"
+          ],
+          "isUnique": true,
+          "where": "\"growth_materials\".\"subject_type\" = 'persona' AND \"growth_materials\".\"source_type\" = 'source_material'"
+        }
+      },
+      "foreignKeys": {
+        "growth_materials_world_id_worlds_id_fk": {
+          "name": "growth_materials_world_id_worlds_id_fk",
+          "tableFrom": "growth_materials",
+          "tableTo": "worlds",
+          "columnsFrom": [
+            "world_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "growth_materials_persona_id_personas_id_fk": {
+          "name": "growth_materials_persona_id_personas_id_fk",
+          "tableFrom": "growth_materials",
+          "tableTo": "personas",
+          "columnsFrom": [
+            "persona_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "growth_materials_subject_type_check": {
+          "name": "growth_materials_subject_type_check",
+          "value": "\"growth_materials\".\"subject_type\" IN ('world', 'persona')"
+        },
+        "growth_materials_subject_check": {
+          "name": "growth_materials_subject_check",
+          "value": "(\n      (\"growth_materials\".\"subject_type\" = 'world' AND \"growth_materials\".\"world_id\" IS NOT NULL AND \"growth_materials\".\"persona_id\" IS NULL)\n      OR (\"growth_materials\".\"subject_type\" = 'persona' AND \"growth_materials\".\"persona_id\" IS NOT NULL AND \"growth_materials\".\"world_id\" IS NULL)\n    )"
+        },
+        "growth_materials_title_check": {
+          "name": "growth_materials_title_check",
+          "value": "length(trim(\"growth_materials\".\"title\")) > 0"
+        },
+        "growth_materials_content_check": {
+          "name": "growth_materials_content_check",
+          "value": "length(trim(\"growth_materials\".\"content_snapshot\")) > 0"
+        },
+        "growth_materials_hash_check": {
+          "name": "growth_materials_hash_check",
+          "value": "length(\"growth_materials\".\"content_hash\") = 64"
+        },
+        "growth_materials_source_type_check": {
+          "name": "growth_materials_source_type_check",
+          "value": "\"growth_materials\".\"source_type\" IN ('source_material', 'manual', 'legacy')"
+        },
+        "growth_materials_source_check": {
+          "name": "growth_materials_source_check",
+          "value": "(\n      (\"growth_materials\".\"source_type\" = 'source_material' AND \"growth_materials\".\"source_id\" IS NOT NULL AND \"growth_materials\".\"source_hash\" IS NOT NULL)\n      OR \"growth_materials\".\"source_type\" IN ('manual', 'legacy')\n    )"
+        },
+        "growth_materials_importance_check": {
+          "name": "growth_materials_importance_check",
+          "value": "\"growth_materials\".\"importance\" BETWEEN 1 AND 5"
+        },
+        "growth_materials_enabled_check": {
+          "name": "growth_materials_enabled_check",
+          "value": "\"growth_materials\".\"is_enabled\" IN (0, 1)"
+        }
+      }
+    },
     "growth_records": {
       "name": "growth_records",
       "columns": {
@@ -2635,6 +3035,397 @@
         "iteration_proposals_conflicts_json_check": {
           "name": "iteration_proposals_conflicts_json_check",
           "value": "json_valid(\"iteration_proposals\".\"conflicts_json\")"
+        }
+      }
+    },
+    "learning_prompt_drafts": {
+      "name": "learning_prompt_drafts",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "prompt_id": {
+          "name": "prompt_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "base_version_id": {
+          "name": "base_version_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "prompt_text": {
+          "name": "prompt_text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "content_hash": {
+          "name": "content_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source_analysis_batch_id": {
+          "name": "source_analysis_batch_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "learning_prompt_drafts_prompt_unique": {
+          "name": "learning_prompt_drafts_prompt_unique",
+          "columns": [
+            "prompt_id"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "learning_prompt_drafts_prompt_id_learning_prompts_id_fk": {
+          "name": "learning_prompt_drafts_prompt_id_learning_prompts_id_fk",
+          "tableFrom": "learning_prompt_drafts",
+          "tableTo": "learning_prompts",
+          "columnsFrom": [
+            "prompt_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "learning_prompt_drafts_base_version_id_learning_prompt_versions_id_fk": {
+          "name": "learning_prompt_drafts_base_version_id_learning_prompt_versions_id_fk",
+          "tableFrom": "learning_prompt_drafts",
+          "tableTo": "learning_prompt_versions",
+          "columnsFrom": [
+            "base_version_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "learning_prompt_drafts_source_analysis_batch_id_analysis_batches_id_fk": {
+          "name": "learning_prompt_drafts_source_analysis_batch_id_analysis_batches_id_fk",
+          "tableFrom": "learning_prompt_drafts",
+          "tableTo": "analysis_batches",
+          "columnsFrom": [
+            "source_analysis_batch_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "learning_prompt_drafts_text_check": {
+          "name": "learning_prompt_drafts_text_check",
+          "value": "length(trim(\"learning_prompt_drafts\".\"prompt_text\")) > 0"
+        },
+        "learning_prompt_drafts_hash_check": {
+          "name": "learning_prompt_drafts_hash_check",
+          "value": "length(\"learning_prompt_drafts\".\"content_hash\") = 64"
+        },
+        "learning_prompt_drafts_creator_check": {
+          "name": "learning_prompt_drafts_creator_check",
+          "value": "\"learning_prompt_drafts\".\"created_by\" IN ('analysis', 'user', 'migration')"
+        }
+      }
+    },
+    "learning_prompt_versions": {
+      "name": "learning_prompt_versions",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "prompt_id": {
+          "name": "prompt_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "version_no": {
+          "name": "version_no",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "parent_version_id": {
+          "name": "parent_version_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "prompt_text": {
+          "name": "prompt_text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "content_hash": {
+          "name": "content_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "source_analysis_batch_id": {
+          "name": "source_analysis_batch_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "change_summary": {
+          "name": "change_summary",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "published_at": {
+          "name": "published_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "learning_prompt_versions_prompt_number_unique": {
+          "name": "learning_prompt_versions_prompt_number_unique",
+          "columns": [
+            "prompt_id",
+            "version_no"
+          ],
+          "isUnique": true
+        },
+        "learning_prompt_versions_prompt_published_index": {
+          "name": "learning_prompt_versions_prompt_published_index",
+          "columns": [
+            "prompt_id",
+            "published_at"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "learning_prompt_versions_prompt_id_learning_prompts_id_fk": {
+          "name": "learning_prompt_versions_prompt_id_learning_prompts_id_fk",
+          "tableFrom": "learning_prompt_versions",
+          "tableTo": "learning_prompts",
+          "columnsFrom": [
+            "prompt_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "learning_prompt_versions_source_analysis_batch_id_analysis_batches_id_fk": {
+          "name": "learning_prompt_versions_source_analysis_batch_id_analysis_batches_id_fk",
+          "tableFrom": "learning_prompt_versions",
+          "tableTo": "analysis_batches",
+          "columnsFrom": [
+            "source_analysis_batch_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "learning_prompt_versions_number_check": {
+          "name": "learning_prompt_versions_number_check",
+          "value": "\"learning_prompt_versions\".\"version_no\" > 0"
+        },
+        "learning_prompt_versions_text_check": {
+          "name": "learning_prompt_versions_text_check",
+          "value": "length(trim(\"learning_prompt_versions\".\"prompt_text\")) > 0"
+        },
+        "learning_prompt_versions_hash_check": {
+          "name": "learning_prompt_versions_hash_check",
+          "value": "length(\"learning_prompt_versions\".\"content_hash\") = 64"
+        },
+        "learning_prompt_versions_summary_check": {
+          "name": "learning_prompt_versions_summary_check",
+          "value": "length(trim(\"learning_prompt_versions\".\"change_summary\")) > 0"
+        },
+        "learning_prompt_versions_creator_check": {
+          "name": "learning_prompt_versions_creator_check",
+          "value": "\"learning_prompt_versions\".\"created_by\" IN ('analysis', 'user', 'migration')"
+        }
+      }
+    },
+    "learning_prompts": {
+      "name": "learning_prompts",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "prompt_type": {
+          "name": "prompt_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "world_id": {
+          "name": "world_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "persona_id": {
+          "name": "persona_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "active_version_id": {
+          "name": "active_version_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "learning_prompts_world_type_unique": {
+          "name": "learning_prompts_world_type_unique",
+          "columns": [
+            "world_id",
+            "prompt_type"
+          ],
+          "isUnique": true
+        },
+        "learning_prompts_persona_type_unique": {
+          "name": "learning_prompts_persona_type_unique",
+          "columns": [
+            "persona_id",
+            "prompt_type"
+          ],
+          "isUnique": true
+        }
+      },
+      "foreignKeys": {
+        "learning_prompts_world_id_worlds_id_fk": {
+          "name": "learning_prompts_world_id_worlds_id_fk",
+          "tableFrom": "learning_prompts",
+          "tableTo": "worlds",
+          "columnsFrom": [
+            "world_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "learning_prompts_persona_id_personas_id_fk": {
+          "name": "learning_prompts_persona_id_personas_id_fk",
+          "tableFrom": "learning_prompts",
+          "tableTo": "personas",
+          "columnsFrom": [
+            "persona_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "learning_prompts_type_check": {
+          "name": "learning_prompts_type_check",
+          "value": "\"learning_prompts\".\"prompt_type\" IN ('world_growth', 'persona_growth', 'persona_memory')"
+        },
+        "learning_prompts_subject_check": {
+          "name": "learning_prompts_subject_check",
+          "value": "(\n      (\"learning_prompts\".\"prompt_type\" = 'world_growth' AND \"learning_prompts\".\"world_id\" IS NOT NULL AND \"learning_prompts\".\"persona_id\" IS NULL)\n      OR (\"learning_prompts\".\"prompt_type\" IN ('persona_growth', 'persona_memory') AND \"learning_prompts\".\"persona_id\" IS NOT NULL AND \"learning_prompts\".\"world_id\" IS NULL)\n    )"
         }
       }
     },
@@ -3356,6 +4147,127 @@
         }
       }
     },
+    "persona_external_records": {
+      "name": "persona_external_records",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "persona_id": {
+          "name": "persona_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "occurred_on": {
+          "name": "occurred_on",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "content": {
+          "name": "content",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "references_json": {
+          "name": "references_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "'[]'"
+        },
+        "is_enabled": {
+          "name": "is_enabled",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 1
+        },
+        "importance": {
+          "name": "importance",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 3
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {
+        "persona_external_records_persona_enabled_index": {
+          "name": "persona_external_records_persona_enabled_index",
+          "columns": [
+            "persona_id",
+            "is_enabled",
+            "occurred_on"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {
+        "persona_external_records_persona_id_personas_id_fk": {
+          "name": "persona_external_records_persona_id_personas_id_fk",
+          "tableFrom": "persona_external_records",
+          "tableTo": "personas",
+          "columnsFrom": [
+            "persona_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "persona_external_records_occurred_on_check": {
+          "name": "persona_external_records_occurred_on_check",
+          "value": "length(\"persona_external_records\".\"occurred_on\") = 10"
+        },
+        "persona_external_records_content_check": {
+          "name": "persona_external_records_content_check",
+          "value": "length(trim(\"persona_external_records\".\"content\")) > 0"
+        },
+        "persona_external_records_references_json_check": {
+          "name": "persona_external_records_references_json_check",
+          "value": "json_valid(\"persona_external_records\".\"references_json\")"
+        },
+        "persona_external_records_enabled_check": {
+          "name": "persona_external_records_enabled_check",
+          "value": "\"persona_external_records\".\"is_enabled\" IN (0, 1)"
+        },
+        "persona_external_records_importance_check": {
+          "name": "persona_external_records_importance_check",
+          "value": "\"persona_external_records\".\"importance\" BETWEEN 1 AND 5"
+        }
+      }
+    },
     "persona_feedback_sources": {
       "name": "persona_feedback_sources",
       "columns": {
@@ -3561,6 +4473,14 @@
           "notNull": false,
           "autoincrement": false
         },
+        "importance": {
+          "name": "importance",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 3
+        },
         "created_at": {
           "name": "created_at",
           "type": "integer",
@@ -3644,6 +4564,10 @@
         "persona_operation_records_context_json_check": {
           "name": "persona_operation_records_context_json_check",
           "value": "json_valid(\"persona_operation_records\".\"context_snapshot_json\")"
+        },
+        "persona_operation_records_importance_check": {
+          "name": "persona_operation_records_importance_check",
+          "value": "\"persona_operation_records\".\"importance\" BETWEEN 1 AND 5"
         }
       }
     },
@@ -3751,6 +4675,27 @@
           "notNull": true,
           "autoincrement": false
         },
+        "username": {
+          "name": "username",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "email": {
+          "name": "email",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "password_ciphertext": {
+          "name": "password_ciphertext",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "origin": {
           "name": "origin",
           "type": "text",
@@ -3764,6 +4709,14 @@
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
+        },
+        "is_enabled": {
+          "name": "is_enabled",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 1
         },
         "created_at": {
           "name": "created_at",
@@ -3787,6 +4740,20 @@
             "world_id"
           ],
           "isUnique": false
+        },
+        "personas_username_unique": {
+          "name": "personas_username_unique",
+          "columns": [
+            "username"
+          ],
+          "isUnique": true
+        },
+        "personas_email_unique": {
+          "name": "personas_email_unique",
+          "columns": [
+            "email"
+          ],
+          "isUnique": true
         }
       },
       "foreignKeys": {
@@ -3814,6 +4781,10 @@
         "personas_origin_check": {
           "name": "personas_origin_check",
           "value": "\"personas\".\"origin\" IN ('original', 'source_based', 'hybrid')"
+        },
+        "personas_enabled_check": {
+          "name": "personas_enabled_check",
+          "value": "\"personas\".\"is_enabled\" IN (0, 1)"
         }
       }
     },
@@ -3855,15 +4826,8 @@
           "notNull": false,
           "autoincrement": false
         },
-        "chapters_json": {
-          "name": "chapters_json",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "runtime_summary": {
-          "name": "runtime_summary",
+        "prompt_text": {
+          "name": "prompt_text",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
@@ -3946,9 +4910,9 @@
           "name": "soul_drafts_subject_check",
           "value": "(\n      (\"soul_drafts\".\"subject_type\" = 'world' AND \"soul_drafts\".\"world_id\" IS NOT NULL AND \"soul_drafts\".\"persona_id\" IS NULL)\n      OR (\"soul_drafts\".\"subject_type\" = 'persona' AND \"soul_drafts\".\"persona_id\" IS NOT NULL AND \"soul_drafts\".\"world_id\" IS NULL)\n    )"
         },
-        "soul_drafts_runtime_summary_not_empty_check": {
-          "name": "soul_drafts_runtime_summary_not_empty_check",
-          "value": "length(trim(\"soul_drafts\".\"runtime_summary\")) > 0"
+        "soul_drafts_prompt_text_not_empty_check": {
+          "name": "soul_drafts_prompt_text_not_empty_check",
+          "value": "length(trim(\"soul_drafts\".\"prompt_text\")) > 0"
         }
       }
     },
@@ -3990,15 +4954,8 @@
           "notNull": false,
           "autoincrement": false
         },
-        "chapters_json": {
-          "name": "chapters_json",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "runtime_summary": {
-          "name": "runtime_summary",
+        "prompt_text": {
+          "name": "prompt_text",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
@@ -4109,9 +5066,9 @@
           "name": "soul_versions_status_check",
           "value": "\"soul_versions\".\"status\" IN ('published', 'archived', 'rejected')"
         },
-        "soul_versions_runtime_summary_not_empty_check": {
-          "name": "soul_versions_runtime_summary_not_empty_check",
-          "value": "length(trim(\"soul_versions\".\"runtime_summary\")) > 0"
+        "soul_versions_prompt_text_not_empty_check": {
+          "name": "soul_versions_prompt_text_not_empty_check",
+          "value": "length(trim(\"soul_versions\".\"prompt_text\")) > 0"
         },
         "soul_versions_runtime_token_count_check": {
           "name": "soul_versions_runtime_token_count_check",
@@ -4259,6 +5216,14 @@
           "notNull": false,
           "autoincrement": false
         },
+        "is_enabled": {
+          "name": "is_enabled",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 1
+        },
         "created_at": {
           "name": "created_at",
           "type": "integer",
@@ -4306,6 +5271,50 @@
         "source_materials_content_not_empty_check": {
           "name": "source_materials_content_not_empty_check",
           "value": "length(trim(\"source_materials\".\"content_text\")) > 0"
+        },
+        "source_materials_enabled_check": {
+          "name": "source_materials_enabled_check",
+          "value": "\"source_materials\".\"is_enabled\" IN (0, 1)"
+        }
+      }
+    },
+    "system_ai_settings": {
+      "name": "system_ai_settings",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "values_json": {
+          "name": "values_json",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "checkConstraints": {
+        "system_ai_settings_singleton_check": {
+          "name": "system_ai_settings_singleton_check",
+          "value": "\"system_ai_settings\".\"id\" = 'system_ai_settings'"
+        },
+        "system_ai_settings_values_json_check": {
+          "name": "system_ai_settings_values_json_check",
+          "value": "json_valid(\"system_ai_settings\".\"values_json\")"
         }
       }
     },
@@ -4589,6 +5598,14 @@
           "notNull": false,
           "autoincrement": false
         },
+        "is_enabled": {
+          "name": "is_enabled",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 1
+        },
         "created_at": {
           "name": "created_at",
           "type": "integer",
@@ -4612,6 +5629,10 @@
         "worlds_name_not_empty_check": {
           "name": "worlds_name_not_empty_check",
           "value": "length(trim(\"worlds\".\"name\")) > 0"
+        },
+        "worlds_enabled_check": {
+          "name": "worlds_enabled_check",
+          "value": "\"worlds\".\"is_enabled\" IN (0, 1)"
         }
       }
     }

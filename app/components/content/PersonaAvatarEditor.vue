@@ -150,72 +150,37 @@ async function submitCustomGeneration(event: FormSubmitEvent<GeneratePersonaAvat
     <div class="persona-avatar-editor">
       <ContentPersonaAvatar :name="props.personaName" :url="displayedAvatarUrl" size="large" />
       <div class="persona-avatar-copy">
-        <div class="flex flex-wrap items-center gap-2">
-          <h2 class="font-semibold text-highlighted">人物头像</h2>
-          <UBadge color="neutral" variant="subtle" icon="i-lucide-scan">自动调整为 512×512</UBadge>
-        </div>
+        <h2 class="font-semibold text-highlighted">人物头像</h2>
         <p class="mt-1 text-sm text-muted">上传现有图片，或根据人物当前名称和灵魂提示词生成头像；系统会自动居中裁切并统一保存为 512×512。</p>
         <UAlert v-if="errorMessage" class="mt-3" color="error" title="头像更新失败" :description="errorMessage" />
         <div class="mt-4 flex flex-wrap gap-2">
-          <input
-            ref="fileInput"
-            data-persona-avatar-input
-            class="sr-only"
-            type="file"
-            accept="image/png,image/jpeg,image/webp"
-            @change="uploadAvatar"
-          >
-          <UButton
-            color="neutral"
-            variant="soft"
-            icon="i-lucide-upload"
-            :loading="activeAction === 'upload'"
-            :disabled="activeAction !== null"
-            @click="chooseAvatarFile"
-          >上传头像</UButton>
-          <UButton
-            icon="i-lucide-sparkles"
-            :loading="activeAction === 'generate'"
-            :disabled="activeAction !== null"
-            @click="generateDefaultAvatar"
-          >生成头像</UButton>
-          <UButton
-            color="neutral"
-            variant="soft"
-            icon="i-lucide-wand-sparkles"
-            :disabled="activeAction !== null"
-            @click="openCustomGeneration"
-          >自定义生成</UButton>
+          <input ref="fileInput" data-persona-avatar-input class="sr-only" type="file"
+            accept="image/png,image/jpeg,image/webp" @change="uploadAvatar">
+          <UButton color="neutral" variant="soft" icon="i-lucide-upload" :loading="activeAction === 'upload'"
+            :disabled="activeAction !== null" @click="chooseAvatarFile">上传头像</UButton>
+          <UButton icon="i-lucide-sparkles" :loading="activeAction === 'generate'" :disabled="activeAction !== null"
+            @click="generateDefaultAvatar">生成头像</UButton>
+          <UButton color="neutral" variant="soft" icon="i-lucide-wand-sparkles" :disabled="activeAction !== null"
+            @click="openCustomGeneration">自定义生成</UButton>
         </div>
         <p class="mt-3 text-xs text-muted">支持 PNG、JPEG、WebP，上传文件最大 2 MB；非正方形图片会从中心裁切，不会拉伸。</p>
       </div>
     </div>
   </UCard>
 
-  <UModal
-    v-model:open="customGenerationOpen"
-    title="自定义生成头像"
-    description="人物名称和当前灵魂会自动加入提示词；这里只需补充画风、服饰、姿态或背景等视觉要求。"
-    :dismissible="activeAction === null"
-    :close="activeAction === null"
-  >
+  <UModal v-model:open="customGenerationOpen" title="自定义生成头像" description="人物名称和当前灵魂会自动加入提示词；这里只需补充画风、服饰、姿态或背景等视觉要求。"
+    :dismissible="activeAction === null" :close="activeAction === null">
     <template #body>
-      <UForm :schema="generatePersonaAvatarSchema" :state="customGenerationState" class="space-y-4" data-custom-avatar-form @submit="submitCustomGeneration">
+      <UForm :schema="generatePersonaAvatarSchema" :state="customGenerationState" class="space-y-4"
+        data-custom-avatar-form @submit="submitCustomGeneration">
         <UFormField name="additionalPrompt" label="补充提示词" hint="最多 2000 字">
-          <UTextarea
-            v-model="customGenerationState.additionalPrompt"
-            class="w-full"
-            :rows="6"
-            autoresize
-            :maxrows="12"
-            maxlength="2000"
-            placeholder="例如：水彩插画风格，暖色逆光，深蓝色大衣，神情沉静，背景为模糊的旧档案馆。"
-            :disabled="activeAction !== null"
-          />
+          <UTextarea v-model="customGenerationState.additionalPrompt" class="w-full" :rows="6" autoresize :maxrows="12"
+            maxlength="2000" placeholder="例如：水彩插画风格，暖色逆光，深蓝色大衣，神情沉静，背景为模糊的旧档案馆。" :disabled="activeAction !== null" />
         </UFormField>
         <UAlert v-if="errorMessage" color="error" title="头像生成失败" :description="errorMessage" />
         <div class="flex justify-end gap-2">
-          <UButton type="button" color="neutral" variant="ghost" :disabled="activeAction !== null" @click="customGenerationOpen = false">取消</UButton>
+          <UButton type="button" color="neutral" variant="ghost" :disabled="activeAction !== null"
+            @click="customGenerationOpen = false">取消</UButton>
           <UButton type="submit" icon="i-lucide-sparkles" :loading="activeAction === 'generate'">生成头像</UButton>
         </div>
       </UForm>

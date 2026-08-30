@@ -10,24 +10,39 @@ export interface BackupManifestFile {
   sha256: string
 }
 
-/** 可只读验证的备份清单。 */
-export interface BackupManifest {
-  /** 当前唯一支持的清单版本。 */
-  version: 1
+/** 两代备份清单共用的不可变内容。 */
+interface BackupManifestBase {
   /** 备份稳定标识。 */
   backupId: string
   /** ISO 8601 创建时间。 */
   createdAt: string
-  /** 已应用 Drizzle 迁移数量。 */
-  migrationCount: number
   /** 数据库和全部引用文件。 */
   files: BackupManifestFile[]
 }
 
+/** 压平迁移前生成的第一版备份清单。 */
+export interface LegacyBackupManifest extends BackupManifestBase {
+  /** 第一版清单使用迁移条数标识兼容性。 */
+  version: 1
+  /** 压平前已应用的 Drizzle 迁移数量。 */
+  migrationCount: number
+}
+
+/** 当前可只读验证的备份清单。 */
+export interface BackupManifest extends BackupManifestBase {
+  /** 第二版清单使用稳定迁移版本时间。 */
+  version: 2
+  /** 当前数据库结构对应的 Drizzle 迁移版本时间。 */
+  migrationVersion: number
+}
+
+/** 恢复流程允许读取的新旧备份清单。 */
+export type CompatibleBackupManifest = BackupManifest | LegacyBackupManifest
+
 /** 只读备份验证结果。 */
 export interface BackupValidationResult {
   /** 已验证清单。 */
-  manifest: BackupManifest
+  manifest: CompatibleBackupManifest
   /** 文件总数。 */
   fileCount: number
   /** 文件总字节数。 */

@@ -16,7 +16,7 @@ import { BackupApplicationService } from '../../server/application/backup/Backup
 import { LocalBackupManager } from '../../server/infrastructure/backup/LocalBackupManager'
 import { SqliteDatabase } from '../../server/infrastructure/database/SqliteDatabase'
 import { ApplicationInstanceLock } from '../../server/infrastructure/system/ApplicationInstanceLock'
-import type { BackupManifest } from '../../shared/types/backup'
+import type { CompatibleBackupManifest, LegacyBackupManifest } from '../../shared/types/backup'
 
 /** 测试使用的稳定 UUID。 */
 const IDS = {
@@ -76,6 +76,9 @@ describe('SQLite 与引用文件备份恢复', () => {
       `sources/${IDS.source}.md`,
     ])
     expect(validation.fileCount).toBe(3)
+    expect(validation.manifest.version).toBe(2)
+    if (validation.manifest.version !== 2) throw new Error('新建备份应使用第二版清单')
+    expect(validation.manifest.migrationVersion).toBe(1788422400000)
     expect(existsSync(resolve(backupDirectory, 'app.sqlite-wal'))).toBe(false)
     expect(existsSync(resolve(backupDirectory, 'app.sqlite-shm'))).toBe(false)
     for (const file of validation.manifest.files) {
@@ -106,6 +109,54 @@ describe('SQLite 与引用文件备份恢复', () => {
     const backupDirectory = await service.create()
     writeFileSync(resolve(backupDirectory, 'secret.env'), '不得夹带')
     await expect(service.validate(backupDirectory)).rejects.toThrow('备份目录包含未列入清单的额外文件')
+  })
+
+  it('允许恢复压平迁移前生成的完整十步迁移备份', async () => {
+    const backupDirectory = await service.create()
+    const databasePath = resolve(backupDirectory, 'app.sqlite')
+    const legacyDatabase = new Database(databasePath, { fileMustExist: true })
+    try {
+      legacyDatabase.prepare(`DELETE FROM __drizzle_migrations`).run()
+      const insertMigration = legacyDatabase.prepare(`
+        INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)
+      `)
+      const versions = [
+        1788028900254,
+        1788036380272,
+        1788042164727,
+        1788075317577,
+        1788081200000,
+        1788084800000,
+        1788163200000,
+        1788249600000,
+        1788336000000,
+        1788422400000,
+      ]
+      versions.forEach((version, index) => insertMigration.run(`legacy-${index}`, version))
+    }
+    finally {
+      legacyDatabase.close()
+    }
+
+    const manifestPath = resolve(backupDirectory, 'manifest.json')
+    const currentManifest = readManifest(manifestPath)
+    if (currentManifest.version !== 2) throw new Error('新建备份应使用第二版清单')
+    const { migrationVersion: _migrationVersion, ...sharedManifest } = currentManifest
+    const legacyManifest: LegacyBackupManifest = {
+      ...sharedManifest,
+      version: 1,
+      migrationCount: 10,
+    }
+    const databaseFile = legacyManifest.files.find(file => file.path === 'app.sqlite')
+    if (!databaseFile) throw new Error('备份清单缺少 app.sqlite')
+    const databaseBytes = readFileSync(databasePath)
+    databaseFile.sizeBytes = databaseBytes.byteLength
+    databaseFile.sha256 = hash(databaseBytes)
+    writeFileSync(manifestPath, `${JSON.stringify(legacyManifest, null, 2)}\n`)
+
+    await expect(service.validate(backupDirectory)).resolves.toMatchObject({
+      manifest: { version: 1, migrationCount: 10 },
+    })
   })
 
   it('引用文件缺失时创建失败并清理未完成备份目录', async () => {
@@ -248,8 +299,8 @@ function seedReferencedData(): void {
  * @param path 清单文件绝对路径。
  * @returns 解析后的备份清单。
  */
-function readManifest(path: string): BackupManifest {
-  return JSON.parse(readFileSync(path, 'utf8')) as BackupManifest
+function readManifest(path: string): CompatibleBackupManifest {
+  return JSON.parse(readFileSync(path, 'utf8')) as CompatibleBackupManifest
 }
 
 /**

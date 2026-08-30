@@ -5,71 +5,8 @@
     {
       "idx": 0,
       "version": "6",
-      "when": 1788028900254,
-      "tag": "0000_baseline",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "6",
-      "when": 1788036380272,
-      "tag": "0001_source_material_status",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "6",
-      "when": 1788042164727,
-      "tag": "0002_persona_world_status",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "6",
-      "when": 1788075317577,
-      "tag": "0003_soul_prompt_text",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "6",
-      "when": 1788081200000,
-      "tag": "0004_soul_save_immediately",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "6",
-      "when": 1788084800000,
-      "tag": "0005_learning_prompt_model",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "6",
-      "when": 1788163200000,
-      "tag": "0006_persona_credentials_external_records",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "6",
-      "when": 1788249600000,
-      "tag": "0007_ai_prompt_catalog",
-      "breakpoints": true
-    },
-    {
-      "idx": 8,
-      "version": "6",
-      "when": 1788336000000,
-      "tag": "0008_remove_unused_evaluation_cases",
-      "breakpoints": true
-    },
-    {
-      "idx": 9,
-      "version": "6",
       "when": 1788422400000,
-      "tag": "0009_system_ai_settings",
+      "tag": "0000_schema",
       "breakpoints": true
     }
   ]
