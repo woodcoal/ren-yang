@@ -43,11 +43,6 @@ const submitLabel = computed(() => {
   const action = state.autoAnalyze ? 'AI 整理并创建' : '直接创建'
   return `${action}${isPersona.value ? '人物' : '世界'}`
 })
-const processingTitle = computed(() => {
-  if (!state.autoAnalyze) return isPersona.value ? '正在创建人物' : '正在创建世界'
-  return isPersona.value ? 'AI 正在整理人物灵魂' : 'AI 正在整理世界灵魂'
-})
-const processingDestination = computed(() => isPersona.value ? '人物详情页' : '世界详情页')
 
 /**
  * 清空一次已经关闭的快速创建表单。
@@ -108,24 +103,4 @@ watch(open, (isOpen, wasOpen) => {
     </template>
   </UModal>
 
-  <Teleport to="body">
-    <div
-      v-if="loading"
-      data-subject-creation-overlay
-      class="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-default/55 px-6 text-center backdrop-blur-md"
-      role="status"
-      aria-live="assertive"
-      aria-busy="true"
-    >
-      <div class="relative mb-7 flex size-20 items-center justify-center" aria-hidden="true">
-        <span class="absolute inset-0 animate-ping rounded-full bg-primary/20" />
-        <span data-subject-creation-spinner class="subject-processing-spinner relative flex size-14 items-center justify-center">
-          <UIcon name="i-lucide-loader-circle" class="size-14 text-primary" />
-        </span>
-      </div>
-      <strong class="text-xl text-highlighted">{{ processingTitle }}</strong>
-      <p class="mt-3 max-w-lg text-sm leading-6 text-muted">{{ state.autoAnalyze ? 'AI 整理和结构校验可能需要几十秒' : '正在保存数据' }}，请保持当前页面开启，不要重复提交。</p>
-      <p class="mt-1 max-w-lg text-sm leading-6 text-muted">处理完成后会自动进入{{ processingDestination }}继续调整。</p>
-    </div>
-  </Teleport>
 </template>

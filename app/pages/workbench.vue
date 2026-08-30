@@ -19,6 +19,7 @@ const [{ data: personaData }, { data: profileData }, { data: templateData }, { d
   useFetch<ApiResponse<FormatTemplateView[]>>('/api/v1/format-templates'),
   useFetch<ApiResponse<CapabilityResponse>>('/api/v1/system/capabilities'),
 ])
+const { runWithAiLoading } = useAiLoading()
 
 const personas = computed(() => (personaData.value?.data ?? []).filter(persona => persona.isEnabled))
 const profiles = computed(() => profileData.value?.data ?? [])
@@ -52,12 +53,19 @@ async function submitRun(): Promise<void> {
       scene: { ...form.scene },
       parameterProfileId: form.parameterProfileId,
     }
-    const response = form.task === 'interest'
+    const isInterestTask = form.task === 'interest'
+    const response = await runWithAiLoading({
+      title: isInterestTask ? 'AI 正在准备人物判断' : 'AI 正在准备图文创作',
+      description: isInterestTask
+        ? '系统正在锁定人物版本、场景与参考资料，并创建判断任务。'
+        : '系统正在锁定创作要求、人物版本与生成设置，并创建规划任务。',
+      completionHint: '任务建立后将自动进入详情页，后续生成进度会在那里持续显示。',
+    }, async () => isInterestTask
       ? await $fetch<ApiResponse<CreatedRun>>('/api/v1/interest-runs', { method: 'POST', body: { ...common, content: form.content } })
       : await $fetch<ApiResponse<CreatedRun>>('/api/v1/generation-runs', {
           method: 'POST',
           body: { ...common, requirement: form.content, formatTemplateId: form.formatTemplateId, includeImages: form.includeImages },
-        })
+        }))
     await navigateTo(`/runs/${response.data.runId}`)
   }
   catch (error: unknown) {

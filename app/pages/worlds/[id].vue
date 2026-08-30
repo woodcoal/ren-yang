@@ -14,6 +14,7 @@ import { getApiErrorMessage } from '../../utils/apiError'
 type WorldTab = 'overview' | 'soul' | 'growth' | 'sources' | 'relations'
 
 const worldId = String(useRoute().params.id)
+const { runWithAiLoading } = useAiLoading()
 const [
   { data, error, refresh },
   { data: soulData, refresh: refreshSoul },
@@ -116,7 +117,11 @@ async function updateWorldGrowthStatus(input: { ids: string[], status: 'active' 
 /** @param mode 增量或完整重建。 @returns 批次创建和状态刷新完成时结束。 */
 async function analyzeWorldGrowth(mode: 'incremental' | 'full_rebuild'): Promise<void> {
   await runAction('世界成长分析已排队；稍后刷新状态查看 AI 提案', async () => {
-    await $fetch(`/api/v1/worlds/${worldId}/growth/analyze`, { method: 'POST', body: { mode } })
+    await runWithAiLoading({
+      title: 'AI 正在启动世界成长分析',
+      description: mode === 'incremental' ? '系统正在提交新增世界资料分析任务。' : '系统正在提交全部世界资料重新分析任务。',
+      completionHint: '任务进入队列后会返回当前页面，可稍后刷新查看 AI 提案。',
+    }, async () => await $fetch(`/api/v1/worlds/${worldId}/growth/analyze`, { method: 'POST', body: { mode } }))
     await refreshAnalysis()
   })
 }

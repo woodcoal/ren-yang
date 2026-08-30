@@ -22,6 +22,7 @@ interface Emits {
 
 const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
+const { runWithAiLoading } = useAiLoading()
 const fileInput = useTemplateRef<HTMLInputElement>('fileInput')
 const activeAction = shallowRef<'upload' | 'generate' | null>(null)
 const errorMessage = shallowRef<string | null>(null)
@@ -88,9 +89,13 @@ async function generateAvatar(): Promise<void> {
   activeAction.value = 'generate'
   errorMessage.value = null
   try {
-    await $fetch<ApiResponse<PersonaSummary>>(`/api/v1/personas/${props.personaId}/avatar/generate`, {
+    await runWithAiLoading({
+      title: 'AI 正在生成人物头像',
+      description: `图片模型正在根据“${props.personaName}”的名称与当前灵魂提示词生成 1:1 头像。`,
+      completionHint: '完成后新头像会自动替换当前头像。',
+    }, async () => await $fetch<ApiResponse<PersonaSummary>>(`/api/v1/personas/${props.personaId}/avatar/generate`, {
       method: 'POST',
-    })
+    }))
     avatarRevision.value += 1
     emit('updated')
   }

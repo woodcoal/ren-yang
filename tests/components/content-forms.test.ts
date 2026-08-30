@@ -1,7 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
 import { readBody } from 'h3'
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import { DOMWrapper, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
 import PersonaDraftAssistant from '../../app/components/content/PersonaDraftAssistant.vue'
@@ -80,16 +78,7 @@ describe('阶段二内容表单', () => {
 
     await wrapper.setProps({ loading: true, errorMessage: null })
     await flushPromises()
-    expect(document.body.textContent).toContain('AI 正在整理世界灵魂')
-    expect(document.body.textContent).toContain('请保持当前页面开启，不要重复提交')
-    expect(document.querySelector('[data-subject-creation-overlay]')?.className).toContain('fixed')
-    expect(document.querySelector('[data-subject-creation-overlay]')?.className).toContain('z-[9999]')
-    expect(document.querySelector('[data-subject-creation-overlay]')?.className).toContain('bg-default/55')
-    expect(document.querySelector('[data-subject-creation-overlay]')?.className).toContain('backdrop-blur-md')
-    expect(document.querySelector('[data-subject-creation-spinner]')?.className).toContain('subject-processing-spinner')
-    const processingStyles = readFileSync(resolve(process.cwd(), 'app/assets/css/theme/processing.css'), 'utf8')
-    expect(processingStyles).toContain('@keyframes subject-processing-spin')
-    expect(processingStyles).toContain('animation: subject-processing-spin 800ms linear infinite')
+    expect(document.body.textContent).toContain('正在创建世界')
     expect(document.querySelector('textarea')).toBeNull()
   })
 
@@ -212,17 +201,13 @@ describe('阶段二内容表单', () => {
     await wrapper.get('[data-soul-analyze-button]').trigger('click')
     await flushPromises()
     expect(soulAnalysisRequests).toEqual([{ subjectType: 'world', promptText: '需要 AI 整理的提示词' }])
-    expect(document.querySelector('[data-soul-analysis-overlay]')?.className).toContain('z-[9999]')
-    expect(document.querySelector('[data-soul-analysis-overlay]')?.className).toContain('backdrop-blur-md')
-    expect(document.querySelector('[data-soul-analysis-spinner]')?.className).toContain('subject-processing-spinner')
-    expect(document.body.textContent).toContain('AI 正在整理世界灵魂')
+    expect(wrapper.get('[data-soul-analyze-button]').attributes('disabled')).toBeDefined()
     expect(wrapper.emitted('save')).toBeUndefined()
 
     const completeAnalysis = resolveSoulAnalysis
     expect(completeAnalysis).not.toBeNull()
     completeAnalysis!({ data: { promptText: 'AI 整理后的灵魂提示词' } })
     await vi.waitFor(() => expect(promptTextarea.element.value).toBe('AI 整理后的灵魂提示词'))
-    expect(document.querySelector('[data-soul-analysis-overlay]')).toBeNull()
     expect(wrapper.emitted('save')).toBeUndefined()
 
     await wrapper.get('[data-soul-history-button]').trigger('click')

@@ -14,6 +14,7 @@ import { getApiErrorMessage } from '../../utils/apiError'
 type PersonaTab = 'overview' | 'soul' | 'growth' | 'memory' | 'sources' | 'relations'
 
 const personaId = String(useRoute().params.id)
+const { runWithAiLoading } = useAiLoading()
 const [
   { data, error, refresh },
   { data: soulData, refresh: refreshSoul },
@@ -172,7 +173,12 @@ async function convertMemoryToFeedbackSource(memoryId: string): Promise<void> {
 async function analyzeLearning(target: 'growth' | 'memory', mode: 'incremental' | 'full_rebuild'): Promise<void> {
   await runAction('分析任务已排队；稍后刷新状态查看 AI 提案', async () => {
     const path = target === 'growth' ? 'growth' : 'memories'
-    await $fetch(`/api/v1/personas/${personaId}/${path}/analyze`, { method: 'POST', body: { mode } })
+    const targetLabel = target === 'growth' ? '成长' : '记忆'
+    await runWithAiLoading({
+      title: `AI 正在启动人物${targetLabel}分析`,
+      description: mode === 'incremental' ? '系统正在提交新增资料分析任务。' : '系统正在提交全部资料重新分析任务。',
+      completionHint: '任务进入队列后会返回当前页面，可稍后刷新查看 AI 提案。',
+    }, async () => await $fetch(`/api/v1/personas/${personaId}/${path}/analyze`, { method: 'POST', body: { mode } }))
     await (target === 'growth' ? refreshGrowthAnalysis() : refreshMemoryAnalysis())
   })
 }

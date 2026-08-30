@@ -15,6 +15,7 @@ interface Props {
 }
 
 const props = defineProps<Props>()
+const { runWithAiLoading } = useAiLoading()
 
 const emit = defineEmits<{
   /** 保存编辑框内容并立即生成新的当前版本。 */
@@ -77,10 +78,14 @@ async function analyzePrompt(): Promise<void> {
   analysisLoading.value = true
   analysisError.value = null
   try {
-    const response = await $fetch<ApiResponse<SoulSnapshot>>('/api/v1/soul/analyze', {
+    const response = await runWithAiLoading({
+      title: `AI 正在整理${subjectLabel.value}灵魂`,
+      description: '模型正在分析原始提示词并整理表达、边界与行为规则，可能需要几十秒。',
+      completionHint: '完成后结果会回填编辑框，请检查内容并点击保存。',
+    }, async () => await $fetch<ApiResponse<SoulSnapshot>>('/api/v1/soul/analyze', {
       method: 'POST',
       body: { subjectType: props.workspace.subjectType, promptText: editor.snapshot.promptText },
-    })
+    }))
     editor.snapshot.promptText = response.data.promptText
   }
   catch (requestError: unknown) {
@@ -186,25 +191,5 @@ watch(() => props.workspace.activeVersion, synchronizeActiveVersion, { immediate
         <p v-else class="text-sm text-muted">还没有保存过提示词。</p>
       </template>
     </UModal>
-
-    <Teleport to="body">
-      <div
-        v-if="analysisLoading"
-        data-soul-analysis-overlay
-        class="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-default/55 px-6 text-center backdrop-blur-md"
-        role="status"
-        aria-live="assertive"
-        aria-busy="true"
-      >
-        <div class="relative mb-7 flex size-20 items-center justify-center" aria-hidden="true">
-          <span class="absolute inset-0 animate-ping rounded-full bg-primary/20" />
-          <span data-soul-analysis-spinner class="subject-processing-spinner relative flex size-14 items-center justify-center">
-            <UIcon name="i-lucide-loader-circle" class="size-14 text-primary" />
-          </span>
-        </div>
-        <strong class="text-xl text-highlighted">AI 正在整理{{ subjectLabel }}灵魂</strong>
-        <p class="mt-3 max-w-lg text-sm leading-6 text-muted">整理完成后会回填编辑框，请检查内容并点击保存。</p>
-      </div>
-    </Teleport>
   </div>
 </template>

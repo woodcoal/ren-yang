@@ -10,6 +10,7 @@ import { getApiErrorMessage } from '../../utils/apiError'
 
 const route = useRoute()
 const runId = String(route.params.id)
+const { runWithAiLoading } = useAiLoading()
 const { data, error, refresh } = await useFetch<ApiResponse<RunDetails>>(`/api/v1/runs/${runId}`)
 const details = computed(() => data.value?.data ?? null)
 const personaId = computed(() => details.value?.run.personaId ?? '')
@@ -70,7 +71,11 @@ async function saveSpec(spec: DocumentSpec): Promise<void> {
 async function confirmSpec(spec: DocumentSpec): Promise<void> {
   await executeAction(async () => {
     await $fetch(`/api/v1/runs/${runId}/document-spec`, { method: 'PUT', body: spec })
-    await $fetch(`/api/v1/runs/${runId}/document-spec/confirm`, { method: 'POST' })
+    await runWithAiLoading({
+      title: 'AI 正在准备生成图文内容',
+      description: '系统正在确认内容规划并创建各图文块的生成任务。',
+      completionHint: '任务进入队列后，详情页会持续显示每个图文块的处理状态。',
+    }, async () => await $fetch(`/api/v1/runs/${runId}/document-spec/confirm`, { method: 'POST' }))
     actionMessage.value = '规格已确认，图文块已进入执行队列'
   })
 }
@@ -86,7 +91,11 @@ async function cancelRun(): Promise<void> {
 /** @returns 为失败或部分成功运行创建新的任务记录。 */
 async function retryRun(): Promise<void> {
   await executeAction(async () => {
-    await $fetch(`/api/v1/runs/${runId}/retry`, { method: 'POST' })
+    await runWithAiLoading({
+      title: 'AI 正在准备重试任务',
+      description: '系统正在复制固定输入与生成设置，并为失败内容创建新的运行任务。',
+      completionHint: '重试任务建立后，详情页会继续显示处理进度。',
+    }, async () => await $fetch(`/api/v1/runs/${runId}/retry`, { method: 'POST' }))
     actionMessage.value = '已创建新的重试任务'
   })
 }
@@ -94,7 +103,11 @@ async function retryRun(): Promise<void> {
 /** @param blockId 目标块 UUID。 @returns 创建单块任务并刷新尝试历史。 */
 async function retryBlock(blockId: string): Promise<void> {
   await executeAction(async () => {
-    await $fetch(`/api/v1/runs/${runId}/blocks/${blockId}/attempts`, { method: 'POST' })
+    await runWithAiLoading({
+      title: 'AI 正在准备重新生成内容块',
+      description: '系统正在按当前锁定的规格为这个内容块创建新尝试。',
+      completionHint: '新尝试建立后，当前内容块会持续显示处理状态。',
+    }, async () => await $fetch(`/api/v1/runs/${runId}/blocks/${blockId}/attempts`, { method: 'POST' }))
     actionMessage.value = '已创建单块重试任务'
   })
 }
@@ -138,7 +151,11 @@ async function renderArtifact(): Promise<void> {
 /** @param input 原始反馈输入。 @returns 保存反馈并展示 AI 分类建议。 */
 async function submitFeedback(input: SubmitFeedbackInput): Promise<void> {
   await executeAction(async () => {
-    await $fetch(`/api/v1/runs/${runId}/feedback`, { method: 'POST', body: input })
+    await runWithAiLoading({
+      title: 'AI 正在分析反馈用途',
+      description: '模型正在判断反馈更适合作为本次修正、人物学习资料或其他长期依据。',
+      completionHint: '完成后会展示分类建议，最终用途仍由你确认。',
+    }, async () => await $fetch(`/api/v1/runs/${runId}/feedback`, { method: 'POST', body: input }))
     await refreshFeedback()
     actionMessage.value = '反馈已保存，请确认或纠正 AI 分类建议'
   })
