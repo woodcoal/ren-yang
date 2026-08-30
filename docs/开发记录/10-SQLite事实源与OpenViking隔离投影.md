@@ -1,5 +1,7 @@
 # SQLite 事实源与 OpenViking 隔离投影开发记录
 
+> 后续状态：本文记录的是早期 Trusted 请求头隔离方案。当前 API Key 多 User 隔离方案见《31-OpenViking-API-Key多User隔离》，身份与重建规则以新记录为准。
+
 ## 完成内容
 
 - 把 OpenViking 同步键从单资料改为资料、范围类型和范围标识组合。

@@ -62,6 +62,10 @@ export class ContextSynchronizationApplicationService implements TaskHandler {
     const queue = this.dependencies.taskQueue
     const capability = this.dependencies.openViking.getCapability()
     if (!queue || !capability.enabled) return
+    await queue.enqueueUserReconciliation(
+      this.dependencies.identifiers.create(),
+      this.dependencies.clock.now(),
+    )
     const [projections, records, sessions] = await Promise.all([
       this.dependencies.repository.listSourceProjections(),
       this.dependencies.repository.listSyncRecords(),
@@ -115,6 +119,10 @@ export class ContextSynchronizationApplicationService implements TaskHandler {
    * @returns SQLite 当前资料写入远端并保存同步事实后结束。
    */
   async execute(job: TaskJob): Promise<void> {
+    if (job.type === 'sync_openviking_users') {
+      await this.reconcileUsers()
+      return
+    }
     if (job.type === 'sync_context_source') {
       const entity = readProjectionSource(job.payloadJson)
       await this.synchronizeProjectionEntity(entity.entityType, entity.sourceId)
@@ -126,6 +134,18 @@ export class ContextSynchronizationApplicationService implements TaskHandler {
       return
     }
     throw new Error(`上下文同步服务未注册任务类型：${job.type}`)
+  }
+
+  /** @returns 按 SQLite 当前世界和独立人物对账 OpenViking User 后结束。 */
+  async reconcileUsers(): Promise<void> {
+    this.requireConfigured(true)
+    try {
+      const userIds = await this.dependencies.repository.listTargetUserIds()
+      await this.dependencies.openViking.reconcileUsers(userIds)
+    }
+    catch (error: unknown) {
+      throw new TaskExecutionError(safeProviderMessage(error), true)
+    }
   }
 
   /**
@@ -234,14 +254,17 @@ export class ContextSynchronizationApplicationService implements TaskHandler {
   }
 
   /**
-   * 删除人样专属 OpenViking 根并从 SQLite 完整资料逐项重建。
+   * 清空人样专属 OpenViking 投影，并从 SQLite 完整资料逐项重建。
    * @returns 每项资料成功或失败的持久同步结果。
    */
   async reindex(): Promise<ContextReindexResult> {
     this.requireConfigured(true)
+    const targetUserIds = await this.dependencies.repository.listTargetUserIds()
     try {
       await this.dependencies.openViking.checkHealth()
       await this.dependencies.openViking.resetLegacyIndex()
+      await this.dependencies.openViking.rebuildUsers(targetUserIds)
+      await this.dependencies.repository.markSessionsForRebuild(this.dependencies.clock.now())
     }
     catch (error: unknown) {
       throw toApplicationError(error)
@@ -251,33 +274,14 @@ export class ContextSynchronizationApplicationService implements TaskHandler {
       this.dependencies.repository.listSourceProjections(),
       this.dependencies.repository.listSyncRecords(),
     ])
-    const desiredKeys = new Set(projections.map(projectionKey))
-    const blockedKeys = new Set<string>()
-    let orphanCleanupFailures = 0
+    // 远端受管根目录和孤立 User 已成功清空，不再逐条重复删除旧 URI，避免再次等待语义刷新。
+    // 保留 previousRecords 仅用于复用同步记录 ID 和创建时间，便于历史审计保持连续。
     for (const record of previousRecords) {
-      try {
-        await this.dependencies.openViking.deleteProjection(record)
-        await this.dependencies.repository.deleteSyncRecord(record.id)
-      }
-      catch (error: unknown) {
-        const key = recordKey(record)
-        await this.dependencies.repository.saveSyncRecord({
-          ...record,
-          status: 'failed',
-          error: safeProviderMessage(error),
-          updatedAt: this.dependencies.clock.now(),
-        })
-        if (desiredKeys.has(key)) blockedKeys.add(key)
-        else orphanCleanupFailures += 1
-      }
+      await this.dependencies.repository.deleteSyncRecord(record.id)
     }
     const previousByProjection = new Map(previousRecords.map(record => [recordKey(record), record]))
     let synchronized = 0
     for (const projection of projections) {
-      if (blockedKeys.has(projectionKey(projection))) {
-        // 删除旧身份投影失败时保留原记录，避免用新身份覆盖后失去重试目标。
-        continue
-      }
       const previous = previousByProjection.get(projectionKey(projection))
       const timestamp = this.dependencies.clock.now()
       const pending = toPendingRecord(projection, previous, this.dependencies.identifiers.create(), timestamp)
@@ -311,11 +315,23 @@ export class ContextSynchronizationApplicationService implements TaskHandler {
       }
     }
     const records = await this.dependencies.repository.listSyncRecords()
+    await this.dependencies.openViking.reconcileUsers(targetUserIds)
+    if (this.dependencies.taskQueue) {
+      const sessions = await this.dependencies.repository.listPendingSessionSources()
+      for (const session of sessions) {
+        await this.dependencies.taskQueue.enqueueSessionSynchronization(
+          session.sourceType,
+          session.sourceId,
+          this.dependencies.identifiers.create(),
+          this.dependencies.clock.now(),
+        )
+      }
+    }
     return {
       provider: 'openviking',
-      total: projections.length + orphanCleanupFailures,
+      total: projections.length,
       synchronized,
-      failed: projections.length - synchronized + orphanCleanupFailures,
+      failed: projections.length - synchronized,
       records,
     }
   }

@@ -59,6 +59,8 @@ class InMemoryOpenViking implements OpenVikingPort {
   public readonly deletedProjections: Array<{ userId: string, peerId: string | null, remoteUri: string | null }> = []
   /** Session 提交后返回的固定派生记忆。 */
   public sessionMemories: DerivedMemoryDocument[] = []
+  /** 当前模拟 Account 中由应用管理的 User。 */
+  public readonly userIds = new Set<string>()
 
   /** @param enabled 能力开关。 */
   constructor(private readonly enabled = true) {}
@@ -69,7 +71,19 @@ class InMemoryOpenViking implements OpenVikingPort {
   }
 
   /** @returns 固定健康状态。 */
-  async checkHealth() { return { healthy: true, version: 'test', authMode: 'trusted' as const } }
+  async checkHealth() { return { healthy: true, version: 'test', authMode: 'api_key' as const } }
+
+  /** @param userIds SQLite 目标 User。 @returns 模拟创建缺失 User、删除孤立 User 后结束。 */
+  async reconcileUsers(userIds: string[]) {
+    this.userIds.clear()
+    for (const userId of userIds) this.userIds.add(userId)
+  }
+
+  /** @param userIds SQLite 目标 User。 @returns 模拟原位清空全部受管 User 内容后结束。 */
+  async rebuildUsers(userIds: string[]) {
+    await this.reconcileUsers(userIds)
+    this.resources.clear()
+  }
 
   /** @returns 清空全部模拟远端资源。 */
   async resetLegacyIndex() {
@@ -150,6 +164,28 @@ describe('OpenViking 可关闭索引与 SQLite 重建', () => {
     expect([...openViking.resources.keys()].sort()).toEqual([
       'viking://~/peers/persona-00000000-0000-4000-8000-000000000200/resources/ren-yang/persona-source/00000000-0000-4000-8000-000000000001.md',
       'viking://~/resources/ren-yang/world-source/00000000-0000-4000-8000-000000000001.md',
+    ])
+  })
+
+  it('User 对账为世界创建 User，并为无世界人物创建隐藏 User', async () => {
+    database.getClient().prepare(`
+      INSERT INTO personas (id, world_id, name, origin, active_soul_version_id, created_at, updated_at)
+      VALUES ('00000000-0000-4000-8000-000000000200', NULL, '独立人物', 'original', NULL, 1000, 1000)
+    `).run()
+    const openViking = new InMemoryOpenViking()
+    const service = new ContextSynchronizationApplicationService({
+      repository: new SqliteContextIndexRepository(database.getClient()), openViking,
+      identifiers: new SequentialIdentifierGenerator(), clock: new IncrementingClock(),
+    })
+
+    await service.execute({
+      id: 'user-sync', type: 'sync_openviking_users', payloadJson: '{}', status: 'running',
+      attemptCount: 1, maxAttempts: 3, leaseUntil: 2_000,
+    })
+
+    expect([...openViking.userIds].sort()).toEqual([
+      'standalone-00000000-0000-4000-8000-000000000200',
+      'world-00000000-0000-4000-8000-000000000100',
     ])
   })
 
@@ -251,6 +287,7 @@ describe('OpenViking 可关闭索引与 SQLite 重建', () => {
     `).run('b'.repeat(64), '00000000-0000-4000-8000-000000000001')
     const rebuilt = await service.reindex()
     expect(openViking.resetCount).toBe(2)
+    expect(openViking.deletedProjections).toEqual([])
     expect([...openViking.resources.values()]).toEqual(['第二版完整正文。'])
     expect(rebuilt.records[0]).toMatchObject({ id: recordId, status: 'synchronized', contentHash: 'b'.repeat(64) })
   })
@@ -335,6 +372,7 @@ describe('OpenViking 可关闭索引与 SQLite 重建', () => {
       openViking,
       identifiers: new SequentialIdentifierGenerator(),
       clock: new IncrementingClock(),
+      taskQueue: new SqliteContextSyncTaskQueue(database.getClient()),
     })
 
     await context.synchronizeSession('run', runId)
@@ -345,6 +383,17 @@ describe('OpenViking 可关闭索引与 SQLite 重建', () => {
     expect(database.getClient().prepare(`SELECT session_record_id FROM persona_operation_records WHERE id = ?`).get(operationId))
       .toEqual({ session_record_id: `ren-yang-run-${runId}` })
     expect(database.getClient().prepare(`SELECT COUNT(*) AS count FROM memory_records`).get()).toEqual({ count: 0 })
+
+    await context.reindex()
+
+    expect(database.getClient().prepare(`SELECT status FROM openviking_session_records WHERE source_id = ?`).get(runId))
+      .toEqual({ status: 'pending' })
+    expect(database.getClient().prepare(`SELECT COUNT(*) AS count FROM openviking_derived_memories`).get())
+      .toEqual({ count: 1 })
+    expect(database.getClient().prepare(`
+      SELECT type, status FROM task_jobs
+      WHERE type = 'sync_openviking_session' AND json_extract(payload_json, '$.sourceId') = ?
+    `).get(runId)).toEqual({ type: 'sync_openviking_session', status: 'queued' })
   })
 
   it('启动补偿会从 SQLite 补回缺失任务并保持重复扫描幂等', async () => {
@@ -359,6 +408,10 @@ describe('OpenViking 可关闭索引与 SQLite 重建', () => {
 
     await service.recoverPendingTasks()
     await service.recoverPendingTasks()
+
+    expect(database.getClient().prepare(`
+      SELECT COUNT(*) AS count FROM task_jobs WHERE type = 'sync_openviking_users' AND status = 'queued'
+    `).get()).toEqual({ count: 1 })
 
     expect(database.getClient().prepare(`
       SELECT type, status, json_extract(payload_json, '$.sourceId') AS source_id

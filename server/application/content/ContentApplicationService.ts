@@ -169,6 +169,7 @@ export class ContentApplicationService {
       timestamp: this.dependencies.clock.now(),
     })
     await this.enqueueSourceSynchronizations(sourceIds)
+    await this.enqueueUserReconciliation()
     return await this.getPersona(personaId)
   }
 
@@ -186,6 +187,7 @@ export class ContentApplicationService {
       : await this.dependencies.repository.listPersonaSources(personaId)
     await this.dependencies.repository.updatePersona(personaId, input.name, input.worldId, this.dependencies.clock.now())
     await this.enqueueSourceSynchronizations(sources.map(source => source.id))
+    if (persona.worldId !== input.worldId) await this.enqueueUserReconciliation()
     return await this.getPersona(personaId)
   }
 
@@ -271,6 +273,7 @@ export class ContentApplicationService {
     ])
     await this.dependencies.repository.deletePersona(personaId, this.dependencies.clock.now())
     await this.enqueueSourceSynchronizations(sources.map(source => source.id))
+    await this.enqueueUserReconciliation()
     if (this.dependencies.imageAssets) await this.dependencies.imageAssets.deleteRunAssets(runIds)
   }
 
@@ -333,6 +336,7 @@ export class ContentApplicationService {
       changeSummary: input.changeSummary,
       timestamp: this.dependencies.clock.now(),
     })
+    await this.enqueueUserReconciliation()
     return await this.getWorld(worldId)
   }
 
@@ -453,6 +457,7 @@ export class ContentApplicationService {
     const sources = await this.dependencies.repository.listWorldSources(worldId)
     await this.dependencies.repository.deleteWorld(worldId, this.dependencies.clock.now())
     await this.enqueueSourceSynchronizations(sources.map(source => source.id))
+    await this.enqueueUserReconciliation()
   }
 
   /**
@@ -634,6 +639,15 @@ export class ContentApplicationService {
   /** @param sourceIds 需要重新展开投影的资料 UUID。 @returns 全部持久任务创建完成时结束。 */
   private async enqueueSourceSynchronizations(sourceIds: string[]): Promise<void> {
     for (const sourceId of new Set(sourceIds)) await this.enqueueSourceSynchronization(sourceId)
+  }
+
+  /** @returns OpenViking User 对账任务写入持久队列后结束；能力关闭时直接结束。 */
+  private async enqueueUserReconciliation(): Promise<void> {
+    if (!this.dependencies.contextSyncQueue) return
+    await this.dependencies.contextSyncQueue.enqueueUserReconciliation(
+      this.dependencies.identifiers.create(),
+      this.dependencies.clock.now(),
+    )
   }
 
   /**

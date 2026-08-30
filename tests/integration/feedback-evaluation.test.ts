@@ -67,6 +67,9 @@ class RecordingContextSyncQueue implements ContextSyncTaskQueue {
   /** 已请求写入 Session 的反馈。 */
   public readonly feedbackIds: string[] = []
 
+  /** @returns 当前反馈测试不涉及 User 对账。 */
+  async enqueueUserReconciliation(): Promise<void> {}
+
   /** @param sourceId 资料 UUID。 @param _taskId 任务 UUID。 @param _timestamp 时间。 @param entityType 资料类型。 @returns 记录结束时完成。 */
   async enqueueSourceSynchronization(
     sourceId: string,

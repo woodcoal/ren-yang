@@ -119,6 +119,8 @@ export interface PendingContextSessionSource {
 
 /** SQLite 上下文同步记录和资料目录端口。 */
 export interface ContextIndexRepository {
+  /** @returns SQLite 当前全部世界 User，以及无世界人物的隐藏 User；用于重建 OpenViking User 投影。 */
+  listTargetUserIds(): Promise<string[]>
   /** @returns 全部 SQLite 资料正文；SQLite 始终是唯一事实源。 */
   listSourceDocuments(): Promise<ContextSourceDocument[]>
   /** @param sourceId 资料 UUID。 @returns 当前完整 SQLite 资料；不存在时返回 null。 */
@@ -135,6 +137,8 @@ export interface ContextIndexRepository {
   findSessionExchange(sourceType: 'run' | 'feedback', sourceId: string): Promise<ContextSessionExchange | null>
   /** @returns 尚未成功写入 OpenViking 的全部终态运行和反馈来源。 */
   listPendingSessionSources(): Promise<PendingContextSessionSource[]>
+  /** @param timestamp 重建开始时间。 @returns 把既有 Session 投影改为待重放，同时保留已同步回 SQLite 的候选记忆。 */
+  markSessionsForRebuild(timestamp: number): Promise<void>
   /** @param exchange 本地交流。 @param status 投影状态。 @param error 可选脱敏错误。 @param timestamp 更新时间。 @returns 无返回值。 */
   saveSessionState(exchange: ContextSessionExchange, status: 'pending' | 'failed', error: string | null, timestamp: number): Promise<void>
   /** @param exchange 已成功同步的交流。 @param memories OpenViking 派生候选。 @param timestamp 同步时间。 @returns 无返回值。 */

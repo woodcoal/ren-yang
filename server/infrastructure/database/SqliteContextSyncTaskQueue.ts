@@ -9,6 +9,19 @@ export class SqliteContextSyncTaskQueue implements ContextSyncTaskQueue {
    */
   constructor(private readonly client: BetterSqliteDatabase) {}
 
+  /** @param taskId 新任务 UUID。 @param timestamp 创建时间。 @returns 无返回值；已有待处理对账时保持幂等。 */
+  async enqueueUserReconciliation(taskId: string, timestamp: number): Promise<void> {
+    this.client.prepare(`
+      INSERT INTO task_jobs (
+        id, run_id, type, payload_json, status, attempt_count, max_attempts, created_at, updated_at
+      ) SELECT ?, NULL, 'sync_openviking_users', '{}', 'queued', 0, 3, ?, ?
+      WHERE NOT EXISTS (
+        SELECT 1 FROM task_jobs
+        WHERE type = 'sync_openviking_users' AND status IN ('queued', 'running')
+      )
+    `).run(taskId, timestamp, timestamp)
+  }
+
   /**
    * 创建最多尝试三次且不绑定生成运行的同步任务；同资料已有排队任务时复用该任务。
    * @param sourceId 资料 UUID。

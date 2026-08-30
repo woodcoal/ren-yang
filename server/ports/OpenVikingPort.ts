@@ -10,8 +10,8 @@ import type { ContextSyncRecordView } from '../../shared/types/context'
 export interface OpenVikingHealthResult {
   healthy: boolean
   version: string | null
-  /** 动态世界 User 隔离要求服务端处于 Trusted 模式。 */
-  authMode: 'trusted'
+  /** 世界隔离由 ADMIN Key 管理 User、各 User Key 访问数据。 */
+  authMode: 'api_key'
 }
 
 /** OpenViking 索引维护端口，不向应用层暴露远端响应类型。 */
@@ -20,6 +20,10 @@ export interface OpenVikingPort {
   getCapability(): OpenVikingCapabilityView
   /** @returns 远端健康状态。 */
   checkHealth(): Promise<OpenVikingHealthResult>
+  /** @param userIds SQLite 当前应存在的世界 User。 @returns 创建缺失 User、删除孤立 User 后结束。 */
+  reconcileUsers(userIds: string[]): Promise<void>
+  /** @param userIds SQLite 当前应存在的世界 User。 @returns 保留 User、清空受管内容并准备按 SQLite 重建后结束。 */
+  rebuildUsers(userIds: string[]): Promise<void>
   /** @returns 清理旧版账号共享目录；不存在视为成功。 */
   resetLegacyIndex(): Promise<void>
   /** @param record SQLite 保存的精确投影身份和 URI。 @returns 删除结束；不存在视为成功。 */

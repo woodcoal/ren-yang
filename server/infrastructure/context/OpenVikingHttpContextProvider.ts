@@ -11,13 +11,18 @@ import { ContextProviderError } from '../../ports/ContextProvider'
 import type { OpenVikingHealthResult, OpenVikingPort } from '../../ports/OpenVikingPort'
 import { OpenVikingError } from '../../ports/OpenVikingPort'
 
+/** 当前单租户实例对应的 OpenViking Account。 */
+const OPEN_VIKING_ACCOUNT_ID = 'ren-yang'
+/** OpenViking 删除 User 后释放同名存储空间的维护等待上限。 */
+const USER_RELEASE_TIMEOUT_MS = 180_000
+
 /** OpenViking 原生 HTTP 适配器配置。 */
 export interface OpenVikingHttpContextProviderOptions {
   /** 是否选择 OpenViking 供新运行检索。 */
   enabled: boolean
   /** OpenViking 服务根地址。 */
   endpoint: string
-  /** 可选 API Key；服务未开启认证时留空。 */
+  /** 当前 Account 的 ADMIN User Key；只用于管理世界 User。 */
   apiKey: string
   /** 单次 HTTP 请求超时。 */
   timeoutMs: number
@@ -33,6 +38,12 @@ export class OpenVikingHttpContextProvider implements ContextProvider, OpenVikin
   private readonly endpoint: URL | null
   /** 实际 HTTP 调用函数。 */
   private readonly fetcher: typeof fetch
+  /** 已验证认证模式和 ADMIN 权限的进程内状态。 */
+  private adminStatePromise: Promise<OpenVikingAdminState> | undefined
+  /** 当前进程按世界 User 缓存的业务数据 Key；绝不写入 SQLite。 */
+  private readonly userKeys = new Map<string, string>()
+  /** 防止并发请求重复创建或刷新同一个世界 User。 */
+  private readonly userKeyPromises = new Map<string, Promise<string>>()
 
   /**
    * 创建 OpenViking 适配器；构造时不联网。
@@ -65,36 +76,93 @@ export class OpenVikingHttpContextProvider implements ContextProvider, OpenVikin
 
   /** @returns 远端公开健康状态。 */
   async checkHealth(): Promise<OpenVikingHealthResult> {
-    const response = await this.request('/health', { method: 'GET' }, false)
-    if (!isRecord(response) || response.status !== 'ok' || response.healthy !== true) {
-      throw new OpenVikingError('PROVIDER_OUTPUT_INVALID', 'OpenViking 健康响应结构无效')
+    const state = await this.ensureAdminState()
+    return { healthy: true, version: state.version, authMode: 'api_key' }
+  }
+
+  /** @param userIds SQLite 当前应存在的世界 User。 @returns 创建缺失 User、删除孤立 User 后结束。 */
+  async reconcileUsers(userIds: string[]): Promise<void> {
+    const desired = normalizeManagedUserIds(userIds)
+    const state = await this.ensureAdminState()
+    for (const userId of [...state.userIds].filter(userId => isManagedUserId(userId) && !desired.has(userId))) {
+      await this.deleteManagedUser(userId, state)
     }
-    if (response.auth_mode !== 'trusted') {
-      throw new OpenVikingError(
-        'CAPABILITY_DISABLED',
-        'OpenViking 必须启用 Trusted 认证模式，API Key 模式无法按世界隔离数据',
-      )
+    for (const userId of desired) await this.ensureUserKey(userId)
+  }
+
+  /** @param userIds SQLite 当前应存在的世界 User。 @returns 保留有效 User、清空受管内容并删除孤立 User 后结束。 */
+  async rebuildUsers(userIds: string[]): Promise<void> {
+    const desired = normalizeManagedUserIds(userIds)
+    const state = await this.ensureAdminState()
+    for (const userId of [...state.userIds].filter(userId => isManagedUserId(userId) && !desired.has(userId))) {
+      await this.deleteManagedUser(userId, state)
     }
-    return {
-      healthy: true,
-      version: typeof response.version === 'string' ? response.version : null,
-      authMode: 'trusted',
+    for (const userId of desired) {
+      const userKey = await this.ensureUserKey(userId)
+      await this.resetUserData(userKey)
     }
   }
 
-  /** @returns 删除人样专属资源根；远端尚不存在时也视为成功。 */
+  /** @returns 删除旧 default ADMIN User 下的人样资料、人物 Peer 和 Session；不存在时视为成功。 */
   async resetLegacyIndex(): Promise<void> {
-    await this.deleteUri('viking://resources/ren-yang', true, { userId: 'ren-yang-maintenance', peerId: null })
+    await this.ensureAdminState()
+    await this.resetUserData(this.requireAdminKey())
+  }
+
+  /** @returns 验证 API Key 模式，并确认配置密钥具有当前 Account 的 User 管理权限。 */
+  private async loadAdminState(): Promise<OpenVikingAdminState> {
+    const response = await this.request('/health', { method: 'GET' })
+    if (!isRecord(response) || response.status !== 'ok' || response.healthy !== true) {
+      throw new OpenVikingError('PROVIDER_OUTPUT_INVALID', 'OpenViking 健康响应结构无效')
+    }
+    if (response.auth_mode !== 'api_key') {
+      throw new OpenVikingError(
+        'CAPABILITY_DISABLED',
+        'OpenViking 必须启用 API Key 认证模式，并配置当前 Account 的 ADMIN User Key',
+      )
+    }
+    const users = readOkArrayResult(
+      await this.request(`/api/v1/admin/accounts/${OPEN_VIKING_ACCOUNT_ID}/users`, { method: 'GET' }, this.requireAdminKey()),
+      'OpenViking ADMIN Key 无法读取当前 Account User',
+    )
+    return {
+      version: typeof response.version === 'string' ? response.version : null,
+      userIds: new Set(users.flatMap((value): string[] => {
+        return isRecord(value) && typeof value.user_id === 'string' ? [value.user_id] : []
+      })),
+    }
+  }
+
+  /** @returns 复用一次成功的 ADMIN 能力检查；失败后允许下一次操作重新检测。 */
+  private async ensureAdminState(): Promise<OpenVikingAdminState> {
+    if (!this.adminStatePromise) {
+      const pending = this.loadAdminState()
+      this.adminStatePromise = pending.catch((error: unknown) => {
+        this.adminStatePromise = undefined
+        throw error
+      })
+    }
+    return await this.adminStatePromise
   }
 
   /**
    * 删除一项 SQLite 已不存在的远端资料资源。
-   * @param sourceId 已删除资料 UUID，用于生成稳定且受控的远端 URI。
+   * @param record SQLite 保存的旧 User、Peer 和稳定远端 URI。
    * @returns OpenViking 删除完成时结束；远端资源不存在时同样成功。
    */
   async deleteProjection(record: import('../../../shared/types/context').ContextSyncRecordView): Promise<void> {
     if (!record.remoteUri) return
-    await this.deleteUri(record.remoteUri, false, { userId: record.userId, peerId: record.peerId })
+    const state = await this.ensureAdminState()
+    // User 对账可能已经删除旧世界；删除路径不得为清理不存在的旧投影而重新创建孤立 User。
+    if (!state.userIds.has(record.userId)) return
+    try {
+      await this.deleteUri(record.remoteUri, false, { userId: record.userId, peerId: record.peerId })
+    }
+    catch (error: unknown) {
+      // 其他进程可能在 ADMIN 状态加载后删除 User，此时刷新旧 User Key 的 404 同样表示投影已不存在。
+      if (error instanceof OpenVikingHttpStatusError && error.statusCode === 404) return
+      throw error
+    }
   }
 
   /**
@@ -108,17 +176,21 @@ export class OpenVikingHttpContextProvider implements ContextProvider, OpenVikin
     }
     const remoteUri = projection.remoteUri
     const identity = { userId: projection.userId, peerId: projection.peerId }
-    await this.deleteUri(remoteUri, false, identity)
+    const existingHash = await this.readProjectionContentHash(remoteUri, projection.source.id, identity)
+    // OpenViking 可能在客户端等待超时后继续完成写入；正文已一致时直接收敛本地状态，禁止重复删除重传。
+    if (existingHash === projection.source.contentHash) return remoteUri
+    // 首次写入没有旧资源，跳过会触发语义刷新的无效删除；仅在正文变化时删除旧目录。
+    if (existingHash !== null) await this.deleteUri(remoteUri, false, identity)
 
     const form = new FormData()
     form.append('file', new Blob([projection.source.contentText], { type: 'text/markdown;charset=utf-8' }), `${projection.source.id}.md`)
-    const uploadPayload = await this.request('/api/v1/resources/temp_upload', { method: 'POST', body: form }, true, identity)
+    const uploadPayload = await this.requestData('/api/v1/resources/temp_upload', { method: 'POST', body: form }, identity)
     const uploadResult = readOkResult(uploadPayload, 'OpenViking 临时上传响应结构无效')
     if (typeof uploadResult.temp_file_id !== 'string' || !uploadResult.temp_file_id) {
       throw new OpenVikingError('PROVIDER_OUTPUT_INVALID', 'OpenViking 未返回临时文件标识')
     }
 
-    const addPayload = await this.request('/api/v1/resources', {
+    const addPayload = await this.requestData('/api/v1/resources', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -139,12 +211,36 @@ export class OpenVikingHttpContextProvider implements ContextProvider, OpenVikin
           `scope_id=${projection.scopeId}`,
         ],
       }),
-    }, true, identity)
+    }, identity)
     const addResult = readOkResult(addPayload, 'OpenViking 资源写入响应结构无效')
     if (typeof addResult.root_uri !== 'string' || !addResult.root_uri.includes(projection.source.id)) {
       throw new OpenVikingError('PROVIDER_OUTPUT_INVALID', 'OpenViking 未返回预期资源 URI')
     }
     return addResult.root_uri
+  }
+
+  /**
+   * 读取 OpenViking 资源目录内的原始文件哈希。
+   * @param remoteUri 当前投影稳定根 URI。
+   * @param sourceId SQLite 资料 UUID，也是原始文件名。
+   * @param identity 世界 User 与可选人物 Peer。
+   * @returns 原文 SHA-256；资源尚不存在时返回 null。
+   */
+  private async readProjectionContentHash(
+    remoteUri: string,
+    sourceId: string,
+    identity: OpenVikingIdentity,
+  ): Promise<string | null> {
+    const sourceUri = `${remoteUri}/${sourceId}.md`
+    try {
+      const payload = await this.requestData(`/api/v1/content/read?uri=${encodeURIComponent(sourceUri)}`, { method: 'GET' }, identity)
+      const content = readOkStringResult(payload, 'OpenViking 资源原文响应结构无效')
+      return createHash('sha256').update(content).digest('hex')
+    }
+    catch (error: unknown) {
+      if (error instanceof OpenVikingHttpStatusError && error.statusCode === 404) return null
+      throw error
+    }
   }
 
   /**
@@ -155,7 +251,7 @@ export class OpenVikingHttpContextProvider implements ContextProvider, OpenVikin
   async synchronizeSession(exchange: ContextSessionExchange): Promise<DerivedMemoryDocument[]> {
     const identity = { userId: exchange.userId, peerId: exchange.peerId }
     await this.deleteSession(exchange.sessionId, identity)
-    await this.request('/api/v1/sessions', {
+    await this.requestData('/api/v1/sessions', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -167,21 +263,20 @@ export class OpenVikingHttpContextProvider implements ContextProvider, OpenVikin
           working_memory: { enabled: false },
         },
       }),
-    }, true, identity)
+    }, identity)
     for (const message of [
       { role: 'user', content: exchange.userContent, peer_id: exchange.peerId },
       { role: 'assistant', content: exchange.assistantContent, peer_id: exchange.peerId },
     ]) {
-      await this.request(`/api/v1/sessions/${encodeURIComponent(exchange.sessionId)}/messages`, {
+      await this.requestData(`/api/v1/sessions/${encodeURIComponent(exchange.sessionId)}/messages`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(message),
-      }, true, identity)
+      }, identity)
     }
-    const committed = readOkResult(await this.request(
+    const committed = readOkResult(await this.requestData(
       `/api/v1/sessions/${encodeURIComponent(exchange.sessionId)}/commit`,
       { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' },
-      true,
       identity,
     ), 'OpenViking Session 提交响应结构无效')
     if (typeof committed.task_id === 'string' && committed.task_id) {
@@ -217,7 +312,7 @@ export class OpenVikingHttpContextProvider implements ContextProvider, OpenVikin
       return { provider: 'openviking' as const, candidates: localCandidates.slice(0, request.limit) }
     }
     try {
-      const payload = await this.request('/api/v1/search/find', {
+      const payload = await this.requestData('/api/v1/search/find', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
@@ -227,7 +322,7 @@ export class OpenVikingHttpContextProvider implements ContextProvider, OpenVikin
           limit: request.limit,
           read_content: true,
         }),
-      }, true, { userId: scope.userId, peerId: scope.peerId })
+      }, { userId: scope.userId, peerId: scope.peerId })
       const result = readOkResult(payload, 'OpenViking 检索响应结构无效')
       if (!Array.isArray(result.resources) || !Array.isArray(result.memories)) {
         throw new OpenVikingError('PROVIDER_OUTPUT_INVALID', 'OpenViking 检索结果缺少资源或记忆列表')
@@ -275,7 +370,7 @@ export class OpenVikingHttpContextProvider implements ContextProvider, OpenVikin
    */
   private async deleteUri(uri: string, recursive: boolean, identity: OpenVikingIdentity): Promise<void> {
     try {
-      await this.request(`/api/v1/fs?uri=${encodeURIComponent(uri)}&recursive=${recursive ? 'true' : 'false'}&wait=true`, { method: 'DELETE' }, true, identity)
+      await this.requestData(`/api/v1/fs?uri=${encodeURIComponent(uri)}&recursive=${recursive ? 'true' : 'false'}&wait=true`, { method: 'DELETE' }, identity)
     }
     catch (error: unknown) {
       if (error instanceof OpenVikingHttpStatusError && error.statusCode === 404) return
@@ -286,7 +381,7 @@ export class OpenVikingHttpContextProvider implements ContextProvider, OpenVikin
   /** @param sessionId 稳定 Session UUID。 @param identity 世界 User 与人物 Peer。 @returns 不存在也视为成功。 */
   private async deleteSession(sessionId: string, identity: OpenVikingIdentity): Promise<void> {
     try {
-      await this.request(`/api/v1/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' }, true, identity)
+      await this.requestData(`/api/v1/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' }, identity)
     }
     catch (error: unknown) {
       if (error instanceof OpenVikingHttpStatusError && error.statusCode === 404) return
@@ -298,7 +393,7 @@ export class OpenVikingHttpContextProvider implements ContextProvider, OpenVikin
   private async waitForTask(taskId: string, identity: OpenVikingIdentity): Promise<void> {
     const deadline = Date.now() + this.options.timeoutMs
     while (Date.now() < deadline) {
-      const result = readOkResult(await this.request(`/api/v1/tasks/${encodeURIComponent(taskId)}`, { method: 'GET' }, true, identity), 'OpenViking 任务响应结构无效')
+      const result = readOkResult(await this.requestData(`/api/v1/tasks/${encodeURIComponent(taskId)}`, { method: 'GET' }, identity), 'OpenViking 任务响应结构无效')
       if (result.status === 'completed') return
       if (['failed', 'cancelled'].includes(String(result.status))) {
         throw new OpenVikingError('PROVIDER_UNAVAILABLE', 'OpenViking 记忆提取任务失败')
@@ -313,7 +408,7 @@ export class OpenVikingHttpContextProvider implements ContextProvider, OpenVikin
     const rootUri = `viking://~/peers/${identity.peerId}/memories/events`
     let listed: unknown
     try {
-      listed = await this.request(`/api/v1/fs/ls?uri=${encodeURIComponent(rootUri)}&recursive=true&output=original`, { method: 'GET' }, true, identity)
+      listed = await this.requestData(`/api/v1/fs/ls?uri=${encodeURIComponent(rootUri)}&recursive=true&output=original`, { method: 'GET' }, identity)
     }
     catch (error: unknown) {
       if (error instanceof OpenVikingHttpStatusError && error.statusCode === 404) return []
@@ -326,7 +421,7 @@ export class OpenVikingHttpContextProvider implements ContextProvider, OpenVikin
       return name.endsWith('.md') && !name.startsWith('.') ? [value.uri] : []
     })
     return await Promise.all(uris.map(async (remoteUri) => {
-      const payload = await this.request(`/api/v1/content/read?uri=${encodeURIComponent(remoteUri)}`, { method: 'GET' }, true, identity)
+      const payload = await this.requestData(`/api/v1/content/read?uri=${encodeURIComponent(remoteUri)}`, { method: 'GET' }, identity)
       const content = readOkStringResult(payload, 'OpenViking 记忆正文响应结构无效').trim()
       return {
         remoteUri,
@@ -338,28 +433,228 @@ export class OpenVikingHttpContextProvider implements ContextProvider, OpenVikin
   }
 
   /**
-   * 执行一次带超时和可选认证的 OpenViking HTTP 请求。
+   * 使用目标世界 User Key 执行业务数据请求；密钥失效时刷新一次后重试。
    * @param path 服务端绝对路径和受控查询。
    * @param init Fetch 请求参数。
-   * @param requireConfigured 是否要求有效配置；健康检查同样默认要求。
+   * @param identity 世界 User 与可选人物 Peer。
    * @returns 解析后的未知 JSON。
    */
-  private async request(path: string, init: RequestInit, requireConfigured = true, identity?: OpenVikingIdentity): Promise<unknown> {
-    if ((requireConfigured || path === '/health') && !this.endpoint) {
-      throw new OpenVikingError('CAPABILITY_DISABLED', 'OpenViking 服务地址尚未配置')
+  private async requestData(path: string, init: RequestInit, identity: OpenVikingIdentity): Promise<unknown> {
+    const userKey = await this.ensureUserKey(identity.userId)
+    try {
+      return await this.request(path, init, userKey, identity.peerId)
     }
+    catch (error: unknown) {
+      if (!(error instanceof OpenVikingHttpStatusError) || ![401, 403].includes(error.statusCode)) throw error
+      this.userKeys.delete(identity.userId)
+      const refreshedKey = await this.ensureUserKey(identity.userId)
+      return await this.request(path, init, refreshedKey, identity.peerId)
+    }
+  }
+
+  /** @param userId 世界或隐藏 User 标识。 @returns 当前进程可使用的 User Key。 */
+  private async ensureUserKey(userId: string): Promise<string> {
+    if (!isManagedUserId(userId)) throw new OpenVikingError('PROVIDER_OUTPUT_INVALID', 'OpenViking User 标识不受当前应用管理')
+    const cached = this.userKeys.get(userId)
+    if (cached) return cached
+    const existing = this.userKeyPromises.get(userId)
+    if (existing) return await existing
+    const pending = this.provisionUserKey(userId).finally(() => this.userKeyPromises.delete(userId))
+    this.userKeyPromises.set(userId, pending)
+    return await pending
+  }
+
+  /** @param userId 世界或隐藏 User 标识。 @returns 新建或刷新的 User Key。 */
+  private async provisionUserKey(userId: string): Promise<string> {
+    const state = await this.ensureAdminState()
+    let payload: unknown
+    if (state.userIds.has(userId)) {
+      try {
+        payload = await this.request(
+          `/api/v1/admin/accounts/${OPEN_VIKING_ACCOUNT_ID}/users/${encodeURIComponent(userId)}/key`,
+          { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' },
+          this.requireAdminKey(),
+        )
+      }
+      catch (error: unknown) {
+        if (!(error instanceof OpenVikingHttpStatusError) || error.statusCode !== 404) throw error
+        // OpenViking 可能在进程运行期间被外部重建；以 SQLite 目标标识修复过期的进程内 User 状态。
+        state.userIds.delete(userId)
+        payload = await this.createOrRefreshUser(userId)
+        state.userIds.add(userId)
+      }
+    }
+    else {
+      payload = await this.createOrRefreshUser(userId)
+      state.userIds.add(userId)
+    }
+    const key = readUserKey(payload)
+    this.userKeys.set(userId, key)
+    return key
+  }
+
+  /**
+   * 创建目标 User；刚删除的同名 User 尚未释放时有限重试，已被其他请求创建时转为刷新 Key。
+   * @param userId 世界或隐藏 User 标识。
+   * @returns User 注册或 Key 刷新响应。
+   */
+  private async createOrRefreshUser(userId: string): Promise<unknown> {
+    const deadline = Date.now() + Math.max(this.options.timeoutMs, USER_RELEASE_TIMEOUT_MS)
+    while (Date.now() < deadline) {
+      try {
+        return await this.request(
+          `/api/v1/admin/accounts/${OPEN_VIKING_ACCOUNT_ID}/users`,
+          {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ user_id: userId, role: 'user' }),
+          },
+          this.requireAdminKey(),
+        )
+      }
+      catch (error: unknown) {
+        if (error instanceof OpenVikingHttpStatusError && error.statusCode === 409) {
+          return await this.request(
+            `/api/v1/admin/accounts/${OPEN_VIKING_ACCOUNT_ID}/users/${encodeURIComponent(userId)}/key`,
+            { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' },
+            this.requireAdminKey(),
+          )
+        }
+        if (!(error instanceof OpenVikingHttpStatusError) || error.statusCode !== 412) throw error
+        // OpenViking 删除 User 后会异步释放其存储空间，412 只表示当前尚不能同名重建。
+        await new Promise(resolve => setTimeout(resolve, 250))
+      }
+    }
+    throw new OpenVikingError('PROVIDER_UNAVAILABLE', 'OpenViking 世界 User 删除后未在时限内释放')
+  }
+
+  /** @param userId 待删除受管 User。 @param state 当前 ADMIN 状态。 @returns 远端不存在也视为成功。 */
+  private async deleteManagedUser(userId: string, state: OpenVikingAdminState): Promise<void> {
+    const deadline = Date.now() + Math.max(this.options.timeoutMs, USER_RELEASE_TIMEOUT_MS)
+    let deleted = false
+    while (Date.now() < deadline) {
+      try {
+        await this.request(
+          `/api/v1/admin/accounts/${OPEN_VIKING_ACCOUNT_ID}/users/${encodeURIComponent(userId)}`,
+          { method: 'DELETE' },
+          this.requireAdminKey(),
+        )
+        deleted = true
+        break
+      }
+      catch (error: unknown) {
+        if (error instanceof OpenVikingHttpStatusError && error.statusCode === 404) {
+          deleted = true
+          break
+        }
+        if (!(error instanceof OpenVikingHttpStatusError) || error.statusCode !== 412) throw error
+        // User 初始化或前一次删除仍在收尾时，OpenViking 会暂时拒绝重复删除。
+        await new Promise(resolve => setTimeout(resolve, 250))
+      }
+    }
+    if (!deleted) throw new OpenVikingError('PROVIDER_UNAVAILABLE', 'OpenViking 世界 User 未在时限内完成删除')
+    state.userIds.delete(userId)
+    this.userKeys.delete(userId)
+  }
+
+  /** @param apiKey ADMIN 或世界 User Key。 @returns 清空该 User 下的人样资料、Session 和人物 Peer 后结束。 */
+  private async resetUserData(apiKey: string): Promise<void> {
+    const resources = await this.listDataEntries('viking://~/resources/ren-yang', apiKey)
+    if (resources.length > 0) {
+      // OpenViking 的 wait=true 会等待递归目录的语义刷新，在已有积压时可能长期阻塞。
+      // 删除本身和向量清理会在响应前完成，后续重放资料的 wait=true 会按队列顺序确认最终索引。
+      await this.deleteUriWithCredential('viking://~/resources/ren-yang', true, apiKey, null, false)
+    }
+    const sessions = readOkArrayResult(
+      await this.request('/api/v1/sessions', { method: 'GET' }, apiKey),
+      'OpenViking Session 列表响应结构无效',
+    )
+    for (const session of sessions) {
+      if (!isRecord(session) || typeof session.session_id !== 'string' || !session.session_id.startsWith('ren-yang-')) continue
+      await this.deleteSessionWithCredential(session.session_id, apiKey, null)
+    }
+    // Session 可能持有 Peer Memory 引用，必须先删除 Session，再递归清理 Peer，避免服务端删除长时间阻塞。
+    const peers = await this.listDataEntries('viking://~/peers', apiKey)
+    for (const peer of peers.filter(item => readEntryName(item).startsWith('persona-'))) {
+      const uri = readEntryUri(peer)
+      if (uri) await this.deleteUriWithCredential(uri, true, apiKey, null, false)
+    }
+  }
+
+  /** @param uri 当前 User 目录。 @param apiKey ADMIN 或世界 User Key。 @returns 目录项；不存在返回空数组。 */
+  private async listDataEntries(uri: string, apiKey: string): Promise<unknown[]> {
+    try {
+      return readOkArrayResult(
+        await this.request(`/api/v1/fs/ls?uri=${encodeURIComponent(uri)}&recursive=false&output=original`, { method: 'GET' }, apiKey),
+        'OpenViking 旧人物目录响应结构无效',
+      )
+    }
+    catch (error: unknown) {
+      if (error instanceof OpenVikingHttpStatusError && error.statusCode === 404) return []
+      throw error
+    }
+  }
+
+  /**
+   * 使用指定凭据删除旧 URI。
+   * @param uri 旧目录 URI。
+   * @param recursive 是否递归。
+   * @param apiKey ADMIN 或世界 User Key。
+   * @param peerId 可选人物 Peer。
+   * @param wait 是否等待语义刷新；全量重建递归目录必须关闭，避免远端队列积压阻塞维护请求。
+   * @returns 删除请求被 OpenViking 接受后结束；不存在同样视为成功。
+   */
+  private async deleteUriWithCredential(
+    uri: string,
+    recursive: boolean,
+    apiKey: string,
+    peerId: string | null,
+    wait = true,
+  ): Promise<void> {
+    try {
+      await this.request(`/api/v1/fs?uri=${encodeURIComponent(uri)}&recursive=${recursive ? 'true' : 'false'}&wait=${wait ? 'true' : 'false'}`, { method: 'DELETE' }, apiKey, peerId)
+    }
+    catch (error: unknown) {
+      if (error instanceof OpenVikingHttpStatusError && error.statusCode === 404) return
+      throw error
+    }
+  }
+
+  /** @param sessionId 旧 Session 标识。 @param apiKey ADMIN Key。 @param peerId 可选 Peer。 @returns 不存在也视为成功。 */
+  private async deleteSessionWithCredential(sessionId: string, apiKey: string, peerId: string | null): Promise<void> {
+    try {
+      await this.request(`/api/v1/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' }, apiKey, peerId)
+    }
+    catch (error: unknown) {
+      if (error instanceof OpenVikingHttpStatusError && error.statusCode === 404) return
+      throw error
+    }
+  }
+
+  /** @returns 已去除空白的 ADMIN Key；缺失时抛出能力错误。 */
+  private requireAdminKey(): string {
+    const key = this.options.apiKey.trim()
+    if (!key) throw new OpenVikingError('CAPABILITY_DISABLED', 'OpenViking ADMIN User Key 尚未配置')
+    return key
+  }
+
+  /**
+   * 执行一次带超时和显式密钥的 OpenViking HTTP 请求。
+   * @param path 服务端绝对路径和受控查询。
+   * @param init Fetch 请求参数。
+   * @param apiKey 可选 ADMIN 或目标 User Key。
+   * @param peerId 可选人物 Peer，只用于业务数据请求。
+   * @returns 解析后的未知 JSON。
+   */
+  private async request(path: string, init: RequestInit, apiKey?: string, peerId?: string | null): Promise<unknown> {
     const endpoint = this.endpoint
     if (!endpoint) throw new OpenVikingError('CAPABILITY_DISABLED', 'OpenViking 服务地址尚未配置')
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), this.options.timeoutMs)
     try {
       const headers = new Headers(init.headers)
-      if (this.options.apiKey.trim()) headers.set('x-api-key', this.options.apiKey.trim())
-      if (identity) {
-        headers.set('x-openviking-account', 'ren-yang')
-        headers.set('x-openviking-user', identity.userId)
-        if (identity.peerId) headers.set('x-openviking-actor-peer', identity.peerId)
-      }
+      if (apiKey) headers.set('x-api-key', apiKey)
+      if (peerId) headers.set('x-openviking-actor-peer', peerId)
       const response = await this.fetcher(new URL(path, endpoint), { ...init, headers, signal: controller.signal })
       let payload: unknown
       try {
@@ -415,6 +710,47 @@ interface OpenVikingIdentity {
   userId: string
   /** 当前人物 Peer；世界级维护为空。 */
   peerId: string | null
+}
+
+/** 已由健康检查和 ADMIN 接口确认的远端控制面状态。 */
+interface OpenVikingAdminState {
+  /** OpenViking 公开版本。 */
+  version: string | null
+  /** 当前 Account 已存在的 User。 */
+  userIds: Set<string>
+}
+
+/** @param userIds SQLite 目标 User。 @returns 已校验、去重并排序的受管 User 集合。 */
+function normalizeManagedUserIds(userIds: string[]): Set<string> {
+  const normalized = [...new Set(userIds)]
+  if (normalized.some(userId => !isManagedUserId(userId))) {
+    throw new OpenVikingError('PROVIDER_OUTPUT_INVALID', 'SQLite 产生了不受管理的 OpenViking User 标识')
+  }
+  return new Set(normalized.sort())
+}
+
+/** @param userId OpenViking User 标识。 @returns 是否属于世界或独立人物命名空间。 */
+function isManagedUserId(userId: string): boolean {
+  return /^(?:world|standalone)-[0-9a-z-]+$/i.test(userId)
+}
+
+/** @param payload OpenViking User 注册或刷新响应。 @returns 不落盘的 User Key。 */
+function readUserKey(payload: unknown): string {
+  const result = readOkResult(payload, 'OpenViking 未返回世界 User Key')
+  if (typeof result.user_key !== 'string' || !result.user_key.trim()) {
+    throw new OpenVikingError('PROVIDER_OUTPUT_INVALID', 'OpenViking 未返回世界 User Key')
+  }
+  return result.user_key
+}
+
+/** @param value OpenViking 文件目录项。 @returns 安全文件名。 */
+function readEntryName(value: unknown): string {
+  return isRecord(value) && typeof value.name === 'string' ? value.name : ''
+}
+
+/** @param value OpenViking 文件目录项。 @returns 安全 URI 或 null。 */
+function readEntryUri(value: unknown): string | null {
+  return isRecord(value) && typeof value.uri === 'string' && value.uri.startsWith('viking://') ? value.uri : null
 }
 
 /** @param value 未知 JSON。 @returns 是否为普通键值对象。 */

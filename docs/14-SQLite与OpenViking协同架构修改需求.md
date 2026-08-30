@@ -136,9 +136,11 @@ OpenViking 故障时仍可使用：
 
 ## 11. 部署前提
 
-世界映射动态 User 需要 OpenViking Trusted 模式。应用后端作为受信网关传递 Account、User 和 Peer，禁止浏览器或移动端直连 OpenViking。
+OpenViking 使用 `api_key` 模式。配置的 `NUXT_OPEN_VIKING_API_KEY` 必须是当前 Account 的 ADMIN User Key，只允许调用 User 管理接口；应用为每个世界创建 `world-{worldId}` User，为无世界人物创建 `standalone-{personaId}` User。
 
-健康检查必须验证 `auth_mode=trusted`。处于 `api_key` 或无法确认认证模式时，OpenViking 能力判定不可用，新运行固定降级到 FTS5，同步任务等待配置修正。
+业务资料、检索、删除和 Session 必须使用目标 User 自己的 User Key，人物操作额外携带 Peer。User Key 由 ADMIN Key 创建或刷新，只在当前应用进程内缓存，不写入 SQLite、备份、响应或日志。进程重启后可按 SQLite 的确定性 User 标识重新取得，因此 OpenViking 仍是可重建投影。
+
+健康检查必须验证 `auth_mode=api_key`，并实际调用当前 Account 的 User 列表接口确认 ADMIN 权限。认证模式错误、密钥不是 ADMIN Key 或管理接口不可用时，OpenViking 能力判定不可用，新运行固定降级到 FTS5，同步任务保留失败事实并等待恢复。
 
 OpenViking 使用本项目专用 Account 或独立部署，不与其他插件或项目共用普通用户空间。
 

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { describe, expect, it, vi } from 'vitest'
 import { OpenVikingHttpContextProvider } from '../../server/infrastructure/context/OpenVikingHttpContextProvider'
 import { SwitchableContextProvider } from '../../server/infrastructure/context/SwitchableContextProvider'
@@ -12,6 +13,9 @@ class FixedContextIndexRepository implements ContextIndexRepository {
 
   /** @param scopes 允许检索的固定资料范围。 */
   constructor(private readonly scopes: ContextSourceScope[]) {}
+
+  /** @returns 当前测试没有需要主动对账的 User。 */
+  async listTargetUserIds() { return [] }
 
   /** @returns 当前测试不需要完整资料列表。 */
   async listSourceDocuments() { return [] }
@@ -45,6 +49,9 @@ class FixedContextIndexRepository implements ContextIndexRepository {
 
   /** @returns 当前单元测试没有待补偿 Session。 */
   async listPendingSessionSources() { return [] }
+
+  /** @returns 当前单元测试不重置 Session 投影。 */
+  async markSessionsForRebuild() {}
 
   /** @returns 当前单元测试不保存 Session 状态。 */
   async saveSessionState() {}
@@ -86,35 +93,45 @@ class FixedContextProvider implements ContextProvider {
   async search() { return { provider: this.provider, candidates: this.evidence } }
 
   /** @returns 固定健康结果。 */
-  async checkHealth() { return { healthy: true, version: 'test', authMode: 'trusted' as const } }
+  async checkHealth() { return { healthy: true, version: 'test', authMode: 'api_key' as const } }
 }
 
 /** 测试固定资料 UUID。 */
 const SOURCE_ID = '00000000-0000-4000-8000-000000000001'
 
 describe('OpenViking 原生 HTTP 上下文适配器', () => {
-  it('拒绝不能按世界动态切换 User 的 API Key 认证模式', async () => {
+  it('只接受能够管理当前 Account User 的 ADMIN Key', async () => {
+    const requests: Array<{ url: string, init: RequestInit }> = []
+    const responses = [
+      new Response(JSON.stringify({ status: 'ok', healthy: true, version: '0.4.16', auth_mode: 'api_key' })),
+      new Response(JSON.stringify({ status: 'ok', result: [{ user_id: 'default', role: 'admin' }] })),
+    ]
     const provider = new OpenVikingHttpContextProvider({
       enabled: true,
       endpoint: 'https://ov.test',
-      apiKey: 'user-key',
+      apiKey: 'admin-key',
       timeoutMs: 5_000,
       repository: new FixedContextIndexRepository([]),
-      fetcher: vi.fn(async () => new Response(JSON.stringify({
-        status: 'ok', healthy: true, version: '0.4.17', auth_mode: 'api_key',
-      }))) as unknown as typeof fetch,
+      fetcher: vi.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
+        requests.push({ url: String(input), init: init ?? {} })
+        return responses.shift()!
+      }) as unknown as typeof fetch,
     })
 
-    await expect(provider.checkHealth()).rejects.toMatchObject({
-      code: 'CAPABILITY_DISABLED',
-      message: 'OpenViking 必须启用 Trusted 认证模式，API Key 模式无法按世界隔离数据',
-    })
+    await expect(provider.checkHealth()).resolves.toEqual({ healthy: true, version: '0.4.16', authMode: 'api_key' })
+    expect(requests.map(item => new URL(item.url).pathname)).toEqual([
+      '/health', '/api/v1/admin/accounts/ren-yang/users',
+    ])
+    expect(new Headers(requests[1]!.init.headers).get('x-api-key')).toBe('admin-key')
   })
 
   it('把反馈写入世界 User Session，消息携带人物 Peer 且只允许提取 events', async () => {
     const requests: Array<{ url: string, init: RequestInit }> = []
     const memoryUri = 'viking://~/peers/persona-persona/memories/events/event-1.md'
     const responses = [
+      new Response(JSON.stringify({ status: 'ok', healthy: true, version: '0.4.16', auth_mode: 'api_key' })),
+      new Response(JSON.stringify({ status: 'ok', result: [] })),
+      new Response(JSON.stringify({ status: 'ok', result: { account_id: 'ren-yang', user_id: 'world-world', user_key: 'world-key' } })),
       new Response(JSON.stringify({ status: 'error' }), { status: 404 }),
       new Response(JSON.stringify({ status: 'ok', result: { session_id: 'session-1' } })),
       new Response(JSON.stringify({ status: 'ok', result: { message_count: 1 } })),
@@ -125,7 +142,7 @@ describe('OpenViking 原生 HTTP 上下文适配器', () => {
       new Response(JSON.stringify({ status: 'ok', result: '人物明确要求以后少用反问。' })),
     ]
     const provider = new OpenVikingHttpContextProvider({
-      enabled: true, endpoint: 'https://ov.test', apiKey: 'trusted-key', timeoutMs: 5_000,
+      enabled: true, endpoint: 'https://ov.test', apiKey: 'admin-key', timeoutMs: 5_000,
       repository: new FixedContextIndexRepository([]),
       fetcher: vi.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
         requests.push({ url: String(input), init: init ?? {} })
@@ -144,32 +161,36 @@ describe('OpenViking 原生 HTTP 上下文适配器', () => {
       contentHash: expect.stringMatching(/^[a-f0-9]{64}$/),
     }])
 
-    const createBody = JSON.parse(String(requests[1]!.init.body))
+    const createBody = JSON.parse(String(requests[4]!.init.body))
     expect(createBody.memory_policy).toEqual({
       self: { enabled: false }, peer: { enabled: true }, memory_types: ['events'], working_memory: { enabled: false },
     })
-    expect(JSON.parse(String(requests[2]!.init.body))).toMatchObject({ role: 'user', peer_id: 'persona-persona' })
-    expect(JSON.parse(String(requests[3]!.init.body))).toMatchObject({ role: 'assistant', peer_id: 'persona-persona' })
-    const headers = new Headers(requests[2]!.init.headers)
-    expect(headers.get('x-openviking-account')).toBe('ren-yang')
-    expect(headers.get('x-openviking-user')).toBe('world-world')
+    expect(JSON.parse(String(requests[5]!.init.body))).toMatchObject({ role: 'user', peer_id: 'persona-persona' })
+    expect(JSON.parse(String(requests[6]!.init.body))).toMatchObject({ role: 'assistant', peer_id: 'persona-persona' })
+    const headers = new Headers(requests[5]!.init.headers)
+    expect(headers.get('x-api-key')).toBe('world-key')
+    expect(headers.get('x-openviking-account')).toBeNull()
+    expect(headers.get('x-openviking-user')).toBeNull()
     expect(headers.get('x-openviking-actor-peer')).toBe('persona-persona')
   })
 
   it('按稳定资料 URI 删除远端资源，并把远端不存在视为成功', async () => {
-    const requests: string[] = []
+    const requests: Array<{ url: string, init: RequestInit }> = []
     const responses = [
+      new Response(JSON.stringify({ status: 'ok', healthy: true, version: '0.4.16', auth_mode: 'api_key' })),
+      new Response(JSON.stringify({ status: 'ok', result: [{ user_id: 'world-world', role: 'user' }] })),
+      new Response(JSON.stringify({ status: 'ok', result: { user_key: 'world-key' } })),
       new Response(JSON.stringify({ status: 'ok', result: { status: 'success' } })),
       new Response(JSON.stringify({ status: 'error', error: { code: 'NOT_FOUND' } }), { status: 404 }),
     ]
     const provider = new OpenVikingHttpContextProvider({
       enabled: true,
       endpoint: 'https://ov.test',
-      apiKey: '',
+      apiKey: 'admin-key',
       timeoutMs: 5_000,
       repository: new FixedContextIndexRepository([]),
-      fetcher: vi.fn(async (input: URL | RequestInfo) => {
-        requests.push(String(input))
+      fetcher: vi.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
+        requests.push({ url: String(input), init: init ?? {} })
         return responses.shift()!
       }) as unknown as typeof fetch,
     })
@@ -183,19 +204,23 @@ describe('OpenViking 原生 HTTP 上下文适配器', () => {
     await expect(provider.deleteProjection(record)).resolves.toBeUndefined()
     await expect(provider.deleteProjection(record)).resolves.toBeUndefined()
 
-    expect(requests.map((value) => {
-      const url = new URL(value)
+    expect(requests.slice(3).map((value) => {
+      const url = new URL(value.url)
       return { path: url.pathname, uri: url.searchParams.get('uri'), recursive: url.searchParams.get('recursive'), wait: url.searchParams.get('wait') }
     })).toEqual([
       { path: '/api/v1/fs', uri: `viking://~/peers/persona-persona/resources/ren-yang/persona-source/${SOURCE_ID}.md`, recursive: 'false', wait: 'true' },
       { path: '/api/v1/fs', uri: `viking://~/peers/persona-persona/resources/ren-yang/persona-source/${SOURCE_ID}.md`, recursive: 'false', wait: 'true' },
     ])
+    expect(new Headers(requests[3]!.init.headers).get('x-api-key')).toBe('world-key')
   })
 
   it('按 temp_upload、wait=true 资源写入和限定 URI 检索契约转换统一证据', async () => {
     const requests: Array<{ url: string, init: RequestInit }> = []
     const responses = [
-      new Response(JSON.stringify({ status: 'ok', healthy: true, version: '0.7.7', auth_mode: 'trusted' })),
+      new Response(JSON.stringify({ status: 'ok', healthy: true, version: '0.4.16', auth_mode: 'api_key' })),
+      new Response(JSON.stringify({ status: 'ok', result: [] })),
+      new Response(JSON.stringify({ status: 'ok', result: { account_id: 'ren-yang', user_id: 'world-world', user_key: 'world-key' } })),
+      new Response(JSON.stringify({ status: 'ok', result: '旧正文' })),
       new Response(JSON.stringify({ status: 'error', error: { code: 'NOT_FOUND', message: 'not found' } }), { status: 404 }),
       new Response(JSON.stringify({ status: 'ok', result: { temp_file_id: 'temp-1' } })),
       new Response(JSON.stringify({ status: 'ok', result: { status: 'success', root_uri: `viking://~/peers/persona-persona/resources/ren-yang/persona-source/${SOURCE_ID}.md` } })),
@@ -218,10 +243,10 @@ describe('OpenViking 原生 HTTP 上下文适配器', () => {
     }) as unknown as typeof fetch
     const repository = new FixedContextIndexRepository([{ sourceId: SOURCE_ID, role: 'canon_fact', priority: 10 }])
     const provider = new OpenVikingHttpContextProvider({
-      enabled: true, endpoint: 'https://ov.test', apiKey: 'secret', timeoutMs: 5_000, repository, fetcher,
+      enabled: true, endpoint: 'https://ov.test', apiKey: 'admin-key', timeoutMs: 5_000, repository, fetcher,
     })
 
-    await expect(provider.checkHealth()).resolves.toEqual({ healthy: true, version: '0.7.7', authMode: 'trusted' })
+    await expect(provider.checkHealth()).resolves.toEqual({ healthy: true, version: '0.4.16', authMode: 'api_key' })
     await expect(provider.synchronizeProjection({
       source: { entityType: 'source_material', id: SOURCE_ID, name: '原著资料', role: 'canon_fact', contentHash: 'a'.repeat(64), contentText: '原著资料正文。' },
       scopeType: 'persona', scopeId: 'persona', userId: 'world-world', peerId: 'persona-persona', priority: 10,
@@ -243,11 +268,12 @@ describe('OpenViking 原生 HTTP 上下文适配器', () => {
     })
 
     expect(requests.map(item => new URL(item.url).pathname)).toEqual([
-      '/health', '/api/v1/fs', '/api/v1/resources/temp_upload', '/api/v1/resources', '/api/v1/search/find',
+      '/health', '/api/v1/admin/accounts/ren-yang/users', '/api/v1/admin/accounts/ren-yang/users',
+      '/api/v1/content/read', '/api/v1/fs', '/api/v1/resources/temp_upload', '/api/v1/resources', '/api/v1/search/find',
     ])
-    expect(new Headers(requests[2]!.init.headers).get('x-api-key')).toBe('secret')
-    expect(requests[2]!.init.body).toBeInstanceOf(FormData)
-    expect(JSON.parse(String(requests[3]!.init.body))).toMatchObject({
+    expect(new Headers(requests[5]!.init.headers).get('x-api-key')).toBe('world-key')
+    expect(requests[5]!.init.body).toBeInstanceOf(FormData)
+    expect(JSON.parse(String(requests[6]!.init.body))).toMatchObject({
       temp_file_id: 'temp-1',
       to: `viking://~/peers/persona-persona/resources/ren-yang/persona-source/${SOURCE_ID}.md`,
       reason: '',
@@ -255,13 +281,281 @@ describe('OpenViking 原生 HTTP 上下文适配器', () => {
       strict: true,
       tags: [`source_id=${SOURCE_ID}`, 'entity_type=source_material', 'source_role=canon_fact', 'scope_type=persona', 'scope_id=persona'],
     })
-    expect(JSON.parse(String(requests[4]!.init.body))).toEqual({
+    expect(JSON.parse(String(requests[7]!.init.body))).toEqual({
       query: '证据',
       target_uri: [`viking://~/peers/persona-persona/resources/ren-yang/persona-source/${SOURCE_ID}.md`],
       context_type: 'resource',
       limit: 5,
       read_content: true,
     })
+  })
+
+  it('远端原文哈希已一致时直接确认同步且不重复删除上传', async () => {
+    const requests: Array<{ url: string, init: RequestInit }> = []
+    const responses = [
+      new Response(JSON.stringify({ status: 'ok', healthy: true, version: '0.4.16', auth_mode: 'api_key' })),
+      new Response(JSON.stringify({ status: 'ok', result: [] })),
+      new Response(JSON.stringify({ status: 'ok', result: { account_id: 'ren-yang', user_id: 'world-a', user_key: 'key-a' } })),
+      new Response(JSON.stringify({ status: 'ok', result: '正文' })),
+    ]
+    const provider = new OpenVikingHttpContextProvider({
+      enabled: true, endpoint: 'https://ov.test', apiKey: 'admin-key', timeoutMs: 5_000,
+      repository: new FixedContextIndexRepository([]),
+      fetcher: vi.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
+        requests.push({ url: String(input), init: init ?? {} })
+        return responses.shift()!
+      }) as unknown as typeof fetch,
+    })
+    const remoteUri = `viking://~/resources/ren-yang/world-source/${SOURCE_ID}.md`
+
+    await expect(provider.synchronizeProjection({
+      source: {
+        entityType: 'source_material', id: SOURCE_ID, name: '资料', role: 'reference',
+        contentHash: createHash('sha256').update('正文').digest('hex'), contentText: '正文',
+      },
+      scopeType: 'world', scopeId: 'world-a', userId: 'world-a', peerId: null,
+      priority: 10, operation: 'upsert', remoteUri,
+    })).resolves.toBe(remoteUri)
+
+    expect(requests.map(item => new URL(item.url).pathname)).toEqual([
+      '/health', '/api/v1/admin/accounts/ren-yang/users',
+      '/api/v1/admin/accounts/ren-yang/users', '/api/v1/content/read',
+    ])
+  })
+
+  it('两个世界分别创建 User，并使用各自 User Key 访问数据接口', async () => {
+    const requests: Array<{ url: string, init: RequestInit }> = []
+    const responses = [
+      new Response(JSON.stringify({ status: 'ok', healthy: true, version: '0.4.16', auth_mode: 'api_key' })),
+      new Response(JSON.stringify({ status: 'ok', result: [] })),
+      new Response(JSON.stringify({ status: 'ok', result: { account_id: 'ren-yang', user_id: 'world-a', user_key: 'key-a' } })),
+      new Response(JSON.stringify({ status: 'error' }), { status: 404 }),
+      new Response(JSON.stringify({ status: 'ok', result: { temp_file_id: 'temp-a' } })),
+      new Response(JSON.stringify({ status: 'ok', result: { root_uri: `viking://~/resources/ren-yang/world-source/${SOURCE_ID}.md` } })),
+      new Response(JSON.stringify({ status: 'ok', result: { account_id: 'ren-yang', user_id: 'world-b', user_key: 'key-b' } })),
+      new Response(JSON.stringify({ status: 'error' }), { status: 404 }),
+      new Response(JSON.stringify({ status: 'ok', result: { temp_file_id: 'temp-b' } })),
+      new Response(JSON.stringify({ status: 'ok', result: { root_uri: `viking://~/resources/ren-yang/world-source/${SOURCE_ID}.md` } })),
+    ]
+    const provider = new OpenVikingHttpContextProvider({
+      enabled: true, endpoint: 'https://ov.test', apiKey: 'admin-key', timeoutMs: 5_000,
+      repository: new FixedContextIndexRepository([]),
+      fetcher: vi.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
+        requests.push({ url: String(input), init: init ?? {} })
+        return responses.shift()!
+      }) as unknown as typeof fetch,
+    })
+    const projection = (userId: string) => ({
+      source: { entityType: 'source_material' as const, id: SOURCE_ID, name: '资料', role: 'reference' as const, contentHash: 'a'.repeat(64), contentText: '正文' },
+      scopeType: 'world' as const, scopeId: userId, userId, peerId: null, priority: 10, operation: 'upsert' as const,
+      remoteUri: `viking://~/resources/ren-yang/world-source/${SOURCE_ID}.md`,
+    })
+
+    await provider.synchronizeProjection(projection('world-a'))
+    await provider.synchronizeProjection(projection('world-b'))
+
+    expect(new Headers(requests[4]!.init.headers).get('x-api-key')).toBe('key-a')
+    expect(new Headers(requests[8]!.init.headers).get('x-api-key')).toBe('key-b')
+    expect(requests.filter(item => new URL(item.url).pathname === '/api/v1/admin/accounts/ren-yang/users')).toHaveLength(3)
+  })
+
+  it('User 对账删除 SQLite 已不存在的受管 User，并创建或刷新当前 User', async () => {
+    const requests: Array<{ url: string, init: RequestInit }> = []
+    const responses = [
+      new Response(JSON.stringify({ status: 'ok', healthy: true, version: '0.4.16', auth_mode: 'api_key' })),
+      new Response(JSON.stringify({ status: 'ok', result: [
+        { user_id: 'default', role: 'admin' },
+        { user_id: 'world-current', role: 'user' },
+        { user_id: 'world-orphan', role: 'user' },
+      ] })),
+      new Response(JSON.stringify({ status: 'ok', result: { deleted: true } })),
+      new Response(JSON.stringify({ status: 'ok', result: { account_id: 'ren-yang', user_id: 'standalone-new', user_key: 'new-key' } })),
+      new Response(JSON.stringify({ status: 'ok', result: { user_key: 'current-key' } })),
+    ]
+    const provider = new OpenVikingHttpContextProvider({
+      enabled: true, endpoint: 'https://ov.test', apiKey: 'admin-key', timeoutMs: 5_000,
+      repository: new FixedContextIndexRepository([]),
+      fetcher: vi.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
+        requests.push({ url: String(input), init: init ?? {} })
+        return responses.shift()!
+      }) as unknown as typeof fetch,
+    })
+
+    await provider.reconcileUsers(['world-current', 'standalone-new'])
+
+    expect(requests.map(item => `${item.init.method ?? 'GET'} ${new URL(item.url).pathname}`)).toEqual([
+      'GET /health',
+      'GET /api/v1/admin/accounts/ren-yang/users',
+      'DELETE /api/v1/admin/accounts/ren-yang/users/world-orphan',
+      'POST /api/v1/admin/accounts/ren-yang/users',
+      'POST /api/v1/admin/accounts/ren-yang/users/world-current/key',
+    ])
+    expect(requests.slice(1).every(item => new Headers(item.init.headers).get('x-api-key') === 'admin-key')).toBe(true)
+  })
+
+  it('清理 default 旧数据时先删除 Session，再删除其引用的 Peer', async () => {
+    const requests: Array<{ url: string, init: RequestInit }> = []
+    const peerUri = 'viking://user/default/peers/persona-old'
+    const responses = [
+      new Response(JSON.stringify({ status: 'ok', healthy: true, version: '0.4.16', auth_mode: 'api_key' })),
+      new Response(JSON.stringify({ status: 'ok', result: [{ user_id: 'default', role: 'admin' }] })),
+      new Response(JSON.stringify({ status: 'ok', result: [{ name: 'world-source', uri: 'viking://user/default/resources/ren-yang/world-source', isDir: true }] })),
+      new Response(JSON.stringify({ status: 'ok', result: { deleted: true } })),
+      new Response(JSON.stringify({ status: 'ok', result: [{ session_id: 'ren-yang-run-old' }] })),
+      new Response(JSON.stringify({ status: 'ok', result: { deleted: true } })),
+      new Response(JSON.stringify({ status: 'ok', result: [{ name: 'persona-old', uri: peerUri, isDir: true }] })),
+      new Response(JSON.stringify({ status: 'ok', result: { deleted: true } })),
+    ]
+    const provider = new OpenVikingHttpContextProvider({
+      enabled: true, endpoint: 'https://ov.test', apiKey: 'admin-key', timeoutMs: 5_000,
+      repository: new FixedContextIndexRepository([]),
+      fetcher: vi.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
+        requests.push({ url: String(input), init: init ?? {} })
+        return responses.shift()!
+      }) as unknown as typeof fetch,
+    })
+
+    await provider.resetLegacyIndex()
+
+    expect(requests.map(item => `${item.init.method ?? 'GET'} ${new URL(item.url).pathname}`)).toEqual([
+      'GET /health',
+      'GET /api/v1/admin/accounts/ren-yang/users',
+      'GET /api/v1/fs/ls',
+      'DELETE /api/v1/fs',
+      'GET /api/v1/sessions',
+      'DELETE /api/v1/sessions/ren-yang-run-old',
+      'GET /api/v1/fs/ls',
+      'DELETE /api/v1/fs',
+    ])
+  })
+
+  it('全量重建保留既有 User，只刷新 Key 并原位清理受管内容', async () => {
+    const requests: Array<{ url: string, init: RequestInit }> = []
+    const responses = [
+      new Response(JSON.stringify({ status: 'ok', healthy: true, version: '0.4.16', auth_mode: 'api_key' })),
+      new Response(JSON.stringify({ status: 'ok', result: [{ user_id: 'world-a', role: 'user' }] })),
+      new Response(JSON.stringify({ status: 'ok', result: { user_key: 'key-a' } })),
+      new Response(JSON.stringify({ status: 'error', error: { code: 'NOT_FOUND' } }), { status: 404 }),
+      new Response(JSON.stringify({ status: 'ok', result: [] })),
+      new Response(JSON.stringify({ status: 'error', error: { code: 'NOT_FOUND' } }), { status: 404 }),
+    ]
+    const provider = new OpenVikingHttpContextProvider({
+      enabled: true, endpoint: 'https://ov.test', apiKey: 'admin-key', timeoutMs: 5_000,
+      repository: new FixedContextIndexRepository([]),
+      fetcher: vi.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
+        requests.push({ url: String(input), init: init ?? {} })
+        return responses.shift()!
+      }) as unknown as typeof fetch,
+    })
+
+    await provider.rebuildUsers(['world-a'])
+
+    expect(requests.some(item => item.init.method === 'DELETE' && new URL(item.url).pathname.includes('/admin/accounts/'))).toBe(false)
+    expect(requests.map(item => `${item.init.method ?? 'GET'} ${new URL(item.url).pathname}`)).toContain(
+      'POST /api/v1/admin/accounts/ren-yang/users/world-a/key',
+    )
+  })
+
+  it('全量重建递归删除受管资料根时不等待语义队列', async () => {
+    const requests: Array<{ url: string, init: RequestInit }> = []
+    const responses = [
+      new Response(JSON.stringify({ status: 'ok', healthy: true, version: '0.4.16', auth_mode: 'api_key' })),
+      new Response(JSON.stringify({ status: 'ok', result: [{ user_id: 'world-a', role: 'user' }] })),
+      new Response(JSON.stringify({ status: 'ok', result: { user_key: 'key-a' } })),
+      new Response(JSON.stringify({ status: 'ok', result: [{ name: 'world-source', uri: 'viking://~/resources/ren-yang/world-source', isDir: true }] })),
+      new Response(JSON.stringify({ status: 'ok', result: { uri: 'viking://~/resources/ren-yang', semantic_status: 'queued' } })),
+      new Response(JSON.stringify({ status: 'ok', result: [] })),
+      new Response(JSON.stringify({ status: 'ok', result: [{ name: 'persona-a', uri: 'viking://~/peers/persona-a', isDir: true }] })),
+      new Response(JSON.stringify({ status: 'ok', result: { uri: 'viking://~/peers/persona-a', semantic_status: 'queued' } })),
+    ]
+    const provider = new OpenVikingHttpContextProvider({
+      enabled: true, endpoint: 'https://ov.test', apiKey: 'admin-key', timeoutMs: 5_000,
+      repository: new FixedContextIndexRepository([]),
+      fetcher: vi.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
+        requests.push({ url: String(input), init: init ?? {} })
+        return responses.shift()!
+      }) as unknown as typeof fetch,
+    })
+
+    await provider.rebuildUsers(['world-a'])
+
+    const recursiveDeletions = requests.filter(item => item.init.method === 'DELETE' && new URL(item.url).pathname === '/api/v1/fs')
+    expect(recursiveDeletions).toHaveLength(2)
+    expect(recursiveDeletions.every(item => new URL(item.url).searchParams.get('recursive') === 'true')).toBe(true)
+    expect(recursiveDeletions.every(item => new URL(item.url).searchParams.get('wait') === 'false')).toBe(true)
+  })
+
+  it('删除旧投影时不会重新创建已被对账删除的 User', async () => {
+    const requests: Array<{ url: string, init: RequestInit }> = []
+    const responses = [
+      new Response(JSON.stringify({ status: 'ok', healthy: true, version: '0.4.16', auth_mode: 'api_key' })),
+      new Response(JSON.stringify({ status: 'ok', result: [] })),
+    ]
+    const provider = new OpenVikingHttpContextProvider({
+      enabled: true, endpoint: 'https://ov.test', apiKey: 'admin-key', timeoutMs: 5_000,
+      repository: new FixedContextIndexRepository([]),
+      fetcher: vi.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
+        requests.push({ url: String(input), init: init ?? {} })
+        return responses.shift()!
+      }) as unknown as typeof fetch,
+    })
+
+    await provider.deleteProjection({
+      id: 'sync-a', entityType: 'source_material', sourceId: SOURCE_ID,
+      scopeType: 'world', scopeId: 'a', userId: 'world-a', peerId: null,
+      provider: 'openviking', remoteUri: `viking://~/resources/ren-yang/world-source/${SOURCE_ID}.md`,
+      contentHash: 'a'.repeat(64), status: 'synchronized', operation: 'upsert', error: null,
+      createdAt: 1, updatedAt: 1,
+    })
+
+    expect(requests.some(item => item.init.method === 'POST' || item.init.method === 'DELETE')).toBe(false)
+  })
+
+  it('创建刚删除的 User 遇到 412 时在维护窗口内重试', async () => {
+    const requests: Array<{ url: string, init: RequestInit }> = []
+    const responses = [
+      new Response(JSON.stringify({ status: 'ok', healthy: true, version: '0.4.16', auth_mode: 'api_key' })),
+      new Response(JSON.stringify({ status: 'ok', result: [] })),
+      new Response(JSON.stringify({ status: 'error', error: { code: 'PRECONDITION_FAILED' } }), { status: 412 }),
+      new Response(JSON.stringify({ status: 'ok', result: { account_id: 'ren-yang', user_id: 'world-a', user_key: 'key-a' } })),
+    ]
+    const provider = new OpenVikingHttpContextProvider({
+      enabled: true, endpoint: 'https://ov.test', apiKey: 'admin-key', timeoutMs: 5_000,
+      repository: new FixedContextIndexRepository([]),
+      fetcher: vi.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
+        requests.push({ url: String(input), init: init ?? {} })
+        return responses.shift()!
+      }) as unknown as typeof fetch,
+    })
+
+    await provider.reconcileUsers(['world-a'])
+
+    expect(requests.filter(item => new URL(item.url).pathname === '/api/v1/admin/accounts/ren-yang/users' && item.init.method === 'POST'))
+      .toHaveLength(2)
+  })
+
+  it('进程内 User 状态过期时按 SQLite 目标标识重新创建', async () => {
+    const requests: Array<{ url: string, init: RequestInit }> = []
+    const responses = [
+      new Response(JSON.stringify({ status: 'ok', healthy: true, version: '0.4.16', auth_mode: 'api_key' })),
+      new Response(JSON.stringify({ status: 'ok', result: [{ user_id: 'world-a', role: 'user' }] })),
+      new Response(JSON.stringify({ status: 'error', error: { code: 'NOT_FOUND' } }), { status: 404 }),
+      new Response(JSON.stringify({ status: 'ok', result: { account_id: 'ren-yang', user_id: 'world-a', user_key: 'new-key' } })),
+    ]
+    const provider = new OpenVikingHttpContextProvider({
+      enabled: true, endpoint: 'https://ov.test', apiKey: 'admin-key', timeoutMs: 5_000,
+      repository: new FixedContextIndexRepository([]),
+      fetcher: vi.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
+        requests.push({ url: String(input), init: init ?? {} })
+        return responses.shift()!
+      }) as unknown as typeof fetch,
+    })
+
+    await provider.reconcileUsers(['world-a'])
+
+    expect(requests.map(item => `${item.init.method ?? 'GET'} ${new URL(item.url).pathname}`)).toContain(
+      'POST /api/v1/admin/accounts/ren-yang/users',
+    )
   })
 
   it('运行创建前健康检查失败时固定使用 SQLite，运行内不再二次切换', async () => {

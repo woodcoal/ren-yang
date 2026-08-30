@@ -21,6 +21,17 @@ export class SqliteContextIndexRepository implements ContextIndexRepository {
    */
   constructor(private readonly client: BetterSqliteDatabase) {}
 
+  /** @returns 全部业务世界 User，以及未关联世界人物的隐藏 User。 */
+  async listTargetUserIds(): Promise<string[]> {
+    return this.client.prepare(`
+      SELECT user_id FROM (
+        SELECT 'world-' || id AS user_id FROM worlds
+        UNION
+        SELECT 'standalone-' || id AS user_id FROM personas WHERE world_id IS NULL
+      ) ORDER BY user_id
+    `).all().map((value) => String(row(value).user_id))
+  }
+
   /** @returns 全部 SQLite 资料完整正文。 */
   async listSourceDocuments(): Promise<ContextSourceDocument[]> {
     return this.client.prepare(`
@@ -286,6 +297,14 @@ export class SqliteContextIndexRepository implements ContextIndexRepository {
         sourceId: String(data.source_id),
       }
     })
+  }
+
+  /** @param timestamp 重建开始时间。 @returns 全部已知 Session 投影改为待重放后结束。 */
+  async markSessionsForRebuild(timestamp: number): Promise<void> {
+    this.client.prepare(`
+      UPDATE openviking_session_records
+      SET status = 'pending', error = NULL, updated_at = ?
+    `).run(timestamp)
   }
 
   /** @param exchange 本地交流。 @param status 待处理或失败。 @param error 脱敏错误。 @param timestamp 更新时间。 @returns 无返回值。 */

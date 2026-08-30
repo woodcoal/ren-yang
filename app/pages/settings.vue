@@ -37,10 +37,10 @@ const reindexConfirmed = shallowRef(false)
 /** @returns 主动检测外部上下文服务，不改变开关或索引。 */
 async function checkProvider(): Promise<void> {
   await executeAction(async () => {
-    const response = await $fetch<ApiResponse<{ healthy: boolean, version: string | null, authMode: 'trusted' }>>('/api/v1/system/providers/check', {
+    const response = await $fetch<ApiResponse<{ healthy: boolean, version: string | null, authMode: 'api_key' }>>('/api/v1/system/providers/check', {
       method: 'POST', body: { provider: 'openviking' },
     })
-    actionMessage.value = `服务正常，版本 ${response.data.version ?? '未知'}，世界隔离模式已生效`
+    actionMessage.value = `服务正常，版本 ${response.data.version ?? '未知'}，ADMIN Key 可管理隔离 User`
   })
 }
 
