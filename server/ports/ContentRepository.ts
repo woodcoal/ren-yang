@@ -164,6 +164,12 @@ export interface SourcePageRecord {
   totalPages: number
 }
 
+/** 仓储返回的资料段落检索记录。 */
+export interface SourceChunkSearchRecord extends SourceChunkRecord {
+  /** 所属资料展示名称。 */
+  sourceName: string
+}
+
 /** 删除人物时会一并删除的运行历史数量。 */
 export interface PersonaRunHistoryStatistics {
   /** 运行数量。 */
@@ -192,8 +198,8 @@ export interface WorldVersionDeletionReferences {
 export interface ContentRepository {
   /** @returns 按更新时间倒序的人物。 */
   listPersonas(): Promise<PersonaRecord[]>
-  /** @param page 从 1 开始的页码。 @param pageSize 每页数量。 @returns 已按总数修正的人物分页记录。 */
-  listPersonasPage(page: number, pageSize: 5 | 10 | 20 | 50 | 100): Promise<PersonaPageRecord>
+  /** @param page 从 1 开始的页码。 @param pageSize 每页数量。 @param query 可选人物名称筛选词。 @returns 已按总数修正的人物分页记录。 */
+  listPersonasPage(page: number, pageSize: 5 | 10 | 20 | 50 | 100, query?: string): Promise<PersonaPageRecord>
   /** @param id 人物标识。 @returns 人物或 null。 */
   findPersona(id: string): Promise<PersonaRecord | null>
   /** @param personaId 人物标识。 @returns 至少配置一项的账号信息密文记录，否则为 null。 */
@@ -223,8 +229,8 @@ export interface ContentRepository {
 
   /** @returns 按更新时间倒序的世界。 */
   listWorlds(): Promise<WorldRecord[]>
-  /** @param page 从 1 开始的页码。 @param pageSize 每页数量。 @returns 已按总数修正的世界分页记录。 */
-  listWorldsPage(page: number, pageSize: 5 | 10 | 20 | 50 | 100): Promise<WorldPageRecord>
+  /** @param page 从 1 开始的页码。 @param pageSize 每页数量。 @param query 可选世界名称筛选词。 @returns 已按总数修正的世界分页记录。 */
+  listWorldsPage(page: number, pageSize: 5 | 10 | 20 | 50 | 100, query?: string): Promise<WorldPageRecord>
   /** @param id 世界标识。 @returns 世界或 null。 */
   findWorld(id: string): Promise<WorldRecord | null>
   /** @param record 完整创建命令。 @returns 无返回值。 */
@@ -252,8 +258,8 @@ export interface ContentRepository {
 
   /** @returns 按更新时间倒序的全部资料。 */
   listSources(): Promise<SourceMaterialRecord[]>
-  /** @param page 从 1 开始的页码。 @param pageSize 每页数量。 @returns 已按总数修正的资料分页记录。 */
-  listSourcesPage(page: number, pageSize: 5 | 10 | 20 | 50 | 100): Promise<SourcePageRecord>
+  /** @param page 从 1 开始的页码。 @param pageSize 每页数量。 @param query 可选资料名称筛选词。 @returns 已按总数修正的资料分页记录。 */
+  listSourcesPage(page: number, pageSize: 5 | 10 | 20 | 50 | 100, query?: string): Promise<SourcePageRecord>
   /** @param id 资料标识。 @returns 资料或 null。 */
   findSource(id: string): Promise<SourceMaterialRecord | null>
   /** @param record 完整资料创建命令。 @returns 无返回值。 */
@@ -275,5 +281,5 @@ export interface ContentRepository {
   /** @param sourceId 资料标识。 @param timestamp 删除时间。 @returns 删除的资料数。 */
   deleteSource(sourceId: string, timestamp: number): Promise<number>
   /** @param query FTS5 检索词。 @param limit 最大结果数。 @returns 已复制正文与哈希的证据候选。 */
-  searchSourceChunks(query: string, limit: number): Promise<SourceChunkRecord[]>
+  searchSourceChunks(query: string, limit: number): Promise<SourceChunkSearchRecord[]>
 }

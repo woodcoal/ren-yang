@@ -267,9 +267,7 @@ describe('阶段二内容表单', () => {
     expect(promptTextarea.element.value).toBe('历史灵魂提示词')
     expect(wrapper.emitted('save')).toBeUndefined()
 
-    const saveButton = wrapper.findAll<HTMLButtonElement>('button')
-      .find(button => button.text().trim() === '保存')
-    expect(saveButton).toBeDefined()
+    expect(wrapper.get('[data-soul-save-publish-button]').text()).toBe('保存并发布')
     await wrapper.get('[data-soul-prompt-form]').trigger('submit')
     await flushPromises()
     expect(wrapper.emitted('save')).toEqual([[{

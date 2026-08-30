@@ -21,9 +21,24 @@ function readPageSize(value: unknown): 5 | 10 | 20 | 50 | 100 {
   return parsed === 5 || parsed === 20 || parsed === 50 || parsed === 100 ? parsed : 10
 }
 
+/**
+ * 从 URL 查询参数读取单个去除首尾空白的文本值。
+ * @param value 路由查询参数原值。
+ * @returns 可用于世界名称筛选的文本。
+ */
+function readTextQuery(value: unknown): string {
+  const normalized = Array.isArray(value) ? value[0] : value
+  return typeof normalized === 'string' ? normalized.trim() : ''
+}
+
 const requestedPage = computed(() => readPositiveInteger(route.query.page, 1))
 const requestedPageSize = computed(() => readPageSize(route.query.pageSize))
-const worldPageQuery = computed(() => ({ page: requestedPage.value, pageSize: requestedPageSize.value }))
+const requestedWorldFilter = computed(() => readTextQuery(route.query.keyword))
+const worldPageQuery = computed(() => ({
+  page: requestedPage.value,
+  pageSize: requestedPageSize.value,
+  query: requestedWorldFilter.value || undefined,
+}))
 const { data, error, refresh } = await useFetch<ApiResponse<WorldPageView>>('/api/v1/worlds/page', { query: worldPageQuery })
 const worldPage = computed<WorldPageView>(() => data.value?.data ?? {
   items: [], total: 0, page: requestedPage.value, pageSize: requestedPageSize.value, totalPages: 1,
@@ -35,6 +50,7 @@ const showCreate = shallowRef(false)
 const loading = shallowRef(false)
 const errorMessage = shallowRef<string | null>(null)
 const actionErrorMessage = shallowRef<string | null>(null)
+const worldFilterInput = shallowRef(requestedWorldFilter.value)
 const selectedWorldIds = ref<string[]>([])
 const batchEnableConfirmationOpen = shallowRef(false)
 const batchDisableConfirmationOpen = shallowRef(false)
@@ -59,7 +75,43 @@ function clearWorldSelection(): void {
   selectedWorldIds.value = []
 }
 
-watch([requestedPage, requestedPageSize], clearWorldSelection)
+watch([requestedPage, requestedPageSize, requestedWorldFilter], clearWorldSelection)
+
+/**
+ * 浏览器前进或后退改变筛选参数时同步世界筛选输入框。
+ * @param query URL 中当前世界名称筛选词。
+ * @returns 输入框同步完成时结束。
+ */
+function synchronizeWorldFilter(query: string): void {
+  worldFilterInput.value = query
+}
+
+watch(requestedWorldFilter, synchronizeWorldFilter)
+
+/**
+ * 按输入的世界名称筛选全部世界并回到第一页。
+ * @returns URL 筛选参数更新完成时结束。
+ */
+async function applyWorldFilter(): Promise<void> {
+  const keyword = worldFilterInput.value.trim()
+  await navigateTo({
+    path: route.path,
+    query: {
+      page: '1',
+      pageSize: String(worldPage.value.pageSize),
+      ...(keyword ? { keyword } : {}),
+    },
+  })
+}
+
+/**
+ * 清空世界名称筛选并重新显示第一页全部世界。
+ * @returns URL 筛选参数清除完成时结束。
+ */
+async function clearWorldFilter(): Promise<void> {
+  worldFilterInput.value = ''
+  await applyWorldFilter()
+}
 
 /** @param worldId 当前页世界 UUID。 @param event 复选框变更事件。 @returns 无返回值。 */
 function updateWorldSelection(worldId: string, event: Event): void {
@@ -188,7 +240,7 @@ async function changePageSize(pageSize: number): Promise<void> {
 
     <UAlert v-if="actionErrorMessage" class="mb-5" color="error" title="操作失败" :description="actionErrorMessage" />
     <UAlert v-if="error" color="error" title="世界列表加载失败" :actions="[{ label: '重试', onClick: () => refresh() }]" />
-    <section v-else-if="worlds.length" class="content-section" aria-labelledby="world-list-heading">
+    <section v-else class="content-section" aria-labelledby="world-list-heading">
       <div class="section-heading">
         <div class="section-heading-copy">
           <p class="eyebrow">世界列表</p>
@@ -196,20 +248,34 @@ async function changePageSize(pageSize: number): Promise<void> {
           <p>禁用后不再进入后续新任务，历史版本、人物关系和资料仍会保留。</p>
         </div>
       </div>
-      <div class="content-toolbar !rounded-none !bg-transparent !border-0">
-        <span v-if="selectedWorldIds.length > 0" class="text-sm text-muted">已选择 {{ selectedWorldIds.length }}
-          个世界</span><span v-else aria-hidden="true"></span>
-        <div class="flex items-center justify-end gap-1">
-          <UButton color="success" variant="ghost" size="xs" :loading="batchStatusUpdating === true"
-            :disabled="selectedDisabledWorldIds.length === 0 || batchStatusUpdating !== null"
-            @click="requestBatchEnable">批量启用</UButton>
-          <UButton color="error" variant="ghost" size="xs"
-            :disabled="selectedEnabledWorldIds.length === 0 || batchStatusUpdating !== null"
-            @click="requestBatchDisable">批量禁用</UButton>
+      <div class="list-management-panel">
+        <div class="list-management-controls">
+          <form class="list-management-search" aria-label="筛选世界" @submit.prevent="applyWorldFilter">
+            <UInput v-model="worldFilterInput" class="list-management-search-input" icon="i-lucide-search"
+              placeholder="输入世界名称" aria-label="世界列表搜索词" />
+            <UButton type="submit" color="neutral" variant="soft">搜索世界</UButton>
+            <UButton v-if="requestedWorldFilter" type="button" color="neutral" variant="ghost"
+              @click="clearWorldFilter">清除筛选</UButton>
+          </form>
+          <div v-if="worlds.length" class="list-management-batch">
+            <span class="list-management-selection">{{ selectedWorldIds.length > 0
+              ? `已选择 ${selectedWorldIds.length} 个世界`
+              : '选择世界后可批量操作' }}</span>
+            <div class="list-management-batch-actions">
+              <UButton color="success" variant="soft" size="xs" icon="i-lucide-circle-check"
+                :loading="batchStatusUpdating === true"
+                :disabled="selectedDisabledWorldIds.length === 0 || batchStatusUpdating !== null"
+                @click="requestBatchEnable">批量启用</UButton>
+              <UButton color="error" variant="soft" size="xs" icon="i-lucide-circle-off"
+                :disabled="selectedEnabledWorldIds.length === 0 || batchStatusUpdating !== null"
+                @click="requestBatchDisable">批量禁用</UButton>
+            </div>
+          </div>
         </div>
-      </div>
-      <div class="content-table-wrap">
-        <table class="content-table">
+
+        <template v-if="worlds.length">
+          <div class="content-table-wrap list-management-table">
+            <table class="content-table">
           <thead>
             <tr>
               <th><input type="checkbox" aria-label="选择当前页全部世界" :checked="allPageWorldsSelected"
@@ -241,24 +307,27 @@ async function changePageSize(pageSize: number): Promise<void> {
               </td>
             </tr>
           </tbody>
-        </table>
-      </div>
-      <div class="mt-5 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
-        <p class="text-sm text-muted">第 {{ worldPage.page }} / {{ worldPage.totalPages }} 页，共 {{ worldPage.total }} 项
-        </p>
-        <div class="flex flex-wrap items-center gap-3">
-          <USelect :model-value="worldPage.pageSize" class="w-34" :items="pageSizeItems" aria-label="每页世界数量"
-            @update:model-value="changePageSize" />
-          <UPagination :page="worldPage.page" :total="worldPage.total" :items-per-page="worldPage.pageSize" show-edges
-            @update:page="changePage" />
+            </table>
+          </div>
+          <div class="list-management-footer">
+            <p class="m-0 text-sm text-muted">第 {{ worldPage.page }} / {{ worldPage.totalPages }} 页，共 {{ worldPage.total }} 项</p>
+            <div class="list-management-pagination">
+              <USelect :model-value="worldPage.pageSize" class="w-34" :items="pageSizeItems" aria-label="每页世界数量"
+                @update:model-value="changePageSize" />
+              <UPagination :page="worldPage.page" :total="worldPage.total" :items-per-page="worldPage.pageSize" show-edges
+                @update:page="changePage" />
+            </div>
+          </div>
+        </template>
+        <div v-else class="content-empty-state list-management-empty">
+          <div><strong>{{ requestedWorldFilter ? '没有匹配的世界' : '还没有世界' }}</strong>
+            <p>{{ requestedWorldFilter ? '请调整世界名称关键词后重试。' : '独立人物仍可正常创建和执行任务。' }}</p>
+            <UButton v-if="requestedWorldFilter" class="mt-4" color="neutral" variant="soft"
+              @click="clearWorldFilter">清除筛选</UButton>
+          </div>
         </div>
       </div>
     </section>
-    <div v-else class="content-empty-state">
-      <div><strong>还没有世界</strong>
-        <p>独立人物仍可正常创建和执行任务。</p>
-      </div>
-    </div>
 
     <UModal v-model:open="batchEnableConfirmationOpen" title="确认批量启用世界" description="启用后，这些世界可以重新进入后续新任务。">
       <template #body>

@@ -29,6 +29,7 @@ import type {
   SourceChunkView,
   SourceDetails,
   SourcePageView,
+  SourceSearchResultView,
   SourceStatusUpdateResult,
   SourceSummary,
   VersionFieldDiff,
@@ -139,7 +140,7 @@ export class ContentApplicationService {
    * @returns 服务端修正页码后的人物分页结果。
    */
   async listPersonasPage(input: ListSubjectsPageInput): Promise<PersonaPageView> {
-    const page = await this.dependencies.repository.listPersonasPage(input.page, input.pageSize)
+    const page = await this.dependencies.repository.listPersonasPage(input.page, input.pageSize, input.query)
     return {
       ...page,
       items: await Promise.all(page.items.map(persona => this.toPersonaSummary(persona))),
@@ -455,7 +456,7 @@ export class ContentApplicationService {
    * @returns 服务端修正页码后的世界分页结果。
    */
   async listWorldsPage(input: ListSubjectsPageInput): Promise<WorldPageView> {
-    const page = await this.dependencies.repository.listWorldsPage(input.page, input.pageSize)
+    const page = await this.dependencies.repository.listWorldsPage(input.page, input.pageSize, input.query)
     return {
       ...page,
       items: await Promise.all(page.items.map(world => this.toWorldSummary(world))),
@@ -661,7 +662,7 @@ export class ContentApplicationService {
    * @returns 服务端修正页码后的资料分页结果。
    */
   async listSourcesPage(input: ListSourcesPageInput): Promise<SourcePageView> {
-    const page = await this.dependencies.repository.listSourcesPage(input.page, input.pageSize)
+    const page = await this.dependencies.repository.listSourcesPage(input.page, input.pageSize, input.query)
     return {
       ...page,
       items: await Promise.all(page.items.map(source => this.toSourceSummary(source))),
@@ -936,7 +937,7 @@ export class ContentApplicationService {
    * @param limit 最大结果数。
    * @returns 含正文与哈希的证据候选，后续运行可原样复制为快照。
    */
-  async searchSources(query: string, limit: number): Promise<SourceChunkView[]> {
+  async searchSources(query: string, limit: number): Promise<SourceSearchResultView[]> {
     return await this.dependencies.repository.searchSourceChunks(query, limit)
   }
 

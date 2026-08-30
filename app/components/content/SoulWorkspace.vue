@@ -119,56 +119,77 @@ watch(() => props.workspace.activeVersion, synchronizeActiveVersion, { immediate
 
 <template>
   <div>
-    <UForm :schema="saveSoulVersionSchema" :state="editor" class="space-y-4" data-soul-prompt-form @submit="handleSave">
-      <UFormField
-        name="snapshot.promptText"
-        :label="`${subjectLabel}灵魂提示词`"
-        description="保存后立即成为新任务使用的最新提示词，并自动保留上一版历史。"
-        required
-      >
-        <UTextarea
-          v-model="editor.snapshot.promptText"
-          class="w-full"
-          :rows="20"
-          autoresize
-          :disabled="loading || analysisLoading"
-          placeholder="输入人物核心人设，或世界背景、规则与边界……"
-        />
-      </UFormField>
-
-      <UAlert v-if="analysisError" color="error" title="AI 整理失败" :description="analysisError" />
-
-      <div class="flex items-center justify-between gap-3">
-        <div class="flex items-center gap-1">
-          <UButton
-            type="button"
-            data-soul-analyze-button
-            icon="i-lucide-wand-sparkles"
-            color="neutral"
-            variant="ghost"
-            aria-label="AI 整理当前提示词"
-            title="AI 整理当前提示词"
-            :disabled="!editor.snapshot.promptText.trim() || loading || analysisLoading"
-            @click="analyzePrompt"
-          />
-          <UButton
-            type="button"
-            data-soul-history-button
-            icon="i-lucide-history"
-            color="neutral"
-            variant="ghost"
-            aria-label="查看提示词历史"
-            title="查看提示词历史"
-            :disabled="loading || analysisLoading"
-            @click="historyOpen = true"
-          />
-          <span class="ml-2 text-xs text-muted">预计 {{ estimatedTokens }} Token</span>
+    <UCard>
+      <template #header>
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 class="font-semibold text-highlighted">{{ subjectLabel }}灵魂提示词</h2>
+            <p class="mt-1 text-sm text-muted">AI 整理和历史只会回填编辑框；检查并保存发布后，才会用于后续新任务。</p>
+          </div>
+          <UBadge :color="workspace.activeVersion ? 'success' : 'neutral'" variant="soft">
+            {{ workspace.activeVersion ? '当前提示词已发布' : '尚未发布' }}
+          </UBadge>
         </div>
-        <UButton type="submit" icon="i-lucide-save" :loading="loading" :disabled="!hasChanges || analysisLoading">保存</UButton>
-      </div>
-    </UForm>
+      </template>
 
-    <UModal v-model:open="historyOpen" title="提示词历史" description="选择后只会载入编辑框，点击保存才会重新使用这一版。" :ui="{ content: 'max-w-3xl' }">
+      <UForm :schema="saveSoulVersionSchema" :state="editor" class="space-y-4" data-soul-prompt-form @submit="handleSave">
+        <UFormField
+          name="snapshot.promptText"
+          :label="`${subjectLabel}灵魂提示词`"
+          description="可直接手工校准完整提示词；发布时会自动保留上一版历史。"
+          required
+        >
+          <UTextarea
+            v-model="editor.snapshot.promptText"
+            class="w-full"
+            :rows="20"
+            autoresize
+            :maxrows="32"
+            :disabled="loading || analysisLoading"
+            placeholder="输入人物核心人设，或世界背景、规则与边界……"
+          />
+        </UFormField>
+
+        <UAlert v-if="analysisError" color="error" title="AI 整理失败" :description="analysisError" />
+
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div class="flex flex-wrap items-center gap-1">
+            <UButton
+              type="button"
+              data-soul-analyze-button
+              icon="i-lucide-wand-sparkles"
+              color="neutral"
+              variant="ghost"
+              aria-label="AI 整理当前提示词"
+              title="AI 整理当前提示词"
+              :disabled="!editor.snapshot.promptText.trim() || loading || analysisLoading"
+              @click="analyzePrompt"
+            />
+            <UButton
+              type="button"
+              data-soul-history-button
+              icon="i-lucide-history"
+              color="neutral"
+              variant="ghost"
+              aria-label="查看提示词历史"
+              title="查看提示词历史"
+              :disabled="loading || analysisLoading"
+              @click="historyOpen = true"
+            />
+            <span class="ml-2 text-xs text-muted">预计 {{ estimatedTokens }} Token</span>
+          </div>
+          <UButton
+            type="submit"
+            data-soul-save-publish-button
+            icon="i-lucide-send"
+            :loading="loading"
+            :disabled="!hasChanges || analysisLoading"
+          >保存并发布</UButton>
+        </div>
+      </UForm>
+    </UCard>
+
+    <UModal v-model:open="historyOpen" title="提示词历史" description="选择后只会载入编辑框，点击保存并发布才会重新使用这一版。" :ui="{ content: 'max-w-3xl' }">
       <template #body>
         <div v-if="workspace.versions.length" class="max-h-[65vh] space-y-2 overflow-y-auto pr-1" data-soul-history-list>
           <button

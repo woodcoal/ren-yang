@@ -20,7 +20,9 @@ import GrowthMaterialPanel from '../../components/learning/GrowthMaterialPanel.v
 import LearningPromptPanel from '../../components/learning/LearningPromptPanel.vue'
 import { getApiErrorMessage } from '../../utils/apiError'
 
-type PersonaTab = 'overview' | 'soul' | 'growth_materials' | 'growth' | 'records' | 'external_records' | 'memory' | 'sources' | 'relations'
+type PersonaTab = 'basic' | 'prompts' | 'materials' | 'operations'
+type PersonaPromptModule = 'soul' | 'growth' | 'memory'
+type PersonaMaterialModule = 'sources' | 'growth_materials' | 'records' | 'external_records'
 
 const personaId = String(useRoute().params.id)
 const { runWithAiLoading } = useAiLoading()
@@ -59,23 +61,30 @@ const memoryWorkspace = computed<PersonaMemoryWorkspaceView>(() => memoryData.va
 const growthAnalysis = computed(() => growthAnalysisData.value?.data ?? null)
 const memoryAnalysis = computed(() => memoryAnalysisData.value?.data ?? null)
 const tabs: Array<{ id: PersonaTab, label: string }> = [
-  { id: 'overview', label: '概览' },
-  { id: 'soul', label: '灵魂' },
-  { id: 'growth_materials', label: '成长素材' },
-  { id: 'growth', label: '成长' },
-  { id: 'records', label: '记录' },
-  { id: 'external_records', label: '三方记录' },
-  { id: 'memory', label: '记忆' },
-  { id: 'sources', label: '资料' },
-  { id: 'relations', label: '基本信息' },
+  { id: 'basic', label: '基础信息' },
+  { id: 'prompts', label: '提示词' },
+  { id: 'materials', label: '资料' },
+  { id: 'operations', label: '操作' },
 ]
-const selectedTab = shallowRef<PersonaTab>('overview')
+const promptModules: Array<{ id: PersonaPromptModule, label: string, description: string }> = [
+  { id: 'soul', label: '灵魂', description: '稳定的人物身份、价值观与行为边界。' },
+  { id: 'growth', label: '成长', description: '从成长素材提炼出的经验与个性变化。' },
+  { id: 'memory', label: '记忆', description: '从历史任务和三方记录提炼出的长期记忆。' },
+]
+const materialModules: Array<{ id: PersonaMaterialModule, label: string, description: string }> = [
+  { id: 'sources', label: '任务参考', description: '任务执行时可检索的相关资料。' },
+  { id: 'growth_materials', label: '成长素材', description: '用于生成成长提示词的原始材料。' },
+  { id: 'records', label: '历史任务', description: '人物实际执行过的任务记录。' },
+  { id: 'external_records', label: '三方记录', description: '手工补充的外部经历与参考地址。' },
+]
+const selectedTab = shallowRef<PersonaTab>('basic')
+const selectedPromptModule = shallowRef<PersonaPromptModule>('soul')
+const selectedMaterialModule = shallowRef<PersonaMaterialModule>('sources')
 const metadata = reactive<UpdatePersonaInput>({
   name: details.value?.persona.name ?? '',
   worldId: details.value?.persona.worldId ?? null,
 })
 const deletionImpact = shallowRef<DeletionImpact | null>(null)
-const deletionConfirmed = shallowRef(false)
 const actionLoading = shallowRef(false)
 const actionError = shallowRef<string | null>(null)
 const actionMessage = shallowRef<string | null>(null)
@@ -430,7 +439,6 @@ async function inspectDeletion(): Promise<void> {
   await runAction(null, async () => {
     const response = await $fetch<ApiResponse<DeletionImpact>>(`/api/v1/personas/${personaId}/deletion-impact`)
     deletionImpact.value = response.data
-    deletionConfirmed.value = false
   })
 }
 
@@ -439,7 +447,7 @@ async function inspectDeletion(): Promise<void> {
  * @returns 删除和导航完成时结束。
  */
 async function deletePersona(): Promise<void> {
-  if (!deletionConfirmed.value || !deletionImpact.value?.canDelete) return
+  if (!deletionImpact.value?.canDelete) return
   await runAction(null, async () => {
     await $fetch(`/api/v1/personas/${personaId}`, { method: 'DELETE' })
     await navigateTo('/personas')
@@ -515,7 +523,6 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
       <template v-if="details" #leading>
         <ContentPersonaAvatar :name="details.persona.name" :url="headerAvatarUrl" size="header" />
       </template>
-      <UButton v-if="details" color="neutral" variant="soft" :loading="actionLoading" @click="requestPersonaStatusChange">{{ details.persona.isEnabled ? '禁用人物' : '启用人物' }}</UButton>
       <UButton to="/personas" color="neutral" variant="ghost">返回人物列表</UButton>
       <UButton v-if="details?.persona.isEnabled" to="/workbench">新建任务</UButton>
     </ContentPageHeader>
@@ -537,104 +544,19 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
         <button v-for="tab in tabs" :key="tab.id" class="mind-tab" :aria-selected="selectedTab === tab.id" @click="selectTab(tab.id)">{{ tab.label }}</button>
       </nav>
 
-      <div v-if="selectedTab === 'overview'" class="grid gap-6 xl:grid-cols-2">
+      <div v-if="selectedTab === 'basic'" class="space-y-6">
         <UCard>
-          <template #header><h2 class="font-semibold text-highlighted">当前人物状态</h2></template>
-          <p class="whitespace-pre-wrap text-sm leading-6 text-muted">{{ soul.activeVersion?.snapshot.promptText || '人物还没有可用的灵魂提示词。' }}</p>
-          <UButton class="mt-4" color="neutral" variant="soft" @click="selectTab('soul')">查看和编辑灵魂</UButton>
+          <template #header><div><h2 class="font-semibold text-highlighted">基本信息</h2><p class="mt-1 text-sm text-muted">名称用于后台辨认；所属世界当前使用的灵魂会进入人物的新任务。</p></div></template>
+          <UForm :schema="updatePersonaSchema" :state="metadata" class="grid gap-4 md:grid-cols-2" @submit="saveMetadata">
+            <UFormField name="name" label="人物名称" required><UInput v-model="metadata.name" class="w-full" /></UFormField>
+            <UFormField name="worldId" label="所属世界">
+              <select v-model="metadata.worldId" class="native-control"><option :value="null">不关联世界</option><option v-for="world in worlds" :key="world.id" :value="world.id">{{ world.name }}{{ world.isEnabled ? '' : '（已禁用）' }}</option></select>
+            </UFormField>
+            <div class="md:col-span-2"><UButton type="submit" :loading="actionLoading">保存基本信息</UButton></div>
+          </UForm>
         </UCard>
-        <UCard>
-          <template #header><h2 class="font-semibold text-highlighted">变化边界</h2></template>
-          <div class="space-y-3 text-sm text-muted">
-            <p>成长来自人物资料库中选出的重要资料，以及你手工添加的独立文档。</p>
-            <p>记忆来自人物成功或部分成功的历史任务，也可以使用你补充的第三方经历记录。</p>
-            <p>AI 只生成完整提示词草稿；人工校准并发布后，成长和记忆提示词才会固定进入新任务。</p>
-          </div>
-        </UCard>
-      </div>
 
-      <ContentSoulWorkspace
-        v-else-if="selectedTab === 'soul'"
-        :workspace="soul"
-        :loading="actionLoading"
-        @save="saveSoulVersion"
-      />
-
-      <div v-else-if="selectedTab === 'growth_materials'" class="space-y-6">
-        <GrowthMaterialPanel
-          subject-label="人物"
-          :items="growthWorkspace.materials"
-          :sources="growthWorkspace.sources"
-          :loading="actionLoading"
-          @import-sources="importGrowthSources"
-          @create="createGrowthMaterial"
-          @update="updateGrowthMaterial"
-          @status="updateGrowthMaterialStatus"
-          @delete="deleteGrowthMaterials"
-        />
-      </div>
-
-      <div v-else-if="selectedTab === 'growth'" class="space-y-6">
-        <LearningPromptPanel
-          title="人物成长"
-          :workspace="growthWorkspace.prompt"
-          :batch="growthAnalysis"
-          :loading="actionLoading"
-          @analyze="analyzeLearning('growth', $event)"
-          @refresh="refreshLearningAnalysis('growth')"
-          @save-and-publish="saveAndPublishLearningPrompt('growth', $event)"
-        />
-      </div>
-
-      <div v-else-if="selectedTab === 'records'" class="space-y-6">
-        <LearningOperationRecordPanel
-          :items="memoryWorkspace.operationRecords"
-          :loading="actionLoading"
-          @status="updateOperationRecordStatus"
-          @importance="updateOperationRecordImportance"
-        />
-      </div>
-
-      <div v-else-if="selectedTab === 'external_records'" class="space-y-6">
-        <LearningExternalRecordPanel
-          :items="memoryWorkspace.externalRecords"
-          :loading="actionLoading"
-          @create="createExternalRecord"
-          @update="updateExternalRecord"
-          @status="updateExternalRecordStatus"
-          @delete="deleteExternalRecords"
-        />
-      </div>
-
-      <div v-else-if="selectedTab === 'memory'" class="space-y-6">
-        <LearningPromptPanel
-          title="人物记忆"
-          :workspace="memoryWorkspace.prompt"
-          :batch="memoryAnalysis"
-          :loading="actionLoading"
-          @analyze="analyzeLearning('memory', $event)"
-          @refresh="refreshLearningAnalysis('memory')"
-          @save-and-publish="saveAndPublishLearningPrompt('memory', $event)"
-        />
-      </div>
-
-      <ContentSubjectSourceManager
-        v-else-if="selectedTab === 'sources'"
-        subject-type="persona"
-        :subject-name="details.persona.name"
-        :linked-sources="details.sources"
-        :all-sources="allSources"
-        :loading="actionLoading"
-        :error-message="actionError"
-        @link="linkSources"
-        @unlink="unlinkSource"
-        @status="updateLinkedSourceStatus"
-        @paste="createPastedSource"
-        @file="importSourceFile"
-      />
-
-      <div v-else class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
-        <div class="space-y-6">
+        <div class="grid gap-6 xl:grid-cols-2">
           <ContentPersonaCredentialPanel
             :credential="details.credentials"
             :revealed="revealedCredential"
@@ -649,27 +571,96 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
             :avatar-url="details.persona.avatarUrl"
             @updated="refreshPersonaAvatar"
           />
-          <UCard>
-            <template #header><div><h2 class="font-semibold text-highlighted">基本信息</h2><p class="mt-1 text-sm text-muted">名称用于后台辨认；所属世界当前使用的灵魂会进入人物的新任务。</p></div></template>
-            <UForm :schema="updatePersonaSchema" :state="metadata" class="grid gap-4 md:grid-cols-2" @submit="saveMetadata">
-              <UFormField name="name" label="人物名称" required><UInput v-model="metadata.name" class="w-full" /></UFormField>
-              <UFormField name="worldId" label="所属世界">
-                <select v-model="metadata.worldId" class="native-control"><option :value="null">不关联世界</option><option v-for="world in worlds" :key="world.id" :value="world.id">{{ world.name }}{{ world.isEnabled ? '' : '（已禁用）' }}</option></select>
-              </UFormField>
-              <div class="md:col-span-2"><UButton type="submit" :loading="actionLoading">保存基本信息</UButton></div>
-            </UForm>
-          </UCard>
         </div>
-        <UCard>
-          <template #header><h2 class="font-semibold text-error">删除人物</h2></template>
-          <UButton v-if="!deletionImpact" color="error" variant="soft" :loading="actionLoading" @click="inspectDeletion">先查看会删除什么</UButton>
-          <div v-else class="space-y-3 text-sm">
-            <p>将删除 {{ deletionImpact.versionCount }} 个灵魂版本和 {{ deletionImpact.runHistory.runs }} 次历史任务。</p>
-            <UCheckbox v-model="deletionConfirmed" label="我确认永久删除这个人物" />
-            <UButton color="error" :disabled="!deletionConfirmed" :loading="actionLoading" @click="deletePersona">永久删除人物</UButton>
-          </div>
-        </UCard>
       </div>
+
+      <div v-else-if="selectedTab === 'prompts'">
+        <ContentWorkspaceModuleNav v-model="selectedPromptModule" :items="promptModules" aria-label="人物提示词模块" />
+        <ContentSoulWorkspace
+          v-if="selectedPromptModule === 'soul'"
+          :workspace="soul"
+          :loading="actionLoading"
+          @save="saveSoulVersion"
+        />
+        <LearningPromptPanel
+          v-else-if="selectedPromptModule === 'growth'"
+          title="人物成长"
+          :workspace="growthWorkspace.prompt"
+          :batch="growthAnalysis"
+          :loading="actionLoading"
+          @analyze="analyzeLearning('growth', $event)"
+          @refresh="refreshLearningAnalysis('growth')"
+          @save-and-publish="saveAndPublishLearningPrompt('growth', $event)"
+        />
+        <LearningPromptPanel
+          v-else
+          title="人物记忆"
+          :workspace="memoryWorkspace.prompt"
+          :batch="memoryAnalysis"
+          :loading="actionLoading"
+          @analyze="analyzeLearning('memory', $event)"
+          @refresh="refreshLearningAnalysis('memory')"
+          @save-and-publish="saveAndPublishLearningPrompt('memory', $event)"
+        />
+      </div>
+
+      <div v-else-if="selectedTab === 'materials'">
+        <ContentWorkspaceModuleNav v-model="selectedMaterialModule" :items="materialModules" aria-label="人物资料模块" />
+        <ContentSubjectSourceManager
+          v-if="selectedMaterialModule === 'sources'"
+          subject-type="persona"
+          :subject-name="details.persona.name"
+          :linked-sources="details.sources"
+          :all-sources="allSources"
+          :loading="actionLoading"
+          :error-message="actionError"
+          @link="linkSources"
+          @unlink="unlinkSource"
+          @status="updateLinkedSourceStatus"
+          @paste="createPastedSource"
+          @file="importSourceFile"
+        />
+        <GrowthMaterialPanel
+          v-else-if="selectedMaterialModule === 'growth_materials'"
+          subject-label="人物"
+          :items="growthWorkspace.materials"
+          :sources="growthWorkspace.sources"
+          :loading="actionLoading"
+          @import-sources="importGrowthSources"
+          @create="createGrowthMaterial"
+          @update="updateGrowthMaterial"
+          @status="updateGrowthMaterialStatus"
+          @delete="deleteGrowthMaterials"
+        />
+        <LearningOperationRecordPanel
+          v-else-if="selectedMaterialModule === 'records'"
+          :items="memoryWorkspace.operationRecords"
+          :loading="actionLoading"
+          @status="updateOperationRecordStatus"
+          @importance="updateOperationRecordImportance"
+        />
+        <LearningExternalRecordPanel
+          v-else
+          :items="memoryWorkspace.externalRecords"
+          :loading="actionLoading"
+          @create="createExternalRecord"
+          @update="updateExternalRecord"
+          @status="updateExternalRecordStatus"
+          @delete="deleteExternalRecords"
+        />
+      </div>
+
+      <ContentLifecycleOperationsPanel
+        v-else
+        subject-type="persona"
+        :subject-name="details.persona.name"
+        :is-enabled="details.persona.isEnabled"
+        :deletion-impact="deletionImpact"
+        :loading="actionLoading"
+        @request-status-change="requestPersonaStatusChange"
+        @inspect-deletion="inspectDeletion"
+        @delete="deletePersona"
+      />
     </template>
 
     <UModal v-model:open="enableConfirmationOpen" title="确认启用人物" description="启用后，可以重新用该人物创建新任务。">

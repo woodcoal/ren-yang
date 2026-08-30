@@ -174,26 +174,33 @@ watch(
             icon="i-lucide-wand-sparkles"
             color="neutral"
             variant="ghost"
+            aria-label="重新 AI 生成提示词"
+            title="重新 AI 生成提示词"
             :disabled="loading || analysisPending"
             @click="requestAnalysis"
-          >重新 AI 生成提示词</UButton>
+          />
           <UButton
             type="button"
             data-learning-history-button
             icon="i-lucide-history"
             color="neutral"
             variant="ghost"
+            aria-label="查看提示词历史"
+            title="查看提示词历史"
             :disabled="loading || analysisPending"
             @click="historyOpen = true"
-          >历史</UButton>
+          />
           <UButton
             type="button"
+            data-learning-refresh-button
             icon="i-lucide-refresh-cw"
             color="neutral"
             variant="ghost"
+            aria-label="刷新状态"
+            title="刷新状态"
             :disabled="loading"
             @click="emit('refresh')"
-          >刷新状态</UButton>
+          />
           <span class="ml-2 text-xs text-muted">预计 {{ estimatedTokens }} Token</span>
         </div>
         <UButton

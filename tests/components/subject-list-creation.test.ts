@@ -1,4 +1,4 @@
-import { createError, readBody } from 'h3'
+import { createError, getQuery, readBody } from 'h3'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DOMWrapper, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
@@ -18,6 +18,8 @@ const worldCreateRequests: unknown[] = []
 const soulAnalyzeRequests: AnalyzeSoulPromptInput[] = []
 const personaStatusRequests: UpdatePersonasStatusInput[] = []
 const worldStatusRequests: UpdateWorldsStatusInput[] = []
+const personaPageQueries: Array<Record<string, string | string[] | undefined>> = []
+const worldPageQueries: Array<Record<string, string | string[] | undefined>> = []
 
 /** @returns 启用与禁用状态各一项的人物列表。 */
 function createPersonaItems(): PersonaSummary[] {
@@ -61,9 +63,13 @@ registerEndpoint('/api/v1/personas', {
   method: 'GET',
   handler: () => ({ data: [] }),
 })
-registerEndpoint('/api/v1/personas/page', () => ({
-  data: { items: personaItems, total: personaItems.length, page: 1, pageSize: 10, totalPages: 1 },
-}))
+registerEndpoint('/api/v1/personas/page', (event) => {
+  const query = getQuery(event)
+  personaPageQueries.push(query)
+  const keyword = typeof query.query === 'string' ? query.query : ''
+  const items = personaItems.filter(persona => persona.name.includes(keyword))
+  return { data: { items, total: items.length, page: 1, pageSize: 10, totalPages: 1 } }
+})
 registerEndpoint('/api/v1/personas', {
   method: 'POST',
   handler: async (event) => {
@@ -75,9 +81,13 @@ registerEndpoint('/api/v1/worlds', {
   method: 'GET',
   handler: () => ({ data: [] }),
 })
-registerEndpoint('/api/v1/worlds/page', () => ({
-  data: { items: worldItems, total: worldItems.length, page: 1, pageSize: 10, totalPages: 1 },
-}))
+registerEndpoint('/api/v1/worlds/page', (event) => {
+  const query = getQuery(event)
+  worldPageQueries.push(query)
+  const keyword = typeof query.query === 'string' ? query.query : ''
+  const items = worldItems.filter(world => world.name.includes(keyword))
+  return { data: { items, total: items.length, page: 1, pageSize: 10, totalPages: 1 } }
+})
 registerEndpoint('/api/v1/worlds', {
   method: 'POST',
   handler: async (event) => {
@@ -166,6 +176,8 @@ describe('世界与人物列表快速初始化', () => {
     soulAnalyzeRequests.length = 0
     personaStatusRequests.length = 0
     worldStatusRequests.length = 0
+    personaPageQueries.length = 0
+    worldPageQueries.length = 0
     personaItems = createPersonaItems()
     worldItems = createWorldItems()
   })
@@ -332,6 +344,37 @@ describe('世界与人物列表快速初始化', () => {
       worldIds: ['20000000-0000-4000-8000-000000000002'], isEnabled: true,
     })
     await vi.waitFor(() => expect(document.body.textContent).not.toContain('确认批量启用世界'))
+    worldWrapper.unmount()
+  })
+
+  it('人物与世界列表按名称进行服务端筛选并支持清除筛选', async () => {
+    const personaWrapper = await mountSuspended(PersonasPage, { route: '/personas' })
+    await flushPromises()
+    const personaRequestCount = personaPageQueries.length
+    await personaWrapper.get('input[aria-label="人物列表搜索词"]').setValue('禁用')
+    await personaWrapper.get('form[aria-label="筛选人物"]').trigger('submit')
+    await vi.waitFor(() => expect(personaPageQueries.length).toBeGreaterThan(personaRequestCount))
+    expect(personaPageQueries.at(-1)).toMatchObject({ query: '禁用', page: '1' })
+    await vi.waitFor(() => expect(personaWrapper.text()).toContain('禁用人物'))
+    expect(personaWrapper.text()).not.toContain('启用人物')
+    await personaWrapper.findAllComponents({ name: 'UButton' })
+      .find(button => button.text() === '清除筛选')!.trigger('click')
+    await vi.waitFor(() => expect(personaWrapper.text()).toContain('启用人物'))
+    personaWrapper.unmount()
+    document.body.innerHTML = ''
+
+    const worldWrapper = await mountSuspended(WorldsPage, { route: '/worlds' })
+    await flushPromises()
+    const worldRequestCount = worldPageQueries.length
+    await worldWrapper.get('input[aria-label="世界列表搜索词"]').setValue('禁用')
+    await worldWrapper.get('form[aria-label="筛选世界"]').trigger('submit')
+    await vi.waitFor(() => expect(worldPageQueries.length).toBeGreaterThan(worldRequestCount))
+    expect(worldPageQueries.at(-1)).toMatchObject({ query: '禁用', page: '1' })
+    await vi.waitFor(() => expect(worldWrapper.text()).toContain('禁用世界'))
+    expect(worldWrapper.text()).not.toContain('启用世界')
+    await worldWrapper.findAllComponents({ name: 'UButton' })
+      .find(button => button.text() === '清除筛选')!.trigger('click')
+    await vi.waitFor(() => expect(worldWrapper.text()).toContain('启用世界'))
     worldWrapper.unmount()
   })
 })

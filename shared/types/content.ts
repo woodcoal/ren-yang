@@ -330,6 +330,12 @@ export interface SourceChunkView {
   contentHash: string
 }
 
+/** 资料段落检索结果。 */
+export interface SourceSearchResultView extends SourceChunkView {
+  /** 所属资料展示名称，用于在独立结果页识别来源。 */
+  sourceName: string
+}
+
 /** 人物详情。 */
 export interface PersonaDetails {
   /** 人物摘要。 */

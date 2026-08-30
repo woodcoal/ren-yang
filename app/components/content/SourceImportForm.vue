@@ -144,7 +144,7 @@ function submitFile(event: FormSubmitEvent<typeof fileState>): void {
       <template #header><div><h2 class="font-semibold text-highlighted">粘贴文本</h2><p class="mt-1 text-sm text-muted">适合短资料或人工整理后的事实。</p></div></template>
       <UForm :schema="createSourceSchema" :state="pasteState" class="space-y-4" @submit="submitPaste">
         <UFormField name="name" label="资料名称" description="文件名或自定义名称，用于在列表中显示。" required><UInput v-model="pasteState.name" class="w-full" :disabled="loading" /></UFormField>
-        <UFormField name="role" label="资料用途" description="决定 AI 应该怎样理解这份资料。" required>
+        <UFormField name="role" label="AI 使用方式" description="确定事实参与事实判断；背景参考补充上下文；风格参考只影响表达。" required>
           <USelect v-model="pasteState.role" class="w-full" :items="[{ label: '原作中的确定事实', value: 'canon_fact' }, { label: '背景参考', value: 'reference' }, { label: '写作风格参考', value: 'style_sample' }]" :disabled="loading" />
         </UFormField>
         <UFormField name="content" label="正文" required><UTextarea v-model="pasteState.content" class="w-full" :rows="9" autoresize :disabled="loading" /></UFormField>
@@ -155,7 +155,7 @@ function submitFile(event: FormSubmitEvent<typeof fileState>): void {
       <UCard>
       <template #header><div><h2 class="font-semibold text-highlighted">上传文件</h2><p class="mt-1 text-sm text-muted">可多选 UTF-8 TXT、MD；每个文件最大 2 MB，不解析 HTML。</p></div></template>
       <UForm :schema="fileFormSchema" :state="fileState" class="space-y-4" @submit="submitFile">
-        <UFormField name="role" label="资料用途" description="决定 AI 应该怎样理解这份资料。" required>
+        <UFormField name="role" label="AI 使用方式" description="确定事实参与事实判断；背景参考补充上下文；风格参考只影响表达。" required>
           <USelect v-model="fileState.role" class="w-full" :items="[{ label: '原作中的确定事实', value: 'canon_fact' }, { label: '背景参考', value: 'reference' }, { label: '写作风格参考', value: 'style_sample' }]" :disabled="loading" />
         </UFormField>
         <UFormField label="文件" required>

@@ -21,9 +21,24 @@ function readPageSize(value: unknown): 5 | 10 | 20 | 50 | 100 {
   return parsed === 5 || parsed === 20 || parsed === 50 || parsed === 100 ? parsed : 10
 }
 
+/**
+ * 从 URL 查询参数读取单个去除首尾空白的文本值。
+ * @param value 路由查询参数原值。
+ * @returns 可用于人物名称筛选的文本。
+ */
+function readTextQuery(value: unknown): string {
+  const normalized = Array.isArray(value) ? value[0] : value
+  return typeof normalized === 'string' ? normalized.trim() : ''
+}
+
 const requestedPage = computed(() => readPositiveInteger(route.query.page, 1))
 const requestedPageSize = computed(() => readPageSize(route.query.pageSize))
-const personaPageQuery = computed(() => ({ page: requestedPage.value, pageSize: requestedPageSize.value }))
+const requestedPersonaFilter = computed(() => readTextQuery(route.query.keyword))
+const personaPageQuery = computed(() => ({
+  page: requestedPage.value,
+  pageSize: requestedPageSize.value,
+  query: requestedPersonaFilter.value || undefined,
+}))
 const { data, error, refresh } = await useFetch<ApiResponse<PersonaPageView>>('/api/v1/personas/page', { query: personaPageQuery })
 const personaPage = computed<PersonaPageView>(() => data.value?.data ?? {
   items: [], total: 0, page: requestedPage.value, pageSize: requestedPageSize.value, totalPages: 1,
@@ -35,6 +50,7 @@ const showCreate = shallowRef(false)
 const createLoading = shallowRef(false)
 const createErrorMessage = shallowRef<string | null>(null)
 const actionErrorMessage = shallowRef<string | null>(null)
+const personaFilterInput = shallowRef(requestedPersonaFilter.value)
 const selectedPersonaIds = ref<string[]>([])
 const batchEnableConfirmationOpen = shallowRef(false)
 const batchDisableConfirmationOpen = shallowRef(false)
@@ -59,7 +75,43 @@ function clearPersonaSelection(): void {
   selectedPersonaIds.value = []
 }
 
-watch([requestedPage, requestedPageSize], clearPersonaSelection)
+watch([requestedPage, requestedPageSize, requestedPersonaFilter], clearPersonaSelection)
+
+/**
+ * 浏览器前进或后退改变筛选参数时同步人物筛选输入框。
+ * @param query URL 中当前人物名称筛选词。
+ * @returns 输入框同步完成时结束。
+ */
+function synchronizePersonaFilter(query: string): void {
+  personaFilterInput.value = query
+}
+
+watch(requestedPersonaFilter, synchronizePersonaFilter)
+
+/**
+ * 按输入的人物名称筛选全部人物并回到第一页。
+ * @returns URL 筛选参数更新完成时结束。
+ */
+async function applyPersonaFilter(): Promise<void> {
+  const keyword = personaFilterInput.value.trim()
+  await navigateTo({
+    path: route.path,
+    query: {
+      page: '1',
+      pageSize: String(personaPage.value.pageSize),
+      ...(keyword ? { keyword } : {}),
+    },
+  })
+}
+
+/**
+ * 清空人物名称筛选并重新显示第一页全部人物。
+ * @returns URL 筛选参数清除完成时结束。
+ */
+async function clearPersonaFilter(): Promise<void> {
+  personaFilterInput.value = ''
+  await applyPersonaFilter()
+}
 
 /** @param personaId 当前页人物 UUID。 @param event 复选框变更事件。 @returns 无返回值。 */
 function updatePersonaSelection(personaId: string, event: Event): void {
@@ -192,19 +244,36 @@ async function changePageSize(pageSize: number): Promise<void> {
 
     <UAlert v-if="actionErrorMessage" class="mb-5" color="error" title="操作失败" :description="actionErrorMessage" />
     <UAlert v-if="error" color="error" title="人物列表加载失败" :actions="[{ label: '重试', onClick: () => refresh() }]" />
-    <section v-else-if="personas.length" class="content-section" aria-labelledby="persona-list-heading">
+    <section v-else class="content-section" aria-labelledby="persona-list-heading">
       <div class="section-heading"><div class="section-heading-copy"><p class="eyebrow">人物状态</p><h2 id="persona-list-heading">已建立的人物</h2><p>禁用只影响后续新任务，历史记录、人物设定和资料关系仍会保留。</p></div></div>
-      <div class="content-toolbar !rounded-none !bg-transparent !border-0">
-        <span v-if="selectedPersonaIds.length > 0" class="text-sm text-muted">已选择 {{ selectedPersonaIds.length }} 个人物</span><span v-else aria-hidden="true"></span>
-        <div class="flex items-center justify-end gap-1">
-          <UButton color="success" variant="ghost" size="xs" :loading="batchStatusUpdating === true"
-            :disabled="selectedDisabledPersonaIds.length === 0 || batchStatusUpdating !== null" @click="requestBatchEnable">批量启用</UButton>
-          <UButton color="error" variant="ghost" size="xs" :disabled="selectedEnabledPersonaIds.length === 0 || batchStatusUpdating !== null"
-            @click="requestBatchDisable">批量禁用</UButton>
+      <div class="list-management-panel">
+        <div class="list-management-controls">
+          <form class="list-management-search" aria-label="筛选人物" @submit.prevent="applyPersonaFilter">
+            <UInput v-model="personaFilterInput" class="list-management-search-input" icon="i-lucide-search"
+              placeholder="输入人物名称" aria-label="人物列表搜索词" />
+            <UButton type="submit" color="neutral" variant="soft">搜索人物</UButton>
+            <UButton v-if="requestedPersonaFilter" type="button" color="neutral" variant="ghost"
+              @click="clearPersonaFilter">清除筛选</UButton>
+          </form>
+          <div v-if="personas.length" class="list-management-batch">
+            <span class="list-management-selection">{{ selectedPersonaIds.length > 0
+              ? `已选择 ${selectedPersonaIds.length} 个人物`
+              : '选择人物后可批量操作' }}</span>
+            <div class="list-management-batch-actions">
+              <UButton color="success" variant="soft" size="xs" icon="i-lucide-circle-check"
+                :loading="batchStatusUpdating === true"
+                :disabled="selectedDisabledPersonaIds.length === 0 || batchStatusUpdating !== null"
+                @click="requestBatchEnable">批量启用</UButton>
+              <UButton color="error" variant="soft" size="xs" icon="i-lucide-circle-off"
+                :disabled="selectedEnabledPersonaIds.length === 0 || batchStatusUpdating !== null"
+                @click="requestBatchDisable">批量禁用</UButton>
+            </div>
+          </div>
         </div>
-      </div>
-      <div class="content-table-wrap">
-        <table class="content-table">
+
+        <template v-if="personas.length">
+          <div class="content-table-wrap list-management-table">
+            <table class="content-table">
           <thead><tr><th><input type="checkbox" aria-label="选择当前页全部人物" :checked="allPagePersonasSelected"
             :indeterminate="somePagePersonasSelected" :disabled="pagePersonaIds.length === 0" @change="updateCurrentPageSelection"></th>
             <th>人物</th><th>世界</th><th>版本与资料</th><th>启用状态</th><th>操作</th></tr></thead>
@@ -222,17 +291,26 @@ async function changePageSize(pageSize: number): Promise<void> {
             <td data-label="操作"><UButton :to="`/personas/${persona.id}`" color="neutral" variant="ghost" size="xs"
               icon="i-lucide-chevron-right" :aria-label="`查看与维护：${persona.name}`" /></td>
           </tr></tbody>
-        </table>
-      </div>
-      <div class="mt-5 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
-        <p class="text-sm text-muted">第 {{ personaPage.page }} / {{ personaPage.totalPages }} 页，共 {{ personaPage.total }} 项</p>
-        <div class="flex flex-wrap items-center gap-3">
-          <USelect :model-value="personaPage.pageSize" class="w-34" :items="pageSizeItems" aria-label="每页人物数量" @update:model-value="changePageSize" />
-          <UPagination :page="personaPage.page" :total="personaPage.total" :items-per-page="personaPage.pageSize" show-edges @update:page="changePage" />
+            </table>
+          </div>
+          <div class="list-management-footer">
+            <p class="m-0 text-sm text-muted">第 {{ personaPage.page }} / {{ personaPage.totalPages }} 页，共 {{ personaPage.total }} 项</p>
+            <div class="list-management-pagination">
+              <USelect :model-value="personaPage.pageSize" class="w-34" :items="pageSizeItems" aria-label="每页人物数量" @update:model-value="changePageSize" />
+              <UPagination :page="personaPage.page" :total="personaPage.total" :items-per-page="personaPage.pageSize" show-edges @update:page="changePage" />
+            </div>
+          </div>
+        </template>
+        <div v-else class="content-empty-state list-management-empty">
+          <div><strong>{{ requestedPersonaFilter ? '没有匹配的人物' : '还没有人物' }}</strong>
+            <p class="mt-1 text-sm text-muted">{{ requestedPersonaFilter ? '请调整人物名称关键词后重试。' : '创建人物时可以按需选择世界和参考资料。' }}</p>
+            <UButton v-if="requestedPersonaFilter" class="mt-4" color="neutral" variant="soft"
+              @click="clearPersonaFilter">清除筛选</UButton>
+            <UButton v-else class="mt-4" @click="openCreateModal">创建第一个人物</UButton>
+          </div>
         </div>
       </div>
     </section>
-    <div v-else class="content-empty-state"><div><strong>还没有人物</strong><p class="mt-1 text-sm text-muted">创建人物时可以按需选择世界和参考资料。</p><UButton class="mt-4" @click="openCreateModal">创建第一个人物</UButton></div></div>
 
     <UModal v-model:open="batchEnableConfirmationOpen" title="确认批量启用人物" description="启用后，这些人物可以重新用于创建新任务。">
       <template #body><p class="text-sm text-muted">确定启用当前页已选择的 {{ selectedDisabledPersonaIds.length }} 个禁用人物吗？</p></template>

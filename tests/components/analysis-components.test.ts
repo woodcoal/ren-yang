@@ -34,8 +34,8 @@ describe('成长与记忆 AI 提炼组件', () => {
       expect(pageSource).not.toContain("import AnalysisPanel from '../../components/analysis/AnalysisPanel.vue'")
       expect(pageSource).not.toContain('@review=')
     }
-    expect(pageSources[1]).toContain("{ id: 'growth_materials', label: '成长素材' }")
-    expect(pageSources[1]).toContain("selectedTab === 'growth_materials'")
+    expect(pageSources[1]).toContain("{ id: 'growth_materials', label: '成长素材'")
+    expect(pageSources[1]).toContain("selectedMaterialModule === 'growth_materials'")
   })
 
   it('提炼面板明确区分结合新增素材与全部素材重建', async () => {

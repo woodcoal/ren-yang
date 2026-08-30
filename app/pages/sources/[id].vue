@@ -19,7 +19,7 @@ const [{ data, error, refresh }, { data: personaData }, { data: worldData }] = a
 const details = computed(() => data.value?.data ?? null)
 const personas = computed(() => personaData.value?.data ?? [])
 const worlds = computed(() => worldData.value?.data ?? [])
-const selectedTab = shallowRef<'body' | 'chunks' | 'relations' | 'danger'>('body')
+const selectedTab = shallowRef<'body' | 'chunks' | 'relations' | 'operations'>('body')
 const editState = reactive<UpdateSourceInput>({
   name: '',
   role: 'reference',
@@ -30,7 +30,6 @@ const actionLoading = shallowRef(false)
 const actionError = shallowRef<string | null>(null)
 const actionMessage = shallowRef<string | null>(null)
 const deletionImpact = shallowRef<DeletionImpact | null>(null)
-const deletionConfirmed = shallowRef(false)
 const enableConfirmationOpen = shallowRef(false)
 const disableConfirmationOpen = shallowRef(false)
 /** 是否已用首次成功加载的资料初始化编辑表单。 */
@@ -165,13 +164,12 @@ async function inspectDeletion(): Promise<void> {
   await runAction(null, async () => {
     const response = await $fetch<ApiResponse<DeletionImpact>>(`/api/v1/sources/${sourceId}/deletion-impact`)
     deletionImpact.value = response.data
-    deletionConfirmed.value = false
   })
 }
 
 /** @returns 永久删除和导航完成时结束。 */
 async function deleteSource(): Promise<void> {
-  if (!deletionConfirmed.value || !deletionImpact.value?.canDelete) return
+  if (!deletionImpact.value?.canDelete) return
   await runAction(null, async () => {
     await $fetch(`/api/v1/sources/${sourceId}`, { method: 'DELETE' })
     await navigateTo('/sources')
@@ -201,7 +199,6 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
 <template>
   <div>
     <ContentPageHeader :title="details?.source.name || '资料详情'" description="编辑资料正文、查看系统整理的段落，以及管理它被哪些人物或世界使用。">
-      <UButton v-if="details" color="neutral" variant="soft" :loading="actionLoading" @click="requestSourceStatusChange">{{ details.source.isEnabled ? '禁用资料' : '启用资料' }}</UButton>
       <UButton to="/sources" color="neutral" variant="ghost">返回列表</UButton>
     </ContentPageHeader>
     <UAlert
@@ -215,7 +212,7 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
       <UAlert v-if="actionError" class="mb-5" color="error" title="操作失败" :description="actionError" />
       <UAlert v-if="actionMessage" class="mb-5" color="success" title="操作完成" :description="actionMessage" />
       <div class="status-strip page-status-strip mb-6">
-        <div class="status-cell"><span class="status-kicker">资料用途</span><strong class="status-value">{{ details.source.role === 'canon_fact' ? '确定事实' : details.source.role === 'style_sample' ? '风格参考' : '背景参考' }}</strong></div>
+        <div class="status-cell"><span class="status-kicker">AI 使用方式</span><strong class="status-value">{{ details.source.role === 'canon_fact' ? '确定事实' : details.source.role === 'style_sample' ? '风格参考' : '背景参考' }}</strong></div>
         <div class="status-cell"><span class="status-kicker">当前状态</span><strong class="status-value">{{ details.source.isEnabled ? '已启用' : '已禁用' }}</strong></div>
         <div class="status-cell"><span class="status-kicker">可检索段落</span><strong class="status-value">{{ details.chunks.length }}</strong></div>
         <div class="status-cell"><span class="status-kicker">使用关系</span><strong class="status-value">{{ details.links.length }}</strong></div>
@@ -225,7 +222,7 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
         <button class="mind-tab" :aria-selected="selectedTab === 'body'" @click="selectedTab = 'body'">资料正文</button>
         <button class="mind-tab" :aria-selected="selectedTab === 'chunks'" @click="selectedTab = 'chunks'">可检索段落</button>
         <button class="mind-tab" :aria-selected="selectedTab === 'relations'" @click="selectedTab = 'relations'">使用关系</button>
-        <button class="mind-tab" :aria-selected="selectedTab === 'danger'" @click="selectedTab = 'danger'">删除资料</button>
+        <button class="mind-tab" :aria-selected="selectedTab === 'operations'" @click="selectedTab = 'operations'">操作</button>
       </nav>
       <div class="space-y-6">
         <div class="contents">
@@ -235,8 +232,9 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
             <UForm :schema="updateSourceSchema" :state="editState" class="space-y-4" @submit="saveSource">
               <div class="grid gap-4 md:grid-cols-2">
                 <UFormField name="name" label="资料名称" description="文件名或自定义名称，用于在列表中显示。" required><UInput v-model="editState.name" class="w-full" /></UFormField>
-                <UFormField name="role" label="资料用途" description="决定 AI 应该怎样理解这份资料。" required><USelect v-model="editState.role" class="w-full" :items="[{ label: '原作中的确定事实', value: 'canon_fact' }, { label: '背景参考', value: 'reference' }, { label: '写作风格参考', value: 'style_sample' }]" /></UFormField>
+                <UFormField name="role" label="AI 使用方式" description="确定事实参与事实判断；背景参考补充上下文；风格参考只影响表达。" required><USelect v-model="editState.role" class="w-full" :items="[{ label: '原作中的确定事实', value: 'canon_fact' }, { label: '背景参考', value: 'reference' }, { label: '写作风格参考', value: 'style_sample' }]" /></UFormField>
               </div>
+              <UAlert color="info" title="该选项会实际影响 AI" description="确定事实会作为高优先级事实证据；背景参考只补充上下文；风格样例只影响表达，不作为事实。" />
               <UFormField name="content" label="正文" required><UTextarea v-model="editState.content" class="w-full" :rows="14" autoresize /></UFormField>
               <UButton type="submit" :loading="actionLoading">保存资料</UButton>
             </UForm>
@@ -261,23 +259,23 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
               :personas="personas"
               :worlds="worlds"
               :disabled="actionLoading"
+              show-selected-groups
               @update:model-value="updateRelationTargets"
             />
             <p class="mt-3 text-xs text-muted">添加或移除标签后立即保存；解除关系不会删除资料、人物或世界。</p>
           </UCard>
 
-          <UCard v-else-if="selectedTab === 'danger'">
-            <template #header><h2 class="font-semibold text-error">永久删除</h2></template>
-            <UButton v-if="!deletionImpact" color="error" variant="soft" :loading="actionLoading" @click="inspectDeletion">查看删除影响</UButton>
-            <div v-else class="space-y-3 text-sm">
-              <UAlert v-if="!deletionImpact.canDelete" color="warning" title="当前不能删除" :description="deletionImpact.blockers.join('；')" />
-              <template v-else>
-                <p>将删除 {{ details.chunks.length }} 个系统整理的内容段落<span v-if="deletionImpact.files.length">和原始文件 {{ deletionImpact.files.join('、') }}</span>。</p>
-                <label class="flex items-start gap-2"><input v-model="deletionConfirmed" type="checkbox" class="mt-1"><span>我确认永久删除此资料。</span></label>
-                <UButton color="error" :disabled="!deletionConfirmed" :loading="actionLoading" @click="deleteSource">永久删除资料</UButton>
-              </template>
-            </div>
-          </UCard>
+          <ContentLifecycleOperationsPanel
+            v-else-if="selectedTab === 'operations'"
+            subject-type="source"
+            :subject-name="details.source.name"
+            :is-enabled="details.source.isEnabled"
+            :deletion-impact="deletionImpact"
+            :loading="actionLoading"
+            @request-status-change="requestSourceStatusChange"
+            @inspect-deletion="inspectDeletion"
+            @delete="deleteSource"
+          />
         </div>
       </div>
     </template>

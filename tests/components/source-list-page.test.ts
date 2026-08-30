@@ -1,4 +1,4 @@
-import { readBody } from 'h3'
+import { getQuery, readBody } from 'h3'
 import { DOMWrapper, flushPromises } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
 import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
@@ -21,13 +21,18 @@ let sourceItems: SourceSummary[] = [
   },
 ]
 const statusRequests: UpdateSourcesStatusInput[] = []
+const sourcePageQueries: Array<Record<string, string | string[] | undefined>> = []
 
 registerEndpoint('/api/v1/auth/session', () => ({
   data: { authenticated: true, administrator: { id: 'administrator', username: 'admin' } },
 }))
-registerEndpoint('/api/v1/sources/page', () => ({
-  data: { items: sourceItems, total: sourceItems.length, page: 1, pageSize: 10, totalPages: 1 },
-}))
+registerEndpoint('/api/v1/sources/page', (event) => {
+  const query = getQuery(event)
+  sourcePageQueries.push(query)
+  const keyword = typeof query.query === 'string' ? query.query : ''
+  const items = sourceItems.filter(source => source.name.includes(keyword))
+  return { data: { items, total: items.length, page: 1, pageSize: 10, totalPages: 1 } }
+})
 registerEndpoint('/api/v1/personas', () => ({ data: [] }))
 registerEndpoint('/api/v1/worlds', () => ({ data: [] }))
 registerEndpoint('/api/v1/sources/status', {
@@ -47,12 +52,12 @@ describe('资料列表批量状态操作', () => {
     const wrapper = await mountSuspended(SourceListPage, { route: '/sources' })
     await flushPromises()
 
-    const batchToolbar = wrapper.get('div.content-toolbar')
+    const batchToolbar = wrapper.get('div.list-management-batch')
     const batchEnable = wrapper.findAllComponents({ name: 'UButton' }).find(button => button.text() === '批量启用')!
     const batchDisable = wrapper.findAllComponents({ name: 'UButton' }).find(button => button.text() === '批量禁用')!
-    expect(batchToolbar.classes()).toEqual(expect.arrayContaining(['!rounded-none', '!bg-transparent', '!border-0']))
-    expect(batchEnable.props()).toMatchObject({ size: 'xs', variant: 'ghost' })
-    expect(batchDisable.props()).toMatchObject({ size: 'xs', variant: 'ghost' })
+    expect(batchToolbar.classes()).toContain('list-management-batch')
+    expect(batchEnable.props()).toMatchObject({ size: 'xs', variant: 'soft', icon: 'i-lucide-circle-check' })
+    expect(batchDisable.props()).toMatchObject({ size: 'xs', variant: 'soft', icon: 'i-lucide-circle-off' })
     const detailsButton = wrapper.findAllComponents({ name: 'UButton' })
       .find(button => button.props('icon') === 'i-lucide-chevron-right')
     expect(detailsButton).toBeDefined()
@@ -91,5 +96,21 @@ describe('资料列表批量状态操作', () => {
       { sourceIds: [disabledSourceId], isEnabled: true },
       { sourceIds: [enabledSourceId], isEnabled: false },
     ])
+  })
+
+  it('段落搜索使用独立结果页，资料项目按名称进行服务端筛选', async () => {
+    const wrapper = await mountSuspended(SourceListPage, { route: '/sources' })
+    await flushPromises()
+
+    expect(wrapper.get('a[href="/sources/search"]').text()).toBe('全文检索')
+    expect(wrapper.text()).toContain('进入独立搜索页')
+
+    const requestCount = sourcePageQueries.length
+    await wrapper.get('input[aria-label="资料列表搜索词"]').setValue('禁用')
+    await wrapper.get('form[aria-label="筛选资料项目"]').trigger('submit')
+    await vi.waitFor(() => expect(sourcePageQueries.length).toBeGreaterThan(requestCount))
+    expect(sourcePageQueries.at(-1)).toMatchObject({ query: '禁用', page: '1' })
+    await vi.waitFor(() => expect(wrapper.text()).toContain('已禁用资料'))
+    expect(wrapper.text()).not.toContain('已启用资料')
   })
 })

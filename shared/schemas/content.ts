@@ -245,10 +245,13 @@ export const listSourcesPageSchema = z.object({
   pageSize: z.coerce.number().pipe(z.union([
     z.literal(5), z.literal(10), z.literal(20), z.literal(50), z.literal(100),
   ])).default(10),
+  query: z.string().trim().max(200, '资料筛选词不能超过 200 字').optional(),
 })
 
 /** 人物与世界管理列表共用的服务端分页参数。 */
-export const listSubjectsPageSchema = listSourcesPageSchema
+export const listSubjectsPageSchema = listSourcesPageSchema.extend({
+  query: z.string().trim().max(200, '人物或世界筛选词不能超过 200 字').optional(),
+})
 
 /** 创建资料关联的输入。 */
 export const createSourceLinkSchema = z.object({

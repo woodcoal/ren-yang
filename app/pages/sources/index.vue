@@ -2,7 +2,7 @@
 import { computed, ref, shallowRef, watch } from 'vue'
 import type { CreateSourceWithTargetsInput } from '#shared/schemas/content'
 import type { ApiResponse } from '#shared/types/api'
-import type { PersonaSummary, SourceChunkView, SourceDetails, SourcePageView, SourceStatusUpdateResult, SourceSummary, WorldSummary } from '#shared/types/content'
+import type { PersonaSummary, SourceDetails, SourcePageView, SourceStatusUpdateResult, SourceSummary, WorldSummary } from '#shared/types/content'
 import type { SourceFileSubmission } from '../../components/content/SourceImportForm.vue'
 import { getApiErrorMessage } from '../../utils/apiError'
 
@@ -30,9 +30,24 @@ function readPageSize(value: unknown): 5 | 10 | 20 | 50 | 100 {
   return parsed === 5 || parsed === 20 || parsed === 50 || parsed === 100 ? parsed : 10
 }
 
+/**
+ * 从 URL 查询参数读取单个去除首尾空白的文本值。
+ * @param value 路由查询参数原值。
+ * @returns 可用于资料名称筛选的文本。
+ */
+function readTextQuery(value: unknown): string {
+  const normalized = Array.isArray(value) ? value[0] : value
+  return typeof normalized === 'string' ? normalized.trim() : ''
+}
+
 const requestedPage = computed(() => readPositiveInteger(route.query.page, 1))
 const requestedPageSize = computed(() => readPageSize(route.query.pageSize))
-const sourcePageQuery = computed(() => ({ page: requestedPage.value, pageSize: requestedPageSize.value }))
+const requestedSourceFilter = computed(() => readTextQuery(route.query.keyword))
+const sourcePageQuery = computed(() => ({
+  page: requestedPage.value,
+  pageSize: requestedPageSize.value,
+  query: requestedSourceFilter.value || undefined,
+}))
 
 const [
   { data, error, refresh },
@@ -60,8 +75,7 @@ const enabledSourceCount = computed(() => sources.value.filter(source => source.
 const showImport = shallowRef(false)
 const loading = shallowRef(false)
 const errorMessage = shallowRef<string | null>(null)
-const searchQuery = shallowRef('')
-const searchResults = shallowRef<SourceChunkView[] | null>(null)
+const sourceFilterInput = shallowRef(requestedSourceFilter.value)
 const selectedSourceIds = ref<string[]>([])
 const batchEnableConfirmationOpen = shallowRef(false)
 const batchDisableConfirmationOpen = shallowRef(false)
@@ -101,7 +115,18 @@ function clearSourceSelection(): void {
   selectedSourceIds.value = []
 }
 
-watch([requestedPage, requestedPageSize], clearSourceSelection)
+watch([requestedPage, requestedPageSize, requestedSourceFilter], clearSourceSelection)
+
+/**
+ * 浏览器前进或后退改变筛选参数时同步列表筛选输入框。
+ * @param query URL 中当前资料名称筛选词。
+ * @returns 输入框同步完成时结束。
+ */
+function synchronizeSourceFilter(query: string): void {
+  sourceFilterInput.value = query
+}
+
+watch(requestedSourceFilter, synchronizeSourceFilter)
 
 /**
  * 根据复选框状态添加或移除一项当前页资料。
@@ -177,23 +202,29 @@ async function importFiles(input: SourceFileSubmission): Promise<void> {
   }
 }
 
-/** @returns FTS5 查询完成时结束。 */
-async function searchSources(): Promise<void> {
-  if (!searchQuery.value.trim()) return
-  loading.value = true
-  errorMessage.value = null
-  try {
-    const response = await $fetch<ApiResponse<SourceChunkView[]>>('/api/v1/sources/search', {
-      query: { query: searchQuery.value, limit: 20 },
-    })
-    searchResults.value = response.data
-  }
-  catch (requestError: unknown) {
-    errorMessage.value = getApiErrorMessage(requestError, '资料检索失败')
-  }
-  finally {
-    loading.value = false
-  }
+/**
+ * 按输入的资料名称筛选全部资料项目并回到第一页。
+ * @returns URL 筛选参数更新完成时结束。
+ */
+async function applySourceFilter(): Promise<void> {
+  const keyword = sourceFilterInput.value.trim()
+  await navigateTo({
+    path: route.path,
+    query: {
+      page: '1',
+      pageSize: String(sourcePage.value.pageSize),
+      ...(keyword ? { keyword } : {}),
+    },
+  })
+}
+
+/**
+ * 清空资料名称筛选并重新显示第一页全部资料。
+ * @returns URL 筛选参数清除完成时结束。
+ */
+async function clearSourceFilter(): Promise<void> {
+  sourceFilterInput.value = ''
+  await applySourceFilter()
 }
 
 /** @param action 单次创建或上传动作。 @returns 动作与列表刷新结束时完成。 */
@@ -317,12 +348,13 @@ async function updateSelectedSourcesStatus(sourceIds: string[], isEnabled: boole
       <UButton icon="i-lucide-plus" @click="showImport = !showImport">{{ showImport ? '收起导入' : '导入资料' }}</UButton>
     </ContentPageHeader>
     <div class="status-strip page-status-strip" aria-label="资料状态摘要">
-      <div class="status-cell"><span class="status-kicker">全部资料</span><strong class="status-value">{{ sourcePage.total
+      <div class="status-cell"><span class="status-kicker">{{ requestedSourceFilter ? '匹配资料' : '全部资料' }}</span><strong
+          class="status-value">{{ sourcePage.total
           }}</strong></div>
       <div class="status-cell"><span class="status-kicker">本页启用</span><strong class="status-value">{{ enabledSourceCount
-          }} / {{ sources.length }}</strong></div>
+      }} / {{ sources.length }}</strong></div>
       <div class="status-cell"><span class="status-kicker">本页可检索段落</span><strong class="status-value">{{ chunkCount
-          }}</strong></div>
+      }}</strong></div>
       <div class="status-cell"><span class="status-kicker">本页已建立关系</span><strong class="status-value">{{
         linkedSourceCount }}</strong><span class="status-note">文件资料 {{ fileSourceCount }} 项</span></div>
     </div>
@@ -336,27 +368,15 @@ async function updateSelectedSourcesStatus(sourceIds: string[], isEnabled: boole
       <div class="section-heading">
         <div class="section-heading-copy">
           <p class="eyebrow">资料检索</p>
-          <h2 id="source-search-heading">查找资料中的事实与段落</h2>
-          <p>输入一句话或关键词，返回本地事实库中最相关的可追溯段落。</p>
+          <h2 id="source-search-heading">全文检索资料段落</h2>
+          <p>进入独立搜索页，按正文关键词查找可追溯段落并高亮命中内容。</p>
         </div>
-      </div>
-      <form class="content-toolbar" @submit.prevent="searchSources">
-        <UInput v-model="searchQuery" class="flex-1" placeholder="输入资料中的短语" aria-label="资料检索词" />
-        <UButton type="submit" color="neutral" variant="soft" :loading="loading">检索</UButton>
-      </form>
-      <div v-if="searchResults" class="mt-4 space-y-3">
-        <p v-if="searchResults.length === 0" class="text-sm text-muted">没有找到相关段落。</p>
-        <div v-for="chunk in searchResults" :key="chunk.id" class="archive-panel">
-          <NuxtLink :to="`/sources/${chunk.sourceId}`" class="text-xs font-medium text-primary hover:underline">{{ chunk.heading || '无标题' }} · 第 {{ chunk.ordinal + 1 }} 段</NuxtLink>
-          <p class="mt-1 whitespace-pre-wrap text-sm text-muted">{{ chunk.content }}</p>
-          <UButton :to="`/sources/${chunk.sourceId}`" color="neutral" variant="link" size="sm" class="mt-1 px-0">查看资料
-          </UButton>
-        </div>
+        <UButton to="/sources/search" icon="i-lucide-search">全文检索</UButton>
       </div>
     </section>
 
     <UAlert v-if="error" color="error" title="资料列表加载失败" :actions="[{ label: '重试', onClick: () => refresh() }]" />
-    <section v-else-if="sources.length" class="content-section" aria-labelledby="source-list-heading">
+    <section v-else class="content-section" aria-labelledby="source-list-heading">
       <div class="section-heading">
         <div class="section-heading-copy">
           <p class="eyebrow">处理与关系</p>
@@ -365,82 +385,102 @@ async function updateSelectedSourcesStatus(sourceIds: string[], isEnabled: boole
         </div>
       </div>
 
-      <div class="content-toolbar !rounded-none !bg-transparent !border-0">
-        <span v-if="selectedSourceIds.length > 0" class="text-sm text-muted">已选择 {{ selectedSourceIds.length }}
-          项资料</span>
-        <span v-else aria-hidden="true"></span>
-        <div class="flex items-center justify-end gap-1">
-          <UButton color="success" variant="ghost" size="xs" :loading="batchStatusUpdating === true"
-            :disabled="selectedDisabledSourceIds.length === 0 || batchStatusUpdating !== null"
-            @click="requestBatchEnable">批量启用</UButton>
-          <UButton color="error" variant="ghost" size="xs"
-            :disabled="selectedEnabledSourceIds.length === 0 || batchStatusUpdating !== null"
-            @click="requestBatchDisable">批量禁用</UButton>
+      <div class="list-management-panel">
+        <div class="list-management-controls">
+          <form class="list-management-search" aria-label="筛选资料项目" @submit.prevent="applySourceFilter">
+            <UInput v-model="sourceFilterInput" class="list-management-search-input" icon="i-lucide-search"
+              placeholder="输入资料名称" aria-label="资料列表搜索词" />
+            <UButton type="submit" color="neutral" variant="soft">筛选资料</UButton>
+            <UButton v-if="requestedSourceFilter" type="button" color="neutral" variant="ghost"
+              @click="clearSourceFilter">清除筛选</UButton>
+          </form>
+          <div v-if="sources.length" class="list-management-batch">
+            <span class="list-management-selection">{{ selectedSourceIds.length > 0
+              ? `已选择 ${selectedSourceIds.length} 项资料`
+              : '选择资料后可批量操作' }}</span>
+            <div class="list-management-batch-actions">
+              <UButton color="success" variant="soft" size="xs" icon="i-lucide-circle-check"
+                :loading="batchStatusUpdating === true"
+                :disabled="selectedDisabledSourceIds.length === 0 || batchStatusUpdating !== null"
+                @click="requestBatchEnable">批量启用</UButton>
+              <UButton color="error" variant="soft" size="xs" icon="i-lucide-circle-off"
+                :disabled="selectedEnabledSourceIds.length === 0 || batchStatusUpdating !== null"
+                @click="requestBatchDisable">批量禁用</UButton>
+            </div>
+          </div>
         </div>
-      </div>
 
-      <div class="content-table-wrap">
-        <table class="content-table">
-          <thead>
-            <tr>
-              <th><input type="checkbox" aria-label="选择当前页全部资料" :checked="allPageSourcesSelected"
-                  :indeterminate="somePageSourcesSelected" :disabled="pageSourceIds.length === 0"
-                  @change="updateCurrentPageSelection"></th>
-              <th>资料</th>
-              <th>用途</th>
-              <th>状态</th>
-              <th>检索内容</th>
-              <th>使用关系</th>
-              <th>操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="source in sources" :key="source.id">
-              <td data-label="选择"><input type="checkbox" :aria-label="`选择资料：${source.name}`"
-                  :checked="selectedSourceIds.includes(source.id)" @change="updateSourceSelection(source.id, $event)">
-              </td>
-              <td data-label="资料"><NuxtLink :to="`/sources/${source.id}`" data-source-title-link class="content-table-title hover:underline"><strong>{{ source.name }}</strong></NuxtLink><span
-                  class="content-table-description">{{ source.contentText.slice(0, 120) }}{{ source.contentText.length >
-                    120 ? '…' : '' }}</span></td>
-              <td data-label="用途">
-                <UBadge color="neutral" variant="subtle">{{ roleLabels[source.role] }}</UBadge><span
-                  class="content-table-description">{{ source.inputType === 'paste' ? '粘贴文本' :
-                    source.inputType.toUpperCase() + ' 文件' }}</span>
-              </td>
-              <td data-label="状态">
-                <UBadge :color="source.isEnabled ? 'success' : 'neutral'" variant="subtle">{{ source.isEnabled ? '已启用' :
-                  '已禁用' }}</UBadge>
-              </td>
-              <td data-label="检索内容">{{ source.chunkCount }} 个段落</td>
-              <td data-label="使用关系">{{ source.linkCount }} 个对象</td>
-              <td data-label="操作">
-                <UButton :to="`/sources/${source.id}`" color="neutral" variant="ghost" size="xs"
-                  icon="i-lucide-chevron-right" :aria-label="`查看与维护：${source.name}`" />
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <div class="mt-5 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
-        <p class="text-sm text-muted">第 {{ sourcePage.page }} / {{ sourcePage.totalPages }} 页，共 {{ sourcePage.total }} 项
-        </p>
-        <div class="flex flex-wrap items-center gap-3">
-          <USelect :model-value="sourcePage.pageSize" class="w-34" :items="pageSizeItems" aria-label="每页资料数量"
-            @update:model-value="changePageSize" />
-          <UPagination :page="sourcePage.page" :total="sourcePage.total" :items-per-page="sourcePage.pageSize"
-            show-edges @update:page="changePage" />
+        <template v-if="sources.length">
+          <div class="content-table-wrap list-management-table">
+            <table class="content-table">
+            <thead>
+              <tr>
+                <th><input type="checkbox" aria-label="选择当前页全部资料" :checked="allPageSourcesSelected"
+                    :indeterminate="somePageSourcesSelected" :disabled="pageSourceIds.length === 0"
+                    @change="updateCurrentPageSelection"></th>
+                <th>资料</th>
+                <th>AI 使用方式</th>
+                <th>状态</th>
+                <th>检索内容</th>
+                <th>使用关系</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="source in sources" :key="source.id">
+                <td data-label="选择"><input type="checkbox" :aria-label="`选择资料：${source.name}`"
+                    :checked="selectedSourceIds.includes(source.id)" @change="updateSourceSelection(source.id, $event)">
+                </td>
+                <td data-label="资料">
+                  <NuxtLink :to="`/sources/${source.id}`" data-source-title-link
+                    class="content-table-title hover:underline"><strong>{{ source.name }}</strong></NuxtLink><span
+                    class="content-table-description">{{ source.contentText.slice(0, 120) }}{{ source.contentText.length
+                      >
+                    120 ? '…' : '' }}</span>
+                </td>
+                <td data-label="AI 使用方式">
+                  <UBadge color="neutral" variant="subtle">{{ roleLabels[source.role] }}</UBadge><span
+                    class="content-table-description">{{ source.inputType === 'paste' ? '粘贴文本' :
+                      source.inputType.toUpperCase() + ' 文件' }}</span>
+                </td>
+                <td data-label="状态">
+                  <UBadge :color="source.isEnabled ? 'success' : 'neutral'" variant="subtle">{{ source.isEnabled ? '已启用'
+                    :
+                    '已禁用' }}</UBadge>
+                </td>
+                <td data-label="检索内容">{{ source.chunkCount }} 个段落</td>
+                <td data-label="使用关系">{{ source.linkCount }} 个对象</td>
+                <td data-label="操作">
+                  <UButton :to="`/sources/${source.id}`" color="neutral" variant="ghost" size="xs"
+                    icon="i-lucide-chevron-right" :aria-label="`查看与维护：${source.name}`" />
+                </td>
+              </tr>
+            </tbody>
+            </table>
+          </div>
+          <div class="list-management-footer">
+            <p class="m-0 text-sm text-muted">第 {{ sourcePage.page }} / {{ sourcePage.totalPages }} 页，共 {{ sourcePage.total }} 项</p>
+            <div class="list-management-pagination">
+            <USelect :model-value="sourcePage.pageSize" class="w-34" :items="pageSizeItems" aria-label="每页资料数量"
+              @update:model-value="changePageSize" />
+            <UPagination :page="sourcePage.page" :total="sourcePage.total" :items-per-page="sourcePage.pageSize"
+              show-edges @update:page="changePage" />
+            </div>
+          </div>
+        </template>
+        <div v-else class="content-empty-state list-management-empty">
+          <div>
+            <strong>{{ requestedSourceFilter ? '没有匹配的资料' : '还没有资料' }}</strong>
+            <p>{{ requestedSourceFilter ? '请更换资料名称关键词，或清除筛选查看全部资料。' : '可以先创建人物，也可以从粘贴文本、TXT 或 Markdown 开始导入。' }}</p>
+          </div>
         </div>
       </div>
     </section>
-    <div v-else class="content-empty-state">
-      <div><strong>还没有资料</strong>
-        <p>可以先创建人物，也可以从粘贴文本、TXT 或 Markdown 开始导入。</p>
-      </div>
-    </div>
 
     <UModal v-model:open="batchEnableConfirmationOpen" title="确认批量启用资料" description="启用后，资料可以重新进入人物和世界检索。">
       <template #body>
-        <p class="text-sm text-muted">确定启用当前页已选择的 {{ selectedDisabledSourceIds.length }} 项禁用资料吗？系统会恢复对应 OpenViking 投影。</p>
+        <p class="text-sm text-muted">确定启用当前页已选择的 {{ selectedDisabledSourceIds.length }} 项禁用资料吗？系统会恢复对应 OpenViking 投影。
+        </p>
       </template>
       <template #footer>
         <div class="flex w-full justify-end gap-2">

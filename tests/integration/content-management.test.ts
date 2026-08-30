@@ -549,6 +549,7 @@ describe('人物、世界与资料管理闭环', () => {
     await expect(service.searchSources('魔法学院', 10)).resolves.toEqual([
       expect.objectContaining({
         sourceId: imported.source.id,
+        sourceName: '学院设定',
         heading: '校规',
         content: '魔法学院禁止在夜间施法。',
       }),
@@ -643,6 +644,10 @@ describe('人物、世界与资料管理闭环', () => {
     expect(third.items).toHaveLength(3)
     expect(new Set([...first.items, ...second.items, ...third.items].map(item => item.id)).size).toBe(23)
     expect(overflow).toEqual(third)
+
+    const filtered = await service.listSourcesPage({ page: 1, pageSize: 10, query: '分页资料 02' })
+    expect(filtered).toMatchObject({ total: 1, page: 1, pageSize: 10, totalPages: 1 })
+    expect(filtered.items.map(item => item.name)).toEqual(['分页资料 02'])
   })
 
   it('人物与世界分页使用默认每页十项并修正越界页码', async () => {
@@ -671,6 +676,13 @@ describe('人物、世界与资料管理闭环', () => {
     expect(worldFirst.items).toHaveLength(10)
     expect(worldLast).toMatchObject({ total: 13, page: 2, pageSize: 10, totalPages: 2 })
     expect(worldLast.items).toHaveLength(3)
+
+    const personaFiltered = await service.listPersonasPage({ page: 1, pageSize: 10, query: '分页人物 02' })
+    expect(personaFiltered).toMatchObject({ total: 1, page: 1, pageSize: 10, totalPages: 1 })
+    expect(personaFiltered.items.map(item => item.name)).toEqual(['分页人物 02'])
+    const worldFiltered = await service.listWorldsPage({ page: 1, pageSize: 10, query: '分页世界 02' })
+    expect(worldFiltered).toMatchObject({ total: 1, page: 1, pageSize: 10, totalPages: 1 })
+    expect(worldFiltered.items.map(item => item.name)).toEqual(['分页世界 02'])
   })
 
   it('人物与世界批量状态修改先验证全部对象并保留原有关联', async () => {

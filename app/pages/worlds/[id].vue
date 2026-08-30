@@ -18,7 +18,9 @@ import GrowthMaterialPanel from '../../components/learning/GrowthMaterialPanel.v
 import LearningPromptPanel from '../../components/learning/LearningPromptPanel.vue'
 import { getApiErrorMessage } from '../../utils/apiError'
 
-type WorldTab = 'overview' | 'soul' | 'growth_materials' | 'growth' | 'sources' | 'relations'
+type WorldTab = 'basic' | 'prompts' | 'materials' | 'operations'
+type WorldPromptModule = 'soul' | 'growth'
+type WorldMaterialModule = 'sources' | 'growth_materials'
 
 const worldId = String(useRoute().params.id)
 const { runWithAiLoading } = useAiLoading()
@@ -48,20 +50,27 @@ const growthWorkspace = computed<WorldGrowthWorkspaceView>(() => growthData.valu
 const growthAnalysis = computed(() => analysisData.value?.data ?? null)
 const allPersonas = computed(() => personaData.value?.data ?? [])
 const tabs: Array<{ id: WorldTab, label: string }> = [
-  { id: 'overview', label: '概览' },
-  { id: 'soul', label: '灵魂' },
-  { id: 'growth_materials', label: '成长素材' },
-  { id: 'growth', label: '成长' },
-  { id: 'sources', label: '资料' },
-  { id: 'relations', label: '人物与管理' },
+  { id: 'basic', label: '基础信息' },
+  { id: 'prompts', label: '提示词' },
+  { id: 'materials', label: '资料' },
+  { id: 'operations', label: '操作' },
 ]
-const selectedTab = shallowRef<WorldTab>('overview')
+const promptModules: Array<{ id: WorldPromptModule, label: string, description: string }> = [
+  { id: 'soul', label: '灵魂', description: '稳定的世界规则、基调与事实边界。' },
+  { id: 'growth', label: '成长', description: '从成长素材提炼出的世界变化与经验。' },
+]
+const materialModules: Array<{ id: WorldMaterialModule, label: string, description: string }> = [
+  { id: 'sources', label: '任务参考', description: '任务执行时可检索的世界相关资料。' },
+  { id: 'growth_materials', label: '成长素材', description: '用于生成世界成长提示词的原始材料。' },
+]
+const selectedTab = shallowRef<WorldTab>('basic')
+const selectedPromptModule = shallowRef<WorldPromptModule>('soul')
+const selectedMaterialModule = shallowRef<WorldMaterialModule>('sources')
 const metadata = reactive<UpdateWorldInput>({
   name: details.value?.world.name ?? '',
   summary: details.value?.world.summary ?? '',
 })
 const deletionImpact = shallowRef<DeletionImpact | null>(null)
-const deletionConfirmed = shallowRef(false)
 const actionLoading = shallowRef(false)
 const actionError = shallowRef<string | null>(null)
 const actionMessage = shallowRef<string | null>(null)
@@ -339,7 +348,6 @@ async function inspectDeletion(): Promise<void> {
   await runAction(null, async () => {
     const response = await $fetch<ApiResponse<DeletionImpact>>(`/api/v1/worlds/${worldId}/deletion-impact`)
     deletionImpact.value = response.data
-    deletionConfirmed.value = false
   })
 }
 
@@ -348,7 +356,7 @@ async function inspectDeletion(): Promise<void> {
  * @returns 删除和导航完成时结束。
  */
 async function deleteWorld(): Promise<void> {
-  if (!deletionConfirmed.value || !deletionImpact.value?.canDelete) return
+  if (!deletionImpact.value?.canDelete) return
   await runAction(null, async () => {
     await $fetch(`/api/v1/worlds/${worldId}`, { method: 'DELETE' })
     await navigateTo('/worlds')
@@ -419,8 +427,6 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
   <div>
     <ContentPageHeader :title="details?.world.name || '世界工作区'"
       :description="details?.world.summary || '世界是多个人物共享的背景，也拥有自己的灵魂和成长。'">
-      <UButton v-if="details" color="neutral" variant="soft" :loading="actionLoading" @click="requestWorldStatusChange">
-        {{ details.world.isEnabled ? '禁用世界' : '启用世界' }}</UButton>
       <UButton to="/worlds" color="neutral" variant="ghost">返回世界列表</UButton>
     </ContentPageHeader>
 
@@ -447,33 +453,67 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
           @click="selectTab(tab.id)">{{ tab.label }}</button>
       </nav>
 
-      <div v-if="selectedTab === 'overview'" class="grid gap-6 xl:grid-cols-2">
+      <div v-if="selectedTab === 'basic'" class="space-y-6">
         <UCard>
           <template #header>
-            <h2 class="font-semibold text-highlighted">当前世界状态</h2>
+            <div>
+              <h2 class="font-semibold text-highlighted">基本信息</h2>
+              <p class="mt-1 text-sm text-muted">名称和简介只方便后台辨认，不会进入提示词。</p>
+            </div>
           </template>
-          <p class="whitespace-pre-wrap text-sm leading-6 text-muted">{{ soul.activeVersion?.snapshot.promptText ||
-            '世界还没有可用的灵魂提示词。' }}</p>
-          <UButton class="mt-4" color="neutral" variant="soft" @click="selectTab('soul')">查看和编辑世界灵魂</UButton>
+          <UForm :schema="updateWorldSchema" :state="metadata" class="grid gap-4 md:grid-cols-2" @submit="saveMetadata">
+            <UFormField name="name" label="世界名称" required><UInput v-model="metadata.name" class="w-full" /></UFormField>
+            <UFormField name="summary" label="后台简介"><UInput v-model="metadata.summary" class="w-full" /></UFormField>
+            <div class="md:col-span-2"><UButton type="submit" :loading="actionLoading">保存基本信息</UButton></div>
+          </UForm>
         </UCard>
-        <UCard>
-          <template #header>
-            <h2 class="font-semibold text-highlighted">世界如何变化</h2>
-          </template>
-          <div class="space-y-3 text-sm text-muted">
-            <p>灵魂保存会直接进入新任务的稳定世界提示词。</p>
-            <p>成长来自世界资料库中选出的重要资料，以及你手工添加的独立文档。</p>
-            <p>AI 综合素材生成完整草稿；人工校准并发布后，世界成长提示词才会固定进入新任务。</p>
-            <p>世界没有人物式记忆，不会从人物处理过程反向形成长期规则。</p>
-          </div>
-        </UCard>
+        <ContentWorldPersonaList
+          :personas="details.personas"
+          :available-personas="allPersonas"
+          :loading="actionLoading"
+          @add="addPersona"
+          @remove="removePersona"
+        />
       </div>
 
-      <ContentSoulWorkspace v-else-if="selectedTab === 'soul'" :workspace="soul" :loading="actionLoading"
-        @save="saveSoulVersion" />
+      <div v-else-if="selectedTab === 'prompts'">
+        <ContentWorkspaceModuleNav v-model="selectedPromptModule" :items="promptModules" aria-label="世界提示词模块" />
+        <ContentSoulWorkspace
+          v-if="selectedPromptModule === 'soul'"
+          :workspace="soul"
+          :loading="actionLoading"
+          @save="saveSoulVersion"
+        />
+        <LearningPromptPanel
+          v-else-if="selectedPromptModule === 'growth'"
+          title="世界成长"
+          :workspace="growthWorkspace.prompt"
+          :batch="growthAnalysis"
+          :loading="actionLoading"
+          @analyze="analyzeWorldGrowth"
+          @refresh="refreshWorldGrowthAnalysis"
+          @save-and-publish="saveAndPublishWorldGrowthPrompt"
+        />
+      </div>
 
-      <div v-else-if="selectedTab === 'growth_materials'" class="space-y-6">
+      <div v-else-if="selectedTab === 'materials'">
+        <ContentWorkspaceModuleNav v-model="selectedMaterialModule" :items="materialModules" aria-label="世界资料模块" />
+        <ContentSubjectSourceManager
+          v-if="selectedMaterialModule === 'sources'"
+          subject-type="world"
+          :subject-name="details.world.name"
+          :linked-sources="details.sources"
+          :all-sources="allSources"
+          :loading="actionLoading"
+          :error-message="actionError"
+          @link="linkSources"
+          @unlink="unlinkSource"
+          @status="updateLinkedSourceStatus"
+          @paste="createPastedSource"
+          @file="importSourceFile"
+        />
         <GrowthMaterialPanel
+          v-else-if="selectedMaterialModule === 'growth_materials'"
           subject-label="世界"
           :items="growthWorkspace.materials"
           :sources="growthWorkspace.sources"
@@ -486,67 +526,17 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
         />
       </div>
 
-      <div v-else-if="selectedTab === 'growth'" class="space-y-6">
-        <LearningPromptPanel
-          title="世界成长"
-          :workspace="growthWorkspace.prompt"
-          :batch="growthAnalysis"
-          :loading="actionLoading"
-          @analyze="analyzeWorldGrowth"
-          @refresh="refreshWorldGrowthAnalysis"
-          @save-and-publish="saveAndPublishWorldGrowthPrompt"
-        />
-      </div>
-
-      <ContentSubjectSourceManager v-else-if="selectedTab === 'sources'" subject-type="world"
-        :subject-name="details.world.name" :linked-sources="details.sources"
-        :all-sources="allSources" :loading="actionLoading" :error-message="actionError" @link="linkSources"
-        @unlink="unlinkSource" @status="updateLinkedSourceStatus" @paste="createPastedSource" @file="importSourceFile" />
-
-      <div v-else class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
-        <div class="space-y-6">
-          <UCard>
-            <template #header>
-              <div>
-                <h2 class="font-semibold text-highlighted">基本信息</h2>
-                <p class="mt-1 text-sm text-muted">名称和简介只方便后台辨认，不会进入提示词。</p>
-              </div>
-            </template>
-            <UForm :schema="updateWorldSchema" :state="metadata" class="grid gap-4 md:grid-cols-2"
-              @submit="saveMetadata">
-              <UFormField name="name" label="世界名称" required>
-                <UInput v-model="metadata.name" class="w-full" />
-              </UFormField>
-              <UFormField name="summary" label="后台简介">
-                <UInput v-model="metadata.summary" class="w-full" />
-              </UFormField>
-              <div class="md:col-span-2">
-                <UButton type="submit" :loading="actionLoading">保存基本信息</UButton>
-              </div>
-            </UForm>
-          </UCard>
-          <ContentWorldPersonaList :personas="details.personas" :available-personas="allPersonas"
-            :loading="actionLoading" @add="addPersona" @remove="removePersona" />
-        </div>
-        <UCard>
-          <template #header>
-            <h2 class="font-semibold text-error">删除世界</h2>
-          </template>
-          <UButton v-if="!deletionImpact" color="error" variant="soft" :loading="actionLoading"
-            @click="inspectDeletion">
-            先查看会删除什么</UButton>
-          <div v-else class="space-y-3 text-sm">
-            <UAlert v-if="!deletionImpact.canDelete" color="warning" title="现在不能删除"
-              :description="deletionImpact.blockers.join('；')" />
-            <template v-else>
-              <p>将删除 {{ deletionImpact.versionCount }} 个灵魂版本，并解除 {{ deletionImpact.relatedSources.length }} 项资料关系。</p>
-              <UCheckbox v-model="deletionConfirmed" label="我确认永久删除这个世界" />
-              <UButton color="error" :disabled="!deletionConfirmed" :loading="actionLoading" @click="deleteWorld">永久删除世界
-              </UButton>
-            </template>
-          </div>
-        </UCard>
-      </div>
+      <ContentLifecycleOperationsPanel
+        v-else
+        subject-type="world"
+        :subject-name="details.world.name"
+        :is-enabled="details.world.isEnabled"
+        :deletion-impact="deletionImpact"
+        :loading="actionLoading"
+        @request-status-change="requestWorldStatusChange"
+        @inspect-deletion="inspectDeletion"
+        @delete="deleteWorld"
+      />
     </template>
 
     <UModal v-model:open="enableConfirmationOpen" title="确认启用世界" description="启用后，该世界可以重新进入后续新任务。">

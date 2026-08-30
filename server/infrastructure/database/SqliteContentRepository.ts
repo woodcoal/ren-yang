@@ -20,6 +20,7 @@ import type {
   PersonaPageRecord,
   PersonaRunHistoryStatistics,
   ReplaceSourceRecord,
+  SourceChunkSearchRecord,
   SourceLinkRecord,
   SourcePageRecord,
   WorldPageRecord,
@@ -45,10 +46,11 @@ export class SqliteContentRepository implements ContentRepository, SoulRepositor
    * 分页读取人物，并把超出总页数的请求修正到最后一页。
    * @param page 从 1 开始的请求页码。
    * @param pageSize 受共享 Schema 限制的每页数量。
+   * @param query 可选人物名称筛选词。
    * @returns 顺序稳定的人物分页记录。
    */
-  async listPersonasPage(page: number, pageSize: 5 | 10 | 20 | 50 | 100): Promise<PersonaPageRecord> {
-    return this.listPage('personas', page, pageSize, toPersona)
+  async listPersonasPage(page: number, pageSize: 5 | 10 | 20 | 50 | 100, query?: string): Promise<PersonaPageRecord> {
+    return this.listPage('personas', page, pageSize, toPersona, query)
   }
 
   /** @param id 人物 UUID。 @returns 找到的人物或 null。 */
@@ -280,10 +282,11 @@ export class SqliteContentRepository implements ContentRepository, SoulRepositor
    * 分页读取世界，并把超出总页数的请求修正到最后一页。
    * @param page 从 1 开始的请求页码。
    * @param pageSize 受共享 Schema 限制的每页数量。
+   * @param query 可选世界名称筛选词。
    * @returns 顺序稳定的世界分页记录。
    */
-  async listWorldsPage(page: number, pageSize: 5 | 10 | 20 | 50 | 100): Promise<WorldPageRecord> {
-    return this.listPage('worlds', page, pageSize, toWorld)
+  async listWorldsPage(page: number, pageSize: 5 | 10 | 20 | 50 | 100, query?: string): Promise<WorldPageRecord> {
+    return this.listPage('worlds', page, pageSize, toWorld, query)
   }
 
   /** @param id 世界 UUID。 @returns 找到的世界或 null。 */
@@ -614,16 +617,21 @@ export class SqliteContentRepository implements ContentRepository, SoulRepositor
    * @param pageSize 受共享 Schema 限制的每页数量。
    * @returns 顺序稳定的资料分页记录。
    */
-  async listSourcesPage(page: number, pageSize: 5 | 10 | 20 | 50 | 100): Promise<SourcePageRecord> {
-    const count = this.client.prepare('SELECT COUNT(*) AS total FROM source_materials').get() as { total: number }
+  async listSourcesPage(page: number, pageSize: 5 | 10 | 20 | 50 | 100, query = ''): Promise<SourcePageRecord> {
+    const normalizedQuery = query.trim()
+    const count = this.client.prepare(`
+      SELECT COUNT(*) AS total FROM source_materials
+      WHERE (? = '' OR instr(lower(name), lower(?)) > 0)
+    `).get(normalizedQuery, normalizedQuery) as { total: number }
     const total = Number(count.total)
     const totalPages = Math.max(1, Math.ceil(total / pageSize))
     const effectivePage = Math.min(page, totalPages)
     const items = this.client.prepare(`
       SELECT * FROM source_materials
+      WHERE (? = '' OR instr(lower(name), lower(?)) > 0)
       ORDER BY updated_at DESC, id
       LIMIT ? OFFSET ?
-    `).all(pageSize, (effectivePage - 1) * pageSize).map(toSource)
+    `).all(normalizedQuery, normalizedQuery, pageSize, (effectivePage - 1) * pageSize).map(toSource)
     return { items, total, page: effectivePage, pageSize, totalPages }
   }
 
@@ -816,26 +824,26 @@ export class SqliteContentRepository implements ContentRepository, SoulRepositor
    * @param limit 最大结果数。
    * @returns 相关性排序的切片。
    */
-  async searchSourceChunks(query: string, limit: number): Promise<SourceChunkRecord[]> {
+  async searchSourceChunks(query: string, limit: number): Promise<SourceChunkSearchRecord[]> {
     if ([...query].length < 3) {
       return this.client.prepare(`
-        SELECT source_chunks.* FROM source_chunks
+        SELECT source_chunks.*, source_materials.name AS source_name FROM source_chunks
         INNER JOIN source_materials ON source_materials.id = source_chunks.source_id
         WHERE source_materials.is_enabled = 1
           AND (source_chunks.heading LIKE ? ESCAPE '\\' OR source_chunks.content LIKE ? ESCAPE '\\')
         ORDER BY source_chunks.source_id, source_chunks.ordinal
         LIMIT ?
-      `).all(toLikePattern(query), toLikePattern(query), limit).map(toChunk)
+      `).all(toLikePattern(query), toLikePattern(query), limit).map(toChunkSearchRecord)
     }
     const phrase = query.replaceAll('"', '""')
     return this.client.prepare(`
-      SELECT source_chunks.* FROM source_chunks_fts
+      SELECT source_chunks.*, source_materials.name AS source_name FROM source_chunks_fts
       INNER JOIN source_chunks ON source_chunks.rowid = source_chunks_fts.rowid
       INNER JOIN source_materials ON source_materials.id = source_chunks.source_id
       WHERE source_chunks_fts MATCH ? AND source_materials.is_enabled = 1
       ORDER BY bm25(source_chunks_fts), source_chunks.source_id, source_chunks.ordinal
       LIMIT ?
-    `).all(`"${phrase}"`, limit).map(toChunk)
+    `).all(`"${phrase}"`, limit).map(toChunkSearchRecord)
   }
 
   /**
@@ -844,6 +852,7 @@ export class SqliteContentRepository implements ContentRepository, SoulRepositor
    * @param page 从 1 开始的请求页码。
    * @param pageSize 每页数量。
    * @param mapper 把 SQLite 行转换为领域记录的函数。
+   * @param query 可选名称筛选词。
    * @returns 已修正越界页码的分页记录。
    * @remarks 表名不能由请求输入提供；这里只接受代码内固定联合类型。
    */
@@ -852,16 +861,21 @@ export class SqliteContentRepository implements ContentRepository, SoulRepositor
     page: number,
     pageSize: 5 | 10 | 20 | 50 | 100,
     mapper: (value: unknown) => T,
+    query?: string,
   ): { items: T[], total: number, page: number, pageSize: 5 | 10 | 20 | 50 | 100, totalPages: number } {
-    const count = this.client.prepare(`SELECT COUNT(*) AS total FROM ${table}`).get() as { total: number }
+    const keyword = query?.trim()
+    const whereClause = keyword ? ' WHERE instr(lower(name), lower(?)) > 0' : ''
+    const parameters = keyword ? [keyword] : []
+    const count = this.client.prepare(`SELECT COUNT(*) AS total FROM ${table}${whereClause}`)
+      .get(...parameters) as { total: number }
     const total = Number(count.total)
     const totalPages = Math.max(1, Math.ceil(total / pageSize))
     const effectivePage = Math.min(page, totalPages)
     const items = this.client.prepare(`
-      SELECT * FROM ${table}
+      SELECT * FROM ${table}${whereClause}
       ORDER BY updated_at DESC, id
       LIMIT ? OFFSET ?
-    `).all(pageSize, (effectivePage - 1) * pageSize).map(mapper)
+    `).all(...parameters, pageSize, (effectivePage - 1) * pageSize).map(mapper)
     return { items, total, page: effectivePage, pageSize, totalPages }
   }
 
@@ -1079,5 +1093,18 @@ function toChunk(value: unknown): SourceChunkRecord {
     heading: row.heading === null ? null : String(row.heading),
     content: String(row.content),
     contentHash: String(row.content_hash),
+  }
+}
+
+/**
+ * 把带所属资料名称的 SQLite 检索行转换为公开检索记录。
+ * @param value SQLite 切片与资料联查行。
+ * @returns 保留完整切片字段和资料名称的检索记录。
+ */
+function toChunkSearchRecord(value: unknown): SourceChunkSearchRecord {
+  const row = asRow(value)
+  return {
+    ...toChunk(value),
+    sourceName: String(row.source_name),
   }
 }

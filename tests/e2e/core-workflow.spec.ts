@@ -134,6 +134,22 @@ test('首次设置、灵魂保存、文档确认及三格式导出形成可复�
   await expect(page.getByText(/成功 1 个，失败 1 个/)).toBeVisible()
   await expect(page.getByText('港口规则', { exact: true })).toBeVisible()
 
+  // 资料项目使用名称筛选；正文段落搜索进入独立结果页并高亮关键词。
+  await page.getByLabel('资料列表搜索词').fill('港口规则')
+  await page.getByRole('button', { name: '筛选资料', exact: true }).click()
+  await expect(page.getByText('港口规则', { exact: true })).toBeVisible()
+  await expect(page.locator('a[data-source-title-link]')).toHaveCount(1)
+  await page.getByRole('button', { name: '清除筛选', exact: true }).click()
+  await expect(page.locator('a[data-source-title-link]')).toHaveCount(2)
+  await page.getByRole('link', { name: '全文检索', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '资料段落搜索', exact: true })).toBeVisible()
+  await page.getByLabel('段落搜索词').fill('浮岛城市')
+  await page.getByRole('button', { name: '搜索段落', exact: true }).click()
+  await expect(page.getByText('北港航行规则', { exact: true })).toHaveCount(0)
+  await expect(page.getByText('浮岛背景资料', { exact: true })).toBeVisible()
+  await expect(page.locator('mark').filter({ hasText: '浮岛城市' })).toBeVisible()
+  await page.getByRole('link', { name: '返回资料库', exact: true }).click()
+
   await page.getByRole('link', { name: '世界', exact: true }).click()
   await page.getByRole('button', { name: '创建世界', exact: true }).click()
   await page.getByLabel('世界名称').fill('浮岛纪元')
@@ -147,10 +163,11 @@ test('首次设置、灵魂保存、文档确认及三格式导出形成可复�
   await page.getByRole('option', { name: '浮岛背景资料', exact: true }).click()
   await page.getByRole('button', { name: '加入所选资料', exact: true }).click()
   await expect(page.getByText('1 项资料已加入这个世界', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '提示词', exact: true }).click()
   await page.getByRole('button', { name: '灵魂', exact: true }).click()
   await expect(page.getByLabel('世界灵魂提示词')).toHaveValue('所有城市位于浮岛，远行依赖风帆船。')
   await page.getByLabel('世界灵魂提示词').fill('所有城市位于浮岛，远行依赖风帆船；北港限制靠岸类型。')
-  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await page.getByRole('button', { name: '保存并发布', exact: true }).click()
   await expect(page.getByText('世界灵魂已保存，之后创建的新任务将使用这一版', { exact: true })).toBeVisible()
   await page.getByRole('button', { name: '查看提示词历史', exact: true }).click()
   await expect(page.getByRole('heading', { name: '提示词历史', exact: true })).toBeVisible()
@@ -158,6 +175,7 @@ test('首次设置、灵魂保存、文档确认及三格式导出形成可复�
 
   // 世界成长从已关联资料复制固定快照，逐条评分后才交给 AI 综合提炼。
   await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: '资料', exact: true }).click()
   await page.getByRole('button', { name: '成长素材', exact: true }).click()
   await expect(page.getByRole('heading', { name: '世界成长素材池', exact: true })).toBeVisible()
   await page.getByRole('button', { name: '从资料库选择', exact: true }).click()
@@ -185,6 +203,7 @@ test('首次设置、灵魂保存、文档确认及三格式导出形成可复�
   await page.getByRole('button', { name: '批量启用', exact: true }).click()
   await expect(page.getByText('所选成长素材已参加提炼', { exact: true })).toBeVisible()
 
+  await page.getByRole('button', { name: '提示词', exact: true }).click()
   await page.getByRole('button', { name: '成长', exact: true }).click()
   await expect(page.getByRole('heading', { name: '世界成长素材池', exact: true })).toHaveCount(0)
   await extractAndPublishLearningPrompt(page, {
@@ -208,10 +227,12 @@ test('首次设置、灵魂保存、文档确认及三格式导出形成可复�
   await expect(page.getByRole('heading', { name: '林默', exact: true })).toBeVisible()
   const personaWorkspaceUrl = page.url()
 
+  await page.getByRole('button', { name: '提示词', exact: true }).click()
   await page.getByRole('button', { name: '灵魂', exact: true }).click()
   await expect(page.getByLabel('人物灵魂提示词')).toHaveValue('严谨克制的学院观察员，关注课程、档案与古代文献，表达冷静简洁。')
 
   // 第三方记录拥有独立标签，并在弹窗中完成新增、修改、启停和删除。
+  await page.getByRole('button', { name: '资料', exact: true }).click()
   await page.getByRole('button', { name: '三方记录', exact: true }).click()
   await expect(page.getByRole('heading', { name: '第三方记录素材池', exact: true })).toBeVisible()
   await page.getByRole('button', { name: '添加记录', exact: true }).click()
@@ -236,7 +257,7 @@ test('首次设置、灵魂保存、文档确认及三格式导出形成可复�
   await page.getByRole('button', { name: '确认永久删除', exact: true }).click()
   await expect(page.getByText('所选第三方记录已删除', { exact: true })).toBeVisible()
 
-  // 人物成长素材单独分页管理，成长标签只负责提炼和提示词。
+  // 人物成长素材在资料分类中单独分页管理，成长提示词只负责提炼和校准。
   await page.getByRole('button', { name: '成长素材', exact: true }).click()
   await expect(page.getByRole('heading', { name: '人物成长素材池', exact: true })).toBeVisible()
   await page.getByRole('button', { name: '手工添加文档', exact: true }).click()
@@ -248,6 +269,7 @@ test('首次设置、灵魂保存、文档确认及三格式导出形成可复�
   await expect(page.getByText('表达与判断经验', { exact: true })).toBeVisible()
   await expect(page.getByLabel('每页素材数量')).toBeVisible()
 
+  await page.getByRole('button', { name: '提示词', exact: true }).click()
   await page.getByRole('button', { name: '成长', exact: true }).click()
   await expect(page.getByRole('heading', { name: '人物成长提示词', exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: '人物成长素材池', exact: true })).toHaveCount(0)
@@ -259,12 +281,12 @@ test('首次设置、灵魂保存、文档确认及三格式导出形成可复�
   })
 
   // 历史版本只载入编辑框，用户再次保存发布后才成为新版本。
-  await page.getByRole('button', { name: '历史', exact: true }).click()
+  await page.getByRole('button', { name: '查看提示词历史', exact: true }).click()
   await page.locator('[data-learning-history-version]').first().click()
   await page.locator('[data-learning-prompt-editor]').fill('表达时先给结论，并按证据强弱组织说明；不确定时明确边界。')
   await page.getByRole('button', { name: '保存并发布', exact: true }).click()
   await expect(page.getByText('提示词已发布，之后创建的新任务将固定使用这一版', { exact: true })).toBeVisible()
-  await page.getByRole('button', { name: '历史', exact: true }).click()
+  await page.getByRole('button', { name: '查看提示词历史', exact: true }).click()
   await expect(page.locator('[data-learning-history-version]')).toHaveCount(2)
   await page.keyboard.press('Escape')
 
@@ -291,7 +313,8 @@ test('首次设置、灵魂保存、文档确认及三格式导出形成可复�
   // 成功任务自动形成记忆原始素材，可人工评分、批量启停，再提炼成独立记忆提示词。
   await page.goto(personaWorkspaceUrl)
   await waitForHydration(page)
-  await page.getByRole('button', { name: '记录', exact: true }).click()
+  await page.getByRole('button', { name: '资料', exact: true }).click()
+  await page.getByRole('button', { name: '历史任务', exact: true }).click()
   await expect(page.getByRole('heading', { name: '历史任务素材池', exact: true })).toBeVisible()
   await expect(page.getByLabel('每页历史任务数量')).toBeVisible()
   await expect(page.getByText('图文任务已全部完成，共处理 2 个内容块。', { exact: true })).toBeVisible()
@@ -306,6 +329,7 @@ test('首次设置、灵魂保存、文档确认及三格式导出形成可复�
   await expect(page.getByText('所选历史任务已参加记忆提炼', { exact: true })).toBeVisible()
 
   // 记忆标签只保留提炼与提示词操作，不再混入两类记录列表。
+  await page.getByRole('button', { name: '提示词', exact: true }).click()
   await page.getByRole('button', { name: '记忆', exact: true }).click()
   await expect(page.getByRole('heading', { name: '人物记忆提示词', exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: '历史任务素材池', exact: true })).toHaveCount(0)
