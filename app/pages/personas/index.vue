@@ -35,6 +35,7 @@ const createLoading = shallowRef(false)
 const createErrorMessage = shallowRef<string | null>(null)
 const actionErrorMessage = shallowRef<string | null>(null)
 const selectedPersonaIds = ref<string[]>([])
+const batchEnableConfirmationOpen = shallowRef(false)
 const batchDisableConfirmationOpen = shallowRef(false)
 const batchStatusUpdating = shallowRef<boolean | null>(null)
 const pagePersonaIds = computed(() => personas.value.map(persona => persona.id))
@@ -129,9 +130,14 @@ async function updateSelectedPersonasStatus(personaIds: string[], isEnabled: boo
   }
 }
 
-/** @returns 批量启用当前选择结束时完成。 */
-async function enableSelectedPersonas(): Promise<void> {
-  await updateSelectedPersonasStatus(selectedDisabledPersonaIds.value, true)
+/** @returns 有可启用人物时打开二次确认框。 */
+function requestBatchEnable(): void {
+  if (selectedDisabledPersonaIds.value.length > 0) batchEnableConfirmationOpen.value = true
+}
+
+/** @returns 用户确认后的批量启用和弹窗关闭结束时完成。 */
+async function confirmBatchEnable(): Promise<void> {
+  if (await updateSelectedPersonasStatus(selectedDisabledPersonaIds.value, true)) batchEnableConfirmationOpen.value = false
 }
 
 /** @returns 有可禁用人物时打开二次确认框。 */
@@ -184,7 +190,7 @@ async function changePageSize(pageSize: number): Promise<void> {
         <span v-if="selectedPersonaIds.length > 0" class="text-sm text-muted">已选择 {{ selectedPersonaIds.length }} 个人物</span><span v-else aria-hidden="true"></span>
         <div class="flex items-center justify-end gap-1">
           <UButton color="success" variant="ghost" size="xs" :loading="batchStatusUpdating === true"
-            :disabled="selectedDisabledPersonaIds.length === 0 || batchStatusUpdating !== null" @click="enableSelectedPersonas">批量启用</UButton>
+            :disabled="selectedDisabledPersonaIds.length === 0 || batchStatusUpdating !== null" @click="requestBatchEnable">批量启用</UButton>
           <UButton color="error" variant="ghost" size="xs" :disabled="selectedEnabledPersonaIds.length === 0 || batchStatusUpdating !== null"
             @click="requestBatchDisable">批量禁用</UButton>
         </div>
@@ -215,6 +221,14 @@ async function changePageSize(pageSize: number): Promise<void> {
       </div>
     </section>
     <div v-else class="content-empty-state"><div><strong>还没有人物</strong><p class="mt-1 text-sm text-muted">原创人物不需要先导入资料。</p><UButton class="mt-4" @click="openCreateModal">创建第一个人物</UButton></div></div>
+
+    <UModal v-model:open="batchEnableConfirmationOpen" title="确认批量启用人物" description="启用后，这些人物可以重新用于创建新任务。">
+      <template #body><p class="text-sm text-muted">确定启用当前页已选择的 {{ selectedDisabledPersonaIds.length }} 个禁用人物吗？</p></template>
+      <template #footer><div class="flex w-full justify-end gap-2">
+        <UButton color="neutral" variant="ghost" :disabled="batchStatusUpdating !== null" @click="batchEnableConfirmationOpen = false">取消</UButton>
+        <UButton color="success" :loading="batchStatusUpdating === true" @click="confirmBatchEnable">确认启用</UButton>
+      </div></template>
+    </UModal>
 
     <UModal v-model:open="batchDisableConfirmationOpen" title="确认批量禁用人物" description="人物设定、资料关系和历史记录仍会保留。">
       <template #body><p class="text-sm text-muted">确定禁用当前页已选择的 {{ selectedEnabledPersonaIds.length }} 个启用人物吗？禁用后不能再用这些人物创建新任务。</p></template>

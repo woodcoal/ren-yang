@@ -43,7 +43,7 @@ registerEndpoint('/api/v1/sources/status', {
 })
 
 describe('资料列表批量状态操作', () => {
-  it('可批量启用禁用资料并保持禁用二次确认', async () => {
+  it('批量启用与禁用资料均需二次确认', async () => {
     const wrapper = await mountSuspended(SourceListPage, { route: '/sources' })
     await flushPromises()
 
@@ -67,6 +67,12 @@ describe('资料列表批量状态操作', () => {
     await batchEnable.trigger('click')
     await flushPromises()
 
+    expect(statusRequests).toHaveLength(0)
+    const confirmEnableButton = [...document.querySelectorAll<HTMLButtonElement>('button')]
+      .find(button => button.textContent?.trim() === '确认启用')
+    expect(confirmEnableButton).toBeDefined()
+    await new DOMWrapper(confirmEnableButton!).trigger('click')
+    await flushPromises()
     expect(statusRequests).toEqual([{ sourceIds: [disabledSourceId], isEnabled: true }])
     await vi.waitFor(() => expect(wrapper.text()).not.toContain('已选择'))
 

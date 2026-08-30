@@ -30,6 +30,8 @@ const roleLabels: Record<SourceSummary['role'], string> = {
     <NuxtLink
       :to="`/sources/${props.source.id}`"
       :aria-label="`查看资料详情：${props.source.name}`"
+      target="_blank"
+      rel="noopener noreferrer"
       class="absolute inset-0 z-0 rounded-[var(--radius-panel)] focus-visible:outline-3 focus-visible:outline-primary/25"
     />
     <div class="pointer-events-none relative z-10 flex items-start gap-3">

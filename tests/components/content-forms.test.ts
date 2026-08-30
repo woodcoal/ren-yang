@@ -187,7 +187,7 @@ describe('阶段二内容表单', () => {
     expect(wrapper.emitted('publish')).toBeUndefined()
   })
 
-  it('人物与世界共用资料区通过弹窗搜索加入，并在确认后解除关联', async () => {
+  it('人物与世界共用资料区使用新标签页查看资料，并确认启停与解除关联', async () => {
     const linkedSource = {
       id: '00000000-0000-4000-8000-000000000001', name: '现有资料', role: 'canon_fact' as const,
       inputType: 'paste' as const, contentHash: 'a'.repeat(64), contentText: '已加入正文', originalFilePath: null,
@@ -206,7 +206,12 @@ describe('阶段二内容表单', () => {
     })
 
     expect(wrapper.text()).toContain('解除关联不会删除资料本身')
-    expect(wrapper.get('a[aria-label="查看资料详情：现有资料"]').attributes('href')).toBe(`/sources/${linkedSource.id}`)
+    const detailsLink = wrapper.get('a[aria-label="查看资料详情：现有资料"]')
+    expect(detailsLink.attributes()).toMatchObject({
+      href: `/sources/${linkedSource.id}`,
+      target: '_blank',
+      rel: 'noopener noreferrer',
+    })
     await wrapper.get('button[aria-label="禁用资料：现有资料"]').trigger('click')
     await flushPromises()
     expect(wrapper.emitted('status')).toBeUndefined()
@@ -220,6 +225,14 @@ describe('阶段二内容表单', () => {
 
     await wrapper.setProps({ linkedSources: [{ ...linkedSource, isEnabled: false }] })
     await wrapper.get('button[aria-label="启用资料：现有资料"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.emitted('status')).toHaveLength(1)
+    expect(document.body.textContent).toContain('确认启用资料')
+    const confirmEnableButton = [...document.querySelectorAll<HTMLButtonElement>('button')]
+      .find(button => button.textContent?.trim() === '确认启用')
+    expect(confirmEnableButton).toBeDefined()
+    await new DOMWrapper(confirmEnableButton!).trigger('click')
+    await flushPromises()
     expect(wrapper.emitted('status')?.[1]).toEqual([{ sourceId: linkedSource.id, isEnabled: true }])
 
     await wrapper.findAll('button').find(button => button.text() === '导入资料')!.trigger('click')

@@ -35,6 +35,7 @@ const loading = shallowRef(false)
 const errorMessage = shallowRef<string | null>(null)
 const actionErrorMessage = shallowRef<string | null>(null)
 const selectedWorldIds = ref<string[]>([])
+const batchEnableConfirmationOpen = shallowRef(false)
 const batchDisableConfirmationOpen = shallowRef(false)
 const batchStatusUpdating = shallowRef<boolean | null>(null)
 const pageWorldIds = computed(() => worlds.value.map(world => world.id))
@@ -116,9 +117,14 @@ async function updateSelectedWorldsStatus(worldIds: string[], isEnabled: boolean
   }
 }
 
-/** @returns 批量启用当前选择结束时完成。 */
-async function enableSelectedWorlds(): Promise<void> {
-  await updateSelectedWorldsStatus(selectedDisabledWorldIds.value, true)
+/** @returns 有可启用世界时打开二次确认框。 */
+function requestBatchEnable(): void {
+  if (selectedDisabledWorldIds.value.length > 0) batchEnableConfirmationOpen.value = true
+}
+
+/** @returns 用户确认后的批量启用和弹窗关闭结束时完成。 */
+async function confirmBatchEnable(): Promise<void> {
+  if (await updateSelectedWorldsStatus(selectedDisabledWorldIds.value, true)) batchEnableConfirmationOpen.value = false
 }
 
 /** @returns 有可禁用世界时打开二次确认框。 */
@@ -183,7 +189,7 @@ async function changePageSize(pageSize: number): Promise<void> {
         <div class="flex items-center justify-end gap-1">
           <UButton color="success" variant="ghost" size="xs" :loading="batchStatusUpdating === true"
             :disabled="selectedDisabledWorldIds.length === 0 || batchStatusUpdating !== null"
-            @click="enableSelectedWorlds">批量启用</UButton>
+            @click="requestBatchEnable">批量启用</UButton>
           <UButton color="error" variant="ghost" size="xs"
             :disabled="selectedEnabledWorldIds.length === 0 || batchStatusUpdating !== null"
             @click="requestBatchDisable">批量禁用</UButton>
@@ -245,6 +251,19 @@ async function changePageSize(pageSize: number): Promise<void> {
         <p>独立人物仍可正常创建和执行任务。</p>
       </div>
     </div>
+
+    <UModal v-model:open="batchEnableConfirmationOpen" title="确认批量启用世界" description="启用后，这些世界可以重新进入后续新任务。">
+      <template #body>
+        <p class="text-sm text-muted">确定启用当前页已选择的 {{ selectedDisabledWorldIds.length }} 个禁用世界吗？</p>
+      </template>
+      <template #footer>
+        <div class="flex w-full justify-end gap-2">
+          <UButton color="neutral" variant="ghost" :disabled="batchStatusUpdating !== null"
+            @click="batchEnableConfirmationOpen = false">取消</UButton>
+          <UButton color="success" :loading="batchStatusUpdating === true" @click="confirmBatchEnable">确认启用</UButton>
+        </div>
+      </template>
+    </UModal>
 
     <UModal v-model:open="batchDisableConfirmationOpen" title="确认批量禁用世界" description="世界版本、人物关系、资料和历史记录仍会保留。">
       <template #body>

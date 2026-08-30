@@ -31,6 +31,7 @@ const actionError = shallowRef<string | null>(null)
 const actionMessage = shallowRef<string | null>(null)
 const deletionImpact = shallowRef<DeletionImpact | null>(null)
 const deletionConfirmed = shallowRef(false)
+const enableConfirmationOpen = shallowRef(false)
 const disableConfirmationOpen = shallowRef(false)
 /** 是否已用首次成功加载的资料初始化编辑表单。 */
 const editStateInitialized = shallowRef(false)
@@ -129,8 +130,8 @@ async function updateSourceStatus(isEnabled: boolean): Promise<boolean> {
 }
 
 /**
- * 已启用资料先打开二次确认；已禁用资料直接重新启用。
- * @returns 确认框打开或启用请求完成时结束。
+ * 根据资料当前状态打开启用或禁用二次确认框。
+ * @returns 确认框打开时结束。
  */
 async function requestSourceStatusChange(): Promise<void> {
   if (!details.value) return
@@ -138,7 +139,16 @@ async function requestSourceStatusChange(): Promise<void> {
     disableConfirmationOpen.value = true
     return
   }
-  await updateSourceStatus(true)
+  enableConfirmationOpen.value = true
+}
+
+/**
+ * 用户二次确认后启用当前资料。
+ * @returns 启用请求完成时结束。
+ */
+async function confirmEnableSource(): Promise<void> {
+  const succeeded = await updateSourceStatus(true)
+  if (succeeded) enableConfirmationOpen.value = false
 }
 
 /**
@@ -271,6 +281,18 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
         </div>
       </div>
     </template>
+
+    <UModal v-model:open="enableConfirmationOpen" title="确认启用资料" description="启用后，它可以重新进入人物和世界检索。">
+      <template #body>
+        <p class="text-sm text-muted">确定启用“{{ details?.source.name }}”吗？系统会恢复对应 OpenViking 投影。</p>
+      </template>
+      <template #footer>
+        <div class="flex w-full justify-end gap-2">
+          <UButton color="neutral" variant="ghost" :disabled="actionLoading" @click="enableConfirmationOpen = false">取消</UButton>
+          <UButton color="success" :loading="actionLoading" @click="confirmEnableSource">确认启用</UButton>
+        </div>
+      </template>
+    </UModal>
 
     <UModal v-model:open="disableConfirmationOpen" title="确认禁用资料" description="禁用不会删除正文、系统整理的段落或使用关系。">
       <template #body>

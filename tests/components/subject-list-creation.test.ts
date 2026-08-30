@@ -197,7 +197,7 @@ describe('世界与人物列表快速初始化', () => {
     expect(document.body.textContent).toContain('创建失败')
   })
 
-  it('人物与世界列表默认每页十项并支持批量启用及确认禁用', async () => {
+  it('人物与世界列表默认每页十项且批量启用与禁用均需确认', async () => {
     const personaWrapper = await mountSuspended(PersonasPage, { route: '/personas' })
     await flushPromises()
 
@@ -227,9 +227,16 @@ describe('世界与人物列表快速初始化', () => {
     await personaWrapper.get('input[aria-label="选择人物：禁用人物"]').setValue(true)
     await personaWrapper.findAllComponents({ name: 'UButton' }).find(button => button.text() === '批量启用')!.trigger('click')
     await flushPromises()
+    expect(personaStatusRequests).toHaveLength(1)
+    const confirmEnablePersona = [...document.querySelectorAll<HTMLButtonElement>('button')]
+      .find(button => button.textContent?.trim() === '确认启用')
+    expect(confirmEnablePersona).toBeDefined()
+    await new DOMWrapper(confirmEnablePersona!).trigger('click')
+    await flushPromises()
     expect(personaStatusRequests[1]).toEqual({
       personaIds: ['10000000-0000-4000-8000-000000000002'], isEnabled: true,
     })
+    await vi.waitFor(() => expect(document.body.textContent).not.toContain('确认批量启用人物'))
     await vi.waitFor(() => expect(document.body.textContent).not.toContain('确认批量禁用人物'))
     personaWrapper.unmount()
     document.body.innerHTML = ''
@@ -258,8 +265,16 @@ describe('世界与人物列表快速初始化', () => {
     await worldWrapper.get('input[aria-label="选择世界：禁用世界"]').setValue(true)
     await worldWrapper.findAllComponents({ name: 'UButton' }).find(button => button.text() === '批量启用')!.trigger('click')
     await flushPromises()
+    expect(worldStatusRequests).toHaveLength(1)
+    const confirmEnableWorld = [...document.querySelectorAll<HTMLButtonElement>('button')]
+      .find(button => button.textContent?.trim() === '确认启用')
+    expect(confirmEnableWorld).toBeDefined()
+    await new DOMWrapper(confirmEnableWorld!).trigger('click')
+    await flushPromises()
     expect(worldStatusRequests[1]).toEqual({
       worldIds: ['20000000-0000-4000-8000-000000000002'], isEnabled: true,
     })
+    await vi.waitFor(() => expect(document.body.textContent).not.toContain('确认批量启用世界'))
+    worldWrapper.unmount()
   })
 })

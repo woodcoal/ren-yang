@@ -30,6 +30,14 @@ interface SourceOption {
   searchText: string
 }
 
+/** 等待用户确认的资料状态变更。 */
+interface PendingSourceStatus {
+  /** 准备修改状态的资料。 */
+  source: SourceSummary
+  /** 用户确认后写入的目标状态。 */
+  isEnabled: boolean
+}
+
 const props = defineProps<Props>()
 const emit = defineEmits<{
   /** 请求把一批已有资料加入当前对象。 */
@@ -52,8 +60,8 @@ const importModalOpen = shallowRef(false)
 const selectedSourceIds = ref<string[]>([])
 /** 等待用户确认解除关联的资料。 */
 const pendingUnlinkSource = shallowRef<SourceSummary | null>(null)
-/** 等待用户确认全局禁用的资料。 */
-const pendingDisableSource = shallowRef<SourceSummary | null>(null)
+/** 等待用户确认的资料全局状态变更。 */
+const pendingSourceStatus = shallowRef<PendingSourceStatus | null>(null)
 /** 资料创建表单实例序号；递增后强制生成空白表单。 */
 const sourceFormKey = shallowRef(0)
 /** 是否正在等待一次资料创建请求完成。 */
@@ -131,34 +139,33 @@ function confirmUnlink(): void {
 }
 
 /**
- * 根据资料当前状态决定直接启用或先确认禁用。
+ * 打开资料启用或禁用二次确认框。
  * @param source 用户准备修改状态的资料。
  * @returns 无返回值。
  */
 function requestSourceStatusChange(source: SourceSummary): void {
-  if (source.isEnabled) {
-    pendingDisableSource.value = source
-    return
-  }
-  emit('status', { sourceId: source.id, isEnabled: true })
+  pendingSourceStatus.value = { source, isEnabled: !source.isEnabled }
 }
 
 /**
- * 关闭资料禁用确认框且不执行写操作。
+ * 关闭资料状态确认框且不执行写操作。
  * @returns 无返回值。
  */
-function cancelDisableSource(): void {
-  pendingDisableSource.value = null
+function cancelSourceStatusChange(): void {
+  pendingSourceStatus.value = null
 }
 
 /**
- * 用户确认后发出资料全局禁用事件。
+ * 用户确认后发出资料全局状态变更事件。
  * @returns 无返回值。
  */
-function confirmDisableSource(): void {
-  if (!pendingDisableSource.value || props.loading) return
-  emit('status', { sourceId: pendingDisableSource.value.id, isEnabled: false })
-  pendingDisableSource.value = null
+function confirmSourceStatusChange(): void {
+  if (!pendingSourceStatus.value || props.loading) return
+  emit('status', {
+    sourceId: pendingSourceStatus.value.source.id,
+    isEnabled: pendingSourceStatus.value.isEnabled,
+  })
+  pendingSourceStatus.value = null
 }
 
 /**
@@ -273,14 +280,28 @@ watch(() => props.loading, handleLoadingChange)
       </template>
     </UModal>
 
-    <UModal :open="pendingDisableSource !== null" title="确认禁用资料" description="禁用是资料的全局状态，不会删除正文或使用关系。" :dismissible="!props.loading" :close="false">
+    <UModal
+      :open="pendingSourceStatus !== null"
+      :title="pendingSourceStatus?.isEnabled ? '确认启用资料' : '确认禁用资料'"
+      :description="pendingSourceStatus?.isEnabled ? '启用后，这项资料可以重新进入人物和世界检索。' : '禁用是资料的全局状态，不会删除正文或使用关系。'"
+      :dismissible="!props.loading"
+      :close="false"
+    >
       <template #body>
-        <p class="text-sm text-muted">确定禁用“{{ pendingDisableSource?.name }}”吗？禁用后，所有人物和世界都不会再使用这项资料。</p>
+        <p class="text-sm text-muted">
+          {{ pendingSourceStatus?.isEnabled
+            ? `确定启用“${pendingSourceStatus.source.name}”吗？启用后，关联的人物和世界可以重新使用这项资料。`
+            : `确定禁用“${pendingSourceStatus?.source.name}”吗？禁用后，所有人物和世界都不会再使用这项资料。` }}
+        </p>
       </template>
       <template #footer>
         <div class="flex w-full justify-end gap-2">
-          <UButton color="neutral" variant="ghost" :disabled="props.loading" @click="cancelDisableSource">取消</UButton>
-          <UButton color="error" :loading="props.loading" @click="confirmDisableSource">确认禁用</UButton>
+          <UButton color="neutral" variant="ghost" :disabled="props.loading" @click="cancelSourceStatusChange">取消</UButton>
+          <UButton
+            :color="pendingSourceStatus?.isEnabled ? 'success' : 'error'"
+            :loading="props.loading"
+            @click="confirmSourceStatusChange"
+          >{{ pendingSourceStatus?.isEnabled ? '确认启用' : '确认禁用' }}</UButton>
         </div>
       </template>
     </UModal>

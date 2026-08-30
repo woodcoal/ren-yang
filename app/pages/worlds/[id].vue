@@ -50,6 +50,7 @@ const deletionConfirmed = shallowRef(false)
 const actionLoading = shallowRef(false)
 const actionError = shallowRef<string | null>(null)
 const actionMessage = shallowRef<string | null>(null)
+const enableConfirmationOpen = shallowRef(false)
 const disableConfirmationOpen = shallowRef(false)
 
 /**
@@ -304,8 +305,8 @@ async function updateWorldStatus(isEnabled: boolean): Promise<void> {
 }
 
 /**
- * 已启用世界先打开二次确认；已禁用世界直接重新启用。
- * @returns 确认框打开或启用请求完成时结束。
+ * 根据世界当前状态打开启用或禁用二次确认框。
+ * @returns 确认框打开时结束。
  */
 async function requestWorldStatusChange(): Promise<void> {
   if (!details.value) return
@@ -313,6 +314,12 @@ async function requestWorldStatusChange(): Promise<void> {
     disableConfirmationOpen.value = true
     return
   }
+  enableConfirmationOpen.value = true
+}
+
+/** @returns 用户确认后的启用请求完成时结束。 */
+async function confirmEnableWorld(): Promise<void> {
+  enableConfirmationOpen.value = false
   await updateWorldStatus(true)
 }
 
@@ -463,6 +470,18 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
         </UCard>
       </div>
     </template>
+
+    <UModal v-model:open="enableConfirmationOpen" title="确认启用世界" description="启用后，该世界可以重新进入后续新任务。">
+      <template #body>
+        <p class="text-sm text-muted">确定启用“{{ details?.world.name }}”吗？</p>
+      </template>
+      <template #footer>
+        <div class="flex w-full justify-end gap-2">
+          <UButton color="neutral" variant="ghost" :disabled="actionLoading" @click="enableConfirmationOpen = false">取消</UButton>
+          <UButton color="success" :loading="actionLoading" @click="confirmEnableWorld">确认启用</UButton>
+        </div>
+      </template>
+    </UModal>
 
     <UModal v-model:open="disableConfirmationOpen" title="确认禁用世界" description="禁用不会删除世界版本、人物关系、资料或历史任务。">
       <template #body>

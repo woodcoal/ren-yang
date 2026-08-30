@@ -63,6 +63,7 @@ const errorMessage = shallowRef<string | null>(null)
 const searchQuery = shallowRef('')
 const searchResults = shallowRef<SourceChunkView[] | null>(null)
 const selectedSourceIds = ref<string[]>([])
+const batchEnableConfirmationOpen = shallowRef(false)
 const batchDisableConfirmationOpen = shallowRef(false)
 const batchStatusUpdating = shallowRef<boolean | null>(null)
 const pageSourceIds = computed(() => sources.value.map(source => source.id))
@@ -256,11 +257,20 @@ async function changePageSize(value: number | string): Promise<void> {
 }
 
 /**
- * 直接启用当前页已勾选的禁用资料。
+ * 打开批量启用二次确认框。
+ * @returns 无返回值。
+ */
+function requestBatchEnable(): void {
+  if (selectedDisabledSourceIds.value.length > 0) batchEnableConfirmationOpen.value = true
+}
+
+/**
+ * 在二次确认后批量启用当前页已勾选的禁用资料。
  * @returns 批量状态请求和当前页刷新完成时结束。
  */
-async function enableSelectedSources(): Promise<void> {
-  await updateSelectedSourcesStatus([...selectedDisabledSourceIds.value], true)
+async function confirmBatchEnable(): Promise<void> {
+  const succeeded = await updateSelectedSourcesStatus([...selectedDisabledSourceIds.value], true)
+  if (succeeded) batchEnableConfirmationOpen.value = false
 }
 
 /**
@@ -362,7 +372,7 @@ async function updateSelectedSourcesStatus(sourceIds: string[], isEnabled: boole
         <div class="flex items-center justify-end gap-1">
           <UButton color="success" variant="ghost" size="xs" :loading="batchStatusUpdating === true"
             :disabled="selectedDisabledSourceIds.length === 0 || batchStatusUpdating !== null"
-            @click="enableSelectedSources">批量启用</UButton>
+            @click="requestBatchEnable">批量启用</UButton>
           <UButton color="error" variant="ghost" size="xs"
             :disabled="selectedEnabledSourceIds.length === 0 || batchStatusUpdating !== null"
             @click="requestBatchDisable">批量禁用</UButton>
@@ -427,6 +437,19 @@ async function updateSelectedSourcesStatus(sourceIds: string[], isEnabled: boole
         <p>可以先创建原创人物，也可以从粘贴文本、TXT 或 Markdown 开始导入。</p>
       </div>
     </div>
+
+    <UModal v-model:open="batchEnableConfirmationOpen" title="确认批量启用资料" description="启用后，资料可以重新进入人物和世界检索。">
+      <template #body>
+        <p class="text-sm text-muted">确定启用当前页已选择的 {{ selectedDisabledSourceIds.length }} 项禁用资料吗？系统会恢复对应 OpenViking 投影。</p>
+      </template>
+      <template #footer>
+        <div class="flex w-full justify-end gap-2">
+          <UButton color="neutral" variant="ghost" :disabled="batchStatusUpdating !== null"
+            @click="batchEnableConfirmationOpen = false">取消</UButton>
+          <UButton color="success" :loading="batchStatusUpdating === true" @click="confirmBatchEnable">确认启用</UButton>
+        </div>
+      </template>
+    </UModal>
 
     <UModal v-model:open="batchDisableConfirmationOpen" title="确认批量禁用资料" description="禁用后资料正文和使用关系仍会保留。">
       <template #body>

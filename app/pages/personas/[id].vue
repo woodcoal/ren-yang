@@ -60,6 +60,7 @@ const deletionConfirmed = shallowRef(false)
 const actionLoading = shallowRef(false)
 const actionError = shallowRef<string | null>(null)
 const actionMessage = shallowRef<string | null>(null)
+const enableConfirmationOpen = shallowRef(false)
 const disableConfirmationOpen = shallowRef(false)
 
 /**
@@ -357,8 +358,8 @@ async function updatePersonaStatus(isEnabled: boolean): Promise<void> {
 }
 
 /**
- * 已启用人物先打开二次确认；已禁用人物直接重新启用。
- * @returns 确认框打开或启用请求完成时结束。
+ * 根据人物当前状态打开启用或禁用二次确认框。
+ * @returns 确认框打开时结束。
  */
 async function requestPersonaStatusChange(): Promise<void> {
   if (!details.value) return
@@ -366,6 +367,12 @@ async function requestPersonaStatusChange(): Promise<void> {
     disableConfirmationOpen.value = true
     return
   }
+  enableConfirmationOpen.value = true
+}
+
+/** @returns 用户确认后的启用请求完成时结束。 */
+async function confirmEnablePersona(): Promise<void> {
+  enableConfirmationOpen.value = false
   await updatePersonaStatus(true)
 }
 
@@ -534,6 +541,14 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
         </UCard>
       </div>
     </template>
+
+    <UModal v-model:open="enableConfirmationOpen" title="确认启用人物" description="启用后，可以重新用该人物创建新任务。">
+      <template #body><p class="text-sm text-muted">确定启用“{{ details?.persona.name }}”吗？</p></template>
+      <template #footer><div class="flex w-full justify-end gap-2">
+        <UButton color="neutral" variant="ghost" :disabled="actionLoading" @click="enableConfirmationOpen = false">取消</UButton>
+        <UButton color="success" :loading="actionLoading" @click="confirmEnablePersona">确认启用</UButton>
+      </div></template>
+    </UModal>
 
     <UModal v-model:open="disableConfirmationOpen" title="确认禁用人物" description="禁用不会删除人物设定、成长、记忆、资料关系或历史任务。">
       <template #body><p class="text-sm text-muted">确定禁用“{{ details?.persona.name }}”吗？禁用后不能再用该人物创建新任务。</p></template>
