@@ -20,8 +20,20 @@ const emit = defineEmits<{
   submit: [input: QuickCreateSubjectInput]
 }>()
 
+/** 快速创建界面状态；可选账号字段在输入控件中始终使用空字符串。 */
+type QuickCreateSubjectFormState = Omit<QuickCreateSubjectInput, 'username' | 'email' | 'password'> & {
+  /** 可选人物账号。 */
+  username: string
+  /** 可选人物邮箱。 */
+  email: string
+  /** 可选人物密码。 */
+  password: string
+}
+
 /** 弹窗唯一表单状态；请求失败时保持原值，关闭后重新打开才清空。 */
-const state = reactive<QuickCreateSubjectInput>({ name: '', promptText: '', autoAnalyze: false })
+const state = reactive<QuickCreateSubjectFormState>({
+  name: '', promptText: '', autoAnalyze: false, username: '', email: '', password: '',
+})
 const isPersona = computed(() => props.subjectType === 'persona')
 const title = computed(() => {
   if (props.loading) return isPersona.value ? '正在创建人物' : '正在创建世界'
@@ -52,9 +64,9 @@ function resetState(): void {
   state.name = ''
   state.promptText = ''
   state.autoAnalyze = false
-  state.username = undefined
-  state.email = undefined
-  state.password = undefined
+  state.username = ''
+  state.email = ''
+  state.password = ''
 }
 
 /**
@@ -63,7 +75,13 @@ function resetState(): void {
  * @returns 无返回值。
  */
 function handleSubmit(event: FormSubmitEvent<QuickCreateSubjectInput>): void {
-  emit('submit', event.data)
+  const { username, email, password, ...subject } = event.data
+  emit('submit', {
+    ...subject,
+    ...(username ? { username } : {}),
+    ...(email ? { email } : {}),
+    ...(password ? { password } : {}),
+  })
 }
 
 watch(open, (isOpen, wasOpen) => {

@@ -14,6 +14,7 @@ const props = withDefaults(defineProps<{
 /** 证据角色中文标签。 */
 const roleLabels: Record<EvidenceSnapshotView['role'], string> = {
   user_setting: '用户设定', canon_fact: '原著事实', reference: '参考资料', style_sample: '风格样本',
+  growth: '成长提示词', memory: '记忆提示词',
 }
 /** 支持当前 AI 推断的证据集合。 */
 const supportingEvidence = computed(() => new Set(props.supportingEvidenceIds))

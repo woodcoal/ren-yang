@@ -95,15 +95,14 @@ function formatTime(timestamp: number): string {
             <p class="mt-1 text-xs text-muted">保存于 {{ formatTime(version.createdAt) }}</p>
           </div>
           <div class="flex flex-wrap gap-2">
-            <UButton v-if="version.status === 'candidate'" size="sm" :loading="props.loading" @click="emit('publish', version.id)">确认并使用</UButton>
-            <UButton v-else-if="version.id !== props.activeVersionId" size="sm" color="neutral" variant="soft" :loading="props.loading" @click="emit('activate', version.id)">恢复使用此版</UButton>
+            <UButton v-if="version.id !== props.activeVersionId" size="sm" color="neutral" variant="soft" :loading="props.loading" @click="emit('activate', version.id)">恢复使用此版</UButton>
             <UButton v-if="version.id !== props.activeVersionId" size="sm" color="error" variant="ghost" icon="i-lucide-trash-2" aria-label="删除" :loading="props.loading" @click="toggleDeletion(version.id)">删除</UButton>
           </div>
         </div>
 
         <details class="mt-3 rounded-md bg-elevated px-3 py-2">
           <summary class="cursor-pointer text-sm font-medium text-muted">查看这一版的完整设定</summary>
-          <pre class="content-pre mt-3 max-h-80 overflow-y-auto">{{ version.snapshot.content }}</pre>
+          <pre class="content-pre mt-3 max-h-80 overflow-y-auto">{{ version.snapshot.promptText }}</pre>
         </details>
 
         <div v-if="pendingDeletionId === version.id" class="mt-3 space-y-3 rounded-md border border-error/30 bg-error/5 p-3 text-sm">

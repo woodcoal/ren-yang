@@ -38,7 +38,10 @@ function resetForm(): void {
  * @returns 保存事件发出且弹窗关闭后结束。
  */
 function submitForm(event: FormSubmitEvent<typeof form>): void {
-  emit('save', { id: props.item?.id, ...event.data })
+  emit('save', {
+    ...event.data,
+    ...(props.item ? { id: props.item.id } : {}),
+  })
   open.value = false
 }
 

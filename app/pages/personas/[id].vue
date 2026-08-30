@@ -492,6 +492,14 @@ async function confirmDisablePersona(): Promise<void> {
 }
 
 /**
+ * 重新加载人物详情与灵魂工作区。
+ * @returns 两项读取请求全部结束时完成。
+ */
+async function retryPersonaWorkspace(): Promise<void> {
+  await Promise.all([refresh(), refreshSoul()])
+}
+
+/**
  * 统一管理页面动作状态和通俗反馈。
  * @param successMessage 成功提示；不需要时为 null。
  * @param action 当前异步动作。
@@ -527,7 +535,7 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
       <UButton v-if="details?.persona.isEnabled" to="/workbench">新建任务</UButton>
     </ContentPageHeader>
 
-    <UAlert v-if="error || !details || !soul" color="error" title="人物工作区加载失败" :actions="[{ label: '重试', onClick: () => Promise.all([refresh(), refreshSoul()]) }]" />
+    <UAlert v-if="error || !details || !soul" color="error" title="人物工作区加载失败" :actions="[{ label: '重试', onClick: retryPersonaWorkspace }]" />
     <template v-else>
       <UAlert v-if="actionError" class="mb-5" color="error" title="操作失败" :description="actionError" />
       <UAlert v-if="actionMessage" class="mb-5" color="success" title="操作完成" :description="actionMessage" />
@@ -575,7 +583,7 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
       </div>
 
       <div v-else-if="selectedTab === 'prompts'">
-        <ContentWorkspaceModuleNav v-model="selectedPromptModule" :items="promptModules" aria-label="人物提示词模块" />
+        <ContentWorkspaceModuleNav v-model="selectedPromptModule" :items="promptModules" ariaLabel="人物提示词模块" />
         <ContentSoulWorkspace
           v-if="selectedPromptModule === 'soul'"
           :workspace="soul"
@@ -605,7 +613,7 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
       </div>
 
       <div v-else-if="selectedTab === 'materials'">
-        <ContentWorkspaceModuleNav v-model="selectedMaterialModule" :items="materialModules" aria-label="人物资料模块" />
+        <ContentWorkspaceModuleNav v-model="selectedMaterialModule" :items="materialModules" ariaLabel="人物资料模块" />
         <ContentSubjectSourceManager
           v-if="selectedMaterialModule === 'sources'"
           subject-type="persona"

@@ -57,6 +57,17 @@ function toggleAll(selected: boolean): void {
 }
 
 /**
+ * 把数字输入框的临时值转换为有效的 1–5 分整数。
+ * @param sourceId 当前资料 UUID。
+ * @param value Nuxt UI 数字输入框返回的原始值。
+ * @returns 评分状态更新完成时结束。
+ */
+function updateScore(sourceId: string, value: string | number | bigint | boolean | null): void {
+  const numericValue = value === null || value === '' || typeof value === 'boolean' ? 3 : Number(value)
+  scores[sourceId] = Number.isFinite(numericValue) ? Math.min(5, Math.max(1, Math.round(numericValue))) : 3
+}
+
+/**
  * 按资料库顺序提交来源 UUID 和逐项 AI 提炼评分。
  * @returns 导入事件发出且弹窗关闭后结束。
  */
@@ -122,7 +133,14 @@ watch(open, (isOpen) => {
               <p v-if="source.content.trim().length > MAX_GROWTH_MATERIAL_LENGTH" class="mt-1 text-xs text-error">正文超过 200000 字，无法导入。</p>
             </div>
             <UFormField label="评分" description="1–5 分" class="w-24 shrink-0">
-              <UInput v-model.number="scores[source.id]" type="number" min="1" max="5" :disabled="loading || !selectedIds.includes(source.id)" />
+              <UInput
+                :model-value="scores[source.id] ?? 3"
+                type="number"
+                min="1"
+                max="5"
+                :disabled="loading || !selectedIds.includes(source.id)"
+                @update:model-value="updateScore(source.id, $event)"
+              />
             </UFormField>
           </article>
         </template>

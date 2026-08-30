@@ -23,7 +23,14 @@ const saving = shallowRef(false)
 const publishing = shallowRef(false)
 const deleting = shallowRef(false)
 const actionError = shallowRef<string | null>(null)
-const form = reactive<SaveAiPromptDraftInput>({
+
+/** 提示词编辑表单状态；输入控件始终使用字符串，图片提示词保存时再转换为空系统模板。 */
+type AiPromptDraftFormState = Omit<SaveAiPromptDraftInput, 'systemPromptTemplate'> & {
+  /** 文本模型使用的系统提示模板；图片模型保持空字符串。 */
+  systemPromptTemplate: string
+}
+
+const form = reactive<AiPromptDraftFormState>({
   baseVersionId: null,
   systemPromptTemplate: '',
   userPromptTemplate: '',
@@ -49,7 +56,7 @@ const isDirty = computed(() => {
   if (!selectedPrompt.value || !source) return false
   const sourceSummary = selectedPrompt.value.draft?.changeSummary ?? ''
   return form.baseVersionId !== selectedPrompt.value.activeVersion?.id
-    || form.systemPromptTemplate !== source.systemPromptTemplate
+    || form.systemPromptTemplate !== (source.systemPromptTemplate ?? '')
     || form.userPromptTemplate !== source.userPromptTemplate
     || form.changeSummary !== sourceSummary
 })
@@ -68,7 +75,7 @@ watch(selectedPrompt, (prompt) => {
 function resetForm(prompt: AiPromptWorkspaceView): void {
   const source = prompt.draft ?? prompt.activeVersion
   form.baseVersionId = prompt.activeVersion?.id ?? null
-  form.systemPromptTemplate = source?.systemPromptTemplate ?? (prompt.kind === 'text' ? '' : null)
+  form.systemPromptTemplate = source?.systemPromptTemplate ?? ''
   form.userPromptTemplate = source?.userPromptTemplate ?? ''
   form.changeSummary = prompt.draft?.changeSummary ?? ''
   actionError.value = null
@@ -122,7 +129,10 @@ async function saveDraft(event: FormSubmitEvent<SaveAiPromptDraftInput>): Promis
   try {
     await $fetch(`/api/v1/ai-prompts/${encodeURIComponent(prompt.code)}/draft`, {
       method: 'PUT',
-      body: event.data,
+      body: {
+        ...event.data,
+        systemPromptTemplate: prompt.kind === 'text' ? event.data.systemPromptTemplate : null,
+      },
     })
     await refresh()
     toast.add({ title: '草稿已保存', description: '尚未影响任何新的 AI 操作。', color: 'success', icon: 'i-lucide-check' })
@@ -193,7 +203,7 @@ async function deleteDraft(): Promise<void> {
  */
 function loadHistoryVersion(version: AiPromptVersionView): void {
   form.baseVersionId = selectedPrompt.value?.activeVersion?.id ?? null
-  form.systemPromptTemplate = version.systemPromptTemplate
+  form.systemPromptTemplate = version.systemPromptTemplate ?? ''
   form.userPromptTemplate = version.userPromptTemplate
   form.changeSummary = `基于 v${version.versionNo} 重新调整`
   window.scrollTo({ top: 0, behavior: 'smooth' })
