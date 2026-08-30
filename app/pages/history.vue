@@ -1,51 +1,84 @@
 <script setup lang="ts">
-import { computed, reactive } from 'vue'
+import { computed, reactive, watch } from 'vue'
 import type { ApiResponse } from '#shared/types/api'
-import type { PersonaSummary, WorldSummary } from '#shared/types/content'
-import type { AnalysisBatchView, AnalysisType } from '#shared/types/analysis'
-import type { RunSummary } from '#shared/types/generation'
-
-type HistoryStatus = RunSummary['status'] | AnalysisBatchView['status']
-type HistoryKind = RunSummary['kind'] | AnalysisType
-
-/** 任务记录页统一展示的一项生成运行或后台提炼。 */
-interface HistoryItem {
-  id: string
-  kind: HistoryKind
-  kindLabel: string
-  subjectType: 'persona' | 'world'
-  subjectId: string
-  subjectName: string
-  status: HistoryStatus
-  description: string
-  secondary: string
-  createdAt: number
-  detailsPath: string
-  detailsLabel: string
-  /** 当前任务对象存在时可进入的人物或世界详情地址。 */
-  subjectPath: string | null
-}
+import type { PersonaSummary } from '#shared/types/content'
+import type { HistoryKind, HistoryStatus } from '#shared/schemas/history'
+import type { HistoryItemView, HistoryPageView } from '#shared/types/history'
 
 const route = useRoute()
+
+/** 任务记录页允许的任务类型。 */
+const historyKinds: readonly HistoryKind[] = [
+  'interest_assessment', 'artifact_generation', 'world_growth', 'persona_growth', 'persona_memory',
+]
+
+/** 任务记录页允许的统一状态。 */
+const historyStatuses: readonly HistoryStatus[] = [
+  'planning', 'awaiting_confirmation', 'queued', 'running', 'succeeded', 'partial', 'failed', 'canceled',
+  'awaiting_review', 'completed',
+]
+
+/** @param value 查询参数原值。 @param fallback 无效时的默认值。 @returns 正整数。 */
+function readPositiveInteger(value: unknown, fallback: number): number {
+  const normalized = Array.isArray(value) ? value[0] : value
+  const parsed = Number(normalized)
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback
+}
+
+/** @param value 查询参数原值。 @returns 支持的每页数量，无效值回退为 10。 */
+function readPageSize(value: unknown): 5 | 10 | 20 | 50 | 100 {
+  const parsed = readPositiveInteger(value, 10)
+  return parsed === 5 || parsed === 20 || parsed === 50 || parsed === 100 ? parsed : 10
+}
+
+/** @param value 查询参数原值。 @returns 单个非空字符串，不符合时返回 undefined。 */
+function readTextQuery(value: unknown): string | undefined {
+  const normalized = Array.isArray(value) ? value[0] : value
+  return typeof normalized === 'string' && normalized.trim() ? normalized.trim() : undefined
+}
+
+/** @param value 查询参数原值。 @returns 有效任务类型，不符合时返回 undefined。 */
+function readHistoryKind(value: unknown): HistoryKind | undefined {
+  const normalized = readTextQuery(value)
+  return historyKinds.includes(normalized as HistoryKind) ? normalized as HistoryKind : undefined
+}
+
+/** @param value 查询参数原值。 @returns 有效任务状态，不符合时返回 undefined。 */
+function readHistoryStatus(value: unknown): HistoryStatus | undefined {
+  const normalized = readTextQuery(value)
+  return historyStatuses.includes(normalized as HistoryStatus) ? normalized as HistoryStatus : undefined
+}
+
+const requestedPage = computed(() => readPositiveInteger(route.query.page, 1))
+const requestedPageSize = computed(() => readPageSize(route.query.pageSize))
+const requestedPersonaId = computed(() => readTextQuery(route.query.personaId))
+const requestedKind = computed(() => readHistoryKind(route.query.kind))
+const requestedStatus = computed(() => readHistoryStatus(route.query.status))
 const filters = reactive({
-  personaId: typeof route.query.personaId === 'string' ? route.query.personaId : '',
-  kind: typeof route.query.kind === 'string' ? route.query.kind : '',
-  status: typeof route.query.status === 'string' ? route.query.status : '',
+  personaId: requestedPersonaId.value ?? '',
+  kind: requestedKind.value ?? '',
+  status: requestedStatus.value ?? '',
 })
+const historyQuery = computed(() => ({
+  page: requestedPage.value,
+  pageSize: requestedPageSize.value,
+  personaId: requestedPersonaId.value,
+  kind: requestedKind.value,
+  status: requestedStatus.value,
+}))
 const [
-  { data: runData, error: runError, refresh: refreshRuns },
-  { data: analysisData, error: analysisError, refresh: refreshAnalysis },
+  { data: historyData, error: historyError, refresh: refreshHistory },
   { data: personaData, error: personaError, refresh: refreshPersonas },
-  { data: worldData, error: worldError, refresh: refreshWorlds },
 ] = await Promise.all([
-  useFetch<ApiResponse<RunSummary[]>>('/api/v1/runs?limit=100'),
-  useFetch<ApiResponse<AnalysisBatchView[]>>('/api/v1/analysis-batches?limit=100'),
+  useFetch<ApiResponse<HistoryPageView>>('/api/v1/history', { query: historyQuery }),
   useFetch<ApiResponse<PersonaSummary[]>>('/api/v1/personas'),
-  useFetch<ApiResponse<WorldSummary[]>>('/api/v1/worlds'),
 ])
 const personas = computed(() => personaData.value?.data ?? [])
-const worlds = computed(() => worldData.value?.data ?? [])
-const error = computed(() => runError.value ?? analysisError.value ?? personaError.value ?? worldError.value)
+const historyPage = computed<HistoryPageView>(() => historyData.value?.data ?? {
+  items: [], total: 0, page: requestedPage.value, pageSize: requestedPageSize.value, totalPages: 1,
+})
+const items = computed(() => historyPage.value.items)
+const error = computed(() => historyError.value ?? personaError.value)
 
 /** 运行状态中文标签。 */
 const statusLabels: Record<HistoryStatus, string> = {
@@ -60,50 +93,20 @@ const kindLabels: Record<HistoryKind, string> = {
   world_growth: '世界成长提炼', persona_growth: '人物成长提炼', persona_memory: '人物记忆提炼',
 }
 
-/** 合并生成运行与后台提炼，并按页面筛选条件和创建时间排序。 */
-const items = computed<HistoryItem[]>(() => {
-  const personaNames = new Map(personas.value.map(persona => [persona.id, persona.name]))
-  const worldNames = new Map(worlds.value.map(world => [world.id, world.name]))
-  const runs: HistoryItem[] = (runData.value?.data ?? []).map(run => ({
-    id: run.id,
-    kind: run.kind,
-    kindLabel: kindLabels[run.kind],
-    subjectType: 'persona',
-    subjectId: run.personaId,
-    subjectName: run.personaName,
-    status: run.status,
-    description: inputPreview(run),
-    secondary: run.model.model,
-    createdAt: run.createdAt,
-    detailsPath: `/runs/${run.id}`,
-    detailsLabel: '查看任务',
-    subjectPath: personaNames.has(run.personaId) ? `/personas/${run.personaId}` : null,
-  }))
-  const analyses: HistoryItem[] = (analysisData.value?.data ?? []).map(batch => ({
-    id: batch.id,
-    kind: batch.analysisType,
-    kindLabel: kindLabels[batch.analysisType],
-    subjectType: batch.analysisType === 'world_growth' ? 'world' : 'persona',
-    subjectId: batch.subjectId,
-    subjectName: batch.analysisType === 'world_growth'
-      ? worldNames.get(batch.subjectId) ?? '已删除世界'
-      : personaNames.get(batch.subjectId) ?? '已删除人物',
-    status: batch.status,
-    description: batch.resultSummary ?? batch.errorMessage ?? `${batch.inputs.length} 项原始素材`,
-    secondary: batch.mode === 'incremental' ? '结合新增素材' : '全部素材重建',
-    createdAt: batch.createdAt,
-    detailsPath: batch.analysisType === 'world_growth' ? `/worlds/${batch.subjectId}` : `/personas/${batch.subjectId}`,
-    detailsLabel: '查看对象',
-    subjectPath: batch.analysisType === 'world_growth'
-      ? worldNames.has(batch.subjectId) ? `/worlds/${batch.subjectId}` : null
-      : personaNames.has(batch.subjectId) ? `/personas/${batch.subjectId}` : null,
-  }))
-  return [...runs, ...analyses]
-    .filter(item => !filters.personaId || (item.subjectType === 'persona' && item.subjectId === filters.personaId))
-    .filter(item => !filters.kind || item.kind === filters.kind)
-    .filter(item => !filters.status || item.status === filters.status)
-    .sort((left, right) => right.createdAt - left.createdAt || right.id.localeCompare(left.id))
-})
+/** 可选择的每页任务数量。 */
+const pageSizeItems = [
+  { label: '每页 5 条', value: 5 }, { label: '每页 10 条', value: 10 }, { label: '每页 20 条', value: 20 },
+  { label: '每页 50 条', value: 50 }, { label: '每页 100 条', value: 100 },
+]
+
+/** @returns 浏览器前进或后退后，把 URL 筛选条件同步回表单。 */
+function synchronizeFilters(): void {
+  filters.personaId = requestedPersonaId.value ?? ''
+  filters.kind = requestedKind.value ?? ''
+  filters.status = requestedStatus.value ?? ''
+}
+
+watch([requestedPersonaId, requestedKind, requestedStatus], synchronizeFilters)
 
 /** @returns 把当前筛选写入 URL，确保刷新页面后可恢复。 */
 async function applyFilters(): Promise<void> {
@@ -113,14 +116,27 @@ async function applyFilters(): Promise<void> {
       ...(filters.personaId ? { personaId: filters.personaId } : {}),
       ...(filters.kind ? { kind: filters.kind } : {}),
       ...(filters.status ? { status: filters.status } : {}),
+      page: '1',
+      pageSize: String(historyPage.value.pageSize),
     },
   })
 }
 
-/** @param run 运行摘要。 @returns 输入内容的简短预览。 */
-function inputPreview(run: RunSummary): string {
-  const value = 'content' in run.input ? run.input.content : run.input.requirement
+/** @param value 任务说明原文。 @returns 最多 120 字的列表预览。 */
+function descriptionPreview(value: string): string {
   return value.length > 120 ? `${value.slice(0, 120)}…` : value
+}
+
+/** @param item 统一任务记录。 @returns 任务详情或所属对象详情地址。 */
+function detailsPath(item: HistoryItemView): string {
+  if (item.sourceType === 'run') return `/runs/${item.id}`
+  return item.subjectType === 'world' ? `/worlds/${item.subjectId}` : `/personas/${item.subjectId}`
+}
+
+/** @param item 统一任务记录。 @returns 当前对象存在时的详情地址，否则返回 null。 */
+function subjectPath(item: HistoryItemView): string | null {
+  if (!item.subjectExists) return null
+  return item.subjectType === 'world' ? `/worlds/${item.subjectId}` : `/personas/${item.subjectId}`
 }
 
 /** @param status 统一任务状态。 @returns Nuxt UI 徽标颜色。 */
@@ -133,7 +149,22 @@ function statusColor(status: HistoryStatus): 'error' | 'success' | 'warning' | '
 
 /** @returns 重新读取生成运行、后台提炼和对象名称。 */
 async function refreshAll(): Promise<void> {
-  await Promise.all([refreshRuns(), refreshAnalysis(), refreshPersonas(), refreshWorlds()])
+  await Promise.all([refreshHistory(), refreshPersonas()])
+}
+
+/** @param page 新页码。 @param pageSize 新每页数量。 @returns 路由导航完成时结束。 */
+async function updatePagination(page: number, pageSize: 5 | 10 | 20 | 50 | 100): Promise<void> {
+  await navigateTo({ path: route.path, query: { ...route.query, page: String(page), pageSize: String(pageSize) } })
+}
+
+/** @param page 新页码。 @returns 路由导航完成时结束。 */
+async function changePage(page: number): Promise<void> {
+  await updatePagination(page, historyPage.value.pageSize)
+}
+
+/** @param pageSize 新每页数量。 @returns 回到第一页的路由导航完成时结束。 */
+async function changePageSize(pageSize: number): Promise<void> {
+  await updatePagination(1, readPageSize(pageSize))
 }
 
 /** @param timestamp UTC Unix 毫秒。 @returns 本地日期时间。 */
@@ -148,34 +179,87 @@ function formatTime(timestamp: number): string {
       <UButton to="/workbench" icon="i-lucide-plus">创建新任务</UButton>
     </ContentPageHeader>
 
-    <section class="content-section" aria-labelledby="history-filter-heading">
-      <div class="section-heading"><div class="section-heading-copy"><p class="eyebrow">缩小范围</p><h2 id="history-filter-heading">定位需要继续处理的任务</h2><p>筛选条件会写入地址，刷新页面后仍会保留。</p></div></div>
-      <form class="content-toolbar" @submit.prevent="applyFilters">
-        <select v-model="filters.personaId" class="native-control" aria-label="按人物筛选"><option value="">全部人物</option><option v-for="persona in personas" :key="persona.id" :value="persona.id">{{ persona.name }}</option></select>
-        <select v-model="filters.kind" class="native-control" aria-label="按类型筛选"><option value="">全部类型</option><option value="interest_assessment">兴趣判断</option><option value="artifact_generation">图文创作</option><option value="world_growth">世界成长提炼</option><option value="persona_growth">人物成长提炼</option><option value="persona_memory">人物记忆提炼</option></select>
-        <select v-model="filters.status" class="native-control" aria-label="按状态筛选"><option value="">全部状态</option><option v-for="(label, status) in statusLabels" :key="status" :value="status">{{ label }}</option></select>
-        <UButton type="submit" color="neutral" variant="soft">应用筛选</UButton>
-      </form>
-    </section>
-
     <UAlert v-if="error" color="error" title="任务记录加载失败" :actions="[{ label: '重试', onClick: refreshAll }]" />
-    <section v-else-if="items.length" class="content-section" aria-labelledby="history-list-heading">
-      <div class="section-heading"><div class="section-heading-copy"><p class="eyebrow">任务列表</p><h2 id="history-list-heading">按当前状态阅读</h2><p>生成运行保留模型与输入；后台提炼保留对象、素材快照、状态和失败原因。</p></div><span class="text-sm text-muted">{{ items.length }} 条记录</span></div>
-      <div class="content-table-wrap">
-        <table class="content-table">
-          <thead><tr><th>任务</th><th>对象</th><th>状态</th><th>创建时间</th><th>操作</th></tr></thead>
-          <tbody>
-            <tr v-for="item in items" :key="`${item.kind}:${item.id}`">
-              <td data-label="任务"><NuxtLink :to="item.detailsPath" class="content-table-title hover:underline"><strong>{{ item.kindLabel }}</strong></NuxtLink><span class="content-table-description">{{ item.description }}</span></td>
-              <td data-label="对象"><NuxtLink v-if="item.subjectPath" :to="item.subjectPath" class="content-table-title hover:underline">{{ item.subjectName }}</NuxtLink><span v-else class="content-table-title">{{ item.subjectName }}</span><span class="content-table-description">{{ item.secondary }}</span></td>
-              <td data-label="状态"><UBadge :color="statusColor(item.status)" variant="subtle">{{ statusLabels[item.status] }}</UBadge></td>
-              <td data-label="创建时间"><span>{{ formatTime(item.createdAt) }}</span><span class="content-table-description">{{ item.id }}</span></td>
-              <td data-label="操作"><UButton :to="item.detailsPath" color="neutral" variant="link">{{ item.detailsLabel }}</UButton></td>
-            </tr>
-          </tbody>
-        </table>
+    <section v-else class="content-section" aria-labelledby="history-list-heading">
+      <h2 id="history-list-heading" class="visually-hidden">任务记录列表</h2>
+      <div class="list-management-panel">
+        <div class="list-management-controls">
+          <form class="list-management-search col-span-full" aria-label="筛选任务记录" @submit.prevent="applyFilters">
+            <select v-model="filters.personaId" class="native-control min-w-0 flex-1" aria-label="按人物筛选">
+              <option value="">全部人物</option>
+              <option v-for="persona in personas" :key="persona.id" :value="persona.id">{{ persona.name }}</option>
+            </select>
+            <select v-model="filters.kind" class="native-control min-w-0 flex-1" aria-label="按类型筛选">
+              <option value="">全部类型</option>
+              <option value="interest_assessment">兴趣判断</option>
+              <option value="artifact_generation">图文创作</option>
+              <option value="world_growth">世界成长提炼</option>
+              <option value="persona_growth">人物成长提炼</option>
+              <option value="persona_memory">人物记忆提炼</option>
+            </select>
+            <select v-model="filters.status" class="native-control min-w-0 flex-1" aria-label="按状态筛选">
+              <option value="">全部状态</option>
+              <option v-for="(label, status) in statusLabels" :key="status" :value="status">{{ label }}</option>
+            </select>
+            <UButton type="submit" color="neutral" variant="soft">应用筛选</UButton>
+          </form>
+        </div>
+
+        <template v-if="items.length">
+          <div class="content-table-wrap list-management-table">
+            <table class="content-table">
+              <thead>
+                <tr>
+                  <th>任务</th>
+                  <th>对象</th>
+                  <th>状态</th>
+                  <th>创建时间</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="item in items" :key="`${item.sourceType}:${item.id}`">
+                  <td data-label="任务">
+                    <NuxtLink :to="detailsPath(item)" class="content-table-title hover:underline"><strong>{{
+                      kindLabels[item.kind] }}</strong></NuxtLink><span class="content-table-description">{{
+                      descriptionPreview(item.description) }}</span>
+                  </td>
+                  <td data-label="对象">
+                    <NuxtLink v-if="subjectPath(item)" :to="subjectPath(item)!"
+                      class="content-table-title hover:underline">{{ item.subjectName }}</NuxtLink><span v-else
+                      class="content-table-title">{{ item.subjectName }}</span><span
+                      class="content-table-description">{{ item.secondary }}</span>
+                  </td>
+                  <td data-label="状态">
+                    <UBadge :color="statusColor(item.status)" variant="subtle">{{ statusLabels[item.status] }}</UBadge>
+                  </td>
+                  <td data-label="创建时间"><span>{{ formatTime(item.createdAt) }}</span><span
+                      class="content-table-description">{{ item.id }}</span></td>
+                  <td data-label="操作">
+                    <UButton :to="detailsPath(item)" color="neutral" variant="ghost" size="xs"
+                      icon="i-lucide-chevron-right" :aria-label="`查看任务：${kindLabels[item.kind]}`" />
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="list-management-footer">
+            <p class="m-0 text-sm text-muted">第 {{ historyPage.page }} / {{ historyPage.totalPages }} 页，共 {{
+              historyPage.total }} 项</p>
+            <div class="list-management-pagination">
+              <USelect :model-value="historyPage.pageSize" class="w-34" :items="pageSizeItems" aria-label="每页任务数量"
+                @update:model-value="changePageSize" />
+              <UPagination :page="historyPage.page" :total="historyPage.total" :items-per-page="historyPage.pageSize"
+                show-edges @update:page="changePage" />
+            </div>
+          </div>
+        </template>
+        <div v-else class="content-empty-state list-management-empty">
+          <div><strong>没有符合条件的任务</strong>
+            <p>调整筛选条件，或创建一项新任务。</p>
+          </div>
+        </div>
       </div>
     </section>
-    <div v-else class="content-empty-state"><div><strong>没有符合条件的任务</strong><p>调整筛选条件，或创建一项新任务。</p></div></div>
   </div>
 </template>

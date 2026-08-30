@@ -44,6 +44,8 @@ import { SqliteLearningRepository } from '../database/SqliteLearningRepository'
 import { AnalysisApplicationService } from '../../application/analysis/AnalysisApplicationService'
 import { SqliteAnalysisRepository } from '../database/SqliteAnalysisRepository'
 import { AesGcmSecretCipher } from '../security/AesGcmSecretCipher'
+import { HistoryApplicationService } from '../../application/history/HistoryApplicationService'
+import { SqliteHistoryRepository } from '../database/SqliteHistoryRepository'
 
 /** 应用运行时组合配置。 */
 export interface ApplicationRuntimeOptions {
@@ -112,6 +114,8 @@ export class ApplicationRuntime {
   private readonly analysisService: AnalysisApplicationService
   /** 请求与 Worker 共用的生成应用服务。 */
   private readonly generationService: GenerationApplicationService
+  /** 请求间共享的统一任务记录查询服务。 */
+  private readonly historyService: HistoryApplicationService
   /** 请求间共享的反馈分类与人物成长素材应用服务。 */
   private readonly feedbackService: FeedbackApplicationService
   /** OpenViking 检测与重建应用服务。 */
@@ -217,6 +221,9 @@ export class ApplicationRuntime {
       learning: learningRepository,
       contextSyncQueue,
     })
+    this.historyService = new HistoryApplicationService({
+      history: new SqliteHistoryRepository(this.sqlite.getClient()),
+    })
     this.feedbackService = new FeedbackApplicationService({
       repository: new SqliteFeedbackRepository(this.sqlite.getClient()),
       model: textModel,
@@ -285,6 +292,7 @@ export class ApplicationRuntime {
       learning: this.learningService,
       analysis: this.analysisService,
       generation: this.generationService,
+      history: this.historyService,
       feedback: this.feedbackService,
       contextSynchronization: this.contextSynchronizationService,
       backup: this.backupService,

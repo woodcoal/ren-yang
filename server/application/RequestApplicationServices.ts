@@ -8,6 +8,7 @@ import type { ContextSynchronizationApplicationService } from './context/Context
 import type { BackupApplicationService } from './backup/BackupApplicationService'
 import type { LearningApplicationService } from './learning/LearningApplicationService'
 import type { AnalysisApplicationService } from './analysis/AnalysisApplicationService'
+import type { HistoryApplicationService } from './history/HistoryApplicationService'
 
 /** 每个 HTTP 请求能够访问的应用服务集合。 */
 export interface RequestApplicationServices {
@@ -23,6 +24,8 @@ export interface RequestApplicationServices {
   analysis: AnalysisApplicationService
   /** 兴趣判断、文档规划、生成和运行历史用例。 */
   generation: GenerationApplicationService
+  /** 生成运行与分析批次统一任务记录用例。 */
+  history: HistoryApplicationService
   /** 反馈归因、一次性动作和人物成长素材确认用例。 */
   feedback: FeedbackApplicationService
   /** OpenViking 检测、同步状态和全量重建用例。 */
