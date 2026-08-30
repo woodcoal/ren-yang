@@ -56,14 +56,15 @@ import type { TextModelPort } from '../../ports/TextModelPort'
 import type { TokenCounter } from '../../ports/TokenCounter'
 import { TextModelError } from '../../ports/TextModelPort'
 import { ApplicationError } from '../errors/ApplicationError'
+import type { AiPromptApplicationService } from '../aiPrompts/AiPromptApplicationService'
 import {
-  buildDocumentPlanPrompt,
-  buildImagePrompt,
-  buildInterestPrompt,
-  buildPersonaDraftPrompt,
-  buildTextBlockPrompt,
-  buildWorldDraftPrompt,
-  GENERATION_PROMPT_VERSION,
+  buildDocumentPlanPromptVariables,
+  buildImagePromptVariables,
+  buildInterestPromptVariables,
+  buildPersonaDraftPromptVariables,
+  buildTextBlockPromptVariables,
+  buildWorldDraftPromptVariables,
+  GENERATION_PROMPT_CODES,
   type PromptContext,
 } from './PromptBuilder'
 import { renderArtifact, type SelectedArtifactBlock } from './ArtifactRenderer'
@@ -112,6 +113,8 @@ export interface GenerationApplicationServiceDependencies {
   content: ContentRepository
   context: ContextProvider
   model: TextModelPort
+  /** 全站已发布 AI 提示词目录。 */
+  prompts: Pick<AiPromptApplicationService, 'render' | 'snapshotPublishedVersions'>
   imageModel: ImageModelPort
   imageAssets: ImageAssetStorage
   identifiers: IdentifierGenerator
@@ -192,9 +195,19 @@ export class GenerationApplicationService implements TaskHandler {
     }))
     sources.sort((left, right) => sourceRoleRank(left.role) - sourceRoleRank(right.role) || left.name.localeCompare(right.name, 'zh-CN'))
 
-    const prompt = buildPersonaDraftPrompt(input.prompt, world, sources)
+    const prompt = await this.dependencies.prompts.render(
+      GENERATION_PROMPT_CODES.personaDraft,
+      buildPersonaDraftPromptVariables(input.prompt, world, sources),
+    )
+    const retryVersions = await this.dependencies.prompts.snapshotPublishedVersions([GENERATION_PROMPT_CODES.jsonRetry])
     try {
-      const { output } = await this.generateValidated(prompt, DEFAULT_TEXT_PARAMETERS, 'persona_draft', value => personaDraftSchema.parse(value))
+      const { output } = await this.generateValidated(
+        prompt,
+        retryVersions[GENERATION_PROMPT_CODES.jsonRetry]!,
+        DEFAULT_TEXT_PARAMETERS,
+        'persona_draft',
+        value => personaDraftSchema.parse(value),
+      )
       return { ...output, warnings }
     }
     catch (error: unknown) {
@@ -214,8 +227,18 @@ export class GenerationApplicationService implements TaskHandler {
       throw new ApplicationError('CAPABILITY_DISABLED', '文本模型尚未配置，不能生成世界草稿', 422)
     }
     try {
-      const prompt = buildWorldDraftPrompt(input.prompt)
-      const { output } = await this.generateValidated(prompt, DEFAULT_TEXT_PARAMETERS, 'world_draft', value => worldDraftSchema.parse(value))
+      const prompt = await this.dependencies.prompts.render(
+        GENERATION_PROMPT_CODES.worldDraft,
+        buildWorldDraftPromptVariables(input.prompt),
+      )
+      const retryVersions = await this.dependencies.prompts.snapshotPublishedVersions([GENERATION_PROMPT_CODES.jsonRetry])
+      const { output } = await this.generateValidated(
+        prompt,
+        retryVersions[GENERATION_PROMPT_CODES.jsonRetry]!,
+        DEFAULT_TEXT_PARAMETERS,
+        'world_draft',
+        value => worldDraftSchema.parse(value),
+      )
       return output
     }
     catch (error: unknown) {
@@ -428,7 +451,9 @@ export class GenerationApplicationService implements TaskHandler {
       if (job.type === 'assess_interest') await this.executeInterest(runId)
       else if (job.type === 'plan_document') await this.executeDocumentPlan(runId)
       else if (job.type === 'execute_document') await this.executeDocument(runId)
-      else if (job.type === 'execute_block') await this.executeSingleBlock(runId, readBlockId(job.payloadJson))
+      else if (job.type === 'execute_block') {
+        await this.executeSingleBlock(runId, readBlockId(job.payloadJson), readCorrectionInstruction(job.payloadJson))
+      }
       else throw new Error(`未注册任务类型：${job.type}`)
       await this.enqueueRunSessionIfTerminal(runId)
     }
@@ -472,6 +497,15 @@ export class GenerationApplicationService implements TaskHandler {
     if ('includeImages' in input && input.includeImages && !imageModel) {
       throw new ApplicationError('CAPABILITY_DISABLED', '图片模型尚未配置，不能创建包含图片的运行', 422)
     }
+    const promptCodes = kind === 'interest_assessment'
+      ? [GENERATION_PROMPT_CODES.interestAssessment, GENERATION_PROMPT_CODES.jsonRetry]
+      : [
+          GENERATION_PROMPT_CODES.documentPlan,
+          GENERATION_PROMPT_CODES.textBlock,
+          GENERATION_PROMPT_CODES.jsonRetry,
+          ...('includeImages' in input && input.includeImages ? [GENERATION_PROMPT_CODES.imageBlock] : []),
+        ]
+    const aiPromptVersions = await this.dependencies.prompts.snapshotPublishedVersions(promptCodes)
     const persona = await this.requirePersona(personaId)
     if (!persona.isEnabled) throw new ApplicationError('RESOURCE_DISABLED', '人物已禁用，不能创建新任务', 409)
     if (!persona.activeVersionId) throw new ApplicationError('PERSONA_VERSION_NOT_ACTIVE', '人物当前灵魂版本缺失，请重新保存灵魂提示词', 409)
@@ -514,7 +548,14 @@ export class GenerationApplicationService implements TaskHandler {
       scene,
       evidence: [],
     }
-    const fixedPrompt = this.buildInitialRunPrompt(kind, input, template.spec, parameters, emptyPromptContext)
+    const fixedPrompt = await this.buildInitialRunPrompt(
+      kind,
+      input,
+      template.spec,
+      parameters,
+      emptyPromptContext,
+      aiPromptVersions,
+    )
     const tokenCounterModel = model.model
     const fixedInputTokens = this.countPromptTokens(tokenCounterModel, fixedPrompt)
     const worldSoulCount = activeWorldVersion
@@ -563,7 +604,14 @@ export class GenerationApplicationService implements TaskHandler {
       ...emptyPromptContext,
       evidence: selectedEvidence.map(item => ({ ...item, runId, createdAt: timestamp })),
     }
-    const initialPrompt = this.buildInitialRunPrompt(kind, input, template.spec, parameters, promptContext)
+    const initialPrompt = await this.buildInitialRunPrompt(
+      kind,
+      input,
+      template.spec,
+      parameters,
+      promptContext,
+      aiPromptVersions,
+    )
     const estimatedInputTokens = this.countPromptTokens(tokenCounterModel, initialPrompt)
     if (estimatedInputTokens > selection.availableInputTokens) {
       throw new ApplicationError('PROMPT_BUDGET_EXCEEDED', '最终提示词超过可用输入 Token，请减少任务内容或上下文预算', 422)
@@ -598,6 +646,7 @@ export class GenerationApplicationService implements TaskHandler {
       ...prepared.invalid,
     ]
     const promptContextSnapshot: PromptContextSnapshot = {
+      aiPromptVersions,
       tokenCounter: personaSoulCount.counter,
       tokenCountExact: [personaSoulCount, worldSoulCount, worldGrowthCount, personaGrowthCount, personaMemoryCount]
         .every(item => item.mode === 'exact' || item.tokens === 0),
@@ -628,7 +677,7 @@ export class GenerationApplicationService implements TaskHandler {
       runId, taskId, taskType: kind === 'interest_assessment' ? 'assess_interest' : 'plan_document', kind,
       personaVersionId: version.id, formatTemplateId: templateId, parameterProfileId: profileId,
       status: kind === 'interest_assessment' ? 'queued' : 'planning', input, scene, parameters, model, imageModel,
-      promptVersion: GENERATION_PROMPT_VERSION,
+      promptVersion: `ai-catalog:${this.dependencies.sourceProcessor.hash(JSON.stringify(aiPromptVersions)).slice(0, 16)}`,
       contextProvider: contextSearch.provider,
       promptContextSnapshot,
       evidence: [
@@ -648,6 +697,7 @@ export class GenerationApplicationService implements TaskHandler {
    * @param template 格式模板规格。
    * @param parameters 运行参数快照。
    * @param context 已选择的心智与资料上下文。
+   * @param aiPromptVersions 创建运行时固定的提示词版本映射。
    * @returns 兴趣判断或文档规划的完整提示。
    */
   private buildInitialRunPrompt(
@@ -656,22 +706,31 @@ export class GenerationApplicationService implements TaskHandler {
     template: { guidance: string, minimumBlocks: number, maximumBlocks: number },
     parameters: TextModelParameters,
     context: PromptContext,
-  ): { systemPrompt: string, userPrompt: string } {
+    aiPromptVersions: Record<string, string>,
+  ): Promise<{ systemPrompt: string, userPrompt: string }> {
     if (kind === 'interest_assessment') {
-      return buildInterestPrompt(context, 'content' in input ? input.content : '')
+      return this.dependencies.prompts.render(
+        GENERATION_PROMPT_CODES.interestAssessment,
+        buildInterestPromptVariables(context, 'content' in input ? input.content : ''),
+        aiPromptVersions[GENERATION_PROMPT_CODES.interestAssessment],
+      )
     }
     const allowImages = 'includeImages' in input && input.includeImages
     const maximum = Math.min(template.maximumBlocks, parameters.maxTextBlocks + (allowImages ? parameters.maxImageBlocks : 0))
     if (template.minimumBlocks > maximum) {
       throw new ApplicationError('TASK_LIMIT_EXCEEDED', '格式模板最少块数超过当前运行允许的图文块总数', 422)
     }
-    return buildDocumentPlanPrompt(
-      context,
-      'requirement' in input ? input.requirement : '',
-      template.guidance,
-      template.minimumBlocks,
-      maximum,
-      allowImages,
+    return this.dependencies.prompts.render(
+      GENERATION_PROMPT_CODES.documentPlan,
+      buildDocumentPlanPromptVariables(
+        context,
+        'requirement' in input ? input.requirement : '',
+        template.guidance,
+        template.minimumBlocks,
+        maximum,
+        allowImages,
+      ),
+      aiPromptVersions[GENERATION_PROMPT_CODES.documentPlan],
     )
   }
 
@@ -745,13 +804,24 @@ export class GenerationApplicationService implements TaskHandler {
     this.requireMatchingModel(run)
     await this.requireRunStarted(run, ['queued', 'running'])
     const context = await this.loadPromptContext(run)
-    const prompt = buildInterestPrompt(context, 'content' in run.input ? run.input.content : '')
-    const { output, usage } = await this.generateValidated(prompt, run.parameterSnapshot, 'interest_assessment', value => {
+    const prompt = await this.dependencies.prompts.render(
+      GENERATION_PROMPT_CODES.interestAssessment,
+      buildInterestPromptVariables(context, 'content' in run.input ? run.input.content : ''),
+      requireRunPromptVersion(run, GENERATION_PROMPT_CODES.interestAssessment),
+    )
+    const { output, usage } = await this.generateValidated(
+      prompt,
+      requireRunPromptVersion(run, GENERATION_PROMPT_CODES.jsonRetry),
+      run.parameterSnapshot,
+      'interest_assessment',
+      (value) => {
       const parsed = interestAssessmentSchema.parse(value)
       const evidenceIds = new Set(context.evidence.map(item => item.id))
       if ([...parsed.supportingEvidenceIds, ...parsed.opposingEvidenceIds].some(id => !evidenceIds.has(id))) throw new Error('兴趣判断引用了不存在的证据标识')
       return parsed
-    }, run.usage)
+      },
+      run.usage,
+    )
     if (await this.finishCancellationIfRequested(runId, usage)) return
     const cumulativeUsage = aggregateTextModelUsage(run.usage ? [run.usage, usage] : [usage])
     const timestamp = this.dependencies.clock.now()
@@ -774,14 +844,32 @@ export class GenerationApplicationService implements TaskHandler {
     if (template.spec.minimumBlocks > maximum) {
       throw new ApplicationError('TASK_LIMIT_EXCEEDED', '格式模板最少块数超过当前运行允许的图文块总数', 422)
     }
-    const prompt = buildDocumentPlanPrompt(context, 'requirement' in run.input ? run.input.requirement : '', template.spec.guidance, template.spec.minimumBlocks, maximum, allowImages)
-    const { output, usage } = await this.generateValidated(prompt, run.parameterSnapshot, 'document_spec', value => {
+    const prompt = await this.dependencies.prompts.render(
+      GENERATION_PROMPT_CODES.documentPlan,
+      buildDocumentPlanPromptVariables(
+        context,
+        'requirement' in run.input ? run.input.requirement : '',
+        template.spec.guidance,
+        template.spec.minimumBlocks,
+        maximum,
+        allowImages,
+      ),
+      requireRunPromptVersion(run, GENERATION_PROMPT_CODES.documentPlan),
+    )
+    const { output, usage } = await this.generateValidated(
+      prompt,
+      requireRunPromptVersion(run, GENERATION_PROMPT_CODES.jsonRetry),
+      run.parameterSnapshot,
+      'document_spec',
+      (value) => {
       const parsed = documentSpecSchema.parse(value)
       if (parsed.blocks.length < template.spec.minimumBlocks || parsed.blocks.length > maximum) throw new Error('模型规划的块数量超出模板或运行限制')
       if (!allowImages && parsed.blocks.some(block => block.type === 'image')) throw new Error('当前运行未启用图片，模型不得规划图片块')
       this.validateDocumentLimits(parsed, run)
       return parsed
-    }, run.usage)
+      },
+      run.usage,
+    )
     if (await this.finishCancellationIfRequested(runId, usage)) return
     const cumulativeUsage = aggregateTextModelUsage(run.usage ? [run.usage, usage] : [usage])
     if (!await this.dependencies.runs.savePlannedDocumentSpec(runId, this.dependencies.identifiers.create(), output, cumulativeUsage, this.dependencies.clock.now())) throw new Error('文档规划运行状态已经变化')
@@ -822,8 +910,14 @@ export class GenerationApplicationService implements TaskHandler {
     if (status !== 'failed') await this.recordPersonaOperation(run, `图文任务已${status === 'succeeded' ? '全部完成' : '部分完成'}，共处理 ${blocks.length} 个内容块。`, null, timestamp)
   }
 
-  /** @param runId 运行 UUID。 @param blockId 目标块 UUID。 @returns 单块任务完成时结束。 */
-  private async executeSingleBlock(runId: string, blockId: string): Promise<void> {
+  /**
+   * 执行一次普通单块重试或用户反馈指导的修正重试。
+   * @param runId 运行 UUID。
+   * @param blockId 目标块 UUID。
+   * @param correctionInstruction 用户确认用于修正当前块的反馈正文；普通手工重试为空。
+   * @returns 单块任务完成时结束。
+   */
+  private async executeSingleBlock(runId: string, blockId: string, correctionInstruction: string | null): Promise<void> {
     const run = await this.requireRun(runId)
     this.requireMatchingModel(run)
     await this.requireRunStarted(run, ['queued', 'running'])
@@ -841,7 +935,7 @@ export class GenerationApplicationService implements TaskHandler {
       if (block.status === 'succeeded') await this.appendSelectedText(block, previousOutputs)
     }
     if (!dependenciesSucceeded(target, blocks)) await this.recordDependencyFailure(run, target, previousOutputs)
-    else await this.executeArtifactBlock(run, context, spec.spec, target, previousOutputs)
+    else await this.executeArtifactBlock(run, context, spec.spec, target, previousOutputs, correctionInstruction)
     const timestamp = this.dependencies.clock.now()
     const status = await this.dependencies.runs.finishDocumentRun(runId, timestamp)
     if (status !== 'failed') await this.recordPersonaOperation(run, `图文任务单块重试后状态为${status === 'succeeded' ? '全部完成' : '部分完成'}。`, null, timestamp)
@@ -888,6 +982,7 @@ export class GenerationApplicationService implements TaskHandler {
    * @param documentSpec 已确认规格。
    * @param block 目标持久块。
    * @param previousOutputs 前序成功文字块。
+   * @param correctionInstruction 用户反馈指导的本次修正要求；普通执行为空。
    * @returns 是否成功及可供后续块使用的文字。
    */
   private async executeArtifactBlock(
@@ -896,24 +991,34 @@ export class GenerationApplicationService implements TaskHandler {
     documentSpec: DocumentSpec,
     block: ArtifactBlockRecord,
     previousOutputs: Array<{ key: string, text: string }>,
+    correctionInstruction: string | null = null,
   ): Promise<{ succeeded: boolean, text: string | null }> {
     const existingAttempts = await this.dependencies.runs.listBlockAttempts(block.id)
-    const remainingAttempts = run.parameterSnapshot.maxBlockAttempts - existingAttempts.length
+    // 用户明确确认的反馈必须获得一次新的修正机会，不受该块此前自动尝试次数影响。
+    const remainingAttempts = correctionInstruction === null
+      ? run.parameterSnapshot.maxBlockAttempts - existingAttempts.length
+      : 1
     for (let attemptIndex = 0; attemptIndex < remainingAttempts; attemptIndex += 1) {
       const attemptId = this.dependencies.identifiers.create()
       const inputSnapshot = block.spec.type === 'image'
-        ? { promptVersion: run.promptVersion, block: block.spec, visualBrief: block.spec.visualBrief, previousOutputs }
-        : { promptVersion: run.promptVersion, block: block.spec, previousOutputs }
+        ? { promptVersion: run.promptVersion, block: block.spec, visualBrief: block.spec.visualBrief, previousOutputs, ...(correctionInstruction === null ? {} : { correctionInstruction }) }
+        : { promptVersion: run.promptVersion, block: block.spec, previousOutputs, ...(correctionInstruction === null ? {} : { correctionInstruction }) }
       const attempt = await this.dependencies.runs.startBlockAttempt(block.id, attemptId, inputSnapshot, this.dependencies.clock.now())
       if (!attempt) break
       let responseUsage: TextModelUsage | null = null
       try {
         if (block.spec.type === 'image') {
-          const brief = block.spec.visualBrief
-          const imagePrompt = buildImagePrompt(context, brief, previousOutputs)
-          this.assertPromptCharacterLimit({ systemPrompt: '', userPrompt: imagePrompt }, run.parameterSnapshot)
+          const brief = correctionInstruction === null
+            ? block.spec.visualBrief
+            : { ...block.spec.visualBrief, theme: appendCorrectionInstruction(block.spec.visualBrief.theme, correctionInstruction) }
+          const imagePrompt = await this.dependencies.prompts.render(
+            GENERATION_PROMPT_CODES.imageBlock,
+            buildImagePromptVariables(context, brief, previousOutputs),
+            requireRunPromptVersion(run, GENERATION_PROMPT_CODES.imageBlock),
+          )
+          this.assertPromptCharacterLimit(imagePrompt, run.parameterSnapshot)
           const response = await this.dependencies.imageModel.generate({
-            prompt: imagePrompt,
+            prompt: imagePrompt.userPrompt,
             aspectRatio: brief.aspectRatio,
             timeoutMs: run.parameterSnapshot.timeoutMs,
           })
@@ -929,7 +1034,14 @@ export class GenerationApplicationService implements TaskHandler {
           }
           return { succeeded: true, text: null }
         }
-        const prompt = buildTextBlockPrompt(context, documentSpec, block.spec, previousOutputs)
+        const correctedBlock = correctionInstruction === null
+          ? block.spec
+          : { ...block.spec, instruction: appendCorrectionInstruction(block.spec.instruction, correctionInstruction) }
+        const prompt = await this.dependencies.prompts.render(
+          GENERATION_PROMPT_CODES.textBlock,
+          buildTextBlockPromptVariables(context, documentSpec, correctedBlock, previousOutputs),
+          requireRunPromptVersion(run, GENERATION_PROMPT_CODES.textBlock),
+        )
         this.assertPromptCharacterLimit(prompt, run.parameterSnapshot)
         this.assertPromptInputBudget(prompt, run.parameterSnapshot, run.modelSnapshot.model)
         await this.assertRunTokenBudget(run, null)
@@ -967,6 +1079,7 @@ export class GenerationApplicationService implements TaskHandler {
   /**
    * 执行最多两次结构化调用，并累计本轮所有供应商响应的用量。
    * @param prompt 已分层提示。
+   * @param retryPromptVersionId 本次操作锁定的结构校验重试提示词版本。
    * @param parameters 固定参数。
    * @param schemaName 结构名称。
    * @param parse 结构校验器。
@@ -975,6 +1088,7 @@ export class GenerationApplicationService implements TaskHandler {
    */
   private async generateValidated<T>(
     prompt: { systemPrompt: string, userPrompt: string },
+    retryPromptVersionId: string,
     parameters: TextModelParameters,
     schemaName: string,
     parse: (value: unknown) => T,
@@ -1004,7 +1118,15 @@ export class GenerationApplicationService implements TaskHandler {
         lastError = error
         const normalized = normalizeExecutionError(error)
         if (!normalized.retryable) break
-        currentPrompt = { ...prompt, userPrompt: `${prompt.userPrompt}\n\n<上次输出校验错误>${JSON.stringify(normalized.message)}</上次输出校验错误>\n请重新输出完整 JSON 对象。` }
+        currentPrompt = await this.dependencies.prompts.render(
+          GENERATION_PROMPT_CODES.jsonRetry,
+          {
+            originalSystemPrompt: prompt.systemPrompt,
+            originalUserPrompt: prompt.userPrompt,
+            errorMessageJson: JSON.stringify(normalized.message),
+          },
+          retryPromptVersionId,
+        )
       }
     }
     if (lastError instanceof TextResponseUsageError) throw lastError
@@ -1338,6 +1460,28 @@ function readBlockId(payloadJson: string): string {
   return value.blockId
 }
 
+/**
+ * 从单块任务载荷读取用户确认的当前产物修正要求。
+ * @param payloadJson 任务载荷 JSON。
+ * @returns 反馈触发重试时返回反馈正文，普通重试返回 null。
+ */
+function readCorrectionInstruction(payloadJson: string): string | null {
+  const value = JSON.parse(payloadJson) as Record<string, unknown>
+  return typeof value.correctionInstruction === 'string' && value.correctionInstruction.trim()
+    ? value.correctionInstruction.trim()
+    : null
+}
+
+/**
+ * 在原块要求后追加由管理员确认的反馈，不改变已确认文档规格。
+ * @param originalInstruction 已确认的原块要求或视觉主题。
+ * @param correctionInstruction 用户反馈正文。
+ * @returns 仅用于本次重试的完整要求。
+ */
+function appendCorrectionInstruction(originalInstruction: string, correctionInstruction: string): string {
+  return `${originalInstruction}\n\n本次重试必须根据以下用户反馈修正：${correctionInstruction}`
+}
+
 /** @param block 目标块。 @param blocks 同文档块快照。 @returns 全部显式依赖是否成功。 */
 function dependenciesSucceeded(block: ArtifactBlockRecord, blocks: ArtifactBlockRecord[]): boolean {
   return block.spec.dependsOn.every(key => blocks.find(candidate => candidate.specKey === key)?.status === 'succeeded')
@@ -1360,6 +1504,20 @@ function normalizeExecutionError(error: unknown): { code: string, message: strin
   if (error instanceof ApplicationError) return { code: error.code, message: error.message, retryable: false }
   if (error instanceof ZodError) return { code: 'MODEL_OUTPUT_INVALID', message: '模型结构化输出未通过校验', retryable: true }
   return { code: 'RUN_EXECUTION_FAILED', message: error instanceof Error ? error.message.slice(0, 500) : '运行执行失败', retryable: true }
+}
+
+/**
+ * 读取新运行固定的提示词版本；迁移前旧运行不允许继续调用已移除的硬编码提示词。
+ * @param run 当前运行记录。
+ * @param code 本次模型调用需要的提示词编码。
+ * @returns 创建运行时固定的不可变版本 UUID。
+ */
+function requireRunPromptVersion(run: GenerationRunRecord, code: string): string {
+  const versionId = run.promptContextSnapshot?.aiPromptVersions?.[code]
+  if (!versionId) {
+    throw new ApplicationError('AI_PROMPT_VERSION_MISSING', '该历史任务没有提示词版本快照，不能继续执行或重试', 409)
+  }
+  return versionId
 }
 
 /** @param role 资料业务角色。 @returns 数值越小表示人物草稿提示中的事实优先级越高。 */

@@ -4,7 +4,6 @@ import { textModelParametersSchema } from '../../../shared/schemas/generation'
 import type { FeedbackTarget } from '../../../shared/schemas/feedback'
 import type { TextModelSnapshot } from '../../domain/generation/GenerationModels'
 import type {
-  EvaluationCaseRecord,
   FeedbackEventRecord,
   FeedbackResolutionRecord,
   FeedbackSuggestionRecord,
@@ -89,7 +88,7 @@ export class SqliteFeedbackRepository implements FeedbackRepository {
   async confirmArtifactFeedback(feedbackId: string, blockId: string, taskId: string, timestamp: number): Promise<boolean> {
     return this.client.transaction(() => {
       const target = this.client.prepare(`
-        SELECT feedback_events.run_id FROM feedback_events
+        SELECT feedback_events.run_id, feedback_events.content FROM feedback_events
         INNER JOIN artifact_documents ON artifact_documents.run_id = feedback_events.run_id
         INNER JOIN artifact_blocks ON artifact_blocks.document_id = artifact_documents.id
         INNER JOIN generation_runs ON generation_runs.id = feedback_events.run_id
@@ -100,6 +99,7 @@ export class SqliteFeedbackRepository implements FeedbackRepository {
       `).get(feedbackId, blockId)
       if (!target) return false
       const runId = String(row(target).run_id)
+      const correctionInstruction = String(row(target).content)
       const updatedRun = this.client.prepare(`
         UPDATE generation_runs SET status = 'queued', completed_at = NULL, error_code = NULL,
           error_message = NULL, updated_at = ? WHERE id = ? AND status IN ('succeeded', 'partial', 'failed')
@@ -109,7 +109,7 @@ export class SqliteFeedbackRepository implements FeedbackRepository {
       this.client.prepare(`
         INSERT INTO task_jobs (id, run_id, type, payload_json, status, attempt_count, max_attempts, created_at, updated_at)
         VALUES (?, ?, 'execute_block', ?, 'queued', 0, 2, ?, ?)
-      `).run(taskId, runId, JSON.stringify({ runId, blockId, feedbackId }), timestamp, timestamp)
+      `).run(taskId, runId, JSON.stringify({ runId, blockId, feedbackId, correctionInstruction }), timestamp, timestamp)
       this.client.prepare(`
         INSERT INTO feedback_resolutions (feedback_id, target_type, resolution_json, confirmed_at)
         VALUES (?, 'artifact', ?, ?)
@@ -199,42 +199,6 @@ export class SqliteFeedbackRepository implements FeedbackRepository {
     }).immediate()
   }
 
-  /** @param personaId 人物 UUID。 @returns 人物全部固定评测用例。 */
-  async listEvaluationCases(personaId: string): Promise<EvaluationCaseRecord[]> {
-    return this.client.prepare(`
-      SELECT * FROM evaluation_cases WHERE persona_id = ? ORDER BY is_active DESC, created_at DESC, id DESC
-    `).all(personaId).map(toEvaluationCase)
-  }
-
-  /** @param evaluationCase 新评测用例。 @returns 无返回值。 */
-  async createEvaluationCase(evaluationCase: EvaluationCaseRecord): Promise<void> {
-    this.client.prepare(`
-      INSERT INTO evaluation_cases (
-        id, persona_id, name, category, prompt, expected_change, assertions_json, is_active, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      evaluationCase.id,
-      evaluationCase.personaId,
-      evaluationCase.name,
-      evaluationCase.category,
-      evaluationCase.prompt,
-      evaluationCase.expectedChange,
-      JSON.stringify({
-        requiredTerms: evaluationCase.requiredTerms,
-        forbiddenTerms: evaluationCase.forbiddenTerms,
-        minimumScore: evaluationCase.minimumScore,
-        maxRegression: evaluationCase.maxRegression,
-      }),
-      evaluationCase.isActive ? 1 : 0,
-      evaluationCase.createdAt,
-    )
-  }
-
-  /** @param personaId 人物 UUID。 @returns 人物是否存在。 */
-  async personaExists(personaId: string): Promise<boolean> {
-    return Boolean(this.client.prepare('SELECT 1 FROM personas WHERE id = ?').get(personaId))
-  }
-
   /** @param sourceId 资料 UUID。 @returns 资料是否存在。 */
   async sourceExists(sourceId: string): Promise<boolean> {
     return Boolean(this.client.prepare('SELECT 1 FROM source_materials WHERE id = ?').get(sourceId))
@@ -314,24 +278,4 @@ function toFeedbackAggregate(value: unknown): FeedbackAggregate {
         confirmedAt: Number(data.confirmed_at),
       }
   return { event, suggestion, resolution }
-}
-
-/** @param value SQLite 行。 @returns 评测用例。 */
-function toEvaluationCase(value: unknown): EvaluationCaseRecord {
-  const data = row(value)
-  const assertions = JSON.parse(String(data.assertions_json)) as Record<string, unknown>
-  return {
-    id: String(data.id),
-    personaId: String(data.persona_id),
-    name: String(data.name),
-    category: data.category as EvaluationCaseRecord['category'],
-    prompt: String(data.prompt),
-    expectedChange: data.expected_change as EvaluationCaseRecord['expectedChange'],
-    requiredTerms: assertions.requiredTerms as string[],
-    forbiddenTerms: assertions.forbiddenTerms as string[],
-    minimumScore: Number(assertions.minimumScore),
-    maxRegression: Number(assertions.maxRegression),
-    isActive: Number(data.is_active) === 1,
-    createdAt: Number(data.created_at),
-  }
 }

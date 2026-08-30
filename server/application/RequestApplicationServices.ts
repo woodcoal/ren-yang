@@ -8,10 +8,13 @@ import type { ContextSynchronizationApplicationService } from './context/Context
 import type { BackupApplicationService } from './backup/BackupApplicationService'
 import type { LearningApplicationService } from './learning/LearningApplicationService'
 import type { AnalysisApplicationService } from './analysis/AnalysisApplicationService'
+import type { AiPromptApplicationService } from './aiPrompts/AiPromptApplicationService'
 import type { HistoryApplicationService } from './history/HistoryApplicationService'
 
 /** 每个 HTTP 请求能够访问的应用服务集合。 */
 export interface RequestApplicationServices {
+  /** 全站 AI 提示词草稿、发布、历史和运行时目录。 */
+  aiPrompts: AiPromptApplicationService
   /** 认证相关用例。 */
   authentication: AuthenticationApplicationService
   /** 人物、世界、版本和资料用例。 */

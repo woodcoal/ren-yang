@@ -41,14 +41,9 @@ export const appNavigationGroups: AppNavigationGroup[] = [
     ],
   },
   {
-    label: '学习与复盘',
-    items: [
-      { label: '学习中心', to: '/feedback', icon: 'i-lucide-message-square-more' },
-    ],
-  },
-  {
     label: '系统',
     items: [
+      { label: '提示词', to: '/prompts', icon: 'i-lucide-braces' },
       { label: '内容模板', to: '/templates', icon: 'i-lucide-panels-top-left' },
       { label: '生成设置', to: '/parameter-profiles', icon: 'i-lucide-sliders-horizontal' },
       { label: '系统中心', to: '/settings', icon: 'i-lucide-settings-2' },

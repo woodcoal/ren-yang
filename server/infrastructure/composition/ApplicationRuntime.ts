@@ -44,6 +44,8 @@ import { SqliteLearningRepository } from '../database/SqliteLearningRepository'
 import { AnalysisApplicationService } from '../../application/analysis/AnalysisApplicationService'
 import { SqliteAnalysisRepository } from '../database/SqliteAnalysisRepository'
 import { AesGcmSecretCipher } from '../security/AesGcmSecretCipher'
+import { AiPromptApplicationService } from '../../application/aiPrompts/AiPromptApplicationService'
+import { SqliteAiPromptRepository } from '../database/SqliteAiPromptRepository'
 import { HistoryApplicationService } from '../../application/history/HistoryApplicationService'
 import { SqliteHistoryRepository } from '../database/SqliteHistoryRepository'
 
@@ -106,6 +108,8 @@ export class ApplicationRuntime {
   private readonly clock = new SystemClock()
   /** 请求间可安全共享的内容应用服务。 */
   private readonly contentService: ContentApplicationService
+  /** 请求与 Worker 共用的全站 AI 提示词目录。 */
+  private readonly aiPromptService: AiPromptApplicationService
   /** 请求间可安全共享的灵魂应用服务。 */
   private readonly soulService: SoulApplicationService
   /** 请求间可安全共享的成长与记忆应用服务。 */
@@ -146,6 +150,11 @@ export class ApplicationRuntime {
     this.administratorRepository = new DrizzleAdministratorRepository(this.sqlite.db)
     const identifiers = new SystemIdentifierGenerator()
     const contentRepository = new SqliteContentRepository(this.sqlite.getClient())
+    this.aiPromptService = new AiPromptApplicationService({
+      repository: new SqliteAiPromptRepository(this.sqlite.getClient()),
+      identifiers,
+      clock: this.clock,
+    })
     const learningRepository = new SqliteLearningRepository(this.sqlite.getClient())
     const sourceProcessor = new NodeSourceContentProcessor(identifiers)
     const storageCapacity = new NodeStorageCapacityGuard(options.minimumFreeDiskBytes)
@@ -177,6 +186,7 @@ export class ApplicationRuntime {
       imageAssets,
       personaAvatars,
       imageModel,
+      prompts: this.aiPromptService,
       contextSyncQueue,
       secretCipher: new AesGcmSecretCipher(options.credentialEncryptionSecret),
     })
@@ -187,6 +197,7 @@ export class ApplicationRuntime {
       clock: this.clock,
       tokenCounter,
       model: textModel,
+      prompts: this.aiPromptService,
       tokenBudgets: { world: 2_500, persona: 3_500 },
     })
     this.learningService = new LearningApplicationService({
@@ -204,6 +215,7 @@ export class ApplicationRuntime {
       learning: learningRepository,
       analysis: new SqliteAnalysisRepository(this.sqlite.getClient()),
       model: textModel,
+      prompts: this.aiPromptService,
       identifiers,
       clock: this.clock,
     })
@@ -212,6 +224,7 @@ export class ApplicationRuntime {
       content: contentRepository,
       context: contextProvider,
       model: textModel,
+      prompts: this.aiPromptService,
       imageModel,
       imageAssets,
       identifiers,
@@ -227,6 +240,7 @@ export class ApplicationRuntime {
     this.feedbackService = new FeedbackApplicationService({
       repository: new SqliteFeedbackRepository(this.sqlite.getClient()),
       model: textModel,
+      prompts: this.aiPromptService,
       identifiers,
       clock: this.clock,
       contextSyncQueue,
@@ -280,6 +294,7 @@ export class ApplicationRuntime {
    */
   createRequestServices(event: H3Event): RequestApplicationServices {
     return {
+      aiPrompts: this.aiPromptService,
       authentication: new AuthenticationApplicationService({
         administratorRepository: this.administratorRepository,
         passwordHasher: this.passwordHasher,

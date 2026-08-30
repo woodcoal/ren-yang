@@ -18,6 +18,7 @@ import { ConservativeTokenCounter } from '../../server/infrastructure/model/Cons
 import type { Clock } from '../../server/ports/Clock'
 import type { IdentifierGenerator } from '../../server/ports/IdentifierGenerator'
 import type { TextModelPort, TextModelRequest, TextModelResponse } from '../../server/ports/TextModelPort'
+import { createTestAiPromptService } from '../support/createTestAiPromptService'
 
 /** 提供稳定 UUID 的分析测试标识器。 */
 class SequentialIdentifierGenerator implements IdentifierGenerator {
@@ -85,6 +86,7 @@ beforeEach(async () => {
   const contentRepository = new SqliteContentRepository(database.getClient())
   const learningRepository = new SqliteLearningRepository(database.getClient())
   const processor = new NodeSourceContentProcessor(identifiers)
+  const prompts = createTestAiPromptService(database, identifiers, clock)
   content = new ContentApplicationService({
     repository: contentRepository,
     souls: contentRepository,
@@ -94,6 +96,7 @@ beforeEach(async () => {
     tokenBudgets: { world: 2_500, persona: 3_500 },
     sourceProcessor: processor,
     sourceFiles: new LocalSourceFileStorage(directory),
+    prompts,
   })
   const souls = new SoulApplicationService({
     content: contentRepository,
@@ -102,6 +105,7 @@ beforeEach(async () => {
     clock,
     tokenCounter,
     tokenBudgets: { world: 2_500, persona: 3_500 },
+    prompts,
   })
   learning = new LearningApplicationService({
     content: contentRepository,
@@ -119,6 +123,7 @@ beforeEach(async () => {
     learning: learningRepository,
     analysis: analysisRepository,
     model,
+    prompts,
     identifiers,
     clock,
   })

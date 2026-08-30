@@ -31,31 +31,3 @@ export interface FeedbackView {
   /** 用户确认时间，尚未确认时为 null。 */
   confirmedAt: number | null
 }
-
-/** 固定人物回归用例。 */
-export interface EvaluationCaseView {
-  /** 用例 UUID。 */
-  id: string
-  /** 所属人物 UUID。 */
-  personaId: string
-  /** 人物内唯一名称。 */
-  name: string
-  /** 评测类别。 */
-  category: 'behavior' | 'style' | 'safety'
-  /** 固定场景或任务输入。 */
-  prompt: string
-  /** 目标用例需改善，保留用例不得明显退化。 */
-  expectedChange: 'improve' | 'retain'
-  /** 候选输出必须包含的词。 */
-  requiredTerms: string[]
-  /** 候选输出不得包含的词。 */
-  forbiddenTerms: string[]
-  /** 模型辅助评分最低值。 */
-  minimumScore: number
-  /** 保留用例允许的最大分数回退。 */
-  maxRegression: number
-  /** 是否参与后续评测。 */
-  isActive: boolean
-  /** 创建时间。 */
-  createdAt: number
-}

@@ -50,6 +50,20 @@
       "when": 1788163200000,
       "tag": "0006_persona_credentials_external_records",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1788249600000,
+      "tag": "0007_ai_prompt_catalog",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1788336000000,
+      "tag": "0008_remove_unused_evaluation_cases",
+      "breakpoints": true
     }
   ]
 }

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { PersonaSummary } from '#shared/types/content'
+import type { FeedbackView } from '#shared/types/feedback'
 import type { RunSummary } from '#shared/types/generation'
 
 /** 仪表盘最近工作的只读属性。 */
@@ -9,8 +10,8 @@ interface Props {
   personas: PersonaSummary[]
   /** 最近运行摘要；组件只展示仍需处理的五项。 */
   runs: RunSummary[]
-  /** 尚未确认分类的反馈事件数量。 */
-  pendingFeedbackCount: number
+  /** 尚未确认用途的反馈事件。 */
+  pendingFeedback: FeedbackView[]
 }
 
 const props = defineProps<Props>()
@@ -23,8 +24,10 @@ const recentPersonas = computed(() => [...props.personas]
 const activeRuns = computed(() => props.runs
   .filter(run => ['planning', 'awaiting_confirmation', 'queued', 'running'].includes(run.status))
   .slice(0, 5))
+/** 首页最多展示五条仍需管理员确认用途的反馈。 */
+const visiblePendingFeedback = computed(() => props.pendingFeedback.slice(0, 5))
 /** 所有仍需管理员确认用途的反馈数量。 */
-const pendingFeedbackTotal = computed(() => props.pendingFeedbackCount)
+const pendingFeedbackTotal = computed(() => props.pendingFeedback.length)
 
 /** 活动运行状态的中文标签。 */
 const statusLabels: Partial<Record<RunSummary['status'], string>> = {
@@ -39,6 +42,15 @@ const statusLabels: Partial<Record<RunSummary['status'], string>> = {
 function inputPreview(run: RunSummary): string {
   const input = 'content' in run.input ? run.input.content : run.input.requirement
   return input.length > 60 ? `${input.slice(0, 60)}…` : input
+}
+
+/**
+ * 返回反馈正文的单行预览。
+ * @param feedback 待确认用途的反馈。
+ * @returns 最多六十个字符的反馈摘要。
+ */
+function feedbackPreview(feedback: FeedbackView): string {
+  return feedback.content.length > 60 ? `${feedback.content.slice(0, 60)}…` : feedback.content
 }
 
 /**
@@ -62,23 +74,23 @@ function formatDateTime(timestamp: number): string {
           <h2 id="dashboard-priority-heading">需要你作决定</h2>
           <p>反馈只有在确认用途后才会执行一次性动作或成为人物成长素材。</p>
         </div>
-        <NuxtLink to="/feedback" class="section-link">进入学习中心</NuxtLink>
+        <NuxtLink to="/history" class="section-link">查看任务记录</NuxtLink>
       </div>
 
       <div v-if="pendingFeedbackTotal" class="log-list">
-        <article v-if="pendingFeedbackCount" class="log-row">
-          <span class="log-row-meta">反馈分类</span>
+        <article v-for="feedback in visiblePendingFeedback" :key="feedback.id" class="log-row">
+          <span class="log-row-meta">待确认反馈</span>
           <div class="log-row-main">
-            <NuxtLink to="/feedback" class="log-row-title">确认反馈会影响哪一部分</NuxtLink>
-            <span class="log-row-description">系统建议仅作参考，需要你确认是修正本次结果、记录参数建议、人物成长素材还是资料事实问题。</span>
+            <NuxtLink :to="`/runs/${feedback.runId}`" class="log-row-title">{{ feedbackPreview(feedback) }}</NuxtLink>
+            <span class="log-row-description">进入原任务核对 AI 建议，并确认本次反馈的实际用途。</span>
           </div>
-          <span class="log-row-end"><UBadge color="warning" variant="subtle">待处理 {{ pendingFeedbackCount }}</UBadge></span>
+          <span class="log-row-end"><UBadge color="warning" variant="subtle">等待确认</UBadge></span>
         </article>
       </div>
       <div v-else class="content-notice">
         <UIcon name="i-lucide-circle-check" class="content-notice-icon" aria-hidden="true" />
         <div class="content-notice-copy">
-          <strong>当前没有需要确认的学习事项</strong>
+          <strong>当前没有待确认反馈</strong>
           <p>新的反馈出现后，会在这里等待用途确认。</p>
         </div>
       </div>

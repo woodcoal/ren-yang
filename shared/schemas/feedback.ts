@@ -29,23 +29,7 @@ export const confirmFeedbackClassificationSchema = z.object({
   hasEvidenceConflict: z.boolean().default(false),
 })
 
-/** 评测用例的固定分类。 */
-export const evaluationCaseCategorySchema = z.enum(['behavior', 'style', 'safety'])
-
-/** 创建不可变人物评测用例。 */
-export const createEvaluationCaseSchema = z.object({
-  name: z.string().trim().min(1, '评测用例名称不能为空').max(200),
-  category: evaluationCaseCategorySchema,
-  prompt: z.string().trim().min(1, '评测输入不能为空').max(10_000),
-  expectedChange: z.enum(['improve', 'retain']),
-  requiredTerms: z.array(z.string().trim().min(1).max(200)).max(50).default([]),
-  forbiddenTerms: z.array(z.string().trim().min(1).max(200)).max(50).default([]),
-  minimumScore: z.number().min(0).max(1).default(0.7),
-  maxRegression: z.number().min(0).max(1).default(0.1),
-})
-
 export type FeedbackTarget = z.infer<typeof feedbackTargetSchema>
 export type SubmitFeedbackInput = z.infer<typeof submitFeedbackSchema>
 export type FeedbackClassificationSuggestion = z.infer<typeof feedbackClassificationSuggestionSchema>
 export type ConfirmFeedbackClassificationInput = z.infer<typeof confirmFeedbackClassificationSchema>
-export type CreateEvaluationCaseInput = z.infer<typeof createEvaluationCaseSchema>

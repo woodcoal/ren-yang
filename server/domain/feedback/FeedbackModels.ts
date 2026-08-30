@@ -33,19 +33,3 @@ export interface FeedbackResolutionRecord {
   resolution: Record<string, unknown>
   confirmedAt: number
 }
-
-/** 一条固定人物回归评测用例。 */
-export interface EvaluationCaseRecord {
-  id: string
-  personaId: string
-  name: string
-  category: 'behavior' | 'style' | 'safety'
-  prompt: string
-  expectedChange: 'improve' | 'retain'
-  requiredTerms: string[]
-  forbiddenTerms: string[]
-  minimumScore: number
-  maxRegression: number
-  isActive: boolean
-  createdAt: number
-}

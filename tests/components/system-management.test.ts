@@ -3,6 +3,7 @@ import { mountSuspended } from '@nuxt/test-utils/runtime'
 import CapabilityStatusPanel from '../../app/components/system/CapabilityStatusPanel.vue'
 import DashboardWorkPanel from '../../app/components/system/DashboardWorkPanel.vue'
 import NavigationStatus from '../../app/components/system/NavigationStatus.vue'
+import type { FeedbackView } from '../../shared/types/feedback'
 import type { RunSummary } from '../../shared/types/generation'
 
 /** 管理组件测试共用的能力状态。 */
@@ -61,6 +62,20 @@ describe('系统管理组件', () => {
       errorCode: null, errorMessage: null, createdAt: 2_000, updatedAt: 3_000, completedAt: null,
     }
     const completedRun: RunSummary = { ...activeRun, id: '00000000-0000-4000-8000-000000000013', personaName: '已完成人物', status: 'succeeded', completedAt: 4_000 }
+    const pendingFeedback: FeedbackView[] = [
+      {
+        id: '00000000-0000-4000-8000-000000000020', runId: activeRun.id, blockId: null,
+        content: '正文需要更简洁。', rating: 'negative', isLongTerm: false, editedOutput: null,
+        suggestion: { targetType: 'artifact', confidence: 0.9, rationale: '修正当前正文' },
+        confirmedTarget: null, resolution: null, createdAt: 4_000, confirmedAt: null,
+      },
+      {
+        id: '00000000-0000-4000-8000-000000000021', runId: completedRun.id, blockId: null,
+        content: '以后都保持短句。', rating: null, isLongTerm: true, editedOutput: null,
+        suggestion: { targetType: 'persona', confidence: 0.8, rationale: '人物成长素材' },
+        confirmedTarget: null, resolution: null, createdAt: 5_000, confirmedAt: null,
+      },
+    ]
     const wrapper = await mountSuspended(DashboardWorkPanel, {
       props: {
         personas: [{
@@ -69,12 +84,14 @@ describe('系统管理组件', () => {
           sourceCount: 0, createdAt: 1_000, updatedAt: 3_000,
         }],
         runs: [activeRun, completedRun],
-        pendingFeedbackCount: 2,
+        pendingFeedback,
       },
     })
 
     expect(wrapper.text()).toContain('活动运行 1')
     expect(wrapper.text()).toContain('待处理反馈 2')
+    expect(wrapper.text()).toContain('正文需要更简洁。')
+    expect(wrapper.find(`a[href="/runs/${activeRun.id}"]`).exists()).toBe(true)
     expect(wrapper.text()).toContain('林默')
     expect(wrapper.text()).not.toContain('已完成人物')
   })

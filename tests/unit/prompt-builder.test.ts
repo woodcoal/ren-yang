@@ -1,80 +1,61 @@
 import { describe, expect, it } from 'vitest'
-import { buildSoulPromptAnalysisPrompt } from '../../server/application/content/SoulPromptBuilder'
-import { buildDocumentPlanPrompt, buildInterestPrompt, buildWorldDraftPrompt, GENERATION_PROMPT_VERSION } from '../../server/application/generation/PromptBuilder'
+import { buildSoulPromptAnalysisVariables, soulAnalysisPromptCode } from '../../server/application/content/SoulPromptBuilder'
+import {
+  buildDocumentPlanPromptVariables,
+  buildInterestPromptVariables,
+  buildWorldDraftPromptVariables,
+  GENERATION_PROMPT_CODES,
+} from '../../server/application/generation/PromptBuilder'
 
-describe('真实模型提示契约', () => {
-  it('明确声明兴趣因素的对象结构和数值边界', () => {
-    // 真实模型不会读取 TypeScript Schema，因此提示必须完整表达容易被误解的嵌套结构。
-    const prompt = buildInterestPrompt({
-      persona: {
-        summary: '测试人物',
-        identityFacts: '',
-        interests: '',
-        valuesAndMotivations: '',
-        expressionStyle: '',
-        appearance: '',
-        visualStyle: '',
-        constraints: '',
-      },
-      world: null,
-      worldGrowthPrompt: '遵循世界成长经验。',
-      personaGrowthPrompt: '回答先给结论。',
-      personaMemoryPrompt: '曾经成功处理事实型文章。',
-      scene: null,
-      evidence: [],
-    }, '测试内容')
+/** 变量构建测试使用的最小固定运行上下文。 */
+const PROMPT_CONTEXT = {
+  persona: { promptText: '测试人物' },
+  world: null,
+  worldGrowthPrompt: '遵循世界成长经验。',
+  personaGrowthPrompt: '回答先给结论。',
+  personaMemoryPrompt: '曾经成功处理事实型文章。',
+  scene: null,
+  evidence: [],
+}
 
-    expect(GENERATION_PROMPT_VERSION).toBe('artifact-v8')
-    expect(prompt.systemPrompt).toContain('factors 必须是对象数组')
-    expect(prompt.systemPrompt).toContain('dimension、score、explanation')
-    expect(prompt.systemPrompt).toContain('score 必须是 -1 到 1 的数字')
-    expect(prompt.userPrompt).toContain('<当前世界成长提示词>"遵循世界成长经验。"</当前世界成长提示词>')
-    expect(prompt.userPrompt).toContain('<当前人物成长提示词>"回答先给结论。"</当前人物成长提示词>')
-    expect(prompt.userPrompt).toContain('<当前人物记忆提示词>"曾经成功处理事实型文章。"</当前人物记忆提示词>')
+describe('提示词变量契约', () => {
+  it('兴趣判断只输出目录定义需要的固定 JSON 变量', () => {
+    const variables = buildInterestPromptVariables(PROMPT_CONTEXT, '测试内容')
+
+    expect(GENERATION_PROMPT_CODES.interestAssessment).toBe('generation.interest_assessment')
+    expect(variables).toMatchObject({
+      personaPromptJson: '"测试人物"',
+      worldPromptJson: 'null',
+      worldGrowthPromptJson: '"遵循世界成长经验。"',
+      personaGrowthPromptJson: '"回答先给结论。"',
+      personaMemoryPromptJson: '"曾经成功处理事实型文章。"',
+      contentJson: '"测试内容"',
+    })
   })
 
-  it('明确声明文档格式是枚举字符串数组而不是说明对象', () => {
-    const prompt = buildDocumentPlanPrompt({
-      persona: {
-        summary: '测试人物',
-        identityFacts: '',
-        interests: '',
-        valuesAndMotivations: '',
-        expressionStyle: '',
-        appearance: '',
-        visualStyle: '',
-        constraints: '',
-      },
-      world: null,
-      worldGrowthPrompt: null,
-      personaGrowthPrompt: null,
-      personaMemoryPrompt: null,
-      scene: null,
-      evidence: [],
-    }, '生成图文', '包含标题与插图', 1, 4, true)
+  it('文档规划把块数和图片开关转换为稳定字符串变量', () => {
+    const variables = buildDocumentPlanPromptVariables(PROMPT_CONTEXT, '生成图文', '包含标题与插图', 1, 4, true)
 
-    expect(prompt.systemPrompt).toContain('requestedFormats 必须是只含 html、markdown、txt 枚举值的字符串数组')
-    expect(prompt.systemPrompt).toContain('禁止输出格式说明对象')
-    expect(prompt.systemPrompt).toContain('aspectRatio 只能是 1:1、4:3、3:4、16:9、9:16')
+    expect(variables).toMatchObject({
+      requirementJson: '"生成图文"',
+      guidanceJson: '"包含标题与插图"',
+      minimumBlocks: '1',
+      maximumBlocks: '4',
+      allowImages: 'true',
+    })
   })
 
-  it('世界快速初始化只使用用户描述并要求完整结构', () => {
-    const prompt = buildWorldDraftPrompt('浮岛与风帆船构成的世界')
-
-    expect(prompt.userPrompt).toContain('浮岛与风帆船构成的世界')
-    expect(prompt.systemPrompt).toContain('用户明确描述是唯一事实来源')
-    expect(prompt.systemPrompt).toContain('name、summary 和 snapshot')
-    expect(prompt.systemPrompt).toContain('promptText')
-    expect(prompt.systemPrompt).toContain('禁止写入返回内容')
-    expect(prompt.systemPrompt).not.toContain('当前结果只是待用户编辑确认的候选草稿')
+  it('世界快速初始化只提供经过 JSON 隔离的用户描述', () => {
+    expect(buildWorldDraftPromptVariables('浮岛与风帆船构成的世界')).toEqual({
+      promptJson: '"浮岛与风帆船构成的世界"',
+    })
   })
 
-  it('灵魂自动分析只允许整理表达并要求单文本结果', () => {
-    const prompt = buildSoulPromptAnalysisPrompt('persona', '谨慎的档案管理员。')
-
-    expect(prompt.systemPrompt).toContain('不得新增、推测或补全任何设定')
-    expect(prompt.systemPrompt).toContain('只能包含 promptText 字符串字段')
-    expect(prompt.systemPrompt).toContain('禁止写入候选、确认、发布、AI 生成')
-    expect(prompt.userPrompt).toContain('谨慎的档案管理员。')
+  it('灵魂整理按对象类型选择稳定编码并隔离原文', () => {
+    expect(soulAnalysisPromptCode('persona')).toBe('content.persona_soul_analysis')
+    expect(soulAnalysisPromptCode('world')).toBe('content.world_soul_analysis')
+    expect(buildSoulPromptAnalysisVariables('谨慎的档案管理员。')).toEqual({
+      promptTextJson: '"谨慎的档案管理员。"',
+    })
   })
 })

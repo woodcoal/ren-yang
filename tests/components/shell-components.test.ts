@@ -4,6 +4,7 @@ import BrandMark from '../../app/components/brand/BrandMark.vue'
 import PageHeader from '../../app/components/content/PageHeader.vue'
 import AppTopbar from '../../app/components/shell/AppTopbar.vue'
 import ThemeSelector from '../../app/components/shell/ThemeSelector.vue'
+import { appNavigationGroups } from '../../app/utils/navigation'
 
 describe('后台品牌与主题组件', () => {
   beforeEach(() => {
@@ -66,5 +67,11 @@ describe('后台品牌与主题组件', () => {
 
     expect(wrapper.get('[data-page-heading-image]').text()).toBe('人物图像')
     expect(wrapper.get('.page-heading-identity').text()).toContain('林默')
+  })
+
+  it('系统菜单提供集中提示词管理入口', () => {
+    const systemGroup = appNavigationGroups.find(group => group.label === '系统')
+
+    expect(systemGroup?.items).toContainEqual({ label: '提示词', to: '/prompts', icon: 'i-lucide-braces' })
   })
 })

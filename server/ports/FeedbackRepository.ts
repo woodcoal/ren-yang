@@ -1,5 +1,4 @@
 import type {
-  EvaluationCaseRecord,
   FeedbackEventRecord,
   FeedbackResolutionRecord,
   FeedbackSuggestionRecord,
@@ -42,12 +41,6 @@ export interface FeedbackRepository {
   confirmSimpleFeedback(feedbackId: string, targetType: 'parameters' | 'source_fact', resolution: Record<string, unknown>, timestamp: number): Promise<boolean>
   /** @param command 原始反馈、所属人物和新成长素材事实。 @returns 是否原子确认并创建人物成长素材。 */
   confirmPersonaLearningFeedback(command: ConfirmPersonaLearningFeedbackCommand): Promise<boolean>
-  /** @param personaId 人物 UUID。 @returns 活动用例在前、停用用例在后的列表。 */
-  listEvaluationCases(personaId: string): Promise<EvaluationCaseRecord[]>
-  /** @param evaluationCase 新评测用例。 @returns 无返回值。 */
-  createEvaluationCase(evaluationCase: EvaluationCaseRecord): Promise<void>
-  /** @param personaId 人物 UUID。 @returns 人物是否存在。 */
-  personaExists(personaId: string): Promise<boolean>
   /** @param sourceId 资料 UUID。 @returns 资料是否存在。 */
   sourceExists(sourceId: string): Promise<boolean>
 }

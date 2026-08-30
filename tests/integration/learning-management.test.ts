@@ -13,6 +13,7 @@ import { SqliteLearningRepository } from '../../server/infrastructure/database/S
 import { ConservativeTokenCounter } from '../../server/infrastructure/model/ConservativeTokenCounter'
 import type { Clock } from '../../server/ports/Clock'
 import type { IdentifierGenerator } from '../../server/ports/IdentifierGenerator'
+import { createTestAiPromptService } from '../support/createTestAiPromptService'
 
 /** 为学习闭环测试提供稳定 UUID。 */
 class SequentialIdentifierGenerator implements IdentifierGenerator {
@@ -51,6 +52,7 @@ beforeEach(() => {
   const clock = new TestClock()
   const tokenCounter = new ConservativeTokenCounter()
   const repository = new SqliteContentRepository(database.getClient())
+  const prompts = createTestAiPromptService(database, identifiers, clock)
   content = new ContentApplicationService({
     repository,
     souls: repository,
@@ -60,6 +62,7 @@ beforeEach(() => {
     tokenBudgets: { world: 2_500, persona: 3_500 },
     sourceProcessor: new NodeSourceContentProcessor(identifiers),
     sourceFiles: new LocalSourceFileStorage(temporaryDirectory),
+    prompts,
   })
   souls = new SoulApplicationService({
     content: repository,
@@ -68,6 +71,7 @@ beforeEach(() => {
     clock,
     tokenCounter,
     tokenBudgets: { world: 2_500, persona: 3_500 },
+    prompts,
   })
   learning = new LearningApplicationService({
     content: repository,

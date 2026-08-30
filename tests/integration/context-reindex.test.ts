@@ -18,6 +18,7 @@ import { ConservativeTokenCounter } from '../../server/infrastructure/model/Cons
 import { SqliteContextProvider } from '../../server/infrastructure/context/SqliteContextProvider'
 import { SqliteTaskJobRepository } from '../../server/infrastructure/database/SqliteTaskJobRepository'
 import type { Clock } from '../../server/ports/Clock'
+import { createTestAiPromptService } from '../support/createTestAiPromptService'
 import type { ContextSourceProjection } from '../../server/ports/ContextIndexRepository'
 import type { IdentifierGenerator } from '../../server/ports/IdentifierGenerator'
 import { OpenVikingError, type OpenVikingPort } from '../../server/ports/OpenVikingPort'
@@ -461,6 +462,7 @@ describe('OpenViking 可关闭索引与 SQLite 重建', () => {
       tokenBudgets: { world: 2_500, persona: 3_500 },
       sourceProcessor: new NodeSourceContentProcessor(identifiers),
       sourceFiles: new LocalSourceFileStorage(temporaryDirectory),
+      prompts: createTestAiPromptService(database, identifiers, clock),
       contextSyncQueue: new SqliteContextSyncTaskQueue(database.getClient()),
     })
     const ignoredHandler = { /** @returns 本测试不应调用该处理器。 */ execute: async () => { throw new Error('路由错误') } }
@@ -519,14 +521,16 @@ describe('OpenViking 可关闭索引与 SQLite 重建', () => {
     database.getClient().prepare('DELETE FROM world_sources').run()
     database.getClient().prepare('DELETE FROM source_materials').run()
     const identifiers = new SequentialIdentifierGenerator()
+    const clock = new IncrementingClock()
     const content = new ContentApplicationService({
       repository: new SqliteContentRepository(database.getClient()),
       identifiers,
-      clock: new IncrementingClock(),
+      clock,
       tokenCounter: new ConservativeTokenCounter(),
       tokenBudgets: { world: 2_500, persona: 3_500 },
       sourceProcessor: new NodeSourceContentProcessor(identifiers),
       sourceFiles: new LocalSourceFileStorage(temporaryDirectory),
+      prompts: createTestAiPromptService(database, identifiers, clock),
     })
 
     await content.createPastedSource({ name: '本地资料', role: 'reference', content: '只保存到 SQLite。' })

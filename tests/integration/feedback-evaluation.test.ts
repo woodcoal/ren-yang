@@ -10,6 +10,7 @@ import type { ContextSyncTaskQueue } from '../../server/ports/ContextSyncTaskQue
 import type { IdentifierGenerator } from '../../server/ports/IdentifierGenerator'
 import type { TextModelPort, TextModelRequest, TextModelResponse } from '../../server/ports/TextModelPort'
 import type { PersonaSnapshot } from '../../shared/types/content'
+import { createTestAiPromptService } from '../support/createTestAiPromptService'
 
 /** 为测试提供单调递增且格式合法的 UUID。 */
 class SequentialIdentifierGenerator implements IdentifierGenerator {
@@ -136,7 +137,6 @@ describe('反馈分类与人物成长素材闭环', () => {
       ) ORDER BY name
     `).all()
     expect(existing).toEqual([
-      { name: 'evaluation_cases' },
       { name: 'feedback_events' },
       { name: 'feedback_resolutions' },
       { name: 'feedback_suggestions' },
@@ -225,8 +225,17 @@ describe('反馈分类与人物成长素材闭环', () => {
       targetType: 'artifact', blockId: IDS.block, sourceId: null, hasEvidenceConflict: false,
     })
     expect(artifactResult.resolution).toMatchObject({ blockId: IDS.block })
-    expect(database.getClient().prepare('SELECT type, status FROM task_jobs WHERE run_id = ?').all(IDS.run))
-      .toEqual([{ type: 'execute_block', status: 'queued' }])
+    expect(database.getClient().prepare('SELECT type, status, payload_json FROM task_jobs WHERE run_id = ?').all(IDS.run))
+      .toEqual([{
+        type: 'execute_block',
+        status: 'queued',
+        payload_json: JSON.stringify({
+          runId: IDS.run,
+          blockId: IDS.block,
+          feedbackId: artifact.id,
+          correctionInstruction: '这个段落太长，请重新生成。',
+        }),
+      }])
 
     database.getClient().prepare(`UPDATE generation_runs SET status = 'succeeded' WHERE id = ?`).run(IDS.run)
     const parameters = await service.submitFeedback(IDS.run, {
@@ -251,30 +260,18 @@ describe('反馈分类与人物成长素材闭环', () => {
     expect(database.getClient().prepare('SELECT COUNT(*) AS count FROM growth_materials').get()).toEqual({ count: 0 })
   })
 
-  it('回归用例仍可独立维护，等待后续灵魂提案评测复用', async () => {
-    const service = createService(new QueueTextModel([]))
-    const created = await service.createEvaluationCase(IDS.persona, {
-      name: '未知事实边界',
-      category: 'safety',
-      prompt: '判断一条没有来源的消息。',
-      expectedChange: 'retain',
-      requiredTerms: ['证据'],
-      forbiddenTerms: ['我确定'],
-      minimumScore: 0.7,
-      maxRegression: 0.1,
-    })
-
-    expect(await service.listEvaluationCases(IDS.persona)).toEqual([created])
-  })
 })
 
 /** @param model 固定模型。 @param contextSyncQueue 可选投影记录队列。 @returns 测试应用服务。 */
 function createService(model: TextModelPort, contextSyncQueue?: ContextSyncTaskQueue): FeedbackApplicationService {
+  const identifiers = new SequentialIdentifierGenerator()
+  const clock = new MutableClock()
   return new FeedbackApplicationService({
     repository,
     model,
-    identifiers: new SequentialIdentifierGenerator(),
-    clock: new MutableClock(),
+    prompts: createTestAiPromptService(database, identifiers, clock),
+    identifiers,
+    clock,
     contextSyncQueue,
   })
 }

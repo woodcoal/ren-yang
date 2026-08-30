@@ -2,11 +2,9 @@ import { ZodError } from 'zod'
 import {
   feedbackClassificationSuggestionSchema,
   type ConfirmFeedbackClassificationInput,
-  type CreateEvaluationCaseInput,
   type SubmitFeedbackInput,
 } from '../../../shared/schemas/feedback'
-import type { EvaluationCaseView, FeedbackView } from '../../../shared/types/feedback'
-import type { EvaluationCaseRecord } from '../../domain/feedback/FeedbackModels'
+import type { FeedbackView } from '../../../shared/types/feedback'
 import type { Clock } from '../../ports/Clock'
 import type { ContextSyncTaskQueue } from '../../ports/ContextSyncTaskQueue'
 import type { FeedbackAggregate, FeedbackRepository } from '../../ports/FeedbackRepository'
@@ -14,9 +12,10 @@ import type { IdentifierGenerator } from '../../ports/IdentifierGenerator'
 import type { TextModelPort } from '../../ports/TextModelPort'
 import { TextModelError } from '../../ports/TextModelPort'
 import { ApplicationError } from '../errors/ApplicationError'
+import type { AiPromptApplicationService } from '../aiPrompts/AiPromptApplicationService'
 import {
-  buildFeedbackClassificationPrompt,
-  FEEDBACK_CLASSIFICATION_PROMPT_VERSION,
+  buildFeedbackClassificationVariables,
+  FEEDBACK_CLASSIFICATION_PROMPT_CODE,
 } from './FeedbackPromptBuilder'
 
 /** 反馈分类固定使用的确定性模型参数，不加载任何长期上下文。 */
@@ -49,6 +48,8 @@ export interface FeedbackApplicationServiceDependencies {
   repository: FeedbackRepository
   /** 固定分类文本模型。 */
   model: TextModelPort
+  /** 全站已发布 AI 提示词目录。 */
+  prompts: Pick<AiPromptApplicationService, 'render'>
   /** UUID 生成端口。 */
   identifiers: IdentifierGenerator
   /** 可测试时钟。 */
@@ -82,12 +83,15 @@ export class FeedbackApplicationService {
     }
     const model = this.requireModel()
     const blockId = input.blockId ?? null
-    const prompt = buildFeedbackClassificationPrompt({
-      content: input.content,
-      blockId,
-      isLongTerm: input.isLongTerm,
-      editedOutput: input.editedOutput ?? null,
-    })
+    const prompt = await this.dependencies.prompts.render(
+      FEEDBACK_CLASSIFICATION_PROMPT_CODE,
+      buildFeedbackClassificationVariables({
+        content: input.content,
+        blockId,
+        isLongTerm: input.isLongTerm,
+        editedOutput: input.editedOutput ?? null,
+      }),
+    )
     let suggestion
     try {
       const response = await this.dependencies.model.generateStructured({
@@ -119,7 +123,7 @@ export class FeedbackApplicationService {
         ...suggestion,
         modelSnapshot: model,
         parameterSnapshot: FEEDBACK_MODEL_PARAMETERS,
-        promptVersion: FEEDBACK_CLASSIFICATION_PROMPT_VERSION,
+        promptVersion: prompt.versionId,
         createdAt: timestamp,
       },
     )
@@ -194,52 +198,6 @@ export class FeedbackApplicationService {
     return toFeedbackView((await this.dependencies.repository.findFeedback(feedbackId))!)
   }
 
-  /**
-   * 为人物添加一个固定且不可原地修改的回归用例。
-   * @param personaId 人物 UUID。
-   * @param input 已校验用例输入。
-   * @returns 新评测用例。
-   */
-  async createEvaluationCase(personaId: string, input: CreateEvaluationCaseInput): Promise<EvaluationCaseView> {
-    if (!await this.dependencies.repository.personaExists(personaId)) {
-      throw new ApplicationError('RESOURCE_NOT_FOUND', '人物不存在', 404)
-    }
-    const cases = await this.dependencies.repository.listEvaluationCases(personaId)
-    if (cases.filter(item => item.isActive).length >= 10) {
-      throw new ApplicationError('TASK_LIMIT_EXCEEDED', '每个人物最多维护 10 个活动评测用例', 422)
-    }
-    const record: EvaluationCaseRecord = {
-      id: this.dependencies.identifiers.create(),
-      personaId,
-      name: input.name,
-      category: input.category,
-      prompt: input.prompt,
-      expectedChange: input.expectedChange,
-      requiredTerms: input.requiredTerms,
-      forbiddenTerms: input.forbiddenTerms,
-      minimumScore: input.minimumScore,
-      maxRegression: input.maxRegression,
-      isActive: true,
-      createdAt: this.dependencies.clock.now(),
-    }
-    try {
-      await this.dependencies.repository.createEvaluationCase(record)
-    }
-    catch (error: unknown) {
-      if (isUniqueConstraintError(error)) throw new ApplicationError('VERSION_CONFLICT', '人物内评测用例名称不能重复', 409)
-      throw error
-    }
-    return record
-  }
-
-  /** @param personaId 人物 UUID。 @returns 人物全部评测用例。 */
-  async listEvaluationCases(personaId: string): Promise<EvaluationCaseView[]> {
-    if (!await this.dependencies.repository.personaExists(personaId)) {
-      throw new ApplicationError('RESOURCE_NOT_FOUND', '人物不存在', 404)
-    }
-    return await this.dependencies.repository.listEvaluationCases(personaId)
-  }
-
   /** @param feedbackId 反馈 UUID。 @returns 存在的反馈聚合。 */
   private async requireFeedback(feedbackId: string): Promise<FeedbackAggregate> {
     const value = await this.dependencies.repository.findFeedback(feedbackId)
@@ -302,9 +260,4 @@ function toModelApplicationError(error: unknown): ApplicationError {
   }
   if (error instanceof ZodError) return new ApplicationError('MODEL_OUTPUT_INVALID', '模型结构化输出未通过校验', 502)
   return new ApplicationError('PROVIDER_UNAVAILABLE', '文本模型调用失败', 503)
-}
-
-/** @param error 未知数据库错误。 @returns 是否为 SQLite 唯一约束冲突。 */
-function isUniqueConstraintError(error: unknown): boolean {
-  return error instanceof Error && error.message.includes('UNIQUE constraint failed')
 }

@@ -11,7 +11,8 @@ import type { TextModelPort } from '../../ports/TextModelPort'
 import { TextModelError } from '../../ports/TextModelPort'
 import type { TokenCounter } from '../../ports/TokenCounter'
 import { ApplicationError } from '../errors/ApplicationError'
-import { buildSoulPromptAnalysisPrompt } from './SoulPromptBuilder'
+import type { AiPromptApplicationService } from '../aiPrompts/AiPromptApplicationService'
+import { buildSoulPromptAnalysisVariables, soulAnalysisPromptCode } from './SoulPromptBuilder'
 
 /** 灵魂文本整理使用的固定、低随机性模型参数。 */
 const SOUL_ANALYSIS_PARAMETERS: TextModelParameters = {
@@ -59,6 +60,8 @@ export interface SoulApplicationServiceDependencies {
   tokenCounter: TokenCounter
   /** 可选执行灵魂文本整理的模型端口。 */
   model?: TextModelPort
+  /** 全站已发布 AI 提示词目录。 */
+  prompts: Pick<AiPromptApplicationService, 'render'>
   /** 世界与人物灵魂提示词预算。 */
   tokenBudgets: SoulTokenBudgets
 }
@@ -310,7 +313,10 @@ export class SoulApplicationService {
     if (!model?.getConfiguredModel()) {
       throw new ApplicationError('CAPABILITY_DISABLED', '文本模型尚未配置，不能自动分析灵魂提示词', 422)
     }
-    const prompt = buildSoulPromptAnalysisPrompt(subjectType, promptText)
+    const prompt = await this.dependencies.prompts.render(
+      soulAnalysisPromptCode(subjectType),
+      buildSoulPromptAnalysisVariables(promptText),
+    )
     try {
       const response = await model.generateStructured({
         ...prompt,

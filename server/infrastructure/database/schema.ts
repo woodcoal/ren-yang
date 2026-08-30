@@ -440,6 +440,70 @@ export const parameterProfiles = sqliteTable(
   ],
 )
 
+/** 全站 AI 提示词的固定业务定义与当前发布版本指针。 */
+export const aiPrompts = sqliteTable(
+  'ai_prompts',
+  {
+    code: text('code').primaryKey(),
+    name: text('name').notNull(),
+    category: text('category').notNull(),
+    description: text('description').notNull(),
+    kind: text('kind').notNull(),
+    variablesJson: text('variables_json').notNull(),
+    activeVersionId: text('active_version_id'),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  table => [
+    index('ai_prompts_category_name_index').on(table.category, table.name),
+    check('ai_prompts_code_check', sql`length(trim(${table.code})) > 0`),
+    check('ai_prompts_name_check', sql`length(trim(${table.name})) > 0`),
+    check('ai_prompts_kind_check', sql`${table.kind} IN ('text', 'image')`),
+    check('ai_prompts_variables_json_check', sql`json_valid(${table.variablesJson})`),
+  ],
+)
+
+/** 已发布且不可变的全站 AI 提示词版本。 */
+export const aiPromptVersions = sqliteTable(
+  'ai_prompt_versions',
+  {
+    id: text('id').primaryKey(),
+    promptCode: text('prompt_code').notNull().references(() => aiPrompts.code, { onDelete: 'cascade' }),
+    versionNo: integer('version_no').notNull(),
+    systemPromptTemplate: text('system_prompt_template'),
+    userPromptTemplate: text('user_prompt_template').notNull(),
+    changeSummary: text('change_summary').notNull(),
+    publishedAt: integer('published_at').notNull(),
+  },
+  table => [
+    uniqueIndex('ai_prompt_versions_code_number_unique').on(table.promptCode, table.versionNo),
+    index('ai_prompt_versions_code_published_index').on(table.promptCode, table.publishedAt),
+    check('ai_prompt_versions_number_check', sql`${table.versionNo} > 0`),
+    check('ai_prompt_versions_user_template_check', sql`length(trim(${table.userPromptTemplate})) > 0`),
+    check('ai_prompt_versions_summary_check', sql`length(trim(${table.changeSummary})) > 0`),
+  ],
+)
+
+/** 发布前唯一可编辑的全站 AI 提示词草稿。 */
+export const aiPromptDrafts = sqliteTable(
+  'ai_prompt_drafts',
+  {
+    id: text('id').primaryKey(),
+    promptCode: text('prompt_code').notNull().references(() => aiPrompts.code, { onDelete: 'cascade' }),
+    baseVersionId: text('base_version_id'),
+    systemPromptTemplate: text('system_prompt_template'),
+    userPromptTemplate: text('user_prompt_template').notNull(),
+    changeSummary: text('change_summary').notNull(),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  table => [
+    uniqueIndex('ai_prompt_drafts_code_unique').on(table.promptCode),
+    check('ai_prompt_drafts_user_template_check', sql`length(trim(${table.userPromptTemplate})) > 0`),
+    check('ai_prompt_drafts_summary_check', sql`length(trim(${table.changeSummary})) > 0`),
+  ],
+)
+
 /** 兴趣判断或文档生成的一次可追溯运行。 */
 export const generationRuns = sqliteTable(
   'generation_runs',
@@ -1007,30 +1071,6 @@ export const openVikingDerivedMemories = sqliteTable(
   ],
 )
 
-/** 人物维护的固定回归评测用例。 */
-export const evaluationCases = sqliteTable(
-  'evaluation_cases',
-  {
-    id: text('id').primaryKey(),
-    personaId: text('persona_id').notNull().references(() => personas.id, { onDelete: 'cascade' }),
-    name: text('name').notNull(),
-    category: text('category').notNull(),
-    prompt: text('prompt').notNull(),
-    expectedChange: text('expected_change').notNull(),
-    assertionsJson: text('assertions_json').notNull(),
-    isActive: integer('is_active').notNull().default(1),
-    createdAt: integer('created_at').notNull(),
-  },
-  table => [
-    uniqueIndex('evaluation_cases_persona_name_unique').on(table.personaId, table.name),
-    index('evaluation_cases_persona_active_index').on(table.personaId, table.isActive),
-    check('evaluation_cases_name_check', sql`length(trim(${table.name})) > 0`),
-    check('evaluation_cases_category_check', sql`${table.category} IN ('behavior', 'style', 'safety')`),
-    check('evaluation_cases_expected_change_check', sql`${table.expectedChange} IN ('improve', 'retain')`),
-    check('evaluation_cases_active_check', sql`${table.isActive} IN (0, 1)`),
-  ],
-)
-
 /** 可选上下文提供器对每项 SQLite 资料的可重建同步状态。 */
 export const contextSyncRecords = sqliteTable(
   'context_sync_records',
@@ -1083,6 +1123,9 @@ export const databaseSchema = {
   growthRevisionEvidence,
   formatTemplates,
   parameterProfiles,
+  aiPrompts,
+  aiPromptVersions,
+  aiPromptDrafts,
   generationRuns,
   personaOperationRecords,
   personaExternalRecords,
@@ -1106,6 +1149,5 @@ export const databaseSchema = {
   feedbackResolutions,
   openVikingSessionRecords,
   openVikingDerivedMemories,
-  evaluationCases,
   contextSyncRecords,
 }

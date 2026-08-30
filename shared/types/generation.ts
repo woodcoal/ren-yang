@@ -28,6 +28,8 @@ export interface PromptContextItemSnapshot {
 
 /** 新运行创建时固定的完整心智与提示预算快照。 */
 export interface PromptContextSnapshot {
+  /** 新运行锁定的提示词编码到不可变版本 UUID；迁移前旧运行可缺失。 */
+  aiPromptVersions?: Record<string, string>
   /** Token 计数器和是否精确的说明。 */
   tokenCounter: string
   /** 当前计数是否为供应商精确分词。 */

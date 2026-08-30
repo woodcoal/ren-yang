@@ -15,6 +15,8 @@ import { AesGcmSecretCipher } from '../../server/infrastructure/security/AesGcmS
 import type { Clock } from '../../server/ports/Clock'
 import type { IdentifierGenerator } from '../../server/ports/IdentifierGenerator'
 import type { TextModelPort, TextModelRequest, TextModelResponse } from '../../server/ports/TextModelPort'
+import type { AiPromptApplicationService } from '../../server/application/aiPrompts/AiPromptApplicationService'
+import { createTestAiPromptService } from '../support/createTestAiPromptService'
 import type { PersonaSnapshot } from '../../shared/types/content'
 import { listSourcesPageSchema, listSubjectsPageSchema } from '../../shared/schemas/content'
 
@@ -110,6 +112,8 @@ let service: ContentApplicationService
 let soulService: SoulApplicationService
 /** 当前测试时钟。 */
 let clock: MutableClock
+/** 使用真实迁移模板的测试提示词目录。 */
+let aiPrompts: AiPromptApplicationService
 
 beforeEach(() => {
   temporaryDirectory = mkdtempSync(resolve(tmpdir(), 'ren-yang-content-test-'))
@@ -120,6 +124,7 @@ beforeEach(() => {
   const identifiers = new SequentialIdentifierGenerator()
   clock = new MutableClock()
   const repository = new SqliteContentRepository(database.getClient())
+  aiPrompts = createTestAiPromptService(database, identifiers, clock)
   service = new ContentApplicationService({
     repository,
     souls: repository,
@@ -130,6 +135,7 @@ beforeEach(() => {
     sourceProcessor: new NodeSourceContentProcessor(identifiers),
     sourceFiles: new LocalSourceFileStorage(temporaryDirectory),
     secretCipher: new AesGcmSecretCipher('content-test-secret-material-32-characters'),
+    prompts: aiPrompts,
   })
   soulService = new SoulApplicationService({
     content: repository,
@@ -138,6 +144,7 @@ beforeEach(() => {
     clock,
     tokenCounter: new ConservativeTokenCounter(),
     tokenBudgets: { world: 2_500, persona: 3_500 },
+    prompts: aiPrompts,
   })
 })
 
@@ -334,6 +341,7 @@ describe('人物、世界与资料管理闭环', () => {
       clock,
       tokenCounter: new ConservativeTokenCounter(),
       model,
+      prompts: aiPrompts,
       tokenBudgets: { world: 2_500, persona: 3_500 },
     })
 
@@ -358,6 +366,7 @@ describe('人物、世界与资料管理闭环', () => {
       clock,
       tokenCounter: new ConservativeTokenCounter(),
       model,
+      prompts: aiPrompts,
       tokenBudgets: { world: 2_500, persona: 3_500 },
     })
 
@@ -392,6 +401,7 @@ describe('人物、世界与资料管理闭环', () => {
       clock,
       tokenCounter: new ConservativeTokenCounter(),
       model,
+      prompts: aiPrompts,
       tokenBudgets: { world: 2_500, persona: 3_500 },
     })
 

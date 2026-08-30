@@ -26,6 +26,8 @@ import type { TextModelPort, TextModelRequest, TextModelResponse } from '../../s
 import { TextModelError } from '../../server/ports/TextModelPort'
 import type { PersonaSnapshot } from '../../shared/types/content'
 import type { DocumentSpec } from '../../shared/schemas/generation'
+import type { AiPromptApplicationService } from '../../server/application/aiPrompts/AiPromptApplicationService'
+import { createTestAiPromptService } from '../support/createTestAiPromptService'
 
 /** 测试固定时钟。 */
 class TestClock implements Clock {
@@ -190,12 +192,15 @@ let imageAssets: LocalImageAssetStorage
 let personaId: string
 let sourceId: string
 let testClock: TestClock
+/** 使用真实迁移模板的测试提示词目录。 */
+let aiPrompts: AiPromptApplicationService
 
 beforeEach(async () => {
   directory = mkdtempSync(resolve(tmpdir(), 'ren-yang-generation-test-'))
   database = new SqliteDatabase({ dataDirectory: directory, migrationsDirectory: resolve(process.cwd(), 'drizzle') })
   const identifiers = new SystemIdentifierGenerator()
   testClock = new TestClock()
+  aiPrompts = createTestAiPromptService(database, identifiers, testClock)
   const contentRepository = new SqliteContentRepository(database.getClient())
   const learningRepository = new SqliteLearningRepository(database.getClient())
   const processor = new NodeSourceContentProcessor(identifiers)
@@ -205,6 +210,7 @@ beforeEach(async () => {
     repository: contentRepository, souls: contentRepository, identifiers, clock: testClock,
     tokenCounter, tokenBudgets: { world: 2_500, persona: 3_500 }, sourceProcessor: processor,
     sourceFiles: new LocalSourceFileStorage(directory), imageAssets,
+    prompts: aiPrompts,
   })
   const source = await contentService.createPastedSource({
     name: '学院原著事实', role: 'canon_fact', content: '魔法学院课程包含古代文献研究与档案整理。',
@@ -220,6 +226,7 @@ beforeEach(async () => {
     identifiers,
     clock: testClock,
     tokenCounter: new ConservativeTokenCounter(),
+    prompts: aiPrompts,
     tokenBudgets: { world: 2_500, persona: 3_500 },
   }).publishDraft('persona', persona.persona.id)
   personaId = persona.persona.id
@@ -235,7 +242,7 @@ beforeEach(async () => {
   imageModel = new FixedImageModel()
   generation = new GenerationApplicationService({
     runs: new SqliteRunRepository(database.getClient()), content: contentRepository,
-    context: new SqliteContextProvider(database.getClient()), model, imageModel, imageAssets,
+    context: new SqliteContextProvider(database.getClient()), model, prompts: aiPrompts, imageModel, imageAssets,
     identifiers, clock: testClock, sourceProcessor: processor,
     tokenCounter: new ConservativeTokenCounter(), learning: learningRepository,
   })
@@ -320,9 +327,13 @@ describe('阶段三纯文本运行', () => {
       status: 'succeeded',
       result: { decision: 'interested', probability: 0.88, confidence: 0.82 },
       scene: { location: '图书馆' },
-      promptVersion: 'artifact-v8',
+      promptVersion: expect.stringMatching(/^ai-catalog:[0-9a-f]{16}$/),
       contextProvider: 'sqlite_fts5',
       promptContext: {
+        aiPromptVersions: {
+          'generation.interest_assessment': expect.any(String),
+          'generation.json_retry': expect.any(String),
+        },
         tokenCountExact: false,
         personaSoulVersionId: details.run.personaVersionId,
         selected: [
@@ -373,6 +384,7 @@ describe('阶段三纯文本运行', () => {
     await new SoulApplicationService({
       content: repository, souls: repository, identifiers: new SystemIdentifierGenerator(), clock: testClock,
       tokenCounter: new ConservativeTokenCounter(), tokenBudgets: { world: 2_500, persona: 3_500 },
+      prompts: aiPrompts,
     }).publishDraft('world', world.world.id)
     await contentService.updatePersona(personaId, { name: '林默', worldId: world.world.id })
     await contentService.updateWorldStatus(world.world.id, { isEnabled: false })
@@ -503,6 +515,7 @@ describe('阶段三纯文本运行', () => {
       content: new SqliteContentRepository(database.getClient()),
       context: new SqliteContextProvider(database.getClient()),
       model: new DisabledTextModel(),
+      prompts: aiPrompts,
       imageModel: new DisabledImageModel(),
       imageAssets,
       identifiers: new SystemIdentifierGenerator(),
@@ -671,6 +684,7 @@ describe('阶段四图文块与导出', () => {
       content: new SqliteContentRepository(database.getClient()),
       context: new SqliteContextProvider(database.getClient()),
       model,
+      prompts: aiPrompts,
       imageModel: new DisabledImageModel(),
       imageAssets,
       identifiers,
@@ -764,6 +778,39 @@ describe('阶段四图文块与导出', () => {
     await expect(generation.retryBlock(runId, imageBlock.id)).rejects.toMatchObject({
       code: 'TASK_LIMIT_EXCEEDED', message: '该块已达到运行快照规定的最大尝试数',
     })
+  })
+
+  it('反馈修正重试超过原自动尝试上限时仍执行一次并携带反馈正文', async () => {
+    const runId = await executeMixedRun()
+    const initial = await generation.getRun(runId)
+    const textBlock = initial.blocks.find(block => block.specKey === 'body')!
+
+    // 先执行普通重试耗尽运行快照中的两次尝试上限。
+    await generation.retryBlock(runId, textBlock.id)
+    await worker.executeNext()
+    expect((await generation.getRun(runId)).blocks.find(block => block.id === textBlock.id)?.attempts).toHaveLength(2)
+
+    const correctionInstruction = '正文太长，请压缩成一句话。'
+    const taskId = '00000000-0000-4000-8000-000000009999'
+    database.getClient().transaction(() => {
+      database.getClient().prepare(`UPDATE generation_runs SET status = 'queued', completed_at = NULL WHERE id = ?`).run(runId)
+      database.getClient().prepare(`UPDATE artifact_blocks SET status = 'pending' WHERE id = ?`).run(textBlock.id)
+      database.getClient().prepare(`
+        INSERT INTO task_jobs (id, run_id, type, payload_json, status, attempt_count, max_attempts, created_at, updated_at)
+        VALUES (?, ?, 'execute_block', ?, 'queued', 0, 2, 9000, 9000)
+      `).run(taskId, runId, JSON.stringify({ runId, blockId: textBlock.id, correctionInstruction }))
+    }).immediate()
+
+    await worker.executeNext()
+
+    const corrected = await generation.getRun(runId)
+    const attempts = corrected.blocks.find(block => block.id === textBlock.id)!.attempts
+    expect(attempts).toHaveLength(3)
+    const latestInput = database.getClient().prepare(`
+      SELECT input_snapshot_json FROM block_attempts WHERE block_id = ? ORDER BY attempt_no DESC LIMIT 1
+    `).get(textBlock.id) as { input_snapshot_json: string }
+    expect(JSON.parse(latestInput.input_snapshot_json)).toMatchObject({ correctionInstruction })
+    expect(model.requests.get('text_block')?.userPrompt).toContain(correctionInstruction)
   })
 
   it('依赖图片失败时记录依赖错误且不调用后续文字模型', async () => {

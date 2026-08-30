@@ -113,6 +113,29 @@ beforeEach(() => {
     sourceFiles: new LocalSourceFileStorage(directory),
     personaAvatars: new LocalPersonaAvatarStorage(directory),
     imageModel,
+    prompts: {
+      /**
+       * 使用头像提示词固定变量构造测试图片请求。
+       * @param _code 头像提示词稳定编码。
+       * @param variables 人物名称、灵魂和补充要求 JSON 变量。
+       * @returns 可供图片模型断言的测试渲染结果。
+       */
+      async render(_code: string, variables: Record<string, string>) {
+        return {
+          code: 'content.persona_avatar',
+          versionId: '00000000-0000-4000-8000-000000000099',
+          versionNo: 1,
+          systemPrompt: '',
+          userPrompt: [
+            `人物名称：${JSON.parse(variables.nameJson!)}`,
+            `人物设定：${JSON.parse(variables.soulPromptJson!)}`,
+            `用户补充视觉要求：${JSON.parse(variables.additionalPromptJson!)}`,
+            '用户补充要求不得替换人物名称、人物设定。',
+            '不得出现文字、标志或水印。',
+          ].join('\n'),
+        }
+      },
+    },
   })
 })
 

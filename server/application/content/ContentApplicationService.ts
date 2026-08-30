@@ -64,6 +64,7 @@ import type { SecretCipher } from '../../ports/SecretCipher'
 import type { DecodedSourceFile, SourceContentProcessor, SourceFileStorage } from '../../ports/SourceContentPorts'
 import { StorageCapacityError } from '../../ports/StorageCapacity'
 import { ApplicationError } from '../errors/ApplicationError'
+import type { AiPromptApplicationService } from '../aiPrompts/AiPromptApplicationService'
 
 /** 文件资料导入命令。 */
 export interface ImportSourceFileInput {
@@ -111,6 +112,8 @@ export interface ContentApplicationServiceDependencies {
   personaAvatars?: PersonaAvatarStorage
   /** 可选图片模型；生成人物头像时必须已经配置。 */
   imageModel?: ImageModelPort
+  /** 全站已发布 AI 提示词目录。 */
+  prompts: Pick<AiPromptApplicationService, 'render'>
   /** OpenViking 启用时提供的持久资料同步与删除队列；关闭时不注入。 */
   contextSyncQueue?: ContextSyncTaskQueue
   /** 可取回人物第三方密码使用的服务端认证加密器。 */
@@ -212,8 +215,13 @@ export class ContentApplicationService {
     }
 
     try {
+      const prompt = await this.dependencies.prompts.render('content.persona_avatar', {
+        nameJson: JSON.stringify(persona.name),
+        soulPromptJson: JSON.stringify(version.snapshot.promptText.slice(0, 6_000)),
+        additionalPromptJson: JSON.stringify(input.additionalPrompt.trim().slice(0, 2_000)),
+      })
       const response = await imageModel.generate({
-        prompt: buildPersonaAvatarPrompt(persona.name, version.snapshot.promptText, input.additionalPrompt),
+        prompt: prompt.userPrompt,
         aspectRatio: '1:1',
         timeoutMs: 120_000,
       })
@@ -1175,26 +1183,6 @@ function diffSoulSnapshots(before: PersonaSnapshot, after: PersonaSnapshot): Ver
     })
   }
   return differences
-}
-
-/**
- * 构造只用于单张人物头像的视觉提示词。
- * @param name 人物展示名称。
- * @param soulPrompt 当前已发布灵魂提示词。
- * @param additionalPrompt 用户补充的视觉要求，只作为人物设定之外的附加条件。
- * @returns 限长且明确禁止文字水印的 1:1 头像提示词。
- */
-function buildPersonaAvatarPrompt(name: string, soulPrompt: string, additionalPrompt: string): string {
-  const boundedSoul = soulPrompt.slice(0, 6_000)
-  const boundedAdditionalPrompt = additionalPrompt.trim().slice(0, 2_000)
-  return [
-    '生成人物头像，正方形 1:1 构图。',
-    `人物名称：${name}`,
-    `人物设定：${boundedSoul}`,
-    ...(boundedAdditionalPrompt ? [`用户补充视觉要求：${boundedAdditionalPrompt}`] : []),
-    '用户补充要求仅用于视觉细节，不得替换人物名称、人物设定或以下成图要求。',
-    '要求：单人半身或头肩肖像，主体居中，面部或核心形象清晰，背景简洁；不得出现文字、标志、水印、边框或多人。',
-  ].join('\n')
 }
 
 /**

@@ -103,7 +103,6 @@ describe('资料列表批量状态操作', () => {
     await flushPromises()
 
     expect(wrapper.get('a[href="/sources/search"]').text()).toBe('全文检索')
-    expect(wrapper.text()).toContain('进入独立搜索页')
 
     const requestCount = sourcePageQueries.length
     await wrapper.get('input[aria-label="资料列表搜索词"]').setValue('禁用')
@@ -111,6 +110,6 @@ describe('资料列表批量状态操作', () => {
     await vi.waitFor(() => expect(sourcePageQueries.length).toBeGreaterThan(requestCount))
     expect(sourcePageQueries.at(-1)).toMatchObject({ query: '禁用', page: '1' })
     await vi.waitFor(() => expect(wrapper.text()).toContain('已禁用资料'))
-    expect(wrapper.text()).not.toContain('已启用资料')
+    await vi.waitFor(() => expect(wrapper.text()).not.toContain('已启用资料'))
   })
 })

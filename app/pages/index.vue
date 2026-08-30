@@ -28,7 +28,7 @@ const health = computed(() => healthData.value?.data ?? null)
 const capabilities = computed(() => capabilityData.value?.data ?? null)
 const personas = computed(() => personaData.value?.data ?? [])
 const runs = computed(() => runData.value?.data ?? [])
-const pendingFeedbackCount = computed(() => (feedbackData.value?.data ?? []).filter(item => item.confirmedTarget === null).length)
+const pendingFeedback = computed(() => (feedbackData.value?.data ?? []).filter(item => item.confirmedTarget === null))
 const counts = computed(() => ({
   personas: personas.value.length,
   worlds: worldData.value?.data.length ?? 0,
@@ -68,7 +68,7 @@ async function refreshDashboard(): Promise<void> {
       </div>
     </div>
 
-    <SystemDashboardWorkPanel :personas="personas" :runs="runs" :pending-feedback-count="pendingFeedbackCount" />
+    <SystemDashboardWorkPanel :personas="personas" :runs="runs" :pending-feedback="pendingFeedback" />
 
     <section class="content-section" aria-labelledby="dashboard-system-heading">
       <div class="section-heading">
