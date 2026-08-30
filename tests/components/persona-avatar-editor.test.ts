@@ -1,7 +1,9 @@
 import { readBody } from 'h3'
+import { defineComponent } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { DOMWrapper, flushPromises } from '@vue/test-utils'
 import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
+import AiLoadingOverlay from '../../app/components/AiLoadingOverlay.vue'
 import PersonaAvatar from '../../app/components/content/PersonaAvatar.vue'
 import PersonaAvatarEditor from '../../app/components/content/PersonaAvatarEditor.vue'
 import type { GeneratePersonaAvatarInput } from '../../shared/schemas/content'
@@ -14,6 +16,16 @@ let uploadRequests = 0
 let generationRequests = 0
 /** 生成接口收到的请求体。 */
 const generationInputs: GeneratePersonaAvatarInput[] = []
+/** 当前测试是否需要保持头像生成请求挂起。 */
+let delayGenerationResponse = false
+/** 结束当前挂起头像生成请求的回调。 */
+let releaseGenerationResponse: (() => void) | null = null
+
+/** 同时挂载头像编辑器与真实全局 AI 加载层，复现两个 Nuxt UI 模态层的交接。 */
+const PersonaAvatarGenerationHarness = defineComponent({
+  components: { AiLoadingOverlay, PersonaAvatarEditor },
+  template: '<div><PersonaAvatarEditor persona-id="00000000-0000-4000-8000-000000000001" persona-name="林默" :avatar-url="null" /><AiLoadingOverlay /></div>',
+})
 
 registerEndpoint(`/api/v1/personas/${PERSONA_ID}/avatar`, {
   method: 'PUT',
@@ -30,14 +42,22 @@ registerEndpoint(`/api/v1/personas/${PERSONA_ID}/avatar/generate`, {
   handler: async (event) => {
     generationRequests += 1
     generationInputs.push(await readBody<GeneratePersonaAvatarInput>(event))
+    if (delayGenerationResponse) {
+      await new Promise<void>((resolveRequest) => {
+        releaseGenerationResponse = resolveRequest
+      })
+    }
     return { data: { id: PERSONA_ID, avatarUrl: `/api/v1/personas/${PERSONA_ID}/avatar` } }
   },
 })
 
 beforeEach(() => {
+  releaseGenerationResponse?.()
   uploadRequests = 0
   generationRequests = 0
   generationInputs.length = 0
+  delayGenerationResponse = false
+  releaseGenerationResponse = null
 })
 
 describe('人物头像编辑器', () => {
@@ -84,10 +104,9 @@ describe('人物头像编辑器', () => {
     await vi.waitFor(() => expect(wrapper.emitted('updated')).toHaveLength(1))
   })
 
-  it('自定义生成弹窗提交用户补充的视觉提示词', async () => {
-    const wrapper = await mountSuspended(PersonaAvatarEditor, {
-      props: { personaId: PERSONA_ID, personaName: '林默', avatarUrl: null },
-    })
+  it('自定义生成提交后关闭弹窗并显示全局 AI 加载层', async () => {
+    delayGenerationResponse = true
+    const wrapper = await mountSuspended(PersonaAvatarGenerationHarness)
     const customButton = wrapper.findAll<HTMLButtonElement>('button')
       .find(button => button.text().includes('自定义生成'))
     expect(customButton).toBeDefined()
@@ -97,16 +116,20 @@ describe('人物头像编辑器', () => {
     const textarea = document.querySelector<HTMLTextAreaElement>('textarea[name="additionalPrompt"]')
     expect(textarea).not.toBeNull()
     await new DOMWrapper(textarea!).setValue('水彩插画，暖色逆光，旧档案馆背景。')
-    const form = document.querySelector<HTMLFormElement>('[data-custom-avatar-form]')
-    expect(form).not.toBeNull()
-    await new DOMWrapper(form!).trigger('submit')
-    await flushPromises()
-
-    expect(generationInputs).toEqual([{ additionalPrompt: '水彩插画，暖色逆光，旧档案馆背景。' }])
-    await vi.waitFor(() => {
-      expect(wrapper.emitted('updated')).toHaveLength(1)
-      expect(document.querySelector('[data-custom-avatar-form]')).toBeNull()
-    })
+    const submitButton = document.querySelector<HTMLButtonElement>('[data-custom-avatar-form] button[type="submit"]')
+    expect(submitButton).not.toBeNull()
+    try {
+      await new DOMWrapper(submitButton!).trigger('click')
+      await vi.waitFor(() => {
+        expect(generationInputs).toEqual([{ additionalPrompt: '水彩插画，暖色逆光，旧档案馆背景。' }])
+        expect(document.querySelector('[data-ai-loading-overlay]')).not.toBeNull()
+        expect(document.querySelector('[data-custom-avatar-form]')).toBeNull()
+      })
+    }
+    finally {
+      releaseGenerationResponse?.()
+      await flushPromises()
+    }
   })
 
   it('在客户端拒绝不支持的上传类型', async () => {

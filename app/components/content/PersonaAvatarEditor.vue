@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { FormSubmitEvent } from '@nuxt/ui'
-import { computed, reactive, shallowRef, useTemplateRef } from 'vue'
+import { computed, nextTick, reactive, shallowRef, useTemplateRef } from 'vue'
 import { generatePersonaAvatarSchema, type GeneratePersonaAvatarInput } from '#shared/schemas/content'
 import type { ApiResponse } from '#shared/types/api'
 import type { PersonaSummary } from '#shared/types/content'
@@ -105,7 +105,6 @@ async function generateAvatar(input: GeneratePersonaAvatarInput): Promise<void> 
     }))
     avatarRevision.value += 1
     emit('updated')
-    customGenerationOpen.value = false
     customGenerationState.additionalPrompt = ''
   }
   catch (error: unknown) {
@@ -129,7 +128,6 @@ async function generateDefaultAvatar(): Promise<void> {
  * @returns 无返回值。
  */
 function openCustomGeneration(): void {
-  customGenerationState.additionalPrompt = ''
   errorMessage.value = null
   customGenerationOpen.value = true
 }
@@ -140,6 +138,9 @@ function openCustomGeneration(): void {
  * @returns 生成请求和弹窗状态更新完成时结束。
  */
 async function submitCustomGeneration(event: FormSubmitEvent<GeneratePersonaAvatarInput>): Promise<void> {
+  // 先卸载自定义模态层，避免它覆盖随后打开的全局 AI 加载层。
+  customGenerationOpen.value = false
+  await nextTick()
   await generateAvatar(event.data)
 }
 </script>
