@@ -7,6 +7,7 @@ import type { ApiResponse } from '#shared/types/api'
 import type { DeletionImpact, PersonaDetails, SoulWorkspaceView, SourceDetails, SourceSummary, WorldSummary } from '#shared/types/content'
 import type { PersonaGrowthWorkspaceView, PersonaMemoryWorkspaceView } from '#shared/types/learning'
 import type { AnalysisBatchView, ProposedLearningContentView } from '#shared/types/analysis'
+import AnalysisPanel from '../../components/analysis/AnalysisPanel.vue'
 import type { SourceFileSubmission } from '../../components/content/SourceImportForm.vue'
 import { getApiErrorMessage } from '../../utils/apiError'
 
@@ -452,7 +453,7 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
       />
 
       <div v-else-if="selectedTab === 'growth'" class="space-y-6">
-        <AnalysisAnalysisPanel
+        <AnalysisPanel
           title="人物成长"
           :batch="growthAnalysis"
           :loading="actionLoading"
@@ -480,7 +481,7 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
       </div>
 
       <div v-else-if="selectedTab === 'memory'" class="space-y-6">
-        <AnalysisAnalysisPanel
+        <AnalysisPanel
           title="人物记忆"
           :batch="memoryAnalysis"
           :loading="actionLoading"

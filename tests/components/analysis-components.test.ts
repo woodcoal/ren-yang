@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
 import AnalysisPanel from '../../app/components/analysis/AnalysisPanel.vue'
@@ -38,6 +39,18 @@ const batch: AnalysisBatchView = {
 }
 
 describe('成长与记忆分析组件', () => {
+  it('人物和世界详情页显式注册正确的分析面板组件', () => {
+    const pageSources = [
+      readFileSync('app/pages/personas/[id].vue', 'utf8'),
+      readFileSync('app/pages/worlds/[id].vue', 'utf8'),
+    ]
+
+    for (const pageSource of pageSources) {
+      expect(pageSource).toContain("import AnalysisPanel from '../../components/analysis/AnalysisPanel.vue'")
+      expect(pageSource).not.toContain('AnalysisAnalysisPanel')
+    }
+  })
+
   it('分析面板明确区分增量分析与完整重建', async () => {
     const wrapper = await mountSuspended(AnalysisPanel, { props: { batch: null, loading: false, title: '人物成长' } })
     const buttons = wrapper.findAll('button')

@@ -7,6 +7,7 @@ import type { ApiResponse } from '#shared/types/api'
 import type { DeletionImpact, SoulWorkspaceView, SourceDetails, SourceSummary, WorldDetails } from '#shared/types/content'
 import type { WorldGrowthWorkspaceView } from '#shared/types/learning'
 import type { AnalysisBatchView, ProposedLearningContentView } from '#shared/types/analysis'
+import AnalysisPanel from '../../components/analysis/AnalysisPanel.vue'
 import type { SourceFileSubmission } from '../../components/content/SourceImportForm.vue'
 import { getApiErrorMessage } from '../../utils/apiError'
 
@@ -402,7 +403,7 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
         @save="saveSoulDraft" @publish="publishSoul" @delete="deleteSoulDraft" @from-version="createDraftFromVersion" />
 
       <div v-else-if="selectedTab === 'growth'" class="space-y-6">
-        <AnalysisAnalysisPanel title="世界成长" :batch="growthAnalysis" :loading="actionLoading"
+        <AnalysisPanel title="世界成长" :batch="growthAnalysis" :loading="actionLoading"
           @analyze="analyzeWorldGrowth" @refresh="refreshAnalysis" @review="reviewWorldGrowthProposal" />
         <div class="grid items-start gap-6 xl:grid-cols-2">
           <LearningWorldGrowthSourcePanel :items="growthWorkspace.sources" :loading="actionLoading"
