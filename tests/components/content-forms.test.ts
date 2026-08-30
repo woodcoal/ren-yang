@@ -93,7 +93,7 @@ describe('阶段二内容表单', () => {
     expect(document.querySelector('textarea')).toBeNull()
   })
 
-  it('原创人物在没有世界和资料时仍可提交初始候选档案', async () => {
+  it('人物在没有世界和资料时仍可提交初始候选档案', async () => {
     const wrapper = await mountSuspended(PersonaForm, {
       props: { worlds: [], sources: [], loading: false, errorMessage: null },
     })
@@ -104,10 +104,11 @@ describe('阶段二内容表单', () => {
     await wrapper.get('form').trigger('submit')
     await flushPromises()
 
+    expect(wrapper.text()).not.toContain('来源模式')
+    expect(wrapper.text()).not.toContain('资料型')
     expect(wrapper.emitted('submit')).toEqual([[
       expect.objectContaining({
         name: '林默',
-        origin: 'original',
         worldId: null,
         sourceIds: [],
         snapshot: { promptText: '谨慎的档案管理员，资料不足时说明未知。' },
@@ -134,8 +135,9 @@ describe('阶段二内容表单', () => {
     await wrapper.get('form').trigger('submit')
     await flushPromises()
 
+    expect(wrapper.text()).not.toContain('来源模式')
     expect(wrapper.emitted('generate')).toEqual([[
-      expect.objectContaining({ prompt: '创建一名谨慎的档案员', origin: 'original', sourceIds: [sourceId] }),
+      expect.objectContaining({ prompt: '创建一名谨慎的档案员', sourceIds: [sourceId] }),
     ]])
     expect(wrapper.emitted('submit')).toBeUndefined()
   })
@@ -143,7 +145,6 @@ describe('阶段二内容表单', () => {
   it('结构化表单收到 AI 草稿后完整替换字段并仍需用户提交', async () => {
     const initialValue = {
       name: '林默',
-      origin: 'original' as const,
       worldId: null,
       sourceIds: [],
       snapshot: { promptText: '谨慎的档案管理员，冷静简洁，未知事实必须说明不知道。' },

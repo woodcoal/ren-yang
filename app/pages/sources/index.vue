@@ -434,7 +434,7 @@ async function updateSelectedSourcesStatus(sourceIds: string[], isEnabled: boole
     </section>
     <div v-else class="content-empty-state">
       <div><strong>还没有资料</strong>
-        <p>可以先创建原创人物，也可以从粘贴文本、TXT 或 Markdown 开始导入。</p>
+        <p>可以先创建人物，也可以从粘贴文本、TXT 或 Markdown 开始导入。</p>
       </div>
     </div>
 

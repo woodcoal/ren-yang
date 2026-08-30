@@ -181,7 +181,7 @@ describe('世界与人物列表快速初始化', () => {
 
     expect(soulAnalyzeRequests).toEqual([])
     expect(personaCreateRequests).toEqual([{
-      name: '林默', origin: 'original', worldId: null, sourceIds: [], snapshot: { promptText: personaPrompt },
+      name: '林默', worldId: null, sourceIds: [], snapshot: { promptText: personaPrompt },
       changeSummary: '按原文建立初始人物灵魂',
     }])
     expect(personaInputs.nameInput.value).toBe('林默')
@@ -210,7 +210,7 @@ describe('世界与人物列表快速初始化', () => {
 
     expect(soulAnalyzeRequests).toEqual([{ subjectType: 'persona', promptText: '原始人物提示词。' }])
     expect(personaCreateRequests).toEqual([{
-      name: '用户指定人物名', origin: 'original', worldId: null, sourceIds: [], snapshot: personaSnapshot,
+      name: '用户指定人物名', worldId: null, sourceIds: [], snapshot: personaSnapshot,
       changeSummary: 'AI 整理初始人物灵魂',
     }])
     personaWrapper.unmount()

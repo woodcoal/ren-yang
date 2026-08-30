@@ -237,9 +237,6 @@ export class ContentApplicationService {
    */
   async createPersona(input: CreatePersonaInput): Promise<PersonaDetails> {
     const sourceIds = [...new Set(input.sourceIds)]
-    if (input.origin === 'source_based' && sourceIds.length === 0) {
-      throw new ApplicationError('SOURCE_REQUIRED', '资料型人物至少需要关联一项资料', 422)
-    }
     await this.requireOptionalWorld(input.worldId ?? null)
     await this.requireSources(sourceIds)
 
@@ -251,7 +248,8 @@ export class ContentApplicationService {
       versionId: this.dependencies.identifiers.create(),
       worldId: input.worldId ?? null,
       name: input.name,
-      origin: input.origin,
+      // 数据库兼容列暂不迁移；来源模式已退出业务，新人物统一写入固定值。
+      origin: 'original',
       snapshot,
       changeSummary: input.changeSummary,
       runtimeTokenCount: count.tokens,

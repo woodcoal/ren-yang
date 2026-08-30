@@ -31,13 +31,6 @@ const statusLabels: Partial<Record<RunSummary['status'], string>> = {
   planning: '规划中', awaiting_confirmation: '等待确认', queued: '排队中', running: '执行中',
 }
 
-/** 人物建立方式的中文标签。 */
-const originLabels: Record<PersonaSummary['origin'], string> = {
-  original: '原创建立',
-  source_based: '根据资料建立',
-  hybrid: '原创与资料结合',
-}
-
 /**
  * 返回运行输入的单行预览。
  * @param run 活动运行摘要。
@@ -131,7 +124,7 @@ function formatDateTime(timestamp: number): string {
       <div v-if="recentPersonas.length" class="archive-panel-grid">
         <article v-for="persona in recentPersonas" :key="persona.id" class="archive-panel">
           <div class="flex flex-wrap items-center justify-between gap-3">
-            <span class="log-row-meta">{{ originLabels[persona.origin] }}</span>
+            <span class="log-row-meta">{{ persona.worldName || '未关联世界' }}</span>
             <UBadge :color="persona.isEnabled ? 'success' : 'neutral'" variant="subtle">{{ persona.isEnabled ? '已启用' : '已禁用' }}</UBadge>
           </div>
           <h3 class="mt-4">

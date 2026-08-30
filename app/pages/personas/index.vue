@@ -2,7 +2,7 @@
 import { computed, ref, shallowRef, watch } from 'vue'
 import type { QuickCreateSubjectInput } from '#shared/schemas/content'
 import type { ApiResponse } from '#shared/types/api'
-import type { PersonaDetails, PersonaPageView, PersonaStatusUpdateResult, PersonaSummary, SoulSnapshot } from '#shared/types/content'
+import type { PersonaDetails, PersonaPageView, PersonaStatusUpdateResult, SoulSnapshot } from '#shared/types/content'
 import { getApiErrorMessage } from '../../utils/apiError'
 
 const route = useRoute()
@@ -53,11 +53,6 @@ const pageSizeItems = [
   { label: '每页 50 条', value: 50 }, { label: '每页 100 条', value: 100 },
 ]
 
-/** 人物来源模式中文标签。 */
-const originLabels: Record<PersonaSummary['origin'], string> = {
-  original: '原创', source_based: '资料型', hybrid: '混合型',
-}
-
 /** @returns 清空当前页勾选，避免分页后误操作上一页对象。 */
 function clearPersonaSelection(): void {
   selectedPersonaIds.value = []
@@ -102,7 +97,7 @@ async function createPersona(input: QuickCreateSubjectInput): Promise<void> {
     }
     const created = await $fetch<ApiResponse<PersonaDetails>>('/api/v1/personas', {
       method: 'POST', body: {
-        name: input.name, origin: 'original', worldId: null, sourceIds: [], snapshot,
+        name: input.name, worldId: null, sourceIds: [], snapshot,
         changeSummary: input.autoAnalyze ? 'AI 整理初始人物灵魂' : '按原文建立初始人物灵魂',
       },
     })
@@ -213,7 +208,7 @@ async function changePageSize(pageSize: number): Promise<void> {
               <ContentPersonaAvatar :name="persona.name" :url="persona.avatarUrl" />
               <div class="min-w-0"><strong class="content-table-title">{{ persona.name }}</strong><span class="content-table-description">{{ persona.currentSummary || '暂无灵魂提示词' }}</span></div>
             </div></td>
-            <td data-label="世界"><span class="content-table-title">{{ persona.worldName || '独立人物' }}</span><span class="content-table-description">{{ originLabels[persona.origin] }}</span></td>
+            <td data-label="世界"><span class="content-table-title">{{ persona.worldName || '独立人物' }}</span></td>
             <td data-label="版本与资料"><span>{{ persona.versionCount }} 条修改记录</span><span class="content-table-description">{{ persona.sourceCount }} 项参考资料</span></td>
             <td data-label="启用状态"><UBadge :color="persona.isEnabled ? 'success' : 'neutral'" variant="subtle">{{ persona.isEnabled ? '已启用' : '已禁用' }}</UBadge></td>
             <td data-label="操作"><UButton :to="`/personas/${persona.id}`" color="neutral" variant="ghost" size="xs"
@@ -229,7 +224,7 @@ async function changePageSize(pageSize: number): Promise<void> {
         </div>
       </div>
     </section>
-    <div v-else class="content-empty-state"><div><strong>还没有人物</strong><p class="mt-1 text-sm text-muted">原创人物不需要先导入资料。</p><UButton class="mt-4" @click="openCreateModal">创建第一个人物</UButton></div></div>
+    <div v-else class="content-empty-state"><div><strong>还没有人物</strong><p class="mt-1 text-sm text-muted">创建人物时可以按需选择世界和参考资料。</p><UButton class="mt-4" @click="openCreateModal">创建第一个人物</UButton></div></div>
 
     <UModal v-model:open="batchEnableConfirmationOpen" title="确认批量启用人物" description="启用后，这些人物可以重新用于创建新任务。">
       <template #body><p class="text-sm text-muted">确定启用当前页已选择的 {{ selectedDisabledPersonaIds.length }} 个禁用人物吗？</p></template>

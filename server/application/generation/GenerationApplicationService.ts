@@ -162,9 +162,6 @@ export class GenerationApplicationService implements TaskHandler {
       throw new ApplicationError('CAPABILITY_DISABLED', '文本模型尚未配置，不能生成人物草稿', 422)
     }
     const sourceIds = [...new Set(input.sourceIds)]
-    if (input.origin === 'source_based' && sourceIds.length === 0) {
-      throw new ApplicationError('SOURCE_REQUIRED', '资料型人物至少需要选择一项参考资料', 422)
-    }
 
     const warnings: string[] = []
     let world = null
@@ -194,7 +191,7 @@ export class GenerationApplicationService implements TaskHandler {
     }))
     sources.sort((left, right) => sourceRoleRank(left.role) - sourceRoleRank(right.role) || left.name.localeCompare(right.name, 'zh-CN'))
 
-    const prompt = buildPersonaDraftPrompt(input.prompt, input.origin, world, sources)
+    const prompt = buildPersonaDraftPrompt(input.prompt, world, sources)
     try {
       const { output } = await this.generateValidated(prompt, DEFAULT_TEXT_PARAMETERS, 'persona_draft', value => personaDraftSchema.parse(value))
       return { ...output, warnings }

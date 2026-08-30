@@ -15,9 +15,6 @@ function rejectInitializationMetaText(values: string[], context: RefinementCtx):
   context.addIssue({ code: 'custom', message: '生成内容不能包含候选、确认或发布等创建流程说明' })
 }
 
-/** 人物来源模式校验。 */
-export const personaOriginSchema = z.enum(['original', 'source_based', 'hybrid'], { error: '人物来源模式无效' })
-
 /** 资料角色校验。 */
 export const sourceRoleSchema = z.enum(['canon_fact', 'reference', 'style_sample'], { error: '资料角色无效' })
 
@@ -49,7 +46,6 @@ export const analyzeSoulPromptInputSchema = z.object({
 
 /** 从自然语言生成人物候选草稿的输入。 */
 export const generatePersonaDraftSchema = subjectInitializationSchema.extend({
-  origin: personaOriginSchema,
   worldId: z.string().uuid('世界标识无效').nullable().optional(),
   sourceIds: z.array(z.string().uuid('资料标识无效')).max(8, '一次最多使用 8 项参考资料').default([]),
 })
@@ -80,7 +76,6 @@ export const worldDraftSchema = z.object({
 /** 创建人物及其初始候选版本的输入。 */
 export const createPersonaSchema = z.object({
   name: z.string().trim().min(1, '人物名称不能为空').max(100, '人物名称不能超过 100 字'),
-  origin: personaOriginSchema,
   worldId: z.string().uuid('世界标识无效').nullable().optional(),
   sourceIds: z.array(z.string().uuid('资料标识无效')).max(100, '一次最多关联 100 项资料').default([]),
   snapshot: personaSnapshotSchema,

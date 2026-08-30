@@ -1,4 +1,4 @@
-/** 人物建立时的事实来源模式。 */
+/** 数据库历史兼容所保留的人物来源值；不再参与业务判断。 */
 export type PersonaOrigin = 'original' | 'source_based' | 'hybrid'
 
 /** 已发布灵魂版本的生命周期状态。 */
@@ -71,7 +71,7 @@ export interface PersonaRecord {
   worldId: string | null
   /** 展示名称。 */
   name: string
-  /** 来源模式。 */
+  /** 数据库历史兼容值；新人物固定为 original。 */
   origin: PersonaOrigin
   /** 当前已发布版本标识。 */
   activeVersionId: string | null

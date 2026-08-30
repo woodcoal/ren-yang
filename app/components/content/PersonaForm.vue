@@ -28,7 +28,6 @@ const emit = defineEmits<{
 /** 表单唯一可变状态。 */
 const state = reactive<CreatePersonaInput>({
   name: '',
-  origin: 'original',
   worldId: null,
   sourceIds: [],
   snapshot: { promptText: '' },
@@ -47,7 +46,6 @@ watch(() => props.initialValue, (value) => {
  */
 function applyInitialValue(value: CreatePersonaInput): void {
   state.name = value.name
-  state.origin = value.origin
   state.worldId = value.worldId ?? null
   state.sourceIds = [...value.sourceIds]
   state.snapshot = { promptText: value.snapshot.promptText }
@@ -70,20 +68,13 @@ function handleSubmit(event: FormSubmitEvent<CreatePersonaInput>): void {
       <UFormField name="name" label="人物名称" required>
         <UInput v-model="state.name" class="w-full" :disabled="loading" />
       </UFormField>
-      <UFormField name="origin" label="来源模式" required>
-        <USelect v-model="state.origin" class="w-full" :items="[
-          { label: '原创', value: 'original' },
-          { label: '资料型', value: 'source_based' },
-          { label: '混合型', value: 'hybrid' },
-        ]" :disabled="loading" />
-      </UFormField>
       <UFormField name="worldId" label="世界（可选）">
         <select v-model="state.worldId" class="native-control" :disabled="loading">
           <option :value="null">不关联世界</option>
           <option v-for="world in worlds" :key="world.id" :value="world.id">{{ world.name }}</option>
         </select>
       </UFormField>
-      <UFormField name="sourceIds" label="参考资料（资料型至少一项）">
+      <UFormField name="sourceIds" label="参考资料（可选）">
         <select v-model="state.sourceIds" class="native-control min-h-28" multiple :disabled="loading">
           <option v-for="source in sources" :key="source.id" :value="source.id">{{ source.name }}</option>
         </select>

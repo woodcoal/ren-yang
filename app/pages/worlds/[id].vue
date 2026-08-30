@@ -4,7 +4,7 @@ import { computed, reactive, shallowRef } from 'vue'
 import type { CreateSourceWithTargetsInput, SaveSoulVersionInput, UpdateWorldInput } from '#shared/schemas/content'
 import { updateWorldSchema } from '#shared/schemas/content'
 import type { ApiResponse } from '#shared/types/api'
-import type { DeletionImpact, SoulWorkspaceView, SourceDetails, SourceSummary, WorldDetails } from '#shared/types/content'
+import type { DeletionImpact, PersonaSummary, SoulWorkspaceView, SourceDetails, SourceSummary, WorldDetails } from '#shared/types/content'
 import type { WorldGrowthWorkspaceView } from '#shared/types/learning'
 import type { AnalysisBatchView, ProposedLearningContentView } from '#shared/types/analysis'
 import AnalysisPanel from '../../components/analysis/AnalysisPanel.vue'
@@ -20,12 +20,14 @@ const [
   { data: sourceData, refresh: refreshSources },
   { data: growthData, refresh: refreshGrowth },
   { data: analysisData, refresh: refreshAnalysis },
+  { data: personaData, error: personaError, refresh: refreshPersonas },
 ] = await Promise.all([
   useFetch<ApiResponse<WorldDetails>>(`/api/v1/worlds/${worldId}`),
   useFetch<ApiResponse<SoulWorkspaceView>>(`/api/v1/worlds/${worldId}/soul`),
   useFetch<ApiResponse<SourceSummary[]>>('/api/v1/sources'),
   useFetch<ApiResponse<WorldGrowthWorkspaceView>>(`/api/v1/worlds/${worldId}/growth`),
   useFetch<ApiResponse<AnalysisBatchView | null>>('/api/v1/analysis-batches/latest', { query: { analysisType: 'world_growth', subjectId: worldId } }),
+  useFetch<ApiResponse<PersonaSummary[]>>('/api/v1/personas'),
 ])
 
 const details = computed(() => data.value?.data ?? null)
@@ -33,6 +35,7 @@ const soul = computed(() => soulData.value?.data ?? null)
 const allSources = computed(() => sourceData.value?.data ?? [])
 const growthWorkspace = computed(() => growthData.value?.data ?? { sources: [], growth: [] })
 const growthAnalysis = computed(() => analysisData.value?.data ?? null)
+const allPersonas = computed(() => personaData.value?.data ?? [])
 const tabs: Array<{ id: WorldTab, label: string }> = [
   { id: 'overview', label: '概览' },
   { id: 'soul', label: '灵魂' },
@@ -162,6 +165,41 @@ async function unlinkSource(sourceId: string): Promise<void> {
   await runAction('资料已移出这个世界，资料本身仍保留', async () => {
     await $fetch(`/api/v1/sources/${sourceId}/links/${encodeURIComponent(`world:${worldId}`)}`, { method: 'DELETE' })
     await Promise.all([refresh(), refreshSources()])
+  })
+}
+
+/**
+ * 把尚未归属世界的人物加入当前世界。
+ * @param persona 待关联的人物摘要。
+ * @returns 关系更新和列表刷新完成时结束。
+ */
+async function addPersona(persona: PersonaSummary): Promise<void> {
+  await updatePersonaWorld(persona, worldId, `人物“${persona.name}”已加入这个世界`)
+}
+
+/**
+ * 解除人物与当前世界的关系，不删除人物及其任何数据。
+ * @param persona 待解除关联的人物摘要。
+ * @returns 关系更新和列表刷新完成时结束。
+ */
+async function removePersona(persona: PersonaSummary): Promise<void> {
+  await updatePersonaWorld(persona, null, `人物“${persona.name}”已移出这个世界，人物本身仍保留`)
+}
+
+/**
+ * 复用人物元数据接口修改世界指针，并同步刷新世界详情与人物候选。
+ * @param persona 待修改的人物摘要。
+ * @param targetWorldId 目标世界 UUID；null 表示解除世界关系。
+ * @param successMessage 操作成功后展示的消息。
+ * @returns 请求和刷新全部完成时结束。
+ */
+async function updatePersonaWorld(persona: PersonaSummary, targetWorldId: string | null, successMessage: string): Promise<void> {
+  await runAction(successMessage, async () => {
+    await $fetch(`/api/v1/personas/${persona.id}`, {
+      method: 'PATCH',
+      body: { name: persona.name, worldId: targetWorldId },
+    })
+    await Promise.all([refresh(), refreshPersonas()])
   })
 }
 
@@ -324,8 +362,8 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
       <UButton to="/worlds" color="neutral" variant="ghost">返回世界列表</UButton>
     </ContentPageHeader>
 
-    <UAlert v-if="error || !details || !soul" color="error" title="世界工作区加载失败"
-      :actions="[{ label: '重试', onClick: () => Promise.all([refresh(), refreshSoul()]) }]" />
+    <UAlert v-if="error || personaError || !details || !soul" color="error" title="世界工作区加载失败"
+      :actions="[{ label: '重试', onClick: () => Promise.all([refresh(), refreshSoul(), refreshPersonas()]) }]" />
     <template v-else>
       <UAlert v-if="actionError" class="mb-5" color="error" title="操作失败" :description="actionError" />
       <UAlert v-if="actionMessage" class="mb-5" color="success" title="操作完成" :description="actionMessage" />
@@ -410,7 +448,8 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
               </div>
             </UForm>
           </UCard>
-          <ContentWorldPersonaList :personas="details.personas" />
+          <ContentWorldPersonaList :personas="details.personas" :available-personas="allPersonas"
+            :loading="actionLoading" @add="addPersona" @remove="removePersona" />
         </div>
         <UCard>
           <template #header>

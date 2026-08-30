@@ -179,7 +179,7 @@ describe('成长与记忆事实管理闭环', () => {
 /** @returns 新建但尚未发布灵魂的测试人物摘要。 */
 async function createPersona(): Promise<{ id: string }> {
   const created = await content.createPersona({
-    name: '测试人物', origin: 'original', worldId: null, sourceIds: [],
+    name: '测试人物', worldId: null, sourceIds: [],
     snapshot: {
       promptText: '重视事实。',
     },

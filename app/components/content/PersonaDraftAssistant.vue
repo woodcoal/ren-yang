@@ -28,7 +28,6 @@ const emit = defineEmits<{
 /** 草稿生成器唯一可变输入状态。 */
 const state = reactive<GeneratePersonaDraftInput>({
   prompt: '',
-  origin: 'original',
   worldId: null,
   sourceIds: [],
 })
@@ -65,14 +64,7 @@ function handleSubmit(event: FormSubmitEvent<GeneratePersonaDraftInput>): void {
         <UTextarea v-model="state.prompt" class="w-full" :rows="6" :disabled="loading"
           placeholder="例如：她是架空学院的年轻档案员，谨慎、重视证据，回答简短；遇到未知事实必须明确说明不知道。" />
       </UFormField>
-      <div class="grid gap-5 md:grid-cols-3">
-        <UFormField name="origin" label="来源模式" required>
-          <USelect v-model="state.origin" class="w-full" :items="[
-            { label: '原创', value: 'original' },
-            { label: '资料型', value: 'source_based' },
-            { label: '混合型', value: 'hybrid' },
-          ]" :disabled="loading" />
-        </UFormField>
+      <div class="grid gap-5 md:grid-cols-2">
         <UFormField name="worldId" label="可用世界（可选）">
           <select v-model="state.worldId" class="native-control" :disabled="loading">
             <option :value="null">不使用世界</option>

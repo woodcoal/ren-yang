@@ -208,7 +208,7 @@ beforeEach(async () => {
   })
   sourceId = source.source.id
   const persona = await contentService.createPersona({
-    name: '林默', origin: 'source_based', worldId: null, sourceIds: [source.source.id],
+    name: '林默', worldId: null, sourceIds: [source.source.id],
     snapshot: PERSONA_SNAPSHOT, changeSummary: '建立人物',
   })
   await new SoulApplicationService({
@@ -245,7 +245,6 @@ describe('阶段三纯文本运行', () => {
     model.invalidPersonaMetaOnce = true
     const draft = await generation.generatePersonaDraft({
       prompt: '创建一名谨慎的学院档案员，回答必须简短。',
-      origin: 'source_based',
       worldId: null,
       sourceIds: [sourceId, sourceId],
     })
@@ -258,6 +257,7 @@ describe('阶段三纯文本运行', () => {
     const request = model.requests.get('persona_draft')!
     expect(request.userPrompt).toContain('创建一名谨慎的学院档案员')
     expect(request.userPrompt).toContain('魔法学院课程包含古代文献研究与档案整理。')
+    expect(request.userPrompt).not.toContain('人物来源模式')
     expect(request.userPrompt.match(/学院原著事实/g)).toHaveLength(1)
     expect(request.systemPrompt).toContain('原著事实只能来自 role=canon_fact')
     expect(request.systemPrompt).toContain('禁止写入返回内容')
@@ -301,7 +301,7 @@ describe('阶段三纯文本运行', () => {
       status: 'succeeded',
       result: { decision: 'interested', probability: 0.88, confidence: 0.82 },
       scene: { location: '图书馆' },
-      promptVersion: 'artifact-v6',
+      promptVersion: 'artifact-v7',
       contextProvider: 'sqlite_fts5',
       promptContext: {
         tokenCountExact: false,
@@ -485,7 +485,7 @@ describe('阶段三纯文本运行', () => {
       learning: new SqliteLearningRepository(database.getClient()),
     })
     await expect(disabled.createInterestRun({ personaId, content: '测试' })).rejects.toMatchObject({ code: 'CAPABILITY_DISABLED' })
-    await expect(disabled.generatePersonaDraft({ prompt: '测试人物', origin: 'original', sourceIds: [] }))
+    await expect(disabled.generatePersonaDraft({ prompt: '测试人物', sourceIds: [] }))
       .rejects.toMatchObject({ code: 'CAPABILITY_DISABLED' })
     await expect(disabled.generateWorldDraft({ prompt: '测试世界' }))
       .rejects.toMatchObject({ code: 'CAPABILITY_DISABLED' })

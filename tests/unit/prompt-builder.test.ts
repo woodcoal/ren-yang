@@ -21,7 +21,7 @@ describe('真实模型提示契约', () => {
       evidence: [],
     }, '测试内容')
 
-    expect(GENERATION_PROMPT_VERSION).toBe('artifact-v6')
+    expect(GENERATION_PROMPT_VERSION).toBe('artifact-v7')
     expect(prompt.systemPrompt).toContain('factors 必须是对象数组')
     expect(prompt.systemPrompt).toContain('dimension、score、explanation')
     expect(prompt.systemPrompt).toContain('score 必须是 -1 到 1 的数字')

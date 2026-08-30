@@ -168,7 +168,6 @@ describe('人物、世界与资料管理闭环', () => {
   it('创建人物和世界时初始灵魂立即成为当前版本且对象默认启用', async () => {
     const created = await service.createPersona({
       name: '林默',
-      origin: 'original',
       worldId: null,
       sourceIds: [],
       snapshot: BASE_PERSONA_SNAPSHOT,
@@ -192,7 +191,7 @@ describe('人物、世界与资料管理闭环', () => {
 
   it('保存灵魂立即生成不可变历史并切换当前版本', async () => {
     const created = await service.createPersona({
-      name: '历史测试人物', origin: 'original', worldId: null, sourceIds: [],
+      name: '历史测试人物', worldId: null, sourceIds: [],
       snapshot: BASE_PERSONA_SNAPSHOT, changeSummary: '建立人物',
     })
     const initialVersionId = created.persona.activeVersionId!
@@ -222,7 +221,7 @@ describe('人物、世界与资料管理闭环', () => {
 
   it('创建和保存灵魂在 Token 上限内成功且超限时不产生版本', async () => {
     const created = await service.createPersona({
-      name: '预算边界人物', origin: 'original', worldId: null, sourceIds: [],
+      name: '预算边界人物', worldId: null, sourceIds: [],
       snapshot: { promptText: '界'.repeat(3_500) }, changeSummary: '建立预算边界人物',
     })
     const initialVersionId = created.persona.activeVersionId!
@@ -243,11 +242,11 @@ describe('人物、世界与资料管理闭环', () => {
 
   it('保存灵魂拒绝使用其他对象的历史版本且不改变当前版本', async () => {
     const first = await service.createPersona({
-      name: '第一位归属测试人物', origin: 'original', worldId: null, sourceIds: [],
+      name: '第一位归属测试人物', worldId: null, sourceIds: [],
       snapshot: BASE_PERSONA_SNAPSHOT, changeSummary: '建立第一位人物',
     })
     const second = await service.createPersona({
-      name: '第二位归属测试人物', origin: 'original', worldId: null, sourceIds: [],
+      name: '第二位归属测试人物', worldId: null, sourceIds: [],
       snapshot: BASE_PERSONA_SNAPSHOT, changeSummary: '建立第二位人物',
     })
 
@@ -264,7 +263,6 @@ describe('人物、世界与资料管理闭环', () => {
   it('手动保存灵魂只移除首尾空白且不调用模型', async () => {
     const created = await service.createPersona({
       name: '手动整理测试人物',
-      origin: 'original',
       worldId: null,
       sourceIds: [],
       snapshot: BASE_PERSONA_SNAPSHOT,
@@ -317,7 +315,6 @@ describe('人物、世界与资料管理闭环', () => {
   it('自动分析不可用或输出无效时不改变当前灵魂版本', async () => {
     const created = await service.createPersona({
       name: '失败保护测试人物',
-      origin: 'original',
       worldId: null,
       sourceIds: [],
       snapshot: BASE_PERSONA_SNAPSHOT,
@@ -355,24 +352,14 @@ describe('人物、世界与资料管理闭环', () => {
     })
   })
 
-  it('资料型人物必须有关联资料，原创和混合型不强制资料', async () => {
+  it('创建人物不再区分来源模式且参考资料可为空', async () => {
     await expect(service.createPersona({
-      name: '无依据人物',
-      origin: 'source_based',
+      name: '独立人物',
       worldId: null,
       sourceIds: [],
       snapshot: BASE_PERSONA_SNAPSHOT,
-      changeSummary: '错误创建',
-    })).rejects.toMatchObject<ApplicationError>({ code: 'SOURCE_REQUIRED', statusCode: 422 })
-
-    await expect(service.createPersona({
-      name: '混合人物',
-      origin: 'hybrid',
-      worldId: null,
-      sourceIds: [],
-      snapshot: BASE_PERSONA_SNAPSHOT,
-      changeSummary: '用户设定优先',
-    })).resolves.toMatchObject({ persona: { origin: 'hybrid' } })
+      changeSummary: '建立人物',
+    })).resolves.toMatchObject({ persona: { origin: 'original', sourceCount: 0 } })
   })
 
   it('保存可选世界版本，并在人设解除关联前阻止删除世界', async () => {
@@ -387,7 +374,6 @@ describe('人物、世界与资料管理闭环', () => {
     await soulService.publishDraft('world', world.world.id)
     const persona = await service.createPersona({
       name: '船长',
-      origin: 'original',
       worldId: world.world.id,
       sourceIds: [],
       snapshot: BASE_PERSONA_SNAPSHOT,
@@ -430,7 +416,6 @@ describe('人物、世界与资料管理闭环', () => {
 
     const persona = await service.createPersona({
       name: '测试人物',
-      origin: 'original',
       worldId: null,
       sourceIds: [],
       snapshot: BASE_PERSONA_SNAPSHOT,
@@ -609,7 +594,7 @@ describe('人物、世界与资料管理闭环', () => {
         snapshot: createWorldSnapshot(`分页世界规则 ${index}。`), changeSummary: '建立分页世界',
       })
       await service.createPersona({
-        name: `分页人物 ${String(index).padStart(2, '0')}`, origin: 'original', worldId: null, sourceIds: [],
+        name: `分页人物 ${String(index).padStart(2, '0')}`, worldId: null, sourceIds: [],
         snapshot: BASE_PERSONA_SNAPSHOT, changeSummary: '建立分页人物',
       })
     }
@@ -638,11 +623,11 @@ describe('人物、世界与资料管理闭环', () => {
       name: '第二世界', summary: '', snapshot: createWorldSnapshot('第二世界规则。'), changeSummary: '建立世界',
     })
     const firstPersona = await service.createPersona({
-      name: '第一人物', origin: 'original', worldId: firstWorld.world.id, sourceIds: [],
+      name: '第一人物', worldId: firstWorld.world.id, sourceIds: [],
       snapshot: BASE_PERSONA_SNAPSHOT, changeSummary: '建立人物',
     })
     const secondPersona = await service.createPersona({
-      name: '第二人物', origin: 'original', worldId: null, sourceIds: [],
+      name: '第二人物', worldId: null, sourceIds: [],
       snapshot: BASE_PERSONA_SNAPSHOT, changeSummary: '建立人物',
     })
     const invalidId = '00000000-0000-4000-8000-999999999999'
@@ -688,7 +673,6 @@ describe('人物、世界与资料管理闭环', () => {
     })
     const persona = await service.createPersona({
       name: '观察员',
-      origin: 'original',
       worldId: null,
       sourceIds: [],
       snapshot: BASE_PERSONA_SNAPSHOT,
@@ -716,7 +700,7 @@ describe('人物、世界与资料管理闭环', () => {
       name: '浮岛纪元', summary: '', snapshot: createWorldSnapshot('群岛依靠风帆船往来。'), changeSummary: '建立世界',
     })
     const persona = await service.createPersona({
-      name: '档案员', origin: 'original', worldId: world.world.id, sourceIds: [],
+      name: '档案员', worldId: world.world.id, sourceIds: [],
       snapshot: BASE_PERSONA_SNAPSHOT, changeSummary: '建立人物',
     })
     const targets = [
@@ -805,7 +789,7 @@ describe('人物、世界与资料管理闭环', () => {
       name: '临时世界', summary: '', snapshot: createWorldSnapshot('临时世界。'), changeSummary: '建立世界',
     })
     const persona = await service.createPersona({
-      name: '临时人物', origin: 'original', worldId: null, sourceIds: [],
+      name: '临时人物', worldId: null, sourceIds: [],
       snapshot: BASE_PERSONA_SNAPSHOT, changeSummary: '建立人物',
     })
     await soulService.saveVersion('world', world.world.id, {

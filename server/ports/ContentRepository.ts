@@ -36,7 +36,7 @@ export interface CreatePersonaRecord {
   worldId: string | null
   /** 人物名称。 */
   name: string
-  /** 来源模式。 */
+  /** 数据库兼容值；来源模式已退出业务。 */
   origin: PersonaOrigin
   /** 初始档案快照。 */
   snapshot: PersonaSnapshot

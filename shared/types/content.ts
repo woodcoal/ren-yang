@@ -102,7 +102,7 @@ export interface PersonaSummary {
   name: string
   /** 已设置头像时返回受认证保护的读取地址，否则为 null。 */
   avatarUrl: string | null
-  /** 人物来源模式。 */
+  /** 历史兼容字段；不再参与业务或界面展示。 */
   origin: 'original' | 'source_based' | 'hybrid'
   /** 当前已发布版本 UUID。 */
   activeVersionId: string | null

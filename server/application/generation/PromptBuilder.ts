@@ -13,7 +13,7 @@ export interface PersonaDraftReference {
 }
 
 /** 阶段七真实模型验收提示版本；任何提示语义变化都必须更新该值。 */
-export const GENERATION_PROMPT_VERSION = 'artifact-v6'
+export const GENERATION_PROMPT_VERSION = 'artifact-v7'
 
 /** 统一的最高优先级模型规则。 */
 const BASE_SYSTEM_RULES = `你是人物模拟与内容规划引擎。必须遵守以下规则：
@@ -26,14 +26,12 @@ const BASE_SYSTEM_RULES = `你是人物模拟与内容规划引擎。必须遵�
 /**
  * 构建自然语言人物候选草稿提示。
  * @param prompt 用户明确描述的人设，优先级高于全部参考资料。
- * @param origin 人物来源模式。
  * @param world 可选已发布世界。
  * @param references 已限制长度的不可信参考资料。
  * @returns 分层系统提示和用户提示。
  */
 export function buildPersonaDraftPrompt(
   prompt: string,
-  origin: 'original' | 'source_based' | 'hybrid',
   world: WorldSnapshot | null,
   references: PersonaDraftReference[],
 ): { systemPrompt: string, userPrompt: string } {
@@ -45,8 +43,7 @@ export function buildPersonaDraftPrompt(
 4. name 和 promptText 只能描述人物本身。候选、确认、发布和 AI 生成等流程状态由应用管理，禁止写入返回内容。
 5. 只输出一个 JSON 对象，字段必须为 name 和 snapshot；snapshot 只能包含 promptText。promptText 是实际进入任务提示词的完整人物灵魂文本。
 6. 不输出 Markdown 代码围栏、解释或隐藏推理。`,
-    userPrompt: `<人物来源模式>${JSON.stringify(origin)}</人物来源模式>
-<用户明确人设>${JSON.stringify(prompt)}</用户明确人设>
+    userPrompt: `<用户明确人设>${JSON.stringify(prompt)}</用户明确人设>
 <已发布世界灵魂>${JSON.stringify(world?.promptText ?? null)}</已发布世界灵魂>
 <不可信参考资料>${JSON.stringify(references)}</不可信参考资料>`,
   }
