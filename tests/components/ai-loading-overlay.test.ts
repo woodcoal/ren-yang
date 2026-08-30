@@ -53,6 +53,8 @@ describe('全局 AI 加载层', () => {
     expect(document.body.textContent).toContain('AI 正在生成测试头像')
     expect(document.body.textContent).toContain('请勿刷新页面或重复提交')
     expect(document.querySelector('[role="progressbar"]')).not.toBeNull()
+    expect(document.querySelector('[data-ai-loading-animation] .animate-spin')).not.toBeNull()
+    expect(document.querySelector('[data-ai-loading-animation] .animate-ping')).not.toBeNull()
     expect(document.querySelector('[data-slot="close"]')).toBeNull()
 
     await new DOMWrapper(wrapper.get('[data-complete-ai-task]').element).trigger('click')

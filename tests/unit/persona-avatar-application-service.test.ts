@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
+import sharp from 'sharp'
+import { generatePersonaAvatarSchema } from '../../shared/schemas/content'
 import { ContentApplicationService } from '../../server/application/content/ContentApplicationService'
 import type { PersonaRecord, PersonaVersionRecord } from '../../server/domain/content/ContentModels'
 import { LocalPersonaAvatarStorage } from '../../server/infrastructure/content/LocalPersonaAvatarStorage'
@@ -18,8 +20,10 @@ import type { SoulRepository } from '../../server/ports/SoulRepository'
 const PERSONA_ID = '00000000-0000-4000-8000-000000000001'
 /** 测试人物当前版本 UUID。 */
 const VERSION_ID = '00000000-0000-4000-8000-000000000002'
-/** 可识别的最小测试 PNG 字节。 */
-const PNG_BYTES = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 1])
+/** 用于验证应用服务统一头像尺寸的 640×320 测试 PNG。 */
+const PNG_BYTES = new Uint8Array(await sharp({
+  create: { width: 640, height: 320, channels: 4, background: '#32658f' },
+}).png().toBuffer())
 /** 固定人物记录。 */
 const PERSONA: PersonaRecord = {
   id: PERSONA_ID,
@@ -119,13 +123,16 @@ afterEach(() => {
 describe('人物头像应用服务', () => {
   it('保存上传头像并在人物摘要中公开受保护读取地址', async () => {
     const summary = await service.uploadPersonaAvatar(PERSONA_ID, PNG_BYTES, 'image/png')
+    const avatar = await service.getPersonaAvatar(PERSONA_ID)
+    const metadata = await sharp(avatar.bytes).metadata()
 
     expect(summary.avatarUrl).toBe(`/api/v1/personas/${PERSONA_ID}/avatar`)
-    await expect(service.getPersonaAvatar(PERSONA_ID)).resolves.toEqual({ bytes: PNG_BYTES, mediaType: 'image/png' })
+    expect(avatar.mediaType).toBe('image/png')
+    expect(metadata).toMatchObject({ width: 512, height: 512 })
   })
 
   it('使用人物名称和当前灵魂生成固定 1:1 头像', async () => {
-    const summary = await service.generatePersonaAvatar(PERSONA_ID)
+    const summary = await service.generatePersonaAvatar(PERSONA_ID, { additionalPrompt: '' })
 
     expect(summary.avatarUrl).toBe(`/api/v1/personas/${PERSONA_ID}/avatar`)
     expect(imageModel.requests).toHaveLength(1)
@@ -133,6 +140,23 @@ describe('人物头像应用服务', () => {
     expect(imageModel.requests[0]?.prompt).toContain('人物名称：林默')
     expect(imageModel.requests[0]?.prompt).toContain(VERSION.snapshot.promptText)
     expect(imageModel.requests[0]?.prompt).toContain('不得出现文字')
+    const avatar = await service.getPersonaAvatar(PERSONA_ID)
+    await expect(sharp(avatar.bytes).metadata()).resolves.toMatchObject({ width: 512, height: 512 })
+  })
+
+  it('把自定义视觉要求追加到人物设定后并保留头像安全约束', async () => {
+    await service.generatePersonaAvatar(PERSONA_ID, { additionalPrompt: '水彩插画，暖色逆光，旧档案馆背景。' })
+
+    expect(imageModel.requests[0]?.prompt).toContain('用户补充视觉要求：水彩插画，暖色逆光，旧档案馆背景。')
+    expect(imageModel.requests[0]?.prompt).toContain('人物名称：林默')
+    expect(imageModel.requests[0]?.prompt).toContain('不得替换人物名称、人物设定')
+    expect(imageModel.requests[0]?.prompt).toContain('不得出现文字')
+  })
+
+  it('校验并整理自定义头像补充提示词', () => {
+    expect(generatePersonaAvatarSchema.parse({ additionalPrompt: '  暖色背景  ' })).toEqual({ additionalPrompt: '暖色背景' })
+    expect(generatePersonaAvatarSchema.parse({})).toEqual({ additionalPrompt: '' })
+    expect(generatePersonaAvatarSchema.safeParse({ additionalPrompt: '字'.repeat(2_001) }).success).toBe(false)
   })
 
   it('在读取不存在头像时返回稳定的资源不存在错误', async () => {

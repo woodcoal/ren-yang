@@ -1,7 +1,10 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { readBody } from 'h3'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { DOMWrapper, flushPromises } from '@vue/test-utils'
 import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
+import PersonaAvatar from '../../app/components/content/PersonaAvatar.vue'
 import PersonaAvatarEditor from '../../app/components/content/PersonaAvatarEditor.vue'
+import type { GeneratePersonaAvatarInput } from '../../shared/schemas/content'
 
 /** 测试人物 UUID。 */
 const PERSONA_ID = '00000000-0000-4000-8000-000000000001'
@@ -9,6 +12,8 @@ const PERSONA_ID = '00000000-0000-4000-8000-000000000001'
 let uploadRequests = 0
 /** 生成接口收到的请求数量。 */
 let generationRequests = 0
+/** 生成接口收到的请求体。 */
+const generationInputs: GeneratePersonaAvatarInput[] = []
 
 registerEndpoint(`/api/v1/personas/${PERSONA_ID}/avatar`, {
   method: 'PUT',
@@ -22,8 +27,9 @@ registerEndpoint(`/api/v1/personas/${PERSONA_ID}/avatar`, {
 registerEndpoint(`/api/v1/personas/${PERSONA_ID}/avatar/generate`, {
   method: 'POST',
   /** @returns 模拟生成后的头像人物摘要。 */
-  handler: () => {
+  handler: async (event) => {
     generationRequests += 1
+    generationInputs.push(await readBody<GeneratePersonaAvatarInput>(event))
     return { data: { id: PERSONA_ID, avatarUrl: `/api/v1/personas/${PERSONA_ID}/avatar` } }
   },
 })
@@ -31,9 +37,19 @@ registerEndpoint(`/api/v1/personas/${PERSONA_ID}/avatar/generate`, {
 beforeEach(() => {
   uploadRequests = 0
   generationRequests = 0
+  generationInputs.length = 0
 })
 
 describe('人物头像编辑器', () => {
+  it('页首头像使用独立尺寸并保留无图占位', async () => {
+    const wrapper = await mountSuspended(PersonaAvatar, {
+      props: { name: '林默', url: null, size: 'header' },
+    })
+
+    expect(wrapper.text()).toBe('林')
+    expect(wrapper.get('.persona-avatar-header').exists()).toBe(true)
+  })
+
   it('无头像时显示姓名首字，并可上传受支持图片', async () => {
     const wrapper = await mountSuspended(PersonaAvatarEditor, {
       props: { personaId: PERSONA_ID, personaName: '林默', avatarUrl: null },
@@ -49,6 +65,7 @@ describe('人物头像编辑器', () => {
 
     expect(uploadRequests).toBe(1)
     expect(wrapper.emitted('updated')).toHaveLength(1)
+    expect(wrapper.text()).toContain('统一保存为 512×512')
   })
 
   it('点击生成头像后调用生成接口并公开更新事件', async () => {
@@ -63,7 +80,33 @@ describe('人物头像编辑器', () => {
     await flushPromises()
 
     expect(generationRequests).toBe(1)
-    expect(wrapper.emitted('updated')).toHaveLength(1)
+    expect(generationInputs).toEqual([{ additionalPrompt: '' }])
+    await vi.waitFor(() => expect(wrapper.emitted('updated')).toHaveLength(1))
+  })
+
+  it('自定义生成弹窗提交用户补充的视觉提示词', async () => {
+    const wrapper = await mountSuspended(PersonaAvatarEditor, {
+      props: { personaId: PERSONA_ID, personaName: '林默', avatarUrl: null },
+    })
+    const customButton = wrapper.findAll<HTMLButtonElement>('button')
+      .find(button => button.text().includes('自定义生成'))
+    expect(customButton).toBeDefined()
+
+    await new DOMWrapper(customButton!.element).trigger('click')
+    await flushPromises()
+    const textarea = document.querySelector<HTMLTextAreaElement>('textarea[name="additionalPrompt"]')
+    expect(textarea).not.toBeNull()
+    await new DOMWrapper(textarea!).setValue('水彩插画，暖色逆光，旧档案馆背景。')
+    const form = document.querySelector<HTMLFormElement>('[data-custom-avatar-form]')
+    expect(form).not.toBeNull()
+    await new DOMWrapper(form!).trigger('submit')
+    await flushPromises()
+
+    expect(generationInputs).toEqual([{ additionalPrompt: '水彩插画，暖色逆光，旧档案馆背景。' }])
+    await vi.waitFor(() => {
+      expect(wrapper.emitted('updated')).toHaveLength(1)
+      expect(document.querySelector('[data-custom-avatar-form]')).toBeNull()
+    })
   })
 
   it('在客户端拒绝不支持的上传类型', async () => {

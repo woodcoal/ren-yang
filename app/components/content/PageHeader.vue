@@ -11,6 +11,12 @@ interface Props {
 }
 
 const props = defineProps<Props>()
+const slots = defineSlots<{
+  /** 页面主标题前的对象图像或其他身份标识。 */
+  leading?: () => unknown
+  /** 页面右侧的主要与次要操作。 */
+  default?: () => unknown
+}>()
 const route = useRoute()
 
 /** 当前页面所属导航分组。 */
@@ -25,13 +31,18 @@ const routeContext = computed(() => getPageRouteContext(route.path))
       <strong>{{ props.title }}</strong>
     </nav>
     <header class="page-heading-header">
-      <div class="page-heading-copy">
-        <h1 class="page-title">
-          {{ title }}
-        </h1>
-        <p class="page-description">{{ description }}</p>
+      <div class="page-heading-identity">
+        <div v-if="slots.leading" class="page-heading-leading">
+          <slot name="leading" />
+        </div>
+        <div class="page-heading-copy">
+          <h1 class="page-title">
+            {{ title }}
+          </h1>
+          <p class="page-description">{{ description }}</p>
+        </div>
       </div>
-      <div v-if="$slots.default" class="page-actions">
+      <div v-if="slots.default" class="page-actions">
         <slot />
       </div>
     </header>

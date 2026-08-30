@@ -93,6 +93,11 @@ export const updatePersonaStatusSchema = z.object({
   isEnabled: z.boolean({ error: '人物状态必须是布尔值' }),
 })
 
+/** 根据人物当前灵魂生成头像时允许附加的视觉要求。 */
+export const generatePersonaAvatarSchema = z.object({
+  additionalPrompt: z.string().trim().max(2_000, '补充提示词不能超过 2000 字').default(''),
+})
+
 /** 批量修改人物启用状态的输入。 */
 export const updatePersonasStatusSchema = updatePersonaStatusSchema.extend({
   personaIds: z.array(z.string().uuid('人物标识无效'))
@@ -258,6 +263,7 @@ export type GeneratePersonaDraftInput = z.infer<typeof generatePersonaDraftSchem
 export type PersonaDraft = z.infer<typeof personaDraftSchema>
 export type UpdatePersonaInput = z.infer<typeof updatePersonaSchema>
 export type UpdatePersonaStatusInput = z.infer<typeof updatePersonaStatusSchema>
+export type GeneratePersonaAvatarInput = z.infer<typeof generatePersonaAvatarSchema>
 export type UpdatePersonasStatusInput = z.infer<typeof updatePersonasStatusSchema>
 export type CreatePersonaVersionInput = z.infer<typeof createPersonaVersionSchema>
 export type CreateWorldInput = z.infer<typeof createWorldSchema>

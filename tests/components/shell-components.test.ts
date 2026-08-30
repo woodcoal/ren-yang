@@ -57,4 +57,14 @@ describe('后台品牌与主题组件', () => {
     expect(wrapper.text()).not.toContain('ROUTE')
     expect(wrapper.find('.page-route-code').exists()).toBe(false)
   })
+
+  it('页面标题允许在名称前展示对象图像', async () => {
+    const wrapper = await mountSuspended(PageHeader, {
+      props: { title: '林默', description: '人物说明' },
+      slots: { leading: '<span data-page-heading-image>人物图像</span>' },
+    })
+
+    expect(wrapper.get('[data-page-heading-image]').text()).toBe('人物图像')
+    expect(wrapper.get('.page-heading-identity').text()).toContain('林默')
+  })
 })

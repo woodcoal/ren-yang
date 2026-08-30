@@ -49,7 +49,7 @@ const tabs: Array<{ id: PersonaTab, label: string }> = [
   { id: 'growth', label: '成长' },
   { id: 'memory', label: '记忆' },
   { id: 'sources', label: '资料' },
-  { id: 'relations', label: '基本信息与管理' },
+  { id: 'relations', label: '基本信息' },
 ]
 const selectedTab = shallowRef<PersonaTab>('overview')
 const metadata = reactive<UpdatePersonaInput>({
@@ -61,8 +61,14 @@ const deletionConfirmed = shallowRef(false)
 const actionLoading = shallowRef(false)
 const actionError = shallowRef<string | null>(null)
 const actionMessage = shallowRef<string | null>(null)
+/** 头像更新后用于强制刷新页首同地址图片。 */
+const avatarRevision = shallowRef(0)
 const enableConfirmationOpen = shallowRef(false)
 const disableConfirmationOpen = shallowRef(false)
+/** 页首头像读取地址；每次更新增加版本查询参数，避免浏览器继续显示旧图。 */
+const headerAvatarUrl = computed(() => details.value?.persona.avatarUrl
+  ? `${details.value.persona.avatarUrl}?v=${avatarRevision.value}`
+  : null)
 
 /**
  * 切换人物工作区标签。
@@ -90,6 +96,7 @@ async function saveMetadata(event: FormSubmitEvent<UpdatePersonaInput>): Promise
  * @returns 最新人物摘要加载完成时结束。
  */
 async function refreshPersonaAvatar(): Promise<void> {
+  avatarRevision.value += 1
   await refresh()
 }
 
@@ -388,6 +395,9 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
       :title="details?.persona.name || '人物工作区'"
       :description="details?.persona.currentSummary || '管理人物灵魂、成长、记忆和资料。'"
     >
+      <template v-if="details" #leading>
+        <ContentPersonaAvatar :name="details.persona.name" :url="headerAvatarUrl" size="header" />
+      </template>
       <UButton v-if="details" color="neutral" variant="soft" :loading="actionLoading" @click="requestPersonaStatusChange">{{ details.persona.isEnabled ? '禁用人物' : '启用人物' }}</UButton>
       <UButton to="/personas" color="neutral" variant="ghost">返回人物列表</UButton>
       <UButton v-if="details?.persona.isEnabled" to="/workbench">新建任务</UButton>
@@ -398,14 +408,6 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
       <UAlert v-if="actionError" class="mb-5" color="error" title="操作失败" :description="actionError" />
       <UAlert v-if="actionMessage" class="mb-5" color="success" title="操作完成" :description="actionMessage" />
       <UAlert v-if="!details.persona.isEnabled" class="mb-6" color="warning" title="人物当前已禁用" description="人物设定、成长、记忆、资料关系和历史任务仍会保留，但不能用来创建新任务。" />
-
-      <ContentPersonaAvatarEditor
-        class="mb-6"
-        :persona-id="details.persona.id"
-        :persona-name="details.persona.name"
-        :avatar-url="details.persona.avatarUrl"
-        @updated="refreshPersonaAvatar"
-      />
 
       <div class="status-strip page-status-strip mb-6">
         <div class="status-cell"><span class="status-kicker">所属世界</span><strong class="status-value">{{ details.persona.worldName || '未关联世界' }}</strong></div>
@@ -501,6 +503,12 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
 
       <div v-else class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
         <div class="space-y-6">
+          <ContentPersonaAvatarEditor
+            :persona-id="details.persona.id"
+            :persona-name="details.persona.name"
+            :avatar-url="details.persona.avatarUrl"
+            @updated="refreshPersonaAvatar"
+          />
           <UCard>
             <template #header><div><h2 class="font-semibold text-highlighted">基本信息</h2><p class="mt-1 text-sm text-muted">名称用于后台辨认；所属世界当前使用的灵魂会进入人物的新任务。</p></div></template>
             <UForm :schema="updatePersonaSchema" :state="metadata" class="grid gap-4 md:grid-cols-2" @submit="saveMetadata">

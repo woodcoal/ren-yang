@@ -7,15 +7,19 @@ interface Props {
   name: string
   /** 头像读取地址；未设置时为 null。 */
   url: string | null
-  /** 头像在列表或编辑区使用的尺寸。 */
-  size?: 'small' | 'large'
+  /** 头像在列表、页首或编辑区使用的尺寸。 */
+  size?: 'small' | 'header' | 'large'
 }
 
 const props = withDefaults(defineProps<Props>(), { size: 'small' })
 /** 无头像时显示的人物名称首字符。 */
 const fallbackInitial = computed(() => Array.from(props.name.trim())[0] ?? '人')
-/** 根据使用位置确定头像尺寸。 */
-const sizeClass = computed(() => props.size === 'large' ? 'persona-avatar-large' : 'persona-avatar-small')
+/** 根据使用位置确定头像尺寸，页首尺寸保持标题层级紧凑。 */
+const sizeClass = computed(() => ({
+  small: 'persona-avatar-small',
+  header: 'persona-avatar-header',
+  large: 'persona-avatar-large',
+})[props.size])
 </script>
 
 <template>
@@ -54,10 +58,26 @@ const sizeClass = computed(() => props.size === 'large' ? 'persona-avatar-large'
   font-size: 1.125rem;
 }
 
+.persona-avatar-header {
+  width: 4.5rem;
+  height: 4.5rem;
+  border-radius: 1.125rem;
+  font-size: 1.75rem;
+}
+
 .persona-avatar-large {
   width: 8rem;
   height: 8rem;
   border-radius: 1.5rem;
   font-size: 2.5rem;
+}
+
+@media (max-width: 40rem) {
+  .persona-avatar-header {
+    width: 3.75rem;
+    height: 3.75rem;
+    border-radius: 1rem;
+    font-size: 1.5rem;
+  }
 }
 </style>

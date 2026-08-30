@@ -1,5 +1,6 @@
 import type {
   CreatePersonaInput,
+  GeneratePersonaAvatarInput,
   CreateSourceInput,
   CreateSourceLinkInput,
   ListSubjectsPageInput,
@@ -157,7 +158,7 @@ export class ContentApplicationService {
   }
 
   /**
-   * 保存用户上传的人物头像。
+   * 保存用户上传并由存储层统一为 512×512 的人物头像。
    * @param personaId 人物 UUID。
    * @param bytes 浏览器上传的图片字节。
    * @param mediaType 浏览器声明的图片媒体类型。
@@ -178,11 +179,12 @@ export class ContentApplicationService {
   }
 
   /**
-   * 根据人物当前名称和灵魂提示词生成并保存 1:1 头像。
+   * 根据人物当前名称、灵魂提示词和可选视觉要求生成并保存 512×512 头像。
    * @param personaId 人物 UUID。
+   * @param input 用户可选补充的视觉提示词；不会替代人物名称或当前灵魂。
    * @returns 更新头像后的人物摘要。
    */
-  async generatePersonaAvatar(personaId: string): Promise<PersonaSummary> {
+  async generatePersonaAvatar(personaId: string, input: GeneratePersonaAvatarInput): Promise<PersonaSummary> {
     const persona = await this.requirePersona(personaId)
     const imageModel = this.dependencies.imageModel
     if (!imageModel?.getConfiguredModel()) {
@@ -198,7 +200,7 @@ export class ContentApplicationService {
 
     try {
       const response = await imageModel.generate({
-        prompt: buildPersonaAvatarPrompt(persona.name, version.snapshot.promptText),
+        prompt: buildPersonaAvatarPrompt(persona.name, version.snapshot.promptText, input.additionalPrompt),
         aspectRatio: '1:1',
         timeoutMs: 120_000,
       })
@@ -1072,14 +1074,18 @@ function diffSoulSnapshots(before: PersonaSnapshot, after: PersonaSnapshot): Ver
  * 构造只用于单张人物头像的视觉提示词。
  * @param name 人物展示名称。
  * @param soulPrompt 当前已发布灵魂提示词。
+ * @param additionalPrompt 用户补充的视觉要求，只作为人物设定之外的附加条件。
  * @returns 限长且明确禁止文字水印的 1:1 头像提示词。
  */
-function buildPersonaAvatarPrompt(name: string, soulPrompt: string): string {
+function buildPersonaAvatarPrompt(name: string, soulPrompt: string, additionalPrompt: string): string {
   const boundedSoul = soulPrompt.slice(0, 6_000)
+  const boundedAdditionalPrompt = additionalPrompt.trim().slice(0, 2_000)
   return [
     '生成人物头像，正方形 1:1 构图。',
     `人物名称：${name}`,
     `人物设定：${boundedSoul}`,
+    ...(boundedAdditionalPrompt ? [`用户补充视觉要求：${boundedAdditionalPrompt}`] : []),
+    '用户补充要求仅用于视觉细节，不得替换人物名称、人物设定或以下成图要求。',
     '要求：单人半身或头肩肖像，主体居中，面部或核心形象清晰，背景简洁；不得出现文字、标志、水印、边框或多人。',
   ].join('\n')
 }

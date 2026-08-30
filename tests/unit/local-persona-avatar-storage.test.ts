@@ -2,12 +2,15 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
+import sharp from 'sharp'
 import { LocalPersonaAvatarStorage } from '../../server/infrastructure/content/LocalPersonaAvatarStorage'
 
 /** 测试人物 UUID。 */
 const PERSONA_ID = '00000000-0000-4000-8000-000000000001'
-/** 可识别的最小测试 PNG 字节。 */
-const PNG_BYTES = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 1])
+/** 用于验证中心裁切和缩放的 640×320 测试 PNG。 */
+const PNG_BYTES = new Uint8Array(await sharp({
+  create: { width: 640, height: 320, channels: 4, background: '#32658f' },
+}).png().toBuffer())
 /** 当前测试独占数据目录。 */
 let directory: string | null = null
 
@@ -30,12 +33,12 @@ describe('LocalPersonaAvatarStorage', () => {
     const storage = createStorage()
     await expect(storage.hasAvatar(PERSONA_ID)).resolves.toBe(false)
 
-    await expect(storage.saveAvatar(PERSONA_ID, PNG_BYTES, 'image/png')).resolves.toEqual({
-      bytes: PNG_BYTES,
-      mediaType: 'image/png',
-    })
+    const saved = await storage.saveAvatar(PERSONA_ID, PNG_BYTES, 'image/png')
+    const metadata = await sharp(saved.bytes).metadata()
+    expect(saved.mediaType).toBe('image/png')
+    expect(metadata).toMatchObject({ width: 512, height: 512, format: 'png' })
     await expect(storage.hasAvatar(PERSONA_ID)).resolves.toBe(true)
-    await expect(storage.readAvatar(PERSONA_ID)).resolves.toEqual({ bytes: PNG_BYTES, mediaType: 'image/png' })
+    await expect(storage.readAvatar(PERSONA_ID)).resolves.toEqual(saved)
   })
 
   it('拒绝伪造类型、无效文件和非法人物路径', async () => {

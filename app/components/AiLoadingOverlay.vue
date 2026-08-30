@@ -26,8 +26,12 @@ const { isLoading, currentTask } = useAiLoading()
       >
         <UCard class="w-full max-w-lg border border-primary/20 bg-default/95 shadow-2xl">
           <div class="flex flex-col items-center px-2 py-5">
-            <div class="mb-5 flex size-16 items-center justify-center rounded-full bg-primary/10" aria-hidden="true">
-              <UIcon name="i-lucide-sparkles" class="size-8 animate-pulse text-primary motion-reduce:animate-none" />
+            <div data-ai-loading-animation class="relative mb-6 flex size-24 items-center justify-center" aria-hidden="true">
+              <span class="absolute inset-1 animate-ping rounded-full bg-primary/10 motion-reduce:animate-none" />
+              <UIcon name="i-lucide-loader-circle" class="absolute size-20 animate-spin text-primary motion-reduce:animate-none" />
+              <span class="relative flex size-12 items-center justify-center rounded-full bg-primary/10 shadow-lg shadow-primary/15">
+                <UIcon name="i-lucide-sparkles" class="size-6 animate-pulse text-primary motion-reduce:animate-none" />
+              </span>
             </div>
             <h2 class="text-xl font-semibold text-highlighted">{{ currentTask.title }}</h2>
             <p class="mt-3 text-sm leading-6 text-muted">{{ currentTask.description }}</p>
