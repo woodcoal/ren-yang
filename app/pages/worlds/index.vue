@@ -229,25 +229,11 @@ async function changePageSize(pageSize: number): Promise<void> {
       </ContentQuickCreateSubjectModal>
     </ContentPageHeader>
 
-    <div class="status-strip page-status-strip" aria-label="世界状态摘要">
-      <div class="status-cell"><span class="status-kicker">全部世界</span><strong class="status-value">{{ worldPage.total
-          }}</strong></div>
-      <div class="status-cell"><span class="status-kicker">本页可使用</span><strong class="status-value">{{ usableWorldCount
-          }}</strong></div>
-      <div class="status-cell"><span class="status-kicker">本页已禁用</span><strong class="status-value">{{
-          disabledWorldCount }}</strong></div>
-    </div>
-
     <UAlert v-if="actionErrorMessage" class="mb-5" color="error" title="操作失败" :description="actionErrorMessage" />
     <UAlert v-if="error" color="error" title="世界列表加载失败" :actions="[{ label: '重试', onClick: () => refresh() }]" />
+
     <section v-else class="content-section" aria-labelledby="world-list-heading">
-      <div class="section-heading">
-        <div class="section-heading-copy">
-          <p class="eyebrow">世界列表</p>
-          <h2 id="world-list-heading">已建立的世界</h2>
-          <p>禁用后不再进入后续新任务，历史版本、人物关系和资料仍会保留。</p>
-        </div>
-      </div>
+      <h2 id="world-list-heading" class="visually-hidden">世界列表</h2>
       <div class="list-management-panel">
         <div class="list-management-controls">
           <form class="list-management-search" aria-label="筛选世界" @submit.prevent="applyWorldFilter">
@@ -292,8 +278,12 @@ async function changePageSize(pageSize: number): Promise<void> {
             <tr v-for="world in worlds" :key="world.id">
               <td data-label="选择"><input type="checkbox" :aria-label="`选择世界：${world.name}`"
                   :checked="selectedWorldIds.includes(world.id)" @change="updateWorldSelection(world.id, $event)"></td>
-              <td data-label="世界"><NuxtLink :to="`/worlds/${world.id}`" data-world-title-link class="content-table-title hover:underline"><strong>{{ world.name }}</strong></NuxtLink><span
-                  class="content-table-description">{{ world.summary || '未填写摘要' }}</span></td>
+              <td data-label="世界">
+                <NuxtLink :to="`/worlds/${world.id}`" data-world-title-link class="content-table-title hover:underline">
+                  <strong>{{ world.name }}</strong>
+                </NuxtLink><span class="content-table-description">{{ world.summary
+                  || '未填写摘要' }}</span>
+              </td>
               <td data-label="使用关系"><span>{{ world.personaCount }} 个人物</span><span class="content-table-description">{{
                 world.sourceCount }} 项资料</span></td>
               <td data-label="版本">{{ world.versionCount }} 条修改记录</td>

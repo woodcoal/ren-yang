@@ -346,45 +346,17 @@ async function updateSelectedSourcesStatus(sourceIds: string[], isEnabled: boole
   <div>
     <ContentPageHeader title="资料库" description="统一导入、检索和维护人物或世界会参考的事实、背景与风格资料。">
       <UButton icon="i-lucide-plus" @click="showImport = !showImport">{{ showImport ? '收起导入' : '导入资料' }}</UButton>
+      <UButton to="/sources/search" icon="i-lucide-search" color="info">全文检索</UButton>
     </ContentPageHeader>
-    <div class="status-strip page-status-strip" aria-label="资料状态摘要">
-      <div class="status-cell"><span class="status-kicker">{{ requestedSourceFilter ? '匹配资料' : '全部资料' }}</span><strong
-          class="status-value">{{ sourcePage.total
-          }}</strong></div>
-      <div class="status-cell"><span class="status-kicker">本页启用</span><strong class="status-value">{{ enabledSourceCount
-      }} / {{ sources.length }}</strong></div>
-      <div class="status-cell"><span class="status-kicker">本页可检索段落</span><strong class="status-value">{{ chunkCount
-      }}</strong></div>
-      <div class="status-cell"><span class="status-kicker">本页已建立关系</span><strong class="status-value">{{
-        linkedSourceCount }}</strong><span class="status-note">文件资料 {{ fileSourceCount }} 项</span></div>
-    </div>
+
     <UAlert v-if="showImport && (personaError || worldError)" class="mt-6" color="warning" title="部分关联对象加载失败"
       description="仍可不选择人物或世界，直接把资料保存到资料库。" />
     <ContentSourceImportForm v-if="showImport" class="mt-6 mb-7" :loading="loading" :error-message="errorMessage"
       :personas="personas" :worlds="worlds" show-target-picker @paste="createPastedSource" @file="importFiles" />
     <UAlert v-if="errorMessage && !showImport" class="mt-6" color="error" title="操作失败" :description="errorMessage" />
-
-    <section class="content-section" aria-labelledby="source-search-heading">
-      <div class="section-heading">
-        <div class="section-heading-copy">
-          <p class="eyebrow">资料检索</p>
-          <h2 id="source-search-heading">全文检索资料段落</h2>
-          <p>进入独立搜索页，按正文关键词查找可追溯段落并高亮命中内容。</p>
-        </div>
-        <UButton to="/sources/search" icon="i-lucide-search">全文检索</UButton>
-      </div>
-    </section>
-
     <UAlert v-if="error" color="error" title="资料列表加载失败" :actions="[{ label: '重试', onClick: () => refresh() }]" />
-    <section v-else class="content-section" aria-labelledby="source-list-heading">
-      <div class="section-heading">
-        <div class="section-heading-copy">
-          <p class="eyebrow">处理与关系</p>
-          <h2 id="source-list-heading">资料内容、检索段落与使用范围</h2>
-          <p>资料正文保存在 SQLite；关联关系决定它会进入哪个世界或人物的上下文。</p>
-        </div>
-      </div>
 
+    <section v-else class="content-section" aria-labelledby="source-list-heading">
       <div class="list-management-panel">
         <div class="list-management-controls">
           <form class="list-management-search" aria-label="筛选资料项目" @submit.prevent="applySourceFilter">
@@ -413,58 +385,62 @@ async function updateSelectedSourcesStatus(sourceIds: string[], isEnabled: boole
         <template v-if="sources.length">
           <div class="content-table-wrap list-management-table">
             <table class="content-table">
-            <thead>
-              <tr>
-                <th><input type="checkbox" aria-label="选择当前页全部资料" :checked="allPageSourcesSelected"
-                    :indeterminate="somePageSourcesSelected" :disabled="pageSourceIds.length === 0"
-                    @change="updateCurrentPageSelection"></th>
-                <th>资料</th>
-                <th>AI 使用方式</th>
-                <th>状态</th>
-                <th>检索内容</th>
-                <th>使用关系</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="source in sources" :key="source.id">
-                <td data-label="选择"><input type="checkbox" :aria-label="`选择资料：${source.name}`"
-                    :checked="selectedSourceIds.includes(source.id)" @change="updateSourceSelection(source.id, $event)">
-                </td>
-                <td data-label="资料">
-                  <NuxtLink :to="`/sources/${source.id}`" data-source-title-link
-                    class="content-table-title hover:underline"><strong>{{ source.name }}</strong></NuxtLink><span
-                    class="content-table-description">{{ source.contentText.slice(0, 120) }}{{ source.contentText.length
-                      >
-                    120 ? '…' : '' }}</span>
-                </td>
-                <td data-label="AI 使用方式">
-                  <UBadge color="neutral" variant="subtle">{{ roleLabels[source.role] }}</UBadge><span
-                    class="content-table-description">{{ source.inputType === 'paste' ? '粘贴文本' :
-                      source.inputType.toUpperCase() + ' 文件' }}</span>
-                </td>
-                <td data-label="状态">
-                  <UBadge :color="source.isEnabled ? 'success' : 'neutral'" variant="subtle">{{ source.isEnabled ? '已启用'
-                    :
-                    '已禁用' }}</UBadge>
-                </td>
-                <td data-label="检索内容">{{ source.chunkCount }} 个段落</td>
-                <td data-label="使用关系">{{ source.linkCount }} 个对象</td>
-                <td data-label="操作">
-                  <UButton :to="`/sources/${source.id}`" color="neutral" variant="ghost" size="xs"
-                    icon="i-lucide-chevron-right" :aria-label="`查看与维护：${source.name}`" />
-                </td>
-              </tr>
-            </tbody>
+              <thead>
+                <tr>
+                  <th><input type="checkbox" aria-label="选择当前页全部资料" :checked="allPageSourcesSelected"
+                      :indeterminate="somePageSourcesSelected" :disabled="pageSourceIds.length === 0"
+                      @change="updateCurrentPageSelection"></th>
+                  <th>资料</th>
+                  <th>AI 使用方式</th>
+                  <th>状态</th>
+                  <th>检索内容</th>
+                  <th>使用关系</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="source in sources" :key="source.id">
+                  <td data-label="选择"><input type="checkbox" :aria-label="`选择资料：${source.name}`"
+                      :checked="selectedSourceIds.includes(source.id)"
+                      @change="updateSourceSelection(source.id, $event)">
+                  </td>
+                  <td data-label="资料">
+                    <NuxtLink :to="`/sources/${source.id}`" data-source-title-link
+                      class="content-table-title hover:underline"><strong>{{ source.name }}</strong></NuxtLink><span
+                      class="content-table-description">{{ source.contentText.slice(0, 120) }}{{
+                        source.contentText.length
+                          >
+                          120 ? '…' : '' }}</span>
+                  </td>
+                  <td data-label="AI 使用方式">
+                    <UBadge color="neutral" variant="subtle">{{ roleLabels[source.role] }}</UBadge><span
+                      class="content-table-description">{{ source.inputType === 'paste' ? '粘贴文本' :
+                        source.inputType.toUpperCase() + ' 文件' }}</span>
+                  </td>
+                  <td data-label="状态">
+                    <UBadge :color="source.isEnabled ? 'success' : 'neutral'" variant="subtle">{{ source.isEnabled ?
+                      '已启用'
+                      :
+                      '已禁用' }}</UBadge>
+                  </td>
+                  <td data-label="检索内容">{{ source.chunkCount }} 个段落</td>
+                  <td data-label="使用关系">{{ source.linkCount }} 个对象</td>
+                  <td data-label="操作">
+                    <UButton :to="`/sources/${source.id}`" color="neutral" variant="ghost" size="xs"
+                      icon="i-lucide-chevron-right" :aria-label="`查看与维护：${source.name}`" />
+                  </td>
+                </tr>
+              </tbody>
             </table>
           </div>
           <div class="list-management-footer">
-            <p class="m-0 text-sm text-muted">第 {{ sourcePage.page }} / {{ sourcePage.totalPages }} 页，共 {{ sourcePage.total }} 项</p>
+            <p class="m-0 text-sm text-muted">第 {{ sourcePage.page }} / {{ sourcePage.totalPages }} 页，共 {{
+              sourcePage.total }} 项</p>
             <div class="list-management-pagination">
-            <USelect :model-value="sourcePage.pageSize" class="w-34" :items="pageSizeItems" aria-label="每页资料数量"
-              @update:model-value="changePageSize" />
-            <UPagination :page="sourcePage.page" :total="sourcePage.total" :items-per-page="sourcePage.pageSize"
-              show-edges @update:page="changePage" />
+              <USelect :model-value="sourcePage.pageSize" class="w-34" :items="pageSizeItems" aria-label="每页资料数量"
+                @update:model-value="changePageSize" />
+              <UPagination :page="sourcePage.page" :total="sourcePage.total" :items-per-page="sourcePage.pageSize"
+                show-edges @update:page="changePage" />
             </div>
           </div>
         </template>

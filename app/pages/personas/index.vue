@@ -236,16 +236,10 @@ async function changePageSize(pageSize: number): Promise<void> {
       </ContentQuickCreateSubjectModal>
     </ContentPageHeader>
 
-    <div class="status-strip page-status-strip" aria-label="人物状态摘要">
-      <div class="status-cell"><span class="status-kicker">全部人物</span><strong class="status-value">{{ personaPage.total }}</strong></div>
-      <div class="status-cell"><span class="status-kicker">本页可创建任务</span><strong class="status-value">{{ usablePersonaCount }}</strong></div>
-      <div class="status-cell"><span class="status-kicker">本页已禁用</span><strong class="status-value">{{ disabledPersonaCount }}</strong></div>
-    </div>
-
     <UAlert v-if="actionErrorMessage" class="mb-5" color="error" title="操作失败" :description="actionErrorMessage" />
     <UAlert v-if="error" color="error" title="人物列表加载失败" :actions="[{ label: '重试', onClick: () => refresh() }]" />
     <section v-else class="content-section" aria-labelledby="persona-list-heading">
-      <div class="section-heading"><div class="section-heading-copy"><p class="eyebrow">人物状态</p><h2 id="persona-list-heading">已建立的人物</h2><p>禁用只影响后续新任务，历史记录、人物设定和资料关系仍会保留。</p></div></div>
+      <h2 id="persona-list-heading" class="visually-hidden">人物列表</h2>
       <div class="list-management-panel">
         <div class="list-management-controls">
           <form class="list-management-search" aria-label="筛选人物" @submit.prevent="applyPersonaFilter">
@@ -274,30 +268,62 @@ async function changePageSize(pageSize: number): Promise<void> {
         <template v-if="personas.length">
           <div class="content-table-wrap list-management-table">
             <table class="content-table">
-          <thead><tr><th><input type="checkbox" aria-label="选择当前页全部人物" :checked="allPagePersonasSelected"
-            :indeterminate="somePagePersonasSelected" :disabled="pagePersonaIds.length === 0" @change="updateCurrentPageSelection"></th>
-            <th>人物</th><th>世界</th><th>版本与资料</th><th>启用状态</th><th>操作</th></tr></thead>
-          <tbody><tr v-for="persona in personas" :key="persona.id">
-            <td data-label="选择"><input type="checkbox" :aria-label="`选择人物：${persona.name}`" :checked="selectedPersonaIds.includes(persona.id)" @change="updatePersonaSelection(persona.id, $event)"></td>
-            <td data-label="人物"><div class="flex min-w-0 items-center gap-3">
-              <NuxtLink :to="`/personas/${persona.id}`" data-persona-avatar-link :aria-label="`查看人物头像：${persona.name}`" class="shrink-0">
-                <ContentPersonaAvatar :name="persona.name" :url="persona.avatarUrl" />
-              </NuxtLink>
-              <div class="min-w-0"><NuxtLink :to="`/personas/${persona.id}`" data-persona-title-link class="content-table-title hover:underline"><strong>{{ persona.name }}</strong></NuxtLink><span class="content-table-description">{{ persona.currentSummary || '暂无灵魂提示词' }}</span></div>
-            </div></td>
-            <td data-label="世界"><NuxtLink v-if="persona.worldId" :to="`/worlds/${persona.worldId}`" class="content-table-title hover:underline">{{ persona.worldName }}</NuxtLink><span v-else class="content-table-title">独立人物</span></td>
-            <td data-label="版本与资料"><span>{{ persona.versionCount }} 条修改记录</span><span class="content-table-description">{{ persona.sourceCount }} 项参考资料</span></td>
-            <td data-label="启用状态"><UBadge :color="persona.isEnabled ? 'success' : 'neutral'" variant="subtle">{{ persona.isEnabled ? '已启用' : '已禁用' }}</UBadge></td>
-            <td data-label="操作"><UButton :to="`/personas/${persona.id}`" color="neutral" variant="ghost" size="xs"
-              icon="i-lucide-chevron-right" :aria-label="`查看与维护：${persona.name}`" /></td>
-          </tr></tbody>
+          <thead>
+            <tr>
+              <th><input type="checkbox" aria-label="选择当前页全部人物" :checked="allPagePersonasSelected"
+                  :indeterminate="somePagePersonasSelected" :disabled="pagePersonaIds.length === 0"
+                  @change="updateCurrentPageSelection"></th>
+              <th>人物</th>
+              <th>世界</th>
+              <th>版本与资料</th>
+              <th>启用状态</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="persona in personas" :key="persona.id">
+              <td data-label="选择"><input type="checkbox" :aria-label="`选择人物：${persona.name}`"
+                  :checked="selectedPersonaIds.includes(persona.id)"
+                  @change="updatePersonaSelection(persona.id, $event)"></td>
+              <td data-label="人物">
+                <div class="flex min-w-0 items-center gap-3">
+                  <NuxtLink :to="`/personas/${persona.id}`" data-persona-avatar-link
+                    :aria-label="`查看人物头像：${persona.name}`" class="shrink-0">
+                    <ContentPersonaAvatar :name="persona.name" :url="persona.avatarUrl" />
+                  </NuxtLink>
+                  <div class="min-w-0">
+                    <NuxtLink :to="`/personas/${persona.id}`" data-persona-title-link
+                      class="content-table-title hover:underline"><strong>{{ persona.name }}</strong></NuxtLink><span
+                      class="content-table-description">{{ persona.currentSummary || '暂无灵魂提示词' }}</span>
+                  </div>
+                </div>
+              </td>
+              <td data-label="世界">
+                <NuxtLink v-if="persona.worldId" :to="`/worlds/${persona.worldId}`"
+                  class="content-table-title hover:underline">{{ persona.worldName }}</NuxtLink><span v-else
+                  class="content-table-title">独立人物</span>
+              </td>
+              <td data-label="版本与资料"><span>{{ persona.versionCount }} 条修改记录</span><span
+                  class="content-table-description">{{ persona.sourceCount }} 项参考资料</span></td>
+              <td data-label="启用状态">
+                <UBadge :color="persona.isEnabled ? 'success' : 'neutral'" variant="subtle">{{ persona.isEnabled ? '已启用'
+                  : '已禁用' }}</UBadge>
+              </td>
+              <td data-label="操作">
+                <UButton :to="`/personas/${persona.id}`" color="neutral" variant="ghost" size="xs"
+                  icon="i-lucide-chevron-right" :aria-label="`查看与维护：${persona.name}`" />
+              </td>
+            </tr>
+          </tbody>
             </table>
           </div>
           <div class="list-management-footer">
             <p class="m-0 text-sm text-muted">第 {{ personaPage.page }} / {{ personaPage.totalPages }} 页，共 {{ personaPage.total }} 项</p>
             <div class="list-management-pagination">
-              <USelect :model-value="personaPage.pageSize" class="w-34" :items="pageSizeItems" aria-label="每页人物数量" @update:model-value="changePageSize" />
-              <UPagination :page="personaPage.page" :total="personaPage.total" :items-per-page="personaPage.pageSize" show-edges @update:page="changePage" />
+              <USelect :model-value="personaPage.pageSize" class="w-34" :items="pageSizeItems" aria-label="每页人物数量"
+                @update:model-value="changePageSize" />
+              <UPagination :page="personaPage.page" :total="personaPage.total" :items-per-page="personaPage.pageSize"
+                show-edges @update:page="changePage" />
             </div>
           </div>
         </template>
@@ -313,19 +339,29 @@ async function changePageSize(pageSize: number): Promise<void> {
     </section>
 
     <UModal v-model:open="batchEnableConfirmationOpen" title="确认批量启用人物" description="启用后，这些人物可以重新用于创建新任务。">
-      <template #body><p class="text-sm text-muted">确定启用当前页已选择的 {{ selectedDisabledPersonaIds.length }} 个禁用人物吗？</p></template>
-      <template #footer><div class="flex w-full justify-end gap-2">
-        <UButton color="neutral" variant="ghost" :disabled="batchStatusUpdating !== null" @click="batchEnableConfirmationOpen = false">取消</UButton>
-        <UButton color="success" :loading="batchStatusUpdating === true" @click="confirmBatchEnable">确认启用</UButton>
-      </div></template>
+      <template #body>
+        <p class="text-sm text-muted">确定启用当前页已选择的 {{ selectedDisabledPersonaIds.length }} 个禁用人物吗？</p>
+      </template>
+      <template #footer>
+        <div class="flex w-full justify-end gap-2">
+          <UButton color="neutral" variant="ghost" :disabled="batchStatusUpdating !== null"
+            @click="batchEnableConfirmationOpen = false">取消</UButton>
+          <UButton color="success" :loading="batchStatusUpdating === true" @click="confirmBatchEnable">确认启用</UButton>
+        </div>
+      </template>
     </UModal>
 
     <UModal v-model:open="batchDisableConfirmationOpen" title="确认批量禁用人物" description="人物设定、资料关系和历史记录仍会保留。">
-      <template #body><p class="text-sm text-muted">确定禁用当前页已选择的 {{ selectedEnabledPersonaIds.length }} 个启用人物吗？禁用后不能再用这些人物创建新任务。</p></template>
-      <template #footer><div class="flex w-full justify-end gap-2">
-        <UButton color="neutral" variant="ghost" :disabled="batchStatusUpdating !== null" @click="batchDisableConfirmationOpen = false">取消</UButton>
-        <UButton color="error" :loading="batchStatusUpdating === false" @click="confirmBatchDisable">确认禁用</UButton>
-      </div></template>
+      <template #body>
+        <p class="text-sm text-muted">确定禁用当前页已选择的 {{ selectedEnabledPersonaIds.length }} 个启用人物吗？禁用后不能再用这些人物创建新任务。</p>
+      </template>
+      <template #footer>
+        <div class="flex w-full justify-end gap-2">
+          <UButton color="neutral" variant="ghost" :disabled="batchStatusUpdating !== null"
+            @click="batchDisableConfirmationOpen = false">取消</UButton>
+          <UButton color="error" :loading="batchStatusUpdating === false" @click="confirmBatchDisable">确认禁用</UButton>
+        </div>
+      </template>
     </UModal>
   </div>
 </template>
