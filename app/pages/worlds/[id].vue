@@ -376,8 +376,8 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
           soul.activeVersion ? '已发布，可用于任务' : '尚未发布' }}</strong></div>
         <div class="status-cell"><span class="status-kicker">世界资料</span><strong class="status-value">{{
           details.sources.length }} 项</strong></div>
-        <div class="status-cell"><span class="status-kicker">待确认修改</span><strong class="status-value">{{ soul.draft ? '1
-            份灵魂修改稿' : '没有灵魂修改稿' }}</strong></div>
+        <div class="status-cell"><span class="status-kicker">待确认修改</span><strong class="status-value">{{ !soul.draft ?
+          '需修改灵魂稿' : '没有灵魂修改稿' }}</strong></div>
       </div>
 
       <nav class="mind-tabs mb-6" aria-label="世界工作区标签">
