@@ -52,6 +52,9 @@ function resetState(): void {
   state.name = ''
   state.promptText = ''
   state.autoAnalyze = false
+  state.username = undefined
+  state.email = undefined
+  state.password = undefined
 }
 
 /**
@@ -87,6 +90,20 @@ watch(open, (isOpen, wasOpen) => {
             :disabled="loading"
           />
         </UFormField>
+        <template v-if="isPersona">
+          <USeparator label="账号信息（均可选，可稍后配置）" />
+          <div class="grid gap-4 md:grid-cols-2">
+            <UFormField name="username" label="账号">
+              <UInput v-model="state.username" class="w-full" autocomplete="off" :disabled="loading" />
+            </UFormField>
+            <UFormField name="email" label="邮箱">
+              <UInput v-model="state.email" class="w-full" type="email" autocomplete="off" :disabled="loading" />
+            </UFormField>
+            <UFormField name="password" label="密码" class="md:col-span-2">
+              <UInput v-model="state.password" class="w-full" type="password" autocomplete="new-password" :disabled="loading" />
+            </UFormField>
+          </div>
+        </template>
         <UCheckbox v-model="state.autoAnalyze" data-quick-create-auto-analyze label="使用 AI 分析并整理为标准提示词" :disabled="loading" />
         <UAlert
           color="neutral"

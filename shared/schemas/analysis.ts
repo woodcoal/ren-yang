@@ -14,6 +14,14 @@ export const latestAnalysisBatchQuerySchema = z.object({
   subjectId: z.string().uuid('对象标识无效'),
 })
 
+/** 任务记录页查询分析批次的过滤条件。 */
+export const listAnalysisBatchesQuerySchema = z.object({
+  analysisType: z.enum(['world_growth', 'persona_growth', 'persona_memory'], { error: '分析类型无效' }).optional(),
+  subjectId: z.string().uuid('对象标识无效').optional(),
+  status: z.enum(['queued', 'running', 'awaiting_review', 'completed', 'failed'], { error: '分析状态无效' }).optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(100),
+})
+
 /** AI 提议的新成长或记忆正文。 */
 export const proposedLearningContentSchema = z.object({
   content: z.string().trim().min(1).max(20_000),
@@ -59,6 +67,7 @@ export const reviewIterationProposalsSchema = z.object({
 })
 
 export type CreateAnalysisBatchInput = z.infer<typeof createAnalysisBatchSchema>
+export type ListAnalysisBatchesInput = z.infer<typeof listAnalysisBatchesQuerySchema>
 export type ModelIterationResult = z.infer<typeof modelIterationResultSchema>
 export type ModelLearningPromptResult = z.infer<typeof modelLearningPromptResultSchema>
 export type ReviewIterationProposalsInput = z.infer<typeof reviewIterationProposalsSchema>

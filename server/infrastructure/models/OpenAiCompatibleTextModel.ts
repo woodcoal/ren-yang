@@ -117,13 +117,7 @@ function parseResponse(value: unknown): TextModelResponse {
   if (typeof message?.content !== 'string') {
     throw new TextModelError('MODEL_OUTPUT_INVALID', '文本模型没有返回 JSON 文本', true)
   }
-  let structuredOutput: unknown
-  try {
-    structuredOutput = JSON.parse(message.content)
-  }
-  catch {
-    throw new TextModelError('MODEL_OUTPUT_INVALID', '文本模型返回的内容不是有效 JSON', true)
-  }
+  const structuredOutput = parseStructuredContent(message.content)
   const usage = response.usage as Record<string, unknown> | undefined
   return {
     structuredOutput,
@@ -133,6 +127,27 @@ function parseResponse(value: unknown): TextModelResponse {
       totalTokens: toOptionalNumber(usage?.total_tokens),
     },
   }
+}
+
+/**
+ * 解析兼容供应商返回的结构化文本，并容忍 Markdown JSON 代码围栏及其说明文字。
+ * @param content Chat Completions 返回的原始文本内容。
+ * @returns 解析后的未知 JSON 值。
+ * @throws TextModelError 文本既不是纯 JSON，也不包含可解析的 JSON 代码围栏时抛出。
+ */
+function parseStructuredContent(content: string): unknown {
+  const trimmed = content.trim()
+  const fenced = /```(?:json)?\s*([\s\S]*?)\s*```/i.exec(trimmed)
+  for (const candidate of [trimmed, fenced?.[1]]) {
+    if (candidate === undefined) continue
+    try {
+      return JSON.parse(candidate.trim())
+    }
+    catch {
+      // 先尝试供应商承诺的纯 JSON，再兼容常见代码围栏；两者都失败后统一抛出安全错误。
+    }
+  }
+  throw new TextModelError('MODEL_OUTPUT_INVALID', '文本模型返回的内容不是有效 JSON', true)
 }
 
 /** @param value 未知用量字段。 @returns 非负有限数或 null。 */

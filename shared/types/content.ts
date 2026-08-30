@@ -120,6 +120,26 @@ export interface PersonaSummary {
   updatedAt: number
 }
 
+/** 人物账号信息的脱敏状态。 */
+export interface PersonaCredentialSummary {
+  /** 账号；尚未配置时为空。 */
+  username: string | null
+  /** 邮箱；尚未配置时为空。 */
+  email: string | null
+  /** 是否已经保存可取回的加密密码。 */
+  passwordConfigured: boolean
+}
+
+/** 用户主动查看人物密码时返回的账号信息。 */
+export interface PersonaCredentialSecretView {
+  /** 可选账号。 */
+  username: string | null
+  /** 可选邮箱。 */
+  email: string | null
+  /** 服务端解密后的密码。 */
+  password: string
+}
+
 /** 服务端分页后的人物列表。 */
 export interface PersonaPageView {
   /** 当前页人物摘要。 */
@@ -314,6 +334,8 @@ export interface SourceChunkView {
 export interface PersonaDetails {
   /** 人物摘要。 */
   persona: PersonaSummary
+  /** 账号信息的脱敏状态。 */
+  credentials: PersonaCredentialSummary
   /** 新版本在前的完整版本历史。 */
   versions: PersonaVersionView[]
   /** 当前唯一可编辑的灵魂草稿。 */

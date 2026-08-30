@@ -89,7 +89,7 @@ describe('成长素材与学习提示词闭环', () => {
     const tables = database.getClient().prepare(`
       SELECT name FROM sqlite_master WHERE type = 'table' AND name IN (
         'growth_materials', 'learning_prompts', 'learning_prompt_drafts',
-        'learning_prompt_versions', 'persona_operation_records'
+        'learning_prompt_versions', 'persona_external_records', 'persona_operation_records'
       ) ORDER BY name
     `).all()
     expect(tables).toEqual([
@@ -97,6 +97,7 @@ describe('成长素材与学习提示词闭环', () => {
       { name: 'learning_prompt_drafts' },
       { name: 'learning_prompt_versions' },
       { name: 'learning_prompts' },
+      { name: 'persona_external_records' },
       { name: 'persona_operation_records' },
     ])
     const operationColumns = database.getClient().prepare(`PRAGMA table_info(persona_operation_records)`).all() as Array<{ name: string }>
@@ -214,6 +215,35 @@ describe('成长素材与学习提示词闭环', () => {
     await learning.updateOperationRecordImportance(persona.id, operationId, { importance: 5 })
     await learning.updateOperationRecordStates(persona.id, { ids: [operationId], isEnabled: false })
     expect((await learning.getPersonaMemoryWorkspace(persona.id)).operationRecords[0]).toMatchObject({ importance: 5, isEnabled: false })
+  })
+
+  it('第三方经历记录可追溯来源并支持修改、批量启停和删除', async () => {
+    const persona = await createPersona()
+    const created = await learning.createExternalRecord(persona.id, {
+      occurredOn: '2026-08-30',
+      content: '为小说项目整理了人物关系。',
+      references: [{ name: '创作笔记', address: '笔记库/小说项目/人物关系' }],
+      importance: 4,
+    })
+    expect(created.externalRecords).toEqual([expect.objectContaining({
+      occurredOn: '2026-08-30', content: '为小说项目整理了人物关系。',
+      references: [{ name: '创作笔记', address: '笔记库/小说项目/人物关系' }],
+      analysisContent: expect.stringContaining('创作笔记：笔记库/小说项目/人物关系'),
+      contentHash: expect.stringMatching(/^[a-f0-9]{64}$/), importance: 4, isEnabled: true,
+    })])
+
+    const recordId = created.externalRecords[0]!.id
+    const updated = await learning.updateExternalRecord(persona.id, recordId, {
+      occurredOn: '2026-08-31', content: '完成了人物关系校对。',
+      references: [{ name: '小说原稿', address: '第三章' }], importance: 5,
+    })
+    expect(updated.externalRecords[0]).toMatchObject({
+      id: recordId, occurredOn: '2026-08-31', content: '完成了人物关系校对。', importance: 5,
+    })
+    expect((await learning.updateExternalRecordStates(persona.id, {
+      ids: [recordId], isEnabled: false,
+    })).externalRecords[0]?.isEnabled).toBe(false)
+    expect((await learning.deleteExternalRecords(persona.id, { ids: [recordId] })).externalRecords).toEqual([])
   })
 })
 

@@ -97,6 +97,9 @@ export const personas = sqliteTable(
     id: text('id').primaryKey(),
     worldId: text('world_id').references(() => worlds.id, { onDelete: 'restrict' }),
     name: text('name').notNull(),
+    username: text('username'),
+    email: text('email'),
+    passwordCiphertext: text('password_ciphertext'),
     origin: text('origin').notNull(),
     activeSoulVersionId: text('active_soul_version_id'),
     isEnabled: integer('is_enabled').notNull().default(1),
@@ -105,6 +108,8 @@ export const personas = sqliteTable(
   },
   table => [
     index('personas_world_id_index').on(table.worldId),
+    uniqueIndex('personas_username_unique').on(table.username),
+    uniqueIndex('personas_email_unique').on(table.email),
     check('personas_name_not_empty_check', sql`length(trim(${table.name})) > 0`),
     check('personas_origin_check', sql`${table.origin} IN ('original', 'source_based', 'hybrid')`),
     check('personas_enabled_check', sql`${table.isEnabled} IN (0, 1)`),
@@ -503,6 +508,30 @@ export const personaOperationRecords = sqliteTable(
   ],
 )
 
+/** 管理员为人物补充、可参与记忆提炼的第三方经历记录。 */
+export const personaExternalRecords = sqliteTable(
+  'persona_external_records',
+  {
+    id: text('id').primaryKey(),
+    personaId: text('persona_id').notNull().references(() => personas.id, { onDelete: 'cascade' }),
+    occurredOn: text('occurred_on').notNull(),
+    content: text('content').notNull(),
+    referencesJson: text('references_json').notNull().default('[]'),
+    isEnabled: integer('is_enabled').notNull().default(1),
+    importance: integer('importance').notNull().default(3),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  table => [
+    index('persona_external_records_persona_enabled_index').on(table.personaId, table.isEnabled, table.occurredOn),
+    check('persona_external_records_occurred_on_check', sql`length(${table.occurredOn}) = 10`),
+    check('persona_external_records_content_check', sql`length(trim(${table.content})) > 0`),
+    check('persona_external_records_references_json_check', sql`json_valid(${table.referencesJson})`),
+    check('persona_external_records_enabled_check', sql`${table.isEnabled} IN (0, 1)`),
+    check('persona_external_records_importance_check', sql`${table.importance} BETWEEN 1 AND 5`),
+  ],
+)
+
 /** 人物逻辑记忆及其当前不可变修订指针。 */
 export const memoryRecords = sqliteTable(
   'memory_records',
@@ -630,7 +659,7 @@ export const analysisBatchInputs = sqliteTable(
   table => [
     uniqueIndex('analysis_batch_inputs_unique').on(table.batchId, table.inputType, table.inputId),
     index('analysis_batch_inputs_source_index').on(table.inputType, table.inputId),
-    check('analysis_batch_inputs_type_check', sql`${table.inputType} IN ('growth_material', 'persona_operation_record', 'world_source', 'persona_feedback_source', 'openviking_memory')`),
+    check('analysis_batch_inputs_type_check', sql`${table.inputType} IN ('growth_material', 'persona_operation_record', 'persona_external_record', 'world_source', 'persona_feedback_source', 'openviking_memory')`),
     check('analysis_batch_inputs_hash_check', sql`length(${table.contentHash}) = 64`),
     check('analysis_batch_inputs_importance_check', sql`${table.importance} BETWEEN 1 AND 5`),
     check('analysis_batch_inputs_new_check', sql`${table.isNew} IN (0, 1)`),
@@ -1056,6 +1085,7 @@ export const databaseSchema = {
   parameterProfiles,
   generationRuns,
   personaOperationRecords,
+  personaExternalRecords,
   memoryRecords,
   memoryRevisions,
   memoryRevisionEvidence,

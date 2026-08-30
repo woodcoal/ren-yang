@@ -74,6 +74,7 @@ let directory: string
 let database: SqliteDatabase
 let analysis: AnalysisApplicationService
 let learning: LearningApplicationService
+let content: ContentApplicationService
 let worker: WorkerApplicationService
 let model: AnalysisTextModel
 let worldId: string
@@ -87,7 +88,7 @@ beforeEach(async () => {
   const contentRepository = new SqliteContentRepository(database.getClient())
   const learningRepository = new SqliteLearningRepository(database.getClient())
   const processor = new NodeSourceContentProcessor(identifiers)
-  const content = new ContentApplicationService({
+  content = new ContentApplicationService({
     repository: contentRepository,
     souls: contentRepository,
     identifiers,
@@ -181,6 +182,21 @@ describe('AI 综合提炼学习提示词', () => {
     expect(rebuild.id).not.toBe(first.id)
   })
 
+  it('同一对象已有排队中的提炼时拒绝重复创建批次', async () => {
+    await analysis.createBatch('world_growth', worldId, { mode: 'incremental' })
+
+    await expect(analysis.createBatch('world_growth', worldId, { mode: 'incremental' }))
+      .rejects.toMatchObject({ code: 'ANALYSIS_ALREADY_PENDING', statusCode: 409 })
+  })
+
+  it('任务记录可读取后台提炼批次及其状态', async () => {
+    const queued = await analysis.createBatch('world_growth', worldId, { mode: 'incremental' })
+
+    await expect(analysis.listBatches({ limit: 100 })).resolves.toEqual([
+      expect.objectContaining({ id: queued.id, status: 'queued' }),
+    ])
+  })
+
   it('人工发布 AI 草稿后才形成当前提示词版本', async () => {
     const batch = await analysis.createBatch('world_growth', worldId, { mode: 'incremental' })
     await worker.executeNext()
@@ -194,5 +210,22 @@ describe('AI 综合提炼学习提示词', () => {
     expect((await learning.getWorldGrowthWorkspace(worldId)).prompt).toMatchObject({
       activeVersion: { id: published.id }, draft: null,
     })
+  })
+
+  it('人物记忆分析会把启用的第三方记录与参考地址固定为独立输入', async () => {
+    const persona = await content.createPersona({
+      name: '外部经历人物', worldId: null, sourceIds: [],
+      snapshot: { promptText: '重视可追溯的工作经验。' }, changeSummary: '建立人物',
+    })
+    await learning.createExternalRecord(persona.persona.id, {
+      occurredOn: '2026-08-31', content: '完成了一次小说人物关系校对。',
+      references: [{ name: '校对笔记', address: '笔记库/小说/第三章' }], importance: 5,
+    })
+
+    const queued = await analysis.createBatch('persona_memory', persona.persona.id, { mode: 'incremental' })
+    expect(queued.inputs).toEqual([expect.objectContaining({
+      inputType: 'persona_external_record', title: '2026-08-31 第三方经历', importance: 5,
+      contentSnapshot: expect.stringContaining('校对笔记：笔记库/小说/第三章'),
+    })])
   })
 })

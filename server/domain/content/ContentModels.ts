@@ -83,6 +83,18 @@ export interface PersonaRecord {
   updatedAt: number
 }
 
+/** 人物账号信息的加密持久化记录。 */
+export interface PersonaCredentialRecord {
+  /** 所属人物标识。 */
+  personaId: string
+  /** 已规范为小写的账号；未配置时为空。 */
+  username: string | null
+  /** 已规范为小写的邮箱；未配置时为空。 */
+  email: string | null
+  /** 仅可由服务端账号信息密钥解密的密码密文；未配置时为空。 */
+  passwordCiphertext: string | null
+}
+
 /** 面向人物用例的灵魂版本视图。 */
 export type PersonaVersionRecord = Omit<SoulVersionRecord, 'subjectType' | 'subjectId' | 'snapshot'> & {
   /** 所属人物标识。 */

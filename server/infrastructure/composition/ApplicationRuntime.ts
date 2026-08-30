@@ -43,6 +43,7 @@ import { LearningApplicationService } from '../../application/learning/LearningA
 import { SqliteLearningRepository } from '../database/SqliteLearningRepository'
 import { AnalysisApplicationService } from '../../application/analysis/AnalysisApplicationService'
 import { SqliteAnalysisRepository } from '../database/SqliteAnalysisRepository'
+import { AesGcmSecretCipher } from '../security/AesGcmSecretCipher'
 
 /** 应用运行时组合配置。 */
 export interface ApplicationRuntimeOptions {
@@ -50,6 +51,8 @@ export interface ApplicationRuntimeOptions {
   dataDirectory: string
   /** Drizzle 迁移目录。 */
   migrationsDirectory: string
+  /** 人物第三方账号密码使用的仓库外密钥材料。 */
+  credentialEncryptionSecret: string
   /** Worker 空闲轮询间隔。 */
   workerPollIntervalMs?: number
   /** Worker 单任务租约长度。 */
@@ -171,6 +174,7 @@ export class ApplicationRuntime {
       personaAvatars,
       imageModel,
       contextSyncQueue,
+      secretCipher: new AesGcmSecretCipher(options.credentialEncryptionSecret),
     })
     this.soulService = new SoulApplicationService({
       content: contentRepository,

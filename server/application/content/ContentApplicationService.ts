@@ -5,6 +5,7 @@ import type {
   CreateSourceLinkInput,
   ListSubjectsPageInput,
   ListSourcesPageInput,
+  PersonaCredentialInput,
   SourceCreationTarget,
   CreateWorldInput,
   UpdatePersonaInput,
@@ -19,6 +20,8 @@ import type {
 } from '../../../shared/schemas/content'
 import type {
   DeletionImpact,
+  PersonaCredentialSecretView,
+  PersonaCredentialSummary,
   PersonaDetails,
   PersonaPageView,
   PersonaStatusUpdateResult,
@@ -56,6 +59,7 @@ import { ImageAssetError } from '../../domain/generation/ImageAssetError'
 import type { ImageModelPort } from '../../ports/ImageModelPort'
 import { ImageModelError } from '../../ports/ImageModelPort'
 import type { PersonaAvatarFile, PersonaAvatarStorage } from '../../ports/PersonaAvatarStorage'
+import type { SecretCipher } from '../../ports/SecretCipher'
 import type { DecodedSourceFile, SourceContentProcessor, SourceFileStorage } from '../../ports/SourceContentPorts'
 import { StorageCapacityError } from '../../ports/StorageCapacity'
 import { ApplicationError } from '../errors/ApplicationError'
@@ -108,6 +112,8 @@ export interface ContentApplicationServiceDependencies {
   imageModel?: ImageModelPort
   /** OpenViking 启用时提供的持久资料同步与删除队列；关闭时不注入。 */
   contextSyncQueue?: ContextSyncTaskQueue
+  /** 可取回人物第三方密码使用的服务端认证加密器。 */
+  secretCipher?: SecretCipher
 }
 
 /** 编排人物、世界、不可变版本、资料及证据检索用例。 */
@@ -147,10 +153,16 @@ export class ContentApplicationService {
    */
   async getPersona(personaId: string): Promise<PersonaDetails> {
     const persona = await this.requirePersona(personaId)
-    const versions = await this.dependencies.repository.listPersonaVersions(personaId)
-    const sources = await this.dependencies.repository.listPersonaSources(personaId)
+    const [versions, sources, credential] = await Promise.all([
+      this.dependencies.repository.listPersonaVersions(personaId),
+      this.dependencies.repository.listPersonaSources(personaId),
+      this.dependencies.repository.findPersonaCredential(personaId),
+    ])
     return {
       persona: await this.toPersonaSummary(persona, versions, sources),
+      credentials: credential
+        ? { username: credential.username, email: credential.email, passwordConfigured: credential.passwordCiphertext !== null }
+        : { username: null, email: null, passwordConfigured: false },
       versions,
       draft: await this.dependencies.souls.findSoulDraft('persona', personaId),
       sources: await Promise.all(sources.map(source => this.toSourceSummary(source))),
@@ -245,11 +257,19 @@ export class ContentApplicationService {
     const snapshot = normalizeSoulSnapshot(input.snapshot)
     const count = this.requireSoulBudget('persona', snapshot.promptText)
     const personaId = this.dependencies.identifiers.create()
-    await this.dependencies.repository.createPersona({
+    const username = normalizeCredentialIdentity(input.username)
+    const email = normalizeCredentialIdentity(input.email)
+    const passwordCiphertext = input.password
+      ? this.requireSecretCipher().encrypt(input.password, credentialContext(personaId))
+      : null
+    const createResult = await this.dependencies.repository.createPersona({
       id: personaId,
       versionId: this.dependencies.identifiers.create(),
       worldId: input.worldId ?? null,
       name: input.name,
+      username,
+      email,
+      passwordCiphertext,
       // 数据库兼容列暂不迁移；来源模式已退出业务，新人物统一写入固定值。
       origin: 'original',
       snapshot,
@@ -259,9 +279,56 @@ export class ContentApplicationService {
       sourceIds,
       timestamp: this.dependencies.clock.now(),
     })
+    requireCredentialWriteSuccess(createResult)
     await this.enqueueSourceSynchronizations(sourceIds)
     await this.enqueueUserReconciliation()
     return await this.getPersona(personaId)
+  }
+
+  /**
+   * 主动解密并返回当前人物已保存的密码。
+   * @param personaId 人物 UUID。
+   * @returns 可选账号、可选邮箱和解密后的密码。
+   */
+  async revealPersonaCredential(personaId: string): Promise<PersonaCredentialSecretView> {
+    await this.requirePersona(personaId)
+    const credential = await this.dependencies.repository.findPersonaCredential(personaId)
+    if (!credential?.passwordCiphertext) throw new ApplicationError('RESOURCE_NOT_FOUND', '人物尚未配置密码', 404)
+    const cipher = this.requireSecretCipher()
+    try {
+      return {
+        username: credential.username,
+        email: credential.email,
+        password: cipher.decrypt(credential.passwordCiphertext, credentialContext(personaId)),
+      }
+    }
+    catch {
+      throw new ApplicationError('CREDENTIAL_DECRYPTION_FAILED', '人物密码无法解密，请重新保存账号信息', 409)
+    }
+  }
+
+  /**
+   * 分别保存人物账号、邮箱和密码；密码留空时保留已保存密文。
+   * @param personaId 人物 UUID。
+   * @param input 已校验的可选账号、邮箱和密码。
+   * @returns 保存后的脱敏账号信息状态。
+   */
+  async savePersonaCredential(personaId: string, input: PersonaCredentialInput): Promise<PersonaCredentialSummary> {
+    await this.requirePersona(personaId)
+    const current = await this.dependencies.repository.findPersonaCredential(personaId)
+    const username = normalizeCredentialIdentity(input.username)
+    const email = normalizeCredentialIdentity(input.email)
+    const passwordCiphertext = input.password
+      ? this.requireSecretCipher().encrypt(input.password, credentialContext(personaId))
+      : current?.passwordCiphertext ?? null
+    const result = await this.dependencies.repository.savePersonaCredential({
+      personaId,
+      username,
+      email,
+      passwordCiphertext,
+    }, this.dependencies.clock.now())
+    requireCredentialWriteSuccess(result)
+    return { username, email, passwordConfigured: passwordCiphertext !== null }
   }
 
   /**
@@ -981,6 +1048,15 @@ export class ContentApplicationService {
   }
 
   /**
+   * 返回运行时已注入的可逆敏感文本加密器。
+   * @returns 可用的认证加密端口。
+   */
+  private requireSecretCipher(): SecretCipher {
+    if (!this.dependencies.secretCipher) throw new ApplicationError('CAPABILITY_DISABLED', '人物账号信息加密功能尚未启用', 503)
+    return this.dependencies.secretCipher
+  }
+
+  /**
    * 组装世界列表摘要，并复用调用方已经读取的数据避免重复查询。
    * @param world 世界记录。
    * @param knownVersions 可选版本集合。
@@ -1049,6 +1125,36 @@ export class ContentApplicationService {
       throw error
     }
   }
+}
+
+/**
+ * 返回与人物绑定的密码加密上下文，阻止不同人物之间替换密文。
+ * @param personaId 人物 UUID。
+ * @returns 稳定的认证附加数据。
+ */
+function credentialContext(personaId: string): string {
+  return `persona-credential:${personaId}`
+}
+
+/**
+ * 统一账号和邮箱的大小写及首尾空白，保证唯一性语义不依赖调用入口。
+ * @param value 用户提交的账号或邮箱；未提交时为空。
+ * @returns 用于展示和唯一索引的规范化小写文本；空值返回 null。
+ */
+function normalizeCredentialIdentity(value: string | null | undefined): string | null {
+  const normalized = value?.trim().toLowerCase() ?? ''
+  return normalized || null
+}
+
+/**
+ * 把仓储唯一性结果转换为稳定、可向用户展示的业务冲突。
+ * @param result 人物创建或账号信息更新结果。
+ * @returns 成功时正常结束。
+ * @throws ApplicationError 账号或邮箱已被其他人物使用时抛出。
+ */
+function requireCredentialWriteSuccess(result: 'created' | 'updated' | 'duplicate_username' | 'duplicate_email'): void {
+  if (result === 'duplicate_username') throw new ApplicationError('USERNAME_CONFLICT', '账号已被其他人物使用', 409)
+  if (result === 'duplicate_email') throw new ApplicationError('EMAIL_CONFLICT', '邮箱已被其他人物使用', 409)
 }
 
 /**

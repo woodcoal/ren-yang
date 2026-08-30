@@ -6,6 +6,7 @@ import type {
   LearningPromptWorkspaceView,
   MemoryRecordView,
   OpenVikingDerivedMemoryView,
+  PersonaExternalRecordView,
   PersonaFeedbackSourceView,
   PersonaOperationRecordView,
   WorldGrowthSourceView,
@@ -151,6 +152,24 @@ export interface CreatePersonaOperationRecord {
   timestamp: number
 }
 
+/** 新建或修改人物第三方经历记录的持久化命令。 */
+export interface SavePersonaExternalRecord {
+  /** 第三方记录 UUID。 */
+  id: string
+  /** 所属人物 UUID。 */
+  personaId: string
+  /** 事件发生日期，格式为 YYYY-MM-DD。 */
+  occurredOn: string
+  /** 人物做过的事情。 */
+  content: string
+  /** 第三方来源名称与地址。 */
+  references: Array<{ name: string, address: string }>
+  /** AI 提炼记忆时的人工权重。 */
+  importance: number
+  /** 创建或更新时间。 */
+  timestamp: number
+}
+
 /** 统一成长与记忆事实源端口。 */
 export interface LearningRepository {
   /** @param subjectType 对象类型。 @param subjectId 对象 UUID。 @returns 当前成长素材。 */
@@ -214,6 +233,16 @@ export interface LearningRepository {
   updatePersonaOperationRecordStates(personaId: string, ids: string[], isEnabled: boolean, timestamp: number): Promise<number>
   /** @param personaId 人物 UUID。 @param recordId 处理记录 UUID。 @param importance 新评分。 @param timestamp 更新时间。 @returns 是否更新。 */
   updatePersonaOperationRecordImportance(personaId: string, recordId: string, importance: number, timestamp: number): Promise<boolean>
+  /** @param personaId 人物 UUID。 @returns 人工补充的第三方经历记录。 */
+  listPersonaExternalRecords(personaId: string): Promise<PersonaExternalRecordView[]>
+  /** @param record 新第三方经历记录。 @returns 创建完成时结束。 */
+  createPersonaExternalRecord(record: SavePersonaExternalRecord): Promise<void>
+  /** @param record 已存在第三方经历记录的新内容。 @returns 记录存在且归属正确时为 true。 */
+  updatePersonaExternalRecord(record: SavePersonaExternalRecord): Promise<boolean>
+  /** @param personaId 人物 UUID。 @param ids 第三方记录 UUID。 @param isEnabled 新状态。 @param timestamp 更新时间。 @returns 更新数量。 */
+  updatePersonaExternalRecordStates(personaId: string, ids: string[], isEnabled: boolean, timestamp: number): Promise<number>
+  /** @param personaId 人物 UUID。 @param ids 第三方记录 UUID。 @param timestamp 删除时间。 @returns 删除数量。 */
+  deletePersonaExternalRecords(personaId: string, ids: string[], timestamp: number): Promise<number>
   /** @param personaId 人物 UUID。 @returns 当前启用的 OpenViking 派生记忆分析素材。 */
   listOpenVikingDerivedMemories(personaId: string): Promise<OpenVikingDerivedMemoryView[]>
 

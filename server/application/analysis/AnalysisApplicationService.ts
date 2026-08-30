@@ -1,5 +1,5 @@
 import { modelLearningPromptResultSchema } from '../../../shared/schemas/analysis'
-import type { CreateAnalysisBatchInput, ReviewIterationProposalsInput } from '../../../shared/schemas/analysis'
+import type { CreateAnalysisBatchInput, ListAnalysisBatchesInput, ReviewIterationProposalsInput } from '../../../shared/schemas/analysis'
 import type { TextModelParameters } from '../../../shared/schemas/generation'
 import type { AnalysisBatchView, AnalysisType } from '../../../shared/types/analysis'
 import type { AnalysisRepository, CreateAnalysisBatchInputRecord } from '../../ports/AnalysisRepository'
@@ -63,7 +63,7 @@ export class AnalysisApplicationService implements TaskHandler {
     if (!model) throw new ApplicationError('CAPABILITY_DISABLED', '文本模型尚未配置，不能分析成长或记忆', 422)
     const prepared = await this.prepareBatch(analysisType, subjectId, input.mode)
     const batchId = this.dependencies.identifiers.create()
-    await this.dependencies.analysis.createBatch({
+    const created = await this.dependencies.analysis.createBatch({
       id: batchId,
       taskId: this.dependencies.identifiers.create(),
       analysisType,
@@ -80,9 +80,17 @@ export class AnalysisApplicationService implements TaskHandler {
       inputs: prepared.inputs,
       timestamp: this.dependencies.clock.now(),
     })
-    const created = await this.dependencies.analysis.findBatch(batchId)
-    if (!created) throw new ApplicationError('PERSISTENCE_CONFLICT', '分析批次创建后无法读取', 409)
-    return created
+    if (!created) {
+      throw new ApplicationError('ANALYSIS_ALREADY_PENDING', '该对象已有排队或进行中的提炼，请等待完成后再试', 409)
+    }
+    const batch = await this.dependencies.analysis.findBatch(batchId)
+    if (!batch) throw new ApplicationError('PERSISTENCE_CONFLICT', '分析批次创建后无法读取', 409)
+    return batch
+  }
+
+  /** @param input 已校验的分析类型、对象、状态和数量过滤。 @returns 新批次在前的后台提炼记录。 */
+  async listBatches(input: ListAnalysisBatchesInput): Promise<AnalysisBatchView[]> {
+    return await this.dependencies.analysis.listBatches(input)
   }
 
   /** @param analysisType 分析类型。 @param subjectId 对象 UUID。 @returns 最新批次或 null。 */
@@ -173,15 +181,23 @@ export class AnalysisApplicationService implements TaskHandler {
       }))
     }
     else {
-      const [operations, activePrompt] = await Promise.all([
+      const [operations, externalRecords, activePrompt] = await Promise.all([
         this.dependencies.learning.listPersonaOperationRecords(subjectId),
+        this.dependencies.learning.listPersonaExternalRecords(subjectId),
         this.dependencies.learning.findActiveLearningPromptText('persona_memory', subjectId),
       ])
       baseline = activePrompt ? [{ type: 'learning_prompt', promptText: activePrompt }] : []
-      sourceInputs = operations.filter(item => item.isEnabled).map(item => ({
-        inputType: 'persona_operation_record' as const, inputId: item.id,
-        title: item.title, content: item.content, contentHash: item.contentHash, importance: item.importance,
-      }))
+      sourceInputs = [
+        ...operations.filter(item => item.isEnabled).map(item => ({
+          inputType: 'persona_operation_record' as const, inputId: item.id,
+          title: item.title, content: item.content, contentHash: item.contentHash, importance: item.importance,
+        })),
+        ...externalRecords.filter(item => item.isEnabled).map(item => ({
+          inputType: 'persona_external_record' as const, inputId: item.id,
+          title: `${item.occurredOn} 第三方经历`, content: item.analysisContent,
+          contentHash: item.contentHash, importance: item.importance,
+        })),
+      ]
     }
     if (sourceInputs.length === 0) throw new ApplicationError('ANALYSIS_INPUT_REQUIRED', '没有已启用的原始资料可供分析', 422)
     const hasNewInput = sourceInputs.some(item => !analyzedKeys.has(analysisInputKey(item)))

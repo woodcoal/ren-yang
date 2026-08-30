@@ -1,5 +1,5 @@
 import type { TextModelParameters } from '../../shared/schemas/generation'
-import type { ModelIterationResult, ModelLearningPromptResult, ReviewIterationProposalsInput } from '../../shared/schemas/analysis'
+import type { ListAnalysisBatchesInput, ModelIterationResult, ModelLearningPromptResult, ReviewIterationProposalsInput } from '../../shared/schemas/analysis'
 import type { AnalysisBatchView, AnalysisType } from '../../shared/types/analysis'
 import type { TextModelSnapshot } from '../domain/generation/GenerationModels'
 
@@ -8,7 +8,7 @@ export interface CreateAnalysisBatchInputRecord {
   /** 批次输入 UUID。 */
   id: string
   /** 原始数据类型。 */
-  inputType: 'growth_material' | 'persona_operation_record' | 'world_source' | 'persona_feedback_source' | 'openviking_memory'
+  inputType: 'growth_material' | 'persona_operation_record' | 'persona_external_record' | 'world_source' | 'persona_feedback_source' | 'openviking_memory'
   /** SQLite 原始数据 UUID。 */
   inputId: string
   /** 标题或摘要。 */
@@ -67,8 +67,10 @@ export interface AnalysisBatchRuntimeRecord {
 
 /** AI 分析批次、提案和原子审核事实源。 */
 export interface AnalysisRepository {
-  /** @param record 完整批次命令。 @returns 无返回值。 */
-  createBatch(record: CreateAnalysisBatchRecord): Promise<void>
+  /** @param record 完整批次命令。 @returns 创建成功时为 true；同对象同类型已有排队或运行批次时为 false。 */
+  createBatch(record: CreateAnalysisBatchRecord): Promise<boolean>
+  /** @param filter 可选分析类型、对象、状态和上限。 @returns 新批次在前的分析记录。 */
+  listBatches(filter: ListAnalysisBatchesInput): Promise<AnalysisBatchView[]>
   /** @param analysisType 分析类型。 @param subjectId 对象 UUID。 @returns 最新批次或 null。 */
   findLatestBatch(analysisType: AnalysisType, subjectId: string): Promise<AnalysisBatchView | null>
   /** @param analysisType 分析类型。 @param subjectId 对象 UUID。 @returns 已成功分析的“类型、标识、内容哈希”稳定键。 */

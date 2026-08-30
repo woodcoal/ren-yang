@@ -11,6 +11,7 @@ import { SqliteContentRepository } from '../../server/infrastructure/database/Sq
 import { SqliteDatabase } from '../../server/infrastructure/database/SqliteDatabase'
 import { SqliteAuditRepository } from '../../server/infrastructure/database/SqliteAuditRepository'
 import { ConservativeTokenCounter } from '../../server/infrastructure/model/ConservativeTokenCounter'
+import { AesGcmSecretCipher } from '../../server/infrastructure/security/AesGcmSecretCipher'
 import type { Clock } from '../../server/ports/Clock'
 import type { IdentifierGenerator } from '../../server/ports/IdentifierGenerator'
 import type { TextModelPort, TextModelRequest, TextModelResponse } from '../../server/ports/TextModelPort'
@@ -128,6 +129,7 @@ beforeEach(() => {
     tokenBudgets: { world: 2_500, persona: 3_500 },
     sourceProcessor: new NodeSourceContentProcessor(identifiers),
     sourceFiles: new LocalSourceFileStorage(temporaryDirectory),
+    secretCipher: new AesGcmSecretCipher('content-test-secret-material-32-characters'),
   })
   soulService = new SoulApplicationService({
     content: repository,
@@ -187,6 +189,62 @@ describe('人物、世界与资料管理闭环', () => {
     expect(world.versions[0]?.snapshot).toEqual({ promptText: '浮岛依靠浮石保持稳定。' })
     expect(world.draft).toBeNull()
     expect(database.getClient().prepare('SELECT COUNT(*) AS count FROM soul_drafts').get()).toEqual({ count: 0 })
+  })
+
+  it('人物账号信息加密保存、主动取回，并按小写全局约束账号和邮箱唯一', async () => {
+    const first = await service.createPersona({
+      name: '账号人物一', worldId: null, sourceIds: [], snapshot: BASE_PERSONA_SNAPSHOT,
+      changeSummary: '建立人物', username: 'LinMo', email: 'LinMo@Example.COM', password: '原始密码-123',
+    })
+    expect(first.credentials).toEqual({ username: 'linmo', email: 'linmo@example.com', passwordConfigured: true })
+    const row = database.getClient().prepare(`
+      SELECT username, email, password_ciphertext FROM personas WHERE id = ?
+    `).get(first.persona.id) as { username: string, email: string, password_ciphertext: string }
+    expect(row).toMatchObject({ username: 'linmo', email: 'linmo@example.com' })
+    expect(row.password_ciphertext).not.toContain('原始密码-123')
+    expect(await service.revealPersonaCredential(first.persona.id)).toEqual({
+      username: 'linmo', email: 'linmo@example.com', password: '原始密码-123',
+    })
+
+    const second = await service.createPersona({
+      name: '账号人物二', worldId: null, sourceIds: [], snapshot: BASE_PERSONA_SNAPSHOT, changeSummary: '建立人物',
+    })
+    await expect(service.savePersonaCredential(second.persona.id, {
+      username: 'LINMO', email: 'second@example.com', password: '第二个密码',
+    })).rejects.toMatchObject<ApplicationError>({ code: 'USERNAME_CONFLICT', statusCode: 409 })
+    await expect(service.savePersonaCredential(second.persona.id, {
+      username: 'second', email: 'LINMO@EXAMPLE.COM', password: '第二个密码',
+    })).rejects.toMatchObject<ApplicationError>({ code: 'EMAIL_CONFLICT', statusCode: 409 })
+  })
+
+  it('账号、邮箱和密码可分别配置，修改账号时保留原密码', async () => {
+    const accountOnly = await service.createPersona({
+      name: '仅账号人物', worldId: null, sourceIds: [], snapshot: BASE_PERSONA_SNAPSHOT,
+      changeSummary: '建立人物', username: 'OnlyAccount',
+    })
+    expect(accountOnly.credentials).toEqual({ username: 'onlyaccount', email: null, passwordConfigured: false })
+
+    const emailOnly = await service.createPersona({
+      name: '仅邮箱人物', worldId: null, sourceIds: [], snapshot: BASE_PERSONA_SNAPSHOT,
+      changeSummary: '建立人物', email: 'OnlyEmail@Example.COM',
+    })
+    expect(emailOnly.credentials).toEqual({ username: null, email: 'onlyemail@example.com', passwordConfigured: false })
+
+    const passwordOnly = await service.createPersona({
+      name: '仅密码人物', worldId: null, sourceIds: [], snapshot: BASE_PERSONA_SNAPSHOT,
+      changeSummary: '建立人物', password: '单独保存的密码',
+    })
+    expect(passwordOnly.credentials).toEqual({ username: null, email: null, passwordConfigured: true })
+    expect(await service.revealPersonaCredential(passwordOnly.persona.id)).toEqual({
+      username: null, email: null, password: '单独保存的密码',
+    })
+
+    await service.savePersonaCredential(passwordOnly.persona.id, {
+      username: 'LaterAccount', email: '', password: '',
+    })
+    expect(await service.revealPersonaCredential(passwordOnly.persona.id)).toEqual({
+      username: 'lateraccount', email: null, password: '单独保存的密码',
+    })
   })
 
   it('保存灵魂立即生成不可变历史并切换当前版本', async () => {

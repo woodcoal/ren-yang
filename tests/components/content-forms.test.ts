@@ -4,6 +4,7 @@ import { DOMWrapper, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
 import PersonaDraftAssistant from '../../app/components/content/PersonaDraftAssistant.vue'
 import PersonaForm from '../../app/components/content/PersonaForm.vue'
+import PersonaCredentialPanel from '../../app/components/content/PersonaCredentialPanel.vue'
 import QuickCreateSubjectModal from '../../app/components/content/QuickCreateSubjectModal.vue'
 import SourceImportForm from '../../app/components/content/SourceImportForm.vue'
 import SubjectSourceManager from '../../app/components/content/SubjectSourceManager.vue'
@@ -103,6 +104,51 @@ describe('阶段二内容表单', () => {
         snapshot: { promptText: '谨慎的档案管理员，资料不足时说明未知。' },
       }),
     ]])
+  })
+
+  it('人物账号信息默认不读取密码，主动查看后可校准并提交完整内容', async () => {
+    const wrapper = await mountSuspended(PersonaCredentialPanel, {
+      props: {
+        credential: { username: 'linmo', email: 'linmo@example.com', passwordConfigured: true },
+        revealed: null,
+        loading: false,
+      },
+    })
+    expect(wrapper.get('input[type="password"]').element.value).toBe('')
+    await wrapper.get('[data-persona-credential-reveal]').trigger('click')
+    expect(wrapper.emitted('reveal')).toEqual([[]])
+
+    await wrapper.setProps({ revealed: { username: 'linmo', email: 'linmo@example.com', password: '已保存密码' } })
+    await flushPromises()
+    expect(wrapper.get('input[type="text"]').element.value).toBe('linmo')
+    expect(wrapper.find('input[type="password"]').exists()).toBe(false)
+    expect(wrapper.findAll('input')[2]!.element.value).toBe('已保存密码')
+    await wrapper.get('[data-persona-credential-form]').trigger('submit')
+    await flushPromises()
+    expect(wrapper.emitted('save')).toEqual([[{
+      username: 'linmo', email: 'linmo@example.com', password: '已保存密码',
+    }]])
+  })
+
+  it('账号信息允许只填写账号并明确三个字段均为可选', async () => {
+    const wrapper = await mountSuspended(PersonaCredentialPanel, {
+      props: {
+        credential: { username: null, email: null, passwordConfigured: false },
+        revealed: null,
+        loading: false,
+      },
+    })
+    const inputs = wrapper.findAll('input')
+    await inputs[0]!.setValue('OnlyAccount')
+    await wrapper.get('[data-persona-credential-form]').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('账号信息')
+    expect(wrapper.text()).not.toContain('第三方账号凭据')
+    expect(wrapper.text()).toContain('均可选填')
+    expect(wrapper.emitted('save')).toEqual([[{
+      username: 'onlyaccount', email: '', password: '',
+    }]])
   })
 
   it('AI 草稿助手提交自然语言与选中的参考资料，但不直接创建人物', async () => {

@@ -26,6 +26,16 @@ export const soulSnapshotSchema = z.object({
 /** 人物灵魂快照校验。 */
 export const personaSnapshotSchema = soulSnapshotSchema
 
+/** 人物可选账号；空字符串表示未配置。 */
+const optionalPersonaAccountSchema = z.string().trim().toLowerCase().max(100, '账号不能超过 100 字')
+
+/** 人物可选邮箱；空字符串表示未配置。 */
+const optionalPersonaEmailSchema = z.string().trim().toLowerCase().max(320, '邮箱不能超过 320 字')
+  .refine(value => value === '' || z.string().email().safeParse(value).success, '邮箱格式无效')
+
+/** 人物可选密码；空字符串在编辑时表示保留已保存密码。 */
+const optionalPersonaPasswordSchema = z.string().max(500, '密码不能超过 500 字')
+
 /** 世界与人物快速初始化共用的自然语言输入。 */
 export const subjectInitializationSchema = z.object({
   prompt: z.string().trim().min(1, '自然语言描述不能为空').max(20_000, '自然语言描述不能超过 20000 字'),
@@ -36,6 +46,16 @@ export const quickCreateSubjectSchema = z.object({
   name: z.string().trim().min(1, '名称不能为空').max(100, '名称不能超过 100 字'),
   promptText: z.string().trim().min(1, '灵魂提示词不能为空').max(50_000, '灵魂提示词不能超过 50000 字'),
   autoAnalyze: z.boolean().default(false),
+  username: optionalPersonaAccountSchema.optional(),
+  email: optionalPersonaEmailSchema.optional(),
+  password: optionalPersonaPasswordSchema.optional(),
+})
+
+/** 人物账号信息编辑输入；三项均可独立留空。 */
+export const personaCredentialSchema = z.object({
+  username: optionalPersonaAccountSchema.default(''),
+  email: optionalPersonaEmailSchema.default(''),
+  password: optionalPersonaPasswordSchema.default(''),
 })
 
 /** 创建对象前独立整理灵魂提示词的输入。 */
@@ -80,6 +100,9 @@ export const createPersonaSchema = z.object({
   sourceIds: z.array(z.string().uuid('资料标识无效')).max(100, '一次最多关联 100 项资料').default([]),
   snapshot: personaSnapshotSchema,
   changeSummary: z.string().trim().min(1, '变化摘要不能为空').max(500, '变化摘要不能超过 500 字'),
+  username: optionalPersonaAccountSchema.optional(),
+  email: optionalPersonaEmailSchema.optional(),
+  password: optionalPersonaPasswordSchema.optional(),
 })
 
 /** 修改人物可变元数据的输入。 */
@@ -258,6 +281,7 @@ export const compareVersionsSchema = z.object({
 export type CreatePersonaInput = z.infer<typeof createPersonaSchema>
 export type SubjectInitializationInput = z.infer<typeof subjectInitializationSchema>
 export type QuickCreateSubjectInput = z.infer<typeof quickCreateSubjectSchema>
+export type PersonaCredentialInput = z.infer<typeof personaCredentialSchema>
 export type AnalyzeSoulPromptInput = z.infer<typeof analyzeSoulPromptInputSchema>
 export type GeneratePersonaDraftInput = z.infer<typeof generatePersonaDraftSchema>
 export type PersonaDraft = z.infer<typeof personaDraftSchema>

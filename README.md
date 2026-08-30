@@ -12,7 +12,7 @@ MVP 已完成阶段七最终验收：人物、世界与资料管理，真实文�
 
 ## 本地启动
 
-1. 在仓库外的环境配置中设置至少 32 个字符的 `NUXT_SESSION_PASSWORD`。
+1. 在仓库外的环境配置中设置至少 32 个字符的 `NUXT_SESSION_PASSWORD`。该密钥也会经过用途隔离派生，用于加密人物账号信息中的密码；已有加密密码期间不得直接更换。
 2. 配置文本模型：`NUXT_TEXT_MODEL_ENDPOINT` 填写 OpenAI-compatible API 根地址（通常以 `/v1` 结尾，程序自动补全 `/chat/completions`），再设置 `NUXT_TEXT_MODEL_API_KEY`、`NUXT_TEXT_MODEL_MODEL`；完整接口地址同样兼容。
 3. 如需图片块，`NUXT_IMAGE_MODEL_ENDPOINT` 填写 API 根地址（程序自动补全 `/images/generations`），再配置 `NUXT_IMAGE_MODEL_API_KEY`、`NUXT_IMAGE_MODEL_MODEL`；不配置时纯文本路径保持可用。
 4. 如需语义上下文，设置 `NUXT_OPEN_VIKING_ENABLED=true`、`NUXT_OPEN_VIKING_ENDPOINT` 和可选的 `NUXT_OPEN_VIKING_API_KEY`；关闭时使用 SQLite FTS5。

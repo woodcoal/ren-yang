@@ -9,6 +9,7 @@ import type {
   LearningPromptWorkspaceView,
   MemoryRecordView,
   OpenVikingDerivedMemoryView,
+  PersonaExternalRecordView,
   PersonaFeedbackSourceView,
   PersonaOperationRecordView,
   WorldGrowthSourceView,
@@ -21,6 +22,7 @@ import type {
   PublishLearningPromptDraftRecord,
   SaveGrowthMaterialRecord,
   SaveLearningPromptDraftRecord,
+  SavePersonaExternalRecord,
   UpdateGrowthRecord,
 } from '../../ports/LearningRepository'
 import { insertAuditEvent } from './AuditSql'
@@ -567,6 +569,83 @@ export class SqliteLearningRepository implements LearningRepository {
     return changed
   }
 
+  /** @param personaId 人物 UUID。 @returns 按发生日期和更新时间倒序的第三方经历记录。 */
+  async listPersonaExternalRecords(personaId: string): Promise<PersonaExternalRecordView[]> {
+    return this.client.prepare(`
+      SELECT * FROM persona_external_records
+      WHERE persona_id = ? ORDER BY occurred_on DESC, updated_at DESC, id DESC
+    `).all(personaId).map(toExternalRecord)
+  }
+
+  /** @param record 已校验的新第三方经历记录。 @returns 写入完成时结束。 */
+  async createPersonaExternalRecord(record: SavePersonaExternalRecord): Promise<void> {
+    this.client.prepare(`
+      INSERT INTO persona_external_records (
+        id, persona_id, occurred_on, content, references_json, is_enabled, importance, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)
+    `).run(
+      record.id, record.personaId, record.occurredOn, record.content, JSON.stringify(record.references),
+      record.importance, record.timestamp, record.timestamp,
+    )
+    insertAuditEvent(this.client, {
+      actor: 'administrator', action: 'persona_external_record_created',
+      targetType: 'persona_external_record', targetId: record.id, timestamp: record.timestamp,
+    })
+  }
+
+  /** @param record 已存在第三方经历记录的新内容。 @returns 记录存在且归属正确时为 true。 */
+  async updatePersonaExternalRecord(record: SavePersonaExternalRecord): Promise<boolean> {
+    const changed = this.client.prepare(`
+      UPDATE persona_external_records
+      SET occurred_on = ?, content = ?, references_json = ?, importance = ?, updated_at = ?
+      WHERE id = ? AND persona_id = ?
+    `).run(
+      record.occurredOn, record.content, JSON.stringify(record.references), record.importance,
+      record.timestamp, record.id, record.personaId,
+    ).changes === 1
+    if (changed) {
+      insertAuditEvent(this.client, {
+        actor: 'administrator', action: 'persona_external_record_updated',
+        targetType: 'persona_external_record', targetId: record.id, timestamp: record.timestamp,
+      })
+    }
+    return changed
+  }
+
+  /** @param personaId 人物 UUID。 @param ids 第三方记录 UUID。 @param isEnabled 新状态。 @param timestamp 更新时间。 @returns 已核对并更新的记录数。 */
+  async updatePersonaExternalRecordStates(personaId: string, ids: string[], isEnabled: boolean, timestamp: number): Promise<number> {
+    return this.updateScopedEnabledState({
+      table: 'persona_external_records', scopeColumn: 'persona_id', idColumn: 'id', scopeId: personaId,
+      ids, isEnabled, timestamp,
+    })
+  }
+
+  /** @param personaId 人物 UUID。 @param ids 第三方记录 UUID。 @param timestamp 删除时间。 @returns 全部归属正确时返回删除数，否则返回零。 */
+  async deletePersonaExternalRecords(personaId: string, ids: string[], timestamp: number): Promise<number> {
+    return this.client.transaction(() => {
+      const placeholders = createPlaceholders(ids)
+      const available = this.client.prepare(`
+        SELECT COUNT(*) AS count FROM persona_external_records
+        WHERE persona_id = ? AND id IN (${placeholders})
+      `).get(personaId, ...ids) as { count: number }
+      if (Number(available.count) !== ids.length) return 0
+      this.client.prepare(`
+        UPDATE analysis_batch_inputs SET source_available = 0
+        WHERE input_type = 'persona_external_record' AND input_id IN (${placeholders})
+      `).run(...ids)
+      const changes = this.client.prepare(`
+        DELETE FROM persona_external_records WHERE persona_id = ? AND id IN (${placeholders})
+      `).run(personaId, ...ids).changes
+      for (const id of ids) {
+        insertAuditEvent(this.client, {
+          actor: 'administrator', action: 'persona_external_record_deleted',
+          targetType: 'persona_external_record', targetId: id, timestamp,
+        })
+      }
+      return changes
+    }).immediate()
+  }
+
   /** @param personaId 人物 UUID。 @returns 当前启用的 OpenViking 派生记忆分析素材。 */
   async listOpenVikingDerivedMemories(personaId: string): Promise<OpenVikingDerivedMemoryView[]> {
     return this.client.prepare(`
@@ -634,7 +713,7 @@ export class SqliteLearningRepository implements LearningRepository {
    * @returns 全部条目更新时返回所选数量，否则返回零。
    */
   private updateScopedEnabledState(input: {
-    table: 'world_sources' | 'persona_feedback_sources' | 'persona_operation_records' | 'growth_materials'
+    table: 'world_sources' | 'persona_feedback_sources' | 'persona_operation_records' | 'persona_external_records' | 'growth_materials'
     scopeColumn: 'world_id' | 'persona_id'
     idColumn: 'source_id' | 'id'
     scopeId: string
@@ -917,6 +996,43 @@ function toOperationRecord(value: unknown): PersonaOperationRecordView {
     sessionRecordId: row.session_record_id === null ? null : String(row.session_record_id),
     createdAt: Number(row.created_at), updatedAt: Number(row.updated_at),
   }
+}
+
+/**
+ * 把第三方经历数据库行转换为含稳定分析正文和哈希的公开视图。
+ * @param value SQLite 第三方经历行。
+ * @returns 可供界面管理并直接进入记忆分析的记录。
+ */
+function toExternalRecord(value: unknown): PersonaExternalRecordView {
+  const row = value as Record<string, unknown>
+  const references = JSON.parse(String(row.references_json)) as Array<{ name: string, address: string }>
+  const occurredOn = String(row.occurred_on)
+  const content = String(row.content)
+  const analysisContent = formatExternalRecordContent(occurredOn, content, references)
+  return {
+    id: String(row.id), personaId: String(row.persona_id), occurredOn, content,
+    analysisContent, contentHash: hashContent(analysisContent), references,
+    isEnabled: Number(row.is_enabled) === 1, importance: Number(row.importance),
+    createdAt: Number(row.created_at), updatedAt: Number(row.updated_at),
+  }
+}
+
+/**
+ * 生成包含发生日期、事情正文和全部参考地址的稳定记忆分析文本。
+ * @param occurredOn 事件发生日期。
+ * @param content 人物做过的事情。
+ * @param references 第三方来源名称与地址。
+ * @returns 可直接交给 AI 的完整文本。
+ */
+function formatExternalRecordContent(
+  occurredOn: string,
+  content: string,
+  references: Array<{ name: string, address: string }>,
+): string {
+  const referenceText = references.length
+    ? references.map(item => `- ${item.name}：${item.address}`).join('\n')
+    : '- 未提供'
+  return `发生日期：${occurredOn}\n\n做过的事情：\n${content}\n\n参考来源：\n${referenceText}`
 }
 
 /** @param value SQLite 行。 @returns 人物记忆当前修订视图。 */

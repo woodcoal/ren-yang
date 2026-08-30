@@ -4,6 +4,7 @@ import { mountSuspended } from '@nuxt/test-utils/runtime'
 import GrowthMaterialPanel from '../../app/components/learning/GrowthMaterialPanel.vue'
 import LearningPromptPanel from '../../app/components/learning/LearningPromptPanel.vue'
 import OperationRecordPanel from '../../app/components/learning/OperationRecordPanel.vue'
+import ExternalRecordPanel from '../../app/components/learning/ExternalRecordPanel.vue'
 
 describe('成长与记忆管理组件', () => {
   it('成长素材支持从资料库逐条评分批量导入', async () => {
@@ -178,5 +179,30 @@ describe('成长与记忆管理组件', () => {
     await firstRow.get('input[type="checkbox"]').setValue(true)
     await wrapper.findAll('button').find(button => button.text().includes('批量禁用'))!.trigger('click')
     expect(wrapper.emitted('status')).toEqual([[{ ids: [items[0]!.id], isEnabled: false }]])
+  })
+
+  it('第三方记录通过弹窗添加并保留多项参考地址', async () => {
+    const wrapper = await mountSuspended(ExternalRecordPanel, { props: { items: [], loading: false } })
+    await wrapper.get('[data-external-record-add]').trigger('click')
+    await flushPromises()
+    const form = document.querySelector<HTMLElement>('[data-external-record-form]')
+    expect(form).toBeDefined()
+    await new DOMWrapper(form!.querySelector<HTMLInputElement>('input[type="date"]')!).setValue('2026-08-31')
+    await new DOMWrapper(form!.querySelector<HTMLTextAreaElement>('textarea')!).setValue('完成小说人物关系校对。')
+    const addReferenceButton = [...form!.querySelectorAll<HTMLButtonElement>('button')]
+      .find(button => button.textContent?.includes('添加参考'))
+    await new DOMWrapper(addReferenceButton!).trigger('click')
+    await flushPromises()
+    const textInputs = [...form!.querySelectorAll<HTMLInputElement>('input[type="text"]')]
+    await new DOMWrapper(textInputs[0]!).setValue('校对笔记')
+    await new DOMWrapper(textInputs[1]!).setValue('笔记库/小说/第三章')
+    await new DOMWrapper(form!).trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.emitted('create')).toEqual([[{
+      occurredOn: '2026-08-31', content: '完成小说人物关系校对。',
+      references: [{ name: '校对笔记', address: '笔记库/小说/第三章' }], importance: 3,
+    }]])
+    wrapper.unmount()
   })
 })

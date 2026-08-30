@@ -1,6 +1,7 @@
 import type { Database as BetterSqliteDatabase } from 'better-sqlite3'
 import { soulSnapshotSchema } from '../../../shared/schemas/content'
 import type {
+  PersonaCredentialRecord,
   PersonaRecord,
   PersonaVersionRecord,
   SoulDraftRecord,
@@ -56,17 +57,39 @@ export class SqliteContentRepository implements ContentRepository, SoulRepositor
     return row ? toPersona(row) : null
   }
 
+  /** @param personaId 人物 UUID。 @returns 至少配置一项的账号信息密文记录，否则为 null。 */
+  async findPersonaCredential(personaId: string): Promise<PersonaCredentialRecord | null> {
+    const value = this.client.prepare(`
+      SELECT id, username, email, password_ciphertext FROM personas WHERE id = ?
+    `).get(personaId)
+    if (!value) return null
+    const row = asRow(value)
+    if (row.username === null && row.email === null && row.password_ciphertext === null) return null
+    return {
+      personaId: String(row.id),
+      username: row.username === null ? null : String(row.username),
+      email: row.email === null ? null : String(row.email),
+      passwordCiphertext: row.password_ciphertext === null ? null : String(row.password_ciphertext),
+    }
+  }
+
   /**
    * 原子创建默认启用的人物、初始当前灵魂版本和资料关联。
    * @param record 已验证的创建命令。
-   * @returns 无返回值。
+   * @returns 创建成功或具体重复字段。
    */
-  async createPersona(record: CreatePersonaRecord): Promise<void> {
-    this.client.transaction(() => {
+  async createPersona(record: CreatePersonaRecord): Promise<'created' | 'duplicate_username' | 'duplicate_email'> {
+    return this.client.transaction(() => {
+      const conflict = this.findCredentialConflict(record.id, record.username, record.email)
+      if (conflict) return conflict
       this.client.prepare(`
-        INSERT INTO personas (id, world_id, name, origin, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `).run(record.id, record.worldId, record.name, record.origin, record.timestamp, record.timestamp)
+        INSERT INTO personas (
+          id, world_id, name, username, email, password_ciphertext, origin, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        record.id, record.worldId, record.name, record.username, record.email,
+        record.passwordCiphertext, record.origin, record.timestamp, record.timestamp,
+      )
       insertSoulVersion(this.client, {
         id: record.versionId,
         subjectType: 'persona',
@@ -89,6 +112,31 @@ export class SqliteContentRepository implements ContentRepository, SoulRepositor
       for (const sourceId of record.sourceIds) {
         link.run(record.id, sourceId)
       }
+      return 'created' as const
+    })()
+  }
+
+  /**
+   * 原子检查账号和邮箱唯一性后保存人物账号信息。
+   * @param record 已由应用层规范化且密码按需加密的账号信息。
+   * @param timestamp 更新时间。
+   * @returns 更新成功或具体重复字段。
+   */
+  async savePersonaCredential(
+    record: PersonaCredentialRecord,
+    timestamp: number,
+  ): Promise<'updated' | 'duplicate_username' | 'duplicate_email'> {
+    return this.client.transaction(() => {
+      const conflict = this.findCredentialConflict(record.personaId, record.username, record.email)
+      if (conflict) return conflict
+      this.client.prepare(`
+        UPDATE personas SET username = ?, email = ?, password_ciphertext = ?, updated_at = ? WHERE id = ?
+      `).run(record.username, record.email, record.passwordCiphertext, timestamp, record.personaId)
+      insertAuditEvent(this.client, {
+        actor: 'administrator', action: 'persona_credential_updated',
+        targetType: 'persona', targetId: record.personaId, timestamp,
+      })
+      return 'updated' as const
     })()
   }
 
@@ -97,6 +145,27 @@ export class SqliteContentRepository implements ContentRepository, SoulRepositor
     return this.client.prepare(`
       UPDATE personas SET name = ?, world_id = ?, updated_at = ? WHERE id = ?
     `).run(name, worldId, timestamp, id).changes === 1
+  }
+
+  /**
+   * 检查人物之外是否已经存在相同的规范化账号或邮箱。
+   * @param personaId 当前人物 UUID；创建时传入即将使用的新 UUID。
+   * @param username 待写入账号；未配置时为空。
+   * @param email 待写入邮箱；未配置时为空。
+   * @returns 首个冲突字段；不存在冲突时返回 null。
+   */
+  private findCredentialConflict(
+    personaId: string,
+    username: string | null,
+    email: string | null,
+  ): 'duplicate_username' | 'duplicate_email' | null {
+    if (username !== null && this.client.prepare(`SELECT 1 FROM personas WHERE username = ? AND id <> ?`).get(username, personaId)) {
+      return 'duplicate_username'
+    }
+    if (email !== null && this.client.prepare(`SELECT 1 FROM personas WHERE email = ? AND id <> ?`).get(email, personaId)) {
+      return 'duplicate_email'
+    }
+    return null
   }
 
   /** @param personaId 人物 UUID。 @param isEnabled 新状态。 @param timestamp 更新时间。 @returns 是否更新。 */

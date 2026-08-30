@@ -62,6 +62,27 @@ describe('OpenAiCompatibleTextModel', () => {
     expect(init?.headers).toMatchObject({ authorization: 'Bearer secret-key' })
   })
 
+  it('兼容模型使用 Markdown 代码围栏包裹的 JSON 对象', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      choices: [{ message: { content: '```json\n{"answer":"ok"}\n```' } }],
+    }), { status: 200, headers: { 'content-type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(createModel().generateStructured(REQUEST)).resolves.toMatchObject({
+      structuredOutput: { answer: 'ok' },
+    })
+  })
+
+  it('兼容模型在 JSON 代码围栏前后附带说明文字', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      choices: [{ message: { content: '以下是结果：\n```json\n{"answer":"ok"}\n```\n请查收。' } }],
+    }), { status: 200 })))
+
+    await expect(createModel().generateStructured(REQUEST)).resolves.toMatchObject({
+      structuredOutput: { answer: 'ok' },
+    })
+  })
+
   it('从 OpenAI-compatible API 根地址推导 Chat Completions 地址', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
       choices: [{ message: { content: '{"answer":"ok"}' } }],

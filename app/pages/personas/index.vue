@@ -104,6 +104,7 @@ async function createPersona(input: QuickCreateSubjectInput): Promise<void> {
       method: 'POST', body: {
         name: input.name, worldId: null, sourceIds: [], snapshot,
         changeSummary: input.autoAnalyze ? 'AI 整理初始人物灵魂' : '按原文建立初始人物灵魂',
+        username: input.username, email: input.email, password: input.password,
       },
     })
     await navigateTo(`/personas/${created.data.persona.id}`)

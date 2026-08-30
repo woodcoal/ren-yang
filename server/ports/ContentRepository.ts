@@ -1,5 +1,6 @@
 import type {
   PersonaOrigin,
+  PersonaCredentialRecord,
   PersonaRecord,
   PersonaSnapshot,
   PersonaVersionRecord,
@@ -36,6 +37,12 @@ export interface CreatePersonaRecord {
   worldId: string | null
   /** 人物名称。 */
   name: string
+  /** 可选账号。 */
+  username: string | null
+  /** 可选邮箱。 */
+  email: string | null
+  /** 可选密码密文。 */
+  passwordCiphertext: string | null
   /** 数据库兼容值；来源模式已退出业务。 */
   origin: PersonaOrigin
   /** 初始档案快照。 */
@@ -189,8 +196,12 @@ export interface ContentRepository {
   listPersonasPage(page: number, pageSize: 5 | 10 | 20 | 50 | 100): Promise<PersonaPageRecord>
   /** @param id 人物标识。 @returns 人物或 null。 */
   findPersona(id: string): Promise<PersonaRecord | null>
+  /** @param personaId 人物标识。 @returns 至少配置一项的账号信息密文记录，否则为 null。 */
+  findPersonaCredential(personaId: string): Promise<PersonaCredentialRecord | null>
   /** @param record 完整创建命令。 @returns 无返回值。 */
-  createPersona(record: CreatePersonaRecord): Promise<void>
+  createPersona(record: CreatePersonaRecord): Promise<'created' | 'duplicate_username' | 'duplicate_email'>
+  /** @param record 三项分别可空的账号信息。 @param timestamp 更新时间。 @returns 保存结果。 */
+  savePersonaCredential(record: PersonaCredentialRecord, timestamp: number): Promise<'updated' | 'duplicate_username' | 'duplicate_email'>
   /** @param id 人物标识。 @param name 新名称。 @param worldId 新世界标识。 @param timestamp 更新时间。 @returns 是否更新成功。 */
   updatePersona(id: string, name: string, worldId: string | null, timestamp: number): Promise<boolean>
   /** @param personaId 人物标识。 @param isEnabled 新状态。 @param timestamp 更新时间。 @returns 是否更新成功。 */

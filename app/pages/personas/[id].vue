@@ -1,19 +1,20 @@
 <script setup lang="ts">
 import type { FormSubmitEvent } from '@nuxt/ui'
 import { computed, reactive, shallowRef } from 'vue'
-import type { CreateSourceWithTargetsInput, SaveSoulVersionInput, UpdatePersonaInput } from '#shared/schemas/content'
+import type { CreateSourceWithTargetsInput, PersonaCredentialInput, SaveSoulVersionInput, UpdatePersonaInput } from '#shared/schemas/content'
 import { updatePersonaSchema } from '#shared/schemas/content'
 import type {
   CreateGrowthMaterialInput,
   CreateLearningPromptDraftFromVersionInput,
   ImportGrowthSourcesInput,
   PublishLearningPromptDraftInput,
+  SaveExternalRecordInput,
   SaveLearningPromptDraftInput,
   UpdateGrowthMaterialInput,
   UpdateOperationRecordInput,
 } from '#shared/schemas/learning'
 import type { ApiResponse } from '#shared/types/api'
-import type { DeletionImpact, PersonaDetails, SoulWorkspaceView, SourceDetails, SourceSummary, WorldSummary } from '#shared/types/content'
+import type { DeletionImpact, PersonaCredentialSecretView, PersonaDetails, SoulWorkspaceView, SourceDetails, SourceSummary, WorldSummary } from '#shared/types/content'
 import type { PersonaGrowthWorkspaceView, PersonaMemoryWorkspaceView } from '#shared/types/learning'
 import type { AnalysisBatchView } from '#shared/types/analysis'
 import AnalysisPanel from '../../components/analysis/AnalysisPanel.vue'
@@ -55,7 +56,7 @@ const growthWorkspace = computed<PersonaGrowthWorkspaceView>(() => growthData.va
   prompt: { promptType: 'persona_growth', activeVersion: null, draft: null, versions: [] },
 })
 const memoryWorkspace = computed<PersonaMemoryWorkspaceView>(() => memoryData.value?.data ?? {
-  operationRecords: [],
+  operationRecords: [], externalRecords: [],
   prompt: { promptType: 'persona_memory', activeVersion: null, draft: null, versions: [] },
 })
 const growthAnalysis = computed(() => growthAnalysisData.value?.data ?? null)
@@ -78,6 +79,8 @@ const deletionConfirmed = shallowRef(false)
 const actionLoading = shallowRef(false)
 const actionError = shallowRef<string | null>(null)
 const actionMessage = shallowRef<string | null>(null)
+/** 只有用户主动查看后才暂存在当前页面内存中的密码和账号信息。 */
+const revealedCredential = shallowRef<PersonaCredentialSecretView | null>(null)
 /** 头像更新后用于强制刷新页首同地址图片。 */
 const avatarRevision = shallowRef(0)
 const enableConfirmationOpen = shallowRef(false)
@@ -104,6 +107,38 @@ function selectTab(tab: PersonaTab): void {
 async function saveMetadata(event: FormSubmitEvent<UpdatePersonaInput>): Promise<void> {
   await runAction('人物基本信息已保存', async () => {
     await $fetch(`/api/v1/personas/${personaId}`, { method: 'PATCH', body: event.data })
+    await refresh()
+  })
+}
+
+/**
+ * 主动请求服务端解密当前人物密码，仅在当前页面内存中短暂展示。
+ * @returns 账号信息加载完成时结束。
+ */
+async function revealCredential(): Promise<void> {
+  await runAction('已读取当前密码；离开或刷新页面后会自动隐藏', async () => {
+    const response = await $fetch<ApiResponse<PersonaCredentialSecretView>>(`/api/v1/personas/${personaId}/credentials`)
+    revealedCredential.value = response.data
+  })
+}
+
+/**
+ * 清除当前页面内存中的密码原文并恢复密码遮罩。
+ * @returns 明文引用清除时结束。
+ */
+function concealCredential(): void {
+  revealedCredential.value = null
+}
+
+/**
+ * 保存人物可选账号信息，并清除页面中的密码明文。
+ * @param input 三项分别可选的账号、邮箱和密码。
+ * @returns 保存与人物详情刷新完成时结束。
+ */
+async function saveCredential(input: PersonaCredentialInput): Promise<void> {
+  await runAction('账号信息已保存', async () => {
+    await $fetch(`/api/v1/personas/${personaId}/credentials`, { method: 'PUT', body: input })
+    revealedCredential.value = null
     await refresh()
   })
 }
@@ -202,6 +237,41 @@ async function updateOperationRecordImportance(input: UpdateOperationRecordInput
     await $fetch(`/api/v1/personas/${personaId}/operation-records/${input.id}`, {
       method: 'PATCH', body: { importance: input.importance },
     })
+    await refreshMemory()
+  })
+}
+
+/** @param input 新第三方经历记录。 @returns 创建和记忆工作区刷新完成时结束。 */
+async function createExternalRecord(input: SaveExternalRecordInput): Promise<void> {
+  await runAction('第三方记录已加入人物记忆素材池', async () => {
+    await $fetch(`/api/v1/personas/${personaId}/external-records`, { method: 'POST', body: input })
+    await refreshMemory()
+  })
+}
+
+/** @param input 第三方记录 UUID 与完整新内容。 @returns 修改和记忆工作区刷新完成时结束。 */
+async function updateExternalRecord(input: SaveExternalRecordInput & { id: string }): Promise<void> {
+  await runAction('第三方记录已修改', async () => {
+    await $fetch(`/api/v1/personas/${personaId}/external-records/${input.id}`, {
+      method: 'PATCH',
+      body: { occurredOn: input.occurredOn, content: input.content, references: input.references, importance: input.importance },
+    })
+    await refreshMemory()
+  })
+}
+
+/** @param input 第三方记录批量启用状态。 @returns 更新和记忆工作区刷新完成时结束。 */
+async function updateExternalRecordStatus(input: { ids: string[], isEnabled: boolean }): Promise<void> {
+  await runAction(input.isEnabled ? '所选第三方记录已参加记忆提炼' : '所选第三方记录已不参加记忆提炼', async () => {
+    await $fetch(`/api/v1/personas/${personaId}/external-records`, { method: 'PATCH', body: input })
+    await refreshMemory()
+  })
+}
+
+/** @param input 待永久删除的第三方记录 UUID 集合。 @returns 删除和记忆工作区刷新完成时结束。 */
+async function deleteExternalRecords(input: { ids: string[] }): Promise<void> {
+  await runAction('所选第三方记录已删除', async () => {
+    await $fetch(`/api/v1/personas/${personaId}/external-records`, { method: 'DELETE', body: input })
     await refreshMemory()
   })
 }
@@ -488,7 +558,7 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
           <template #header><h2 class="font-semibold text-highlighted">变化边界</h2></template>
           <div class="space-y-3 text-sm text-muted">
             <p>成长来自人物资料库中选出的重要资料，以及你手工添加的独立文档。</p>
-            <p>记忆来自人物成功或部分成功的历史任务，记录实际做过的工作与形成的经验。</p>
+            <p>记忆来自人物成功或部分成功的历史任务，也可以使用你补充的第三方经历记录。</p>
             <p>AI 只生成完整提示词草稿；人工校准并发布后，成长和记忆提示词才会固定进入新任务。</p>
           </div>
         </UCard>
@@ -532,6 +602,14 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
       </div>
 
       <div v-else-if="selectedTab === 'memory'" class="space-y-6">
+        <LearningExternalRecordPanel
+          :items="memoryWorkspace.externalRecords"
+          :loading="actionLoading"
+          @create="createExternalRecord"
+          @update="updateExternalRecord"
+          @status="updateExternalRecordStatus"
+          @delete="deleteExternalRecords"
+        />
         <LearningOperationRecordPanel
           :items="memoryWorkspace.operationRecords"
           :loading="actionLoading"
@@ -573,6 +651,14 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
 
       <div v-else class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
         <div class="space-y-6">
+          <ContentPersonaCredentialPanel
+            :credential="details.credentials"
+            :revealed="revealedCredential"
+            :loading="actionLoading"
+            @reveal="revealCredential"
+            @conceal="concealCredential"
+            @save="saveCredential"
+          />
           <ContentPersonaAvatarEditor
             :persona-id="details.persona.id"
             :persona-name="details.persona.name"

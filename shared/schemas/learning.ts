@@ -77,6 +77,25 @@ export const updateOperationRecordSchema = z.object({
   importance: z.number().int('素材评分必须是整数').min(1, '素材评分不能低于 1').max(5, '素材评分不能高于 5'),
 })
 
+/** 第三方经历记录引用的名称和地址。 */
+export const externalRecordReferenceSchema = z.object({
+  name: z.string().trim().min(1, '参考名称不能为空').max(100, '参考名称不能超过 100 字'),
+  address: z.string().trim().min(1, '参考地址不能为空').max(2_000, '参考地址不能超过 2000 字'),
+})
+
+/** 新建或修改一条可参与人物记忆提炼的第三方经历记录。 */
+export const saveExternalRecordSchema = z.object({
+  occurredOn: z.iso.date('发生日期无效'),
+  content: z.string().trim().min(1, '事情描述不能为空').max(20_000, '事情描述不能超过 20000 字'),
+  references: z.array(externalRecordReferenceSchema).max(20, '一条记录最多添加 20 项参考').default([]),
+  importance: z.number().int('素材评分必须是整数').min(1, '素材评分不能低于 1').max(5, '素材评分不能高于 5').default(3),
+})
+
+/** 批量永久删除第三方经历记录。 */
+export const deleteExternalRecordsSchema = z.object({
+  ids: z.array(z.string().uuid('第三方记录标识无效')).min(1, '至少选择一条记录').max(100, '一次最多删除 100 条记录'),
+})
+
 /** 保存不会立即生效的完整学习提示词草稿。 */
 export const saveLearningPromptDraftSchema = z.object({
   promptText: z.string().trim().min(1, '提示词不能为空').max(20_000, '提示词不能超过 20000 字'),
@@ -104,6 +123,8 @@ export type DeleteGrowthInput = z.infer<typeof deleteGrowthSchema>
 export type CreateGrowthMaterialInput = z.infer<typeof createGrowthMaterialSchema>
 export type UpdateGrowthMaterialInput = z.infer<typeof updateGrowthMaterialSchema>
 export type UpdateOperationRecordInput = z.infer<typeof updateOperationRecordSchema>
+export type SaveExternalRecordInput = z.infer<typeof saveExternalRecordSchema>
+export type DeleteExternalRecordsInput = z.infer<typeof deleteExternalRecordsSchema>
 export type SaveLearningPromptDraftInput = z.infer<typeof saveLearningPromptDraftSchema>
 export type CreateLearningPromptDraftFromVersionInput = z.infer<typeof createLearningPromptDraftFromVersionSchema>
 export type PublishLearningPromptDraftInput = z.infer<typeof publishLearningPromptDraftSchema>

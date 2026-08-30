@@ -4,6 +4,7 @@ import { proposedLearningContentSchema } from '../../../shared/schemas/analysis'
 import { textModelParametersSchema } from '../../../shared/schemas/generation'
 import { DEFAULT_GROWTH_SCOPE } from '../../../shared/schemas/learning'
 import type { ModelIterationResult, ModelLearningPromptResult, ReviewIterationProposalsInput } from '../../../shared/schemas/analysis'
+import type { ListAnalysisBatchesInput } from '../../../shared/schemas/analysis'
 import type {
   AnalysisBatchInputView,
   AnalysisBatchView,
@@ -27,11 +28,18 @@ export class SqliteAnalysisRepository implements AnalysisRepository {
    */
   constructor(private readonly client: BetterSqliteDatabase) {}
 
-  /** @param record 完整批次命令。 @returns 无返回值。 */
-  async createBatch(record: CreateAnalysisBatchRecord): Promise<void> {
-    this.client.transaction(() => {
+  /** @param record 完整批次命令。 @returns 创建成功时为 true；同对象同类型已有排队或运行批次时为 false。 */
+  async createBatch(record: CreateAnalysisBatchRecord): Promise<boolean> {
+    return this.client.transaction(() => {
       const worldId = record.analysisType === 'world_growth' ? record.subjectId : null
       const personaId = record.analysisType === 'world_growth' ? null : record.subjectId
+      const subjectColumn = record.analysisType === 'world_growth' ? 'world_id' : 'persona_id'
+      const pending = this.client.prepare(`
+        SELECT 1 FROM analysis_batches
+        WHERE analysis_type = ? AND ${subjectColumn} = ? AND status IN ('queued', 'running')
+        LIMIT 1
+      `).get(record.analysisType, record.subjectId)
+      if (pending) return false
       this.client.prepare(`
         INSERT INTO analysis_batches (
           id, analysis_type, world_id, persona_id, mode, baseline_soul_version_id,
@@ -64,7 +72,32 @@ export class SqliteAnalysisRepository implements AnalysisRepository {
         actor: 'administrator', action: 'analysis_batch_created',
         targetType: 'analysis_batch', targetId: record.id, timestamp: record.timestamp,
       })
+      return true
     }).immediate()
+  }
+
+  /** @param filter 可选分析类型、对象、状态和上限。 @returns 新批次在前的分析记录。 */
+  async listBatches(filter: ListAnalysisBatchesInput): Promise<AnalysisBatchView[]> {
+    const clauses: string[] = []
+    const parameters: unknown[] = []
+    if (filter.analysisType) {
+      clauses.push('analysis_type = ?')
+      parameters.push(filter.analysisType)
+    }
+    if (filter.subjectId) {
+      clauses.push('(world_id = ? OR persona_id = ?)')
+      parameters.push(filter.subjectId, filter.subjectId)
+    }
+    if (filter.status) {
+      clauses.push('status = ?')
+      parameters.push(filter.status)
+    }
+    parameters.push(filter.limit)
+    return this.client.prepare(`
+      SELECT * FROM analysis_batches
+      ${clauses.length ? `WHERE ${clauses.join(' AND ')}` : ''}
+      ORDER BY created_at DESC, id DESC LIMIT ?
+    `).all(...parameters).map(row => this.toBatchView(row))
   }
 
   /** @param analysisType 分析类型。 @param subjectId 对象 UUID。 @returns 最新批次或 null。 */

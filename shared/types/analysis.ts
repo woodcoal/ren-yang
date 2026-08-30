@@ -8,7 +8,7 @@ export interface AnalysisBatchInputView {
   /** 批次输入 UUID，供模型和证据链引用。 */
   id: string
   /** 原始数据类型。 */
-  inputType: 'growth_material' | 'persona_operation_record' | 'world_source' | 'persona_feedback_source' | 'openviking_memory'
+  inputType: 'growth_material' | 'persona_operation_record' | 'persona_external_record' | 'world_source' | 'persona_feedback_source' | 'openviking_memory'
   /** SQLite 原始数据 UUID。 */
   inputId: string
   /** 输入标题或摘要。 */

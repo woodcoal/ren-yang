@@ -54,4 +54,15 @@ describe('成长与记忆 AI 提炼组件', () => {
     expect(wrapper.text()).toContain('综合表达素材')
     expect(wrapper.text()).not.toContain('接受并应用')
   })
+
+  it('批次排队或运行期间禁止再次点击两种提炼操作', async () => {
+    const wrapper = await mountSuspended(AnalysisPanel, {
+      props: { batch: { ...completedBatch, status: 'queued' }, loading: false, title: '人物成长' },
+    })
+    const buttons = wrapper.findAllComponents({ name: 'UButton' })
+
+    expect(buttons[0]!.props('disabled')).toBe(true)
+    expect(buttons[1]!.props('disabled')).toBe(true)
+    expect(wrapper.text()).toContain('当前提炼完成前不能重复提交')
+  })
 })

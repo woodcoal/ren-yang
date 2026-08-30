@@ -7,10 +7,12 @@ import type {
   CreateGrowthInput,
   CreatePersonaFeedbackSourceInput,
   DeleteGrowthInput,
+  DeleteExternalRecordsInput,
   DeletePersonaFeedbackSourcesInput,
   ImportGrowthSourcesInput,
   PublishLearningPromptDraftInput,
   SaveLearningPromptDraftInput,
+  SaveExternalRecordInput,
   UpdateGrowthMaterialInput,
   UpdateOperationRecordInput,
   UpdateGrowthInput,
@@ -333,11 +335,12 @@ export class LearningApplicationService {
   /** @param personaId 人物 UUID。 @returns 处理记录和记忆完整工作区。 */
   async getPersonaMemoryWorkspace(personaId: string): Promise<PersonaMemoryWorkspaceView> {
     await this.requirePersona(personaId)
-    const [operationRecords, prompt] = await Promise.all([
+    const [operationRecords, externalRecords, prompt] = await Promise.all([
       this.dependencies.learning.listPersonaOperationRecords(personaId),
+      this.dependencies.learning.listPersonaExternalRecords(personaId),
       this.getLearningPromptWorkspace('persona_memory', personaId),
     ])
-    return { operationRecords, prompt }
+    return { operationRecords, externalRecords, prompt }
   }
 
   /** @param personaId 人物 UUID。 @param input 处理记录批量启用状态。 @returns 更新后的记忆工作区。 */
@@ -368,6 +371,72 @@ export class LearningApplicationService {
       personaId, recordId, input.importance, this.dependencies.clock.now(),
     )
     if (!updated) throw new ApplicationError('RESOURCE_NOT_FOUND', '历史任务不存在或不属于当前人物', 404)
+    return await this.getPersonaMemoryWorkspace(personaId)
+  }
+
+  /**
+   * 新建一条默认参加记忆提炼的第三方经历记录。
+   * @param personaId 人物 UUID。
+   * @param input 发生日期、事情正文、参考地址和评分。
+   * @returns 创建后的完整人物记忆工作区。
+   */
+  async createExternalRecord(personaId: string, input: SaveExternalRecordInput): Promise<PersonaMemoryWorkspaceView> {
+    await this.requirePersona(personaId)
+    await this.dependencies.learning.createPersonaExternalRecord({
+      id: this.dependencies.identifiers.create(), personaId, ...input, timestamp: this.dependencies.clock.now(),
+    })
+    return await this.getPersonaMemoryWorkspace(personaId)
+  }
+
+  /**
+   * 修改一条当前人物的第三方经历记录。
+   * @param personaId 人物 UUID。
+   * @param recordId 第三方记录 UUID。
+   * @param input 完整的新日期、正文、参考地址和评分。
+   * @returns 修改后的完整人物记忆工作区。
+   */
+  async updateExternalRecord(
+    personaId: string,
+    recordId: string,
+    input: SaveExternalRecordInput,
+  ): Promise<PersonaMemoryWorkspaceView> {
+    await this.requirePersona(personaId)
+    const updated = await this.dependencies.learning.updatePersonaExternalRecord({
+      id: recordId, personaId, ...input, timestamp: this.dependencies.clock.now(),
+    })
+    if (!updated) throw new ApplicationError('RESOURCE_NOT_FOUND', '第三方记录不存在或不属于当前人物', 404)
+    return await this.getPersonaMemoryWorkspace(personaId)
+  }
+
+  /**
+   * 批量启用或禁用当前人物的第三方经历记录。
+   * @param personaId 人物 UUID。
+   * @param input 第三方记录 UUID 集合和目标状态。
+   * @returns 更新后的完整人物记忆工作区。
+   */
+  async updateExternalRecordStates(personaId: string, input: BatchEnabledStateInput): Promise<PersonaMemoryWorkspaceView> {
+    await this.requirePersona(personaId)
+    const ids = uniqueIds(input.ids)
+    const changes = await this.dependencies.learning.updatePersonaExternalRecordStates(
+      personaId, ids, input.isEnabled, this.dependencies.clock.now(),
+    )
+    requireCompleteBatch(changes, ids.length, '部分第三方记录不存在或不属于当前人物')
+    return await this.getPersonaMemoryWorkspace(personaId)
+  }
+
+  /**
+   * 永久删除当前人物选中的第三方经历记录，不改变已经发布的记忆提示词。
+   * @param personaId 人物 UUID。
+   * @param input 待删除第三方记录 UUID 集合。
+   * @returns 删除后的完整人物记忆工作区。
+   */
+  async deleteExternalRecords(personaId: string, input: DeleteExternalRecordsInput): Promise<PersonaMemoryWorkspaceView> {
+    await this.requirePersona(personaId)
+    const ids = uniqueIds(input.ids)
+    const changes = await this.dependencies.learning.deletePersonaExternalRecords(
+      personaId, ids, this.dependencies.clock.now(),
+    )
+    requireCompleteBatch(changes, ids.length, '部分第三方记录不存在或不属于当前人物')
     return await this.getPersonaMemoryWorkspace(personaId)
   }
 

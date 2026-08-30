@@ -206,6 +206,40 @@ export interface PersonaOperationRecordView {
   updatedAt: number
 }
 
+/** 第三方经历记录中的一项来源引用。 */
+export interface ExternalRecordReferenceView {
+  /** 便于辨认来源的名称，例如笔记名或小说名。 */
+  name: string
+  /** 来源地址，可填写网址或第三方系统中的文字位置说明。 */
+  address: string
+}
+
+/** 管理员为人物补充、可参与记忆提炼的第三方经历记录。 */
+export interface PersonaExternalRecordView {
+  /** 第三方记录 UUID。 */
+  id: string
+  /** 所属人物 UUID。 */
+  personaId: string
+  /** 事件发生日期，格式为 YYYY-MM-DD。 */
+  occurredOn: string
+  /** 人物在该日期做过的事情。 */
+  content: string
+  /** 供记忆提炼使用、包含日期和来源的稳定完整正文。 */
+  analysisContent: string
+  /** 完整分析正文 SHA-256。 */
+  contentHash: string
+  /** 第三方笔记、小说或网址等来源引用。 */
+  references: ExternalRecordReferenceView[]
+  /** 是否参加后续记忆分析。 */
+  isEnabled: boolean
+  /** AI 提炼记忆提示词时的人工权重，1 到 5。 */
+  importance: number
+  /** 创建时间。 */
+  createdAt: number
+  /** 更新时间。 */
+  updatedAt: number
+}
+
 /** OpenViking 从人物 Session 派生、只供记忆分析使用的原始素材。 */
 export interface OpenVikingDerivedMemoryView {
   /** SQLite 素材 UUID。 */
@@ -276,6 +310,8 @@ export interface PersonaGrowthWorkspaceView {
 export interface PersonaMemoryWorkspaceView {
   /** 人物历史任务形成的记忆素材。 */
   operationRecords: PersonaOperationRecordView[]
+  /** 人工补充的第三方经历记忆素材。 */
+  externalRecords: PersonaExternalRecordView[]
   /** 人物唯一记忆提示词工作区。 */
   prompt: LearningPromptWorkspaceView
 }
