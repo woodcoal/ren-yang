@@ -64,13 +64,13 @@ describe('成长与记忆分析组件', () => {
     const wrapper = await mountSuspended(IterationProposalCard, { props: { proposal, loading: false } })
     await wrapper.get('textarea').setValue('每次回答先给简短结论。')
     const inputs = wrapper.findAll('input')
-    await inputs[0]!.setValue('所有回答')
-    await inputs[1]!.setValue('5')
+    expect(wrapper.text()).not.toContain('适用范围')
+    await inputs[0]!.setValue('5')
     await wrapper.findAll('button')[0]!.trigger('click')
     expect(wrapper.emitted('review')).toEqual([[{
       proposalId: proposal.id,
       action: 'accept',
-      reviewed: { content: '每次回答先给简短结论。', scope: '所有回答', importance: 5 },
+      reviewed: { content: '每次回答先给简短结论。', scope: '所有新任务', importance: 5 },
     }]])
   })
 

@@ -111,9 +111,9 @@ describe('成长与记忆事实管理闭环', () => {
     expect((await learning.getWorldGrowthWorkspace(world.world.id)).sources[0]?.isEnabled).toBe(false)
 
     const created = await learning.createGrowth('world', world.world.id, {
-      content: '重要城邦通常依赖水运。', scope: '涉及城邦交通时', importance: 4, sourceIds: [source.source.id],
+      content: '重要城邦通常依赖水运。', importance: 4, sourceIds: [source.source.id],
     })
-    expect(created.growth).toEqual([expect.objectContaining({ status: 'candidate', evidenceCount: 1 })])
+    expect(created.growth).toEqual([expect.objectContaining({ status: 'candidate', scope: '所有新任务', evidenceCount: 1 })])
     await learning.updateGrowthStates('world', world.world.id, { ids: [created.growth[0]!.id], status: 'active' })
     expect((await learning.getWorldGrowthWorkspace(world.world.id)).growth[0]?.status).toBe('active')
   })
@@ -124,7 +124,7 @@ describe('成长与记忆事实管理闭环', () => {
       title: '表达反馈', content: '减少夸张修辞，结论先行。', sourceType: 'manual', sourceId: null,
     })
     const workspace = await learning.createGrowth('persona', persona.id, {
-      content: '表达时先给结论并减少夸张修辞。', scope: '写作任务', importance: 5, sourceIds: [feedback.id],
+      content: '表达时先给结论并减少夸张修辞。', importance: 5, sourceIds: [feedback.id],
     })
     const growthId = workspace.growth[0]!.id
     await learning.updateGrowthStates('persona', persona.id, { ids: [growthId], status: 'active' })
@@ -143,11 +143,11 @@ describe('成长与记忆事实管理闭环', () => {
     })
 
     const imported = await learning.importGrowthSources('persona', persona.id, {
-      scope: '所有回答', items: [{ sourceId: feedback.id, importance: 5 }],
+      items: [{ sourceId: feedback.id, importance: 5 }],
     })
 
     expect(imported.growth).toEqual([expect.objectContaining({
-      content: '回答需要先给结论，再说明依据。', scope: '所有回答', importance: 5,
+      content: '回答需要先给结论，再说明依据。', scope: '所有新任务', importance: 5,
       status: 'candidate', evidenceCount: 1,
     })])
   })
@@ -164,23 +164,22 @@ describe('成长与记忆事实管理闭环', () => {
     await content.linkSource(secondSource.source.id, { targetType: 'world', targetId: world.world.id, priority: 20 })
 
     const imported = await learning.importGrowthSources('world', world.world.id, {
-      scope: '规划城邦时',
       items: [
         { sourceId: firstSource.source.id, importance: 5 },
         { sourceId: secondSource.source.id, importance: 3 },
       ],
     })
     expect(imported.growth).toEqual(expect.arrayContaining([
-      expect.objectContaining({ content: '城邦依水而建。', scope: '规划城邦时', importance: 5, evidenceCount: 1 }),
-      expect.objectContaining({ content: '港口促进区域贸易。', scope: '规划城邦时', importance: 3, evidenceCount: 1 }),
+      expect.objectContaining({ content: '城邦依水而建。', scope: '所有新任务', importance: 5, evidenceCount: 1 }),
+      expect.objectContaining({ content: '港口促进区域贸易。', scope: '所有新任务', importance: 3, evidenceCount: 1 }),
     ]))
 
     const firstGrowth = imported.growth.find(item => item.content === '城邦依水而建。')!
     const updated = await learning.updateGrowth('world', world.world.id, firstGrowth.id, {
-      content: '城邦规划必须优先保障稳定水运。', scope: '规划大型城邦时', importance: 4,
+      content: '城邦规划必须优先保障稳定水运。', importance: 4,
     })
     expect(updated.growth.find(item => item.id === firstGrowth.id)).toMatchObject({
-      content: '城邦规划必须优先保障稳定水运。', revisionNo: 2, status: 'candidate', evidenceCount: 1,
+      content: '城邦规划必须优先保障稳定水运。', scope: '所有新任务', revisionNo: 2, status: 'candidate', evidenceCount: 1,
     })
     expect(database.getClient().prepare(`
       SELECT revision_no FROM growth_revisions WHERE growth_id = ? ORDER BY revision_no

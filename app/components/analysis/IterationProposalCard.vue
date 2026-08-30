@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { reactive } from 'vue'
+import { DEFAULT_GROWTH_SCOPE } from '#shared/schemas/learning'
 import type { IterationProposalView, ProposedLearningContentView } from '#shared/types/analysis'
 
 const props = defineProps<{
@@ -28,14 +29,15 @@ const reviewed = reactive({
 /** @returns 无返回值。 */
 function accept(): void {
   const needsContent = ['add', 'revise', 'merge', 'supersede'].includes(props.proposal.operation)
-  if (needsContent && (!reviewed.content.trim() || !reviewed.scope.trim())) return
+  const scope = props.proposal.targetType === 'growth' ? DEFAULT_GROWTH_SCOPE : reviewed.scope.trim()
+  if (needsContent && (!reviewed.content.trim() || !scope)) return
   emit('review', {
     proposalId: props.proposal.id,
     action: 'accept',
     reviewed: needsContent
       ? {
           content: reviewed.content.trim(),
-          scope: reviewed.scope.trim(),
+          scope,
           importance: reviewed.importance,
           ...(reviewed.memoryType ? { memoryType: reviewed.memoryType } : {}),
         }
@@ -67,8 +69,8 @@ function operationLabel(operation: IterationProposalView['operation']): string {
     </div>
     <div v-if="proposal.proposed" class="mt-4 grid gap-3">
       <UFormField label="最终内容"><UTextarea v-model="reviewed.content" class="w-full" :rows="3" /></UFormField>
-      <div class="grid gap-3 sm:grid-cols-2">
-        <UFormField label="适用范围"><UInput v-model="reviewed.scope" class="w-full" /></UFormField>
+      <div class="grid gap-3" :class="{ 'sm:grid-cols-2': proposal.targetType === 'memory' }">
+        <UFormField v-if="proposal.targetType === 'memory'" label="适用范围"><UInput v-model="reviewed.scope" class="w-full" /></UFormField>
         <UFormField label="重要程度"><UInput v-model.number="reviewed.importance" type="number" min="1" max="5" class="w-full" /></UFormField>
       </div>
     </div>

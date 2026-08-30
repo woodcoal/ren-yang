@@ -156,9 +156,9 @@ describe('AI 迭代提案与人工审核', () => {
     })
     expect(reviewed).toMatchObject({ status: 'completed' })
     expect(database.getClient().prepare(`
-      SELECT growth_records.status, growth_revisions.content, growth_revisions.importance
+      SELECT growth_records.status, growth_revisions.content, growth_revisions.scope, growth_revisions.importance
       FROM growth_records INNER JOIN growth_revisions ON growth_revisions.id = growth_records.current_revision_id
-    `).get()).toEqual({ status: 'active', content: '水路稳定性是城邦规划的首要条件。', importance: 5 })
+    `).get()).toEqual({ status: 'active', content: '水路稳定性是城邦规划的首要条件。', scope: '所有新任务', importance: 5 })
     expect(database.getClient().prepare(`SELECT COUNT(*) AS count FROM growth_revision_evidence`).get()).toEqual({ count: 1 })
   })
 

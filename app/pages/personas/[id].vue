@@ -137,17 +137,9 @@ async function deleteFeedbackSources(input: { ids: string[] }): Promise<void> {
   })
 }
 
-/** @param input 人工成长候选。 @returns 创建和成长工作区刷新完成时结束。 */
-async function createGrowth(input: { content: string, scope: string, importance: number, sourceIds: string[] }): Promise<void> {
-  await runAction('成长候选已创建，确认前不会进入任务', async () => {
-    await $fetch(`/api/v1/personas/${personaId}/growth`, { method: 'POST', body: input })
-    await refreshGrowth()
-  })
-}
-
 /**
  * 按逐条人工评分把人物反馈资料批量导入成长候选。
- * @param input 共用适用范围和资料 UUID、重要程度评分。
+ * @param input 资料 UUID 与重要程度评分。
  * @returns 整批导入和成长工作区刷新完成时结束。
  */
 async function importGrowthSources(input: ImportGrowthSourcesInput): Promise<void> {
@@ -159,14 +151,14 @@ async function importGrowthSources(input: ImportGrowthSourcesInput): Promise<voi
 
 /**
  * 修改人物成长并建立新的待确认修订。
- * @param input 成长 UUID 及新正文、适用范围和重要程度。
+ * @param input 成长 UUID 及新正文、重要程度。
  * @returns 修改和成长工作区刷新完成时结束。
  */
 async function updateGrowth(input: UpdateGrowthInput & { id: string }): Promise<void> {
   await runAction('成长新修订已保存，重新启用后进入新任务', async () => {
     await $fetch(`/api/v1/personas/${personaId}/growth/${input.id}`, {
       method: 'PATCH',
-      body: { content: input.content, scope: input.scope, importance: input.importance },
+      body: { content: input.content, importance: input.importance },
     })
     await refreshGrowth()
   })
@@ -505,7 +497,6 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
           :items="growthWorkspace.growth"
           :sources="growthWorkspace.feedbackSources.map(item => ({ id: item.id, label: item.title, content: item.content, isEnabled: item.isEnabled }))"
           :loading="actionLoading"
-          @create="createGrowth"
           @import-sources="importGrowthSources"
           @update="updateGrowth"
           @status="updateGrowthStatus"

@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import type { Database as BetterSqliteDatabase } from 'better-sqlite3'
 import { proposedLearningContentSchema } from '../../../shared/schemas/analysis'
 import { textModelParametersSchema } from '../../../shared/schemas/generation'
+import { DEFAULT_GROWTH_SCOPE } from '../../../shared/schemas/learning'
 import type { ModelIterationResult, ReviewIterationProposalsInput } from '../../../shared/schemas/analysis'
 import type {
   AnalysisBatchInputView,
@@ -319,7 +320,7 @@ export class SqliteAnalysisRepository implements AnalysisRepository {
         id, growth_id, revision_no, content, content_hash, scope, importance,
         analysis_batch_id, created_by, created_at
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'analysis', ?)
-    `).run(revisionId, growthId, revisionNo, proposed.content, hashContent(proposed.content), proposed.scope, proposed.importance, batchId, timestamp)
+    `).run(revisionId, growthId, revisionNo, proposed.content, hashContent(proposed.content), DEFAULT_GROWTH_SCOPE, proposed.importance, batchId, timestamp)
   }
 
   /** @param memoryId 记忆 UUID。 @param revisionId 修订 UUID。 @param revisionNo 修订号。 @param proposed 最终内容。 @param batchId 批次 UUID。 @param proposal 提案行。 @param timestamp 创建时间。 @returns 无返回值。 */

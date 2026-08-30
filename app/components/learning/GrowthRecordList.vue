@@ -55,7 +55,6 @@ function statusLabel(status: GrowthRecordView['status']): string {
           <summary class="cursor-pointer text-primary">查看完整内容</summary>
           <p class="mt-2 whitespace-pre-wrap leading-6">{{ entry.item.content }}</p>
         </details>
-        <p class="mt-1 text-sm text-muted">适用范围：{{ entry.item.scope }}</p>
         <p v-if="entry.item.conflictSummary" class="mt-1 text-sm text-warning">冲突：{{ entry.item.conflictSummary }}</p>
       </div>
       <UButton

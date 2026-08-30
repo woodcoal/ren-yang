@@ -22,27 +22,24 @@ describe('成长与记忆管理组件', () => {
     expect(wrapper.emitted('create')).toEqual([[{ title: '表达反馈', content: '先给结论。', sourceType: 'manual' }]])
   })
 
-  it('成长记录创建的是候选并携带显式来源', async () => {
-    const sourceId = '40000000-0000-4000-8000-000000000001'
+  it('没有成长原始资料时仍可打开导入说明且不提供手工添加', async () => {
     const wrapper = await mountSuspended(GrowthRecordPanel, {
       props: {
         items: [], loading: false, subjectLabel: '人物',
-        sources: [{ id: sourceId, label: '反馈一', content: '先给结论。', isEnabled: true }],
+        sources: [],
       },
     })
-    await wrapper.get('[data-growth-add-button]').trigger('click')
+
+    expect(wrapper.find('[data-growth-add-button]').exists()).toBe(false)
+    expect(wrapper.get('[data-growth-import-button]').attributes('disabled')).toBeUndefined()
+    await wrapper.get('[data-growth-import-button]').trigger('click')
     await flushPromises()
-    const form = document.querySelector<HTMLElement>('[data-growth-editor-form]')
-    const textarea = form?.querySelector<HTMLTextAreaElement>('textarea')
+
+    const form = document.querySelector<HTMLElement>('[data-growth-import-form]')
     expect(form).toBeDefined()
-    expect(textarea).toBeDefined()
-    await new DOMWrapper(textarea!).setValue('先给结论。')
-    await new DOMWrapper(form!).trigger('submit')
-    await flushPromises()
-    expect(wrapper.emitted('create')).toEqual([[{
-      content: '先给结论。', scope: '所有新任务', importance: 3, sourceIds: [],
-    }]])
-    expect(wrapper.text()).toContain('只有确认后才会进入新任务')
+    expect(form?.textContent).toContain('请先在人物反馈资料中添加内容')
+    expect(form?.textContent).not.toContain('适用范围')
+    wrapper.unmount()
   })
 
   it('成长记录支持资料逐条评分后批量导入', async () => {
@@ -76,12 +73,12 @@ describe('成长与记忆管理组件', () => {
     await flushPromises()
 
     expect(wrapper.emitted('importSources')).toEqual([[{
-      scope: '所有新任务',
       items: [
         { sourceId: firstSourceId, importance: 5 },
         { sourceId: secondSourceId, importance: 2 },
       ],
     }]])
+    expect(form!.textContent).not.toContain('适用范围')
   })
 
   it('成长内容分页展示并提供修改和批量管理入口', async () => {
@@ -114,12 +111,14 @@ describe('成长与记忆管理组件', () => {
     const editorForm = document.querySelector<HTMLElement>('[data-growth-editor-form]')
     const editorTextarea = editorForm?.querySelector<HTMLTextAreaElement>('textarea')
     expect(editorTextarea?.value).toBe('成长内容 1')
+    expect(editorForm?.textContent).not.toContain('适用范围')
     await new DOMWrapper(editorTextarea!).setValue('修改后的成长内容')
     await new DOMWrapper(editorForm!).trigger('submit')
     await flushPromises()
     expect(wrapper.emitted('update')).toEqual([[expect.objectContaining({
-      id: items[0]!.id, content: '修改后的成长内容', scope: '所有新任务', importance: 3,
+      id: items[0]!.id, content: '修改后的成长内容', importance: 3,
     })]])
+    expect(wrapper.text()).not.toContain('适用范围')
 
     await wrapper.get('[data-growth-row-checkbox]').setValue(true)
     expect(wrapper.find('[data-growth-delete-button]').exists()).toBe(true)

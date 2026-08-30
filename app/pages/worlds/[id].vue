@@ -99,17 +99,9 @@ async function updateWorldSourceStatus(input: { ids: string[], isEnabled: boolea
   })
 }
 
-/** @param input 人工世界成长候选。 @returns 创建和成长工作区刷新完成时结束。 */
-async function createWorldGrowth(input: { content: string, scope: string, importance: number, sourceIds: string[] }): Promise<void> {
-  await runAction('世界成长候选已创建，确认前不会进入人物任务', async () => {
-    await $fetch(`/api/v1/worlds/${worldId}/growth`, { method: 'POST', body: input })
-    await refreshGrowth()
-  })
-}
-
 /**
  * 按逐条人工评分把世界资料批量导入成长候选。
- * @param input 共用适用范围和资料 UUID、重要程度评分。
+ * @param input 资料 UUID 与重要程度评分。
  * @returns 整批导入和成长工作区刷新完成时结束。
  */
 async function importWorldGrowthSources(input: ImportGrowthSourcesInput): Promise<void> {
@@ -121,14 +113,14 @@ async function importWorldGrowthSources(input: ImportGrowthSourcesInput): Promis
 
 /**
  * 修改世界成长并建立新的待确认修订。
- * @param input 成长 UUID 及新正文、适用范围和重要程度。
+ * @param input 成长 UUID 及新正文、重要程度。
  * @returns 修改和成长工作区刷新完成时结束。
  */
 async function updateWorldGrowth(input: UpdateGrowthInput & { id: string }): Promise<void> {
   await runAction('成长新修订已保存，重新启用后进入新任务', async () => {
     await $fetch(`/api/v1/worlds/${worldId}/growth/${input.id}`, {
       method: 'PATCH',
-      body: { content: input.content, scope: input.scope, importance: input.importance },
+      body: { content: input.content, importance: input.importance },
     })
     await refreshGrowth()
   })
@@ -462,7 +454,7 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
             @status="updateWorldSourceStatus" />
           <LearningGrowthRecordPanel subject-label="世界" :items="growthWorkspace.growth"
             :sources="growthWorkspace.sources.map(item => ({ id: item.id, label: item.name, content: item.content, isEnabled: item.isEnabled }))" :loading="actionLoading"
-            @create="createWorldGrowth" @import-sources="importWorldGrowthSources" @update="updateWorldGrowth"
+            @import-sources="importWorldGrowthSources" @update="updateWorldGrowth"
             @status="updateWorldGrowthStatus" @delete="deleteWorldGrowth" />
         </div>
       </div>

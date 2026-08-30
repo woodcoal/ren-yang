@@ -1,3 +1,4 @@
+import { DEFAULT_GROWTH_SCOPE } from '../../../shared/schemas/learning'
 import type {
   BatchEnabledStateInput,
   BatchLearningStatusInput,
@@ -130,7 +131,7 @@ export class LearningApplicationService {
       subjectType,
       subjectId,
       content: input.content,
-      scope: input.scope,
+      scope: DEFAULT_GROWTH_SCOPE,
       importance: input.importance,
       sourceIds,
       timestamp: this.dependencies.clock.now(),
@@ -144,7 +145,7 @@ export class LearningApplicationService {
    * 把多份当前对象的原始资料分别导入为待确认成长，并使用人工评分作为重要程度。
    * @param subjectType 世界或人物对象类型。
    * @param subjectId 当前世界或人物 UUID。
-   * @param input 共用适用范围及每份资料的 UUID、1–5 分评分。
+   * @param input 每份资料的 UUID 与 1–5 分评分。
    * @returns 整批原子创建后的最新成长工作区。
    */
   async importGrowthSources(subjectType: 'world' | 'persona', subjectId: string, input: ImportGrowthSourcesInput): Promise<WorldGrowthWorkspaceView | PersonaGrowthWorkspaceView> {
@@ -168,7 +169,7 @@ export class LearningApplicationService {
         subjectType,
         subjectId,
         content,
-        scope: input.scope,
+        scope: DEFAULT_GROWTH_SCOPE,
         importance: item.importance,
         sourceIds: [item.sourceId],
         timestamp: this.dependencies.clock.now(),
@@ -185,7 +186,7 @@ export class LearningApplicationService {
    * @param subjectType 世界或人物对象类型。
    * @param subjectId 当前世界或人物 UUID。
    * @param growthId 待修改成长 UUID。
-   * @param input 新正文、适用范围和重要程度。
+   * @param input 新正文和重要程度。
    * @returns 修改后的最新成长工作区。
    */
   async updateGrowth(subjectType: 'world' | 'persona', subjectId: string, growthId: string, input: UpdateGrowthInput): Promise<WorldGrowthWorkspaceView | PersonaGrowthWorkspaceView> {
@@ -196,7 +197,7 @@ export class LearningApplicationService {
       subjectType,
       subjectId,
       content: input.content,
-      scope: input.scope,
+      scope: DEFAULT_GROWTH_SCOPE,
       importance: input.importance,
       timestamp: this.dependencies.clock.now(),
     })

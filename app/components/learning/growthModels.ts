@@ -12,14 +12,12 @@ export interface GrowthSourceOption {
   isEnabled: boolean
 }
 
-/** 新增或修改成长弹窗提交内容。 */
+/** 修改成长弹窗提交内容。 */
 export interface GrowthEditorSubmission {
-  /** 修改时存在的稳定成长 UUID；新增时为空。 */
-  id?: string
+  /** 稳定成长 UUID。 */
+  id: string
   /** 成长正文。 */
   content: string
-  /** 适用范围。 */
-  scope: string
   /** 重要程度，1–5。 */
   importance: number
 }
@@ -34,11 +32,9 @@ export interface GrowthImportItem {
 
 /** 资料批量导入弹窗提交内容。 */
 export interface GrowthImportSubmission {
-  /** 整批成长共用的适用范围。 */
-  scope: string
   /** 保持界面顺序的来源评分。 */
   items: GrowthImportItem[]
 }
 
-/** 成长编辑弹窗接收的可选当前修订。 */
-export type EditableGrowthRecord = GrowthRecordView | null
+/** 成长编辑弹窗接收的当前修订。 */
+export type EditableGrowthRecord = GrowthRecordView

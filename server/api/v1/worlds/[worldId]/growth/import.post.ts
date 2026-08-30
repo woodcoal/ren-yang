@@ -6,7 +6,7 @@ import { executeController } from '../../../../../presentation/http/controller'
 
 /**
  * 将世界资料按逐条评分批量导入世界成长候选。
- * @param event 当前 H3 请求，路径包含世界 UUID，请求体包含适用范围和资料评分。
+ * @param event 当前 H3 请求，路径包含世界 UUID，请求体包含资料评分。
  * @returns 整批导入后的最新世界成长工作区响应。
  */
 async function handleImportWorldGrowth(event: H3Event) {

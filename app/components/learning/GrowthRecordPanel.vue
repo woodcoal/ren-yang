@@ -18,8 +18,6 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  /** 创建仍需确认的人工成长候选。 */
-  create: [input: { content: string, scope: string, importance: number, sourceIds: string[] }]
   /** 按逐条评分批量导入资料。 */
   importSources: [input: GrowthImportSubmission]
   /** 修改成长并建立新的待确认修订。 */
@@ -55,15 +53,6 @@ const canArchiveSelection = computed(() => selectedItems.value.every(item => ['a
 const canRejectSelection = computed(() => selectedItems.value.every(item => ['candidate', 'rejected'].includes(item.status)))
 
 /**
- * 打开空白成长添加弹窗。
- * @returns 编辑目标清空且弹窗打开后结束，无业务返回值。
- */
-function openCreate(): void {
-  editingItem.value = null
-  editorOpen.value = true
-}
-
-/**
  * 打开指定成长当前修订的修改弹窗。
  * @param item 当前列表中的成长修订。
  * @returns 编辑目标保存且弹窗打开后结束，无业务返回值。
@@ -74,21 +63,17 @@ function openEdit(item: GrowthRecordView): void {
 }
 
 /**
- * 把弹窗提交分派为新增或修改事件。
- * @param input 弹窗提交的正文、范围、重要程度及可选成长 UUID。
- * @returns 对应页面级事件发出后结束，无业务返回值。
+ * 转发成长新修订提交事件。
+ * @param input 弹窗提交的成长 UUID、正文和重要程度。
+ * @returns 页面级修改事件发出后结束，无业务返回值。
  */
 function submitEditor(input: GrowthEditorSubmission): void {
-  if (input.id) {
-    emit('update', { ...input, id: input.id })
-    return
-  }
-  emit('create', { content: input.content, scope: input.scope, importance: input.importance, sourceIds: [] })
+  emit('update', input)
 }
 
 /**
  * 转发资料批量导入命令。
- * @param input 共用适用范围和逐条资料评分。
+ * @param input 逐条资料评分。
  * @returns 页面级导入事件发出后结束，无业务返回值。
  */
 function submitImport(input: GrowthImportSubmission): void {
@@ -166,11 +151,10 @@ watch(pageSize, () => {
       <div class="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h2 class="font-semibold text-highlighted">{{ subjectLabel }}成长记录</h2>
-          <p class="mt-1 text-sm text-muted">人工添加和资料导入都先形成候选，只有确认后才会进入新任务。</p>
+          <p class="mt-1 text-sm text-muted">资料导入先形成候选，只有确认后才会进入新任务。</p>
         </div>
         <div class="flex flex-wrap gap-2">
-          <UButton data-growth-import-button color="neutral" variant="soft" icon="i-lucide-import" :disabled="!sources.length" @click="importOpen = true">从资料导入</UButton>
-          <UButton data-growth-add-button icon="i-lucide-plus" @click="openCreate">添加成长</UButton>
+          <UButton data-growth-import-button color="neutral" variant="soft" icon="i-lucide-import" @click="importOpen = true">从资料导入</UButton>
         </div>
       </div>
     </template>
@@ -204,10 +188,10 @@ watch(pageSize, () => {
         <UPagination v-model:page="page" :total="items.length" :items-per-page="pageSize" size="sm" :disabled="loading" />
       </div>
     </template>
-    <p v-else class="text-sm text-muted">还没有成长记录。可以直接添加，或从已有资料批量导入。</p>
+    <p v-else class="text-sm text-muted">还没有成长记录。可以从当前对象已有资料批量导入。</p>
   </UCard>
 
-  <GrowthRecordEditorModal v-model:open="editorOpen" :item="editingItem" :loading="loading" :subject-label="subjectLabel" @save="submitEditor" />
+  <GrowthRecordEditorModal v-if="editingItem" v-model:open="editorOpen" :item="editingItem" :loading="loading" :subject-label="subjectLabel" @save="submitEditor" />
   <GrowthSourceImportModal v-model:open="importOpen" :sources="sources" :loading="loading" :subject-label="subjectLabel" @import-sources="submitImport" />
 
   <UModal

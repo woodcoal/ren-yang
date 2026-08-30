@@ -5,7 +5,7 @@ import { updateGrowthSchema } from '#shared/schemas/learning'
 import type { EditableGrowthRecord, GrowthEditorSubmission } from './growthModels'
 
 const props = defineProps<{
-  /** 当前正在修改的成长；null 表示新增。 */
+  /** 当前正在修改的成长。 */
   item: EditableGrowthRecord
   /** 页面级动作是否正在执行。 */
   loading: boolean
@@ -19,20 +19,16 @@ const emit = defineEmits<{
 }>()
 
 const open = defineModel<boolean>('open', { default: false })
-const form = reactive({ content: '', scope: '所有新任务', importance: 3 })
-const title = computed(() => props.item ? `修改${props.subjectLabel}成长` : `添加${props.subjectLabel}成长`)
-const description = computed(() => props.item
-  ? '保存会建立新修订并恢复为待确认状态，旧修订仍可追溯。'
-  : '人工添加先形成待确认成长，启用后才会进入新任务。')
+const form = reactive({ content: props.item.content, importance: props.item.importance })
+const title = computed(() => `修改${props.subjectLabel}成长`)
 
 /**
- * 使用当前编辑项或新增默认值重置弹窗表单。
+ * 使用当前编辑项重置弹窗表单。
  * @returns 表单字段恢复完成后结束，无业务返回值。
  */
 function resetForm(): void {
-  form.content = props.item?.content ?? ''
-  form.scope = props.item?.scope ?? '所有新任务'
-  form.importance = props.item?.importance ?? 3
+  form.content = props.item.content
+  form.importance = props.item.importance
 }
 
 /**
@@ -42,9 +38,8 @@ function resetForm(): void {
  */
 function submitForm(event: FormSubmitEvent<typeof form>): void {
   emit('save', {
-    ...(props.item ? { id: props.item.id } : {}),
+    id: props.item.id,
     content: event.data.content,
-    scope: event.data.scope,
     importance: event.data.importance,
   })
   open.value = false
@@ -60,23 +55,18 @@ watch(() => props.item, () => {
 </script>
 
 <template>
-  <UModal v-model:open="open" :title="title" :description="description" :dismissible="!loading" :close="!loading">
+  <UModal v-model:open="open" :title="title" description="保存会建立新修订并恢复为待确认状态，旧修订仍可追溯。" :dismissible="!loading" :close="!loading">
     <template #body>
       <UForm data-growth-editor-form :schema="updateGrowthSchema" :state="form" class="space-y-4" @submit="submitForm">
         <UFormField name="content" label="成长内容" required>
           <UTextarea v-model="form.content" class="w-full" :rows="7" autoresize :maxrows="14" maxlength="20000" :disabled="loading" />
         </UFormField>
-        <div class="grid gap-4 sm:grid-cols-[minmax(0,1fr)_8rem]">
-          <UFormField name="scope" label="适用范围" required>
-            <UInput v-model="form.scope" class="w-full" maxlength="500" :disabled="loading" />
-          </UFormField>
-          <UFormField name="importance" label="重要程度" description="1–5 分" required>
-            <UInput v-model.number="form.importance" class="w-full" type="number" min="1" max="5" :disabled="loading" />
-          </UFormField>
-        </div>
+        <UFormField name="importance" label="重要程度" description="1–5 分" class="w-32" required>
+          <UInput v-model.number="form.importance" class="w-full" type="number" min="1" max="5" :disabled="loading" />
+        </UFormField>
         <div class="flex justify-end gap-2">
           <UButton color="neutral" variant="ghost" :disabled="loading" @click="open = false">取消</UButton>
-          <UButton type="submit" :loading="loading">{{ item ? '保存新修订' : '添加成长' }}</UButton>
+          <UButton type="submit" :loading="loading">保存新修订</UButton>
         </div>
       </UForm>
     </template>
