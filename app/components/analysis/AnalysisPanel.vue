@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { AnalysisBatchView, ProposedLearningContentView } from '#shared/types/analysis'
+import type { AnalysisBatchView } from '#shared/types/analysis'
 
 defineProps<{
   /** 当前对象最新分析批次。 */
@@ -15,17 +15,11 @@ const emit = defineEmits<{
   analyze: [mode: 'incremental' | 'full_rebuild']
   /** 重新读取 Worker 执行状态。 */
   refresh: []
-  /** 审核单项提案。 */
-  review: [decision: {
-    proposalId: string
-    action: 'accept' | 'reject'
-    reviewed?: ProposedLearningContentView | null
-  }]
 }>()
 
 /** @param status 批次状态。 @returns 通俗中文状态。 */
 function statusLabel(status: AnalysisBatchView['status']): string {
-  return { queued: '等待分析', running: '分析中', awaiting_review: '等待审核', completed: '审核完成', failed: '分析失败' }[status]
+  return { queued: '等待提炼', running: '提炼中', awaiting_review: '旧批次待审核', completed: '草稿已生成', failed: '提炼失败' }[status]
 }
 </script>
 
@@ -33,10 +27,10 @@ function statusLabel(status: AnalysisBatchView['status']): string {
   <UCard>
     <template #header>
       <div class="flex flex-wrap items-start justify-between gap-3">
-        <div><h2 class="font-semibold text-highlighted">{{ title }} AI 迭代</h2><p class="mt-1 text-sm text-muted">AI 只提出候选；接受前不会改变长期内容。</p></div>
+        <div><h2 class="font-semibold text-highlighted">{{ title }} AI 提炼</h2><p class="mt-1 text-sm text-muted">AI 综合全部启用素材生成完整草稿；人工校准并发布后才会生效。</p></div>
         <div class="flex flex-wrap gap-2">
-          <UButton size="sm" :loading="loading" @click="emit('analyze', 'incremental')">分析新增资料</UButton>
-          <UButton size="sm" color="neutral" variant="soft" :loading="loading" @click="emit('analyze', 'full_rebuild')">完整重新分析</UButton>
+          <UButton size="sm" :loading="loading" @click="emit('analyze', 'incremental')">结合新增素材提炼</UButton>
+          <UButton size="sm" color="neutral" variant="soft" :loading="loading" @click="emit('analyze', 'full_rebuild')">从全部素材重新提炼</UButton>
           <UButton size="sm" color="neutral" variant="ghost" :loading="loading" @click="emit('refresh')">刷新状态</UButton>
         </div>
       </div>
@@ -46,18 +40,11 @@ function statusLabel(status: AnalysisBatchView['status']): string {
     <template v-else>
       <div class="flex flex-wrap items-center gap-2 text-sm">
         <UBadge :color="batch.status === 'failed' ? 'error' : batch.status === 'awaiting_review' ? 'warning' : 'neutral'" variant="soft">{{ statusLabel(batch.status) }}</UBadge>
-        <span class="text-muted">{{ batch.mode === 'incremental' ? '增量分析' : '完整重建' }} · {{ batch.inputs.length }} 项输入 · {{ batch.proposals.length }} 项提案</span>
+        <span class="text-muted">{{ batch.mode === 'incremental' ? '结合新增素材' : '全部素材重建' }} · {{ batch.inputs.length }} 项输入</span>
       </div>
-      <UAlert v-if="batch.errorMessage" class="mt-4" color="error" title="分析没有完成" :description="batch.errorMessage" />
-      <div v-if="batch.proposals.length" class="mt-5 grid gap-4 xl:grid-cols-2">
-        <AnalysisIterationProposalCard
-          v-for="proposal in batch.proposals"
-          :key="proposal.id"
-          :proposal="proposal"
-          :loading="loading"
-          @review="emit('review', $event)"
-        />
-      </div>
+      <UAlert v-if="batch.errorMessage" class="mt-4" color="error" title="提炼没有完成" :description="batch.errorMessage" />
+      <UAlert v-else-if="batch.status === 'completed'" class="mt-4" color="success" title="完整提示词草稿已生成" description="请在下方校准草稿，确认无误后发布。" />
+      <p v-if="batch.resultSummary" class="mt-4 whitespace-pre-wrap text-sm leading-6 text-muted">{{ batch.resultSummary }}</p>
     </template>
   </UCard>
 </template>

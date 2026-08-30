@@ -2,35 +2,19 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
 import AnalysisPanel from '../../app/components/analysis/AnalysisPanel.vue'
-import IterationProposalCard from '../../app/components/analysis/IterationProposalCard.vue'
-import type { AnalysisBatchView, IterationProposalView } from '../../shared/types/analysis'
+import type { AnalysisBatchView } from '../../shared/types/analysis'
 
-const proposal: IterationProposalView = {
-  id: '70000000-0000-4000-8000-000000000001',
-  operation: 'add',
-  targetType: 'growth',
-  targetIds: [],
-  before: [],
-  proposed: { content: '先给结论。', scope: '所有写作任务', importance: 4 },
-  reviewed: null,
-  evidenceInputIds: ['70000000-0000-4000-8000-000000000002'],
-  conflicts: [],
-  rationale: '多条反馈重复强调先给结论。',
-  status: 'pending',
-  reviewReason: null,
-  reviewedAt: null,
-  createdAt: 1,
-}
-
-const batch: AnalysisBatchView = {
+/** 已完成并生成完整草稿的分析批次。 */
+const completedBatch: AnalysisBatchView = {
   id: '70000000-0000-4000-8000-000000000003',
   analysisType: 'persona_growth',
   subjectId: '70000000-0000-4000-8000-000000000004',
   mode: 'incremental',
-  status: 'awaiting_review',
+  status: 'completed',
   baselineSoulVersionId: '70000000-0000-4000-8000-000000000005',
   inputs: [],
-  proposals: [proposal],
+  proposals: [],
+  resultSummary: '综合表达素材，补充了结论先行和不确定性标注。',
   errorCode: null,
   errorMessage: null,
   createdAt: 1,
@@ -38,51 +22,36 @@ const batch: AnalysisBatchView = {
   completedAt: 1,
 }
 
-describe('成长与记忆分析组件', () => {
-  it('人物和世界详情页显式注册正确的分析面板组件', () => {
+describe('成长与记忆 AI 提炼组件', () => {
+  it('人物和世界详情页显式使用完整提示词提炼面板', () => {
     const pageSources = [
       readFileSync('app/pages/personas/[id].vue', 'utf8'),
       readFileSync('app/pages/worlds/[id].vue', 'utf8'),
     ]
-
     for (const pageSource of pageSources) {
       expect(pageSource).toContain("import AnalysisPanel from '../../components/analysis/AnalysisPanel.vue'")
-      expect(pageSource).not.toContain('AnalysisAnalysisPanel')
+      expect(pageSource).toContain('LearningPromptPanel')
+      expect(pageSource).not.toContain('@review=')
     }
   })
 
-  it('分析面板明确区分增量分析与完整重建', async () => {
+  it('提炼面板明确区分结合新增素材与全部素材重建', async () => {
     const wrapper = await mountSuspended(AnalysisPanel, { props: { batch: null, loading: false, title: '人物成长' } })
     const buttons = wrapper.findAll('button')
     await buttons[0]!.trigger('click')
     await buttons[1]!.trigger('click')
     expect(wrapper.emitted('analyze')).toEqual([['incremental'], ['full_rebuild']])
-    expect(wrapper.text()).toContain('接受前不会改变长期内容')
+    expect(wrapper.text()).toContain('人工校准并发布后才会生效')
+    expect(wrapper.text()).not.toContain('提案')
   })
 
-  it('提案允许管理员编辑后再接受', async () => {
-    const wrapper = await mountSuspended(IterationProposalCard, { props: { proposal, loading: false } })
-    await wrapper.get('textarea').setValue('每次回答先给简短结论。')
-    const inputs = wrapper.findAll('input')
-    expect(wrapper.text()).not.toContain('适用范围')
-    await inputs[0]!.setValue('5')
-    await wrapper.findAll('button')[0]!.trigger('click')
-    expect(wrapper.emitted('review')).toEqual([[{
-      proposalId: proposal.id,
-      action: 'accept',
-      reviewed: { content: '每次回答先给简短结论。', scope: '所有新任务', importance: 5 },
-    }]])
-  })
-
-  it('已审核提案不再显示重复操作按钮', async () => {
+  it('完成后展示提炼摘要并引导校准发布草稿', async () => {
     const wrapper = await mountSuspended(AnalysisPanel, {
-      props: {
-        batch: { ...batch, status: 'completed', proposals: [{ ...proposal, status: 'applied' }] },
-        loading: false,
-        title: '人物成长',
-      },
+      props: { batch: completedBatch, loading: false, title: '人物成长' },
     })
-    expect(wrapper.text()).toContain('该提案已应用')
+    expect(wrapper.text()).toContain('完整提示词草稿已生成')
+    expect(wrapper.text()).toContain('请在下方校准草稿')
+    expect(wrapper.text()).toContain('综合表达素材')
     expect(wrapper.text()).not.toContain('接受并应用')
   })
 })

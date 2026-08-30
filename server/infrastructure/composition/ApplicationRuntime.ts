@@ -109,7 +109,7 @@ export class ApplicationRuntime {
   private readonly analysisService: AnalysisApplicationService
   /** 请求与 Worker 共用的生成应用服务。 */
   private readonly generationService: GenerationApplicationService
-  /** 请求间共享的反馈分类与人物学习资料应用服务。 */
+  /** 请求间共享的反馈分类与人物成长素材应用服务。 */
   private readonly feedbackService: FeedbackApplicationService
   /** OpenViking 检测与重建应用服务。 */
   private readonly contextSynchronizationService: ContextSynchronizationApplicationService
@@ -186,6 +186,8 @@ export class ApplicationRuntime {
       learning: learningRepository,
       identifiers,
       clock: this.clock,
+      tokenCounter,
+      promptTokenBudgets: { world_growth: 2_500, persona_growth: 2_500, persona_memory: 3_000 },
       contextSyncQueue,
     })
     this.analysisService = new AnalysisApplicationService({

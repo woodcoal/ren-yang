@@ -33,7 +33,7 @@ describe('反馈组件', () => {
     expect(wrapper.text()).toContain('反馈内容不能为空')
   })
 
-  it('人物学习确认只创建反馈资料意图，不提交灵魂字段补丁', async () => {
+  it('人物反馈确认只创建成长素材意图，不提交灵魂字段补丁', async () => {
     const wrapper = await mountSuspended(FeedbackClassificationReview, {
       props: { feedback: createFeedback('persona') },
     })
@@ -45,7 +45,7 @@ describe('反馈组件', () => {
       sourceId: null,
       hasEvidenceConflict: false,
     })
-    expect(wrapper.text()).toContain('不会直接修改人物灵魂或记忆')
+    expect(wrapper.text()).toContain('人工校准发布后才会进入新任务')
   })
 
   it('当前产物分类必须选择具体块', async () => {

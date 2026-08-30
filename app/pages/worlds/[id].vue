@@ -3,13 +3,22 @@ import type { FormSubmitEvent } from '@nuxt/ui'
 import { computed, reactive, shallowRef } from 'vue'
 import type { CreateSourceWithTargetsInput, SaveSoulVersionInput, UpdateWorldInput } from '#shared/schemas/content'
 import { updateWorldSchema } from '#shared/schemas/content'
-import type { ImportGrowthSourcesInput, UpdateGrowthInput } from '#shared/schemas/learning'
+import type {
+  CreateGrowthMaterialInput,
+  CreateLearningPromptDraftFromVersionInput,
+  ImportGrowthSourcesInput,
+  PublishLearningPromptDraftInput,
+  SaveLearningPromptDraftInput,
+  UpdateGrowthMaterialInput,
+} from '#shared/schemas/learning'
 import type { ApiResponse } from '#shared/types/api'
 import type { DeletionImpact, PersonaSummary, SoulWorkspaceView, SourceDetails, SourceSummary, WorldDetails } from '#shared/types/content'
 import type { WorldGrowthWorkspaceView } from '#shared/types/learning'
-import type { AnalysisBatchView, ProposedLearningContentView } from '#shared/types/analysis'
+import type { AnalysisBatchView } from '#shared/types/analysis'
 import AnalysisPanel from '../../components/analysis/AnalysisPanel.vue'
 import type { SourceFileSubmission } from '../../components/content/SourceImportForm.vue'
+import GrowthMaterialPanel from '../../components/learning/GrowthMaterialPanel.vue'
+import LearningPromptPanel from '../../components/learning/LearningPromptPanel.vue'
 import { getApiErrorMessage } from '../../utils/apiError'
 
 type WorldTab = 'overview' | 'soul' | 'growth' | 'sources' | 'relations'
@@ -35,7 +44,10 @@ const [
 const details = computed(() => data.value?.data ?? null)
 const soul = computed(() => soulData.value?.data ?? null)
 const allSources = computed(() => sourceData.value?.data ?? [])
-const growthWorkspace = computed(() => growthData.value?.data ?? { sources: [], growth: [] })
+const growthWorkspace = computed<WorldGrowthWorkspaceView>(() => growthData.value?.data ?? {
+  sources: [], materials: [],
+  prompt: { promptType: 'world_growth', activeVersion: null, draft: null, versions: [] },
+})
 const growthAnalysis = computed(() => analysisData.value?.data ?? null)
 const allPersonas = computed(() => personaData.value?.data ?? [])
 const tabs: Array<{ id: WorldTab, label: string }> = [
@@ -91,83 +103,111 @@ async function saveSoulVersion(input: SaveSoulVersionInput): Promise<void> {
   })
 }
 
-/** @param input 世界资料批量启用状态。 @returns 更新和成长工作区刷新完成时结束。 */
-async function updateWorldSourceStatus(input: { ids: string[], isEnabled: boolean }): Promise<void> {
-  await runAction(input.isEnabled ? '所选世界资料已参加成长分析' : '所选世界资料已不参加成长分析', async () => {
-    await $fetch(`/api/v1/worlds/${worldId}/sources/status`, { method: 'PATCH', body: input })
-    await refreshGrowth()
-  })
-}
-
 /**
- * 按逐条人工评分把世界资料批量导入成长候选。
- * @param input 资料 UUID 与重要程度评分。
- * @returns 整批导入和成长工作区刷新完成时结束。
+ * 按逐条人工评分把世界资料库内容批量复制为成长素材。
+ * @param input 资料 UUID 与 AI 提炼评分。
+ * @returns 整批导入和成长素材池刷新完成时结束。
  */
 async function importWorldGrowthSources(input: ImportGrowthSourcesInput): Promise<void> {
-  await runAction(`已从 ${input.items.length} 项资料创建待确认成长`, async () => {
+  await runAction(`已从资料库导入 ${input.items.length} 项世界成长素材`, async () => {
     await $fetch(`/api/v1/worlds/${worldId}/growth/import`, { method: 'POST', body: input })
     await refreshGrowth()
   })
 }
 
 /**
- * 修改世界成长并建立新的待确认修订。
- * @param input 成长 UUID 及新正文、重要程度。
- * @returns 修改和成长工作区刷新完成时结束。
+ * 手工添加只用于世界成长提炼的独立文档。
+ * @param input 素材标题、完整正文和评分。
+ * @returns 添加和成长素材池刷新完成时结束。
  */
-async function updateWorldGrowth(input: UpdateGrowthInput & { id: string }): Promise<void> {
-  await runAction('成长新修订已保存，重新启用后进入新任务', async () => {
+async function createWorldGrowthMaterial(input: CreateGrowthMaterialInput): Promise<void> {
+  await runAction('手工文档已加入世界成长素材池', async () => {
+    await $fetch(`/api/v1/worlds/${worldId}/growth`, { method: 'POST', body: input })
+    await refreshGrowth()
+  })
+}
+
+/**
+ * 修改世界成长素材的固定标题、正文快照和评分。
+ * @param input 素材 UUID 与完整新内容。
+ * @returns 修改和成长素材池刷新完成时结束。
+ */
+async function updateWorldGrowthMaterial(input: UpdateGrowthMaterialInput & { id: string }): Promise<void> {
+  await runAction('世界成长素材已修改', async () => {
     await $fetch(`/api/v1/worlds/${worldId}/growth/${input.id}`, {
       method: 'PATCH',
-      body: { content: input.content, importance: input.importance },
+      body: { title: input.title, content: input.content, importance: input.importance },
     })
     await refreshGrowth()
   })
 }
 
-/** @param input 世界成长批量目标状态。 @returns 审核和成长工作区刷新完成时结束。 */
-async function updateWorldGrowthStatus(input: { ids: string[], status: 'active' | 'archived' | 'rejected' }): Promise<void> {
-  await runAction('世界成长状态已更新', async () => {
+/** @param input 世界成长素材批量启用状态。 @returns 更新和成长素材池刷新完成时结束。 */
+async function updateWorldGrowthMaterialStatus(input: { ids: string[], isEnabled: boolean }): Promise<void> {
+  await runAction(input.isEnabled ? '所选成长素材已参加提炼' : '所选成长素材已不参加提炼', async () => {
     await $fetch(`/api/v1/worlds/${worldId}/growth/status`, { method: 'PATCH', body: input })
     await refreshGrowth()
   })
 }
 
 /**
- * 永久删除所选世界成长及其全部历史修订。
- * @param input 待删除成长 UUID 集合。
- * @returns 原子删除和成长工作区刷新完成时结束。
+ * 永久删除所选世界成长素材快照。
+ * @param input 待删除素材 UUID 集合。
+ * @returns 删除和成长素材池刷新完成时结束。
  */
-async function deleteWorldGrowth(input: { ids: string[] }): Promise<void> {
-  await runAction('所选世界成长已永久删除', async () => {
+async function deleteWorldGrowthMaterials(input: { ids: string[] }): Promise<void> {
+  await runAction('所选世界成长素材已删除', async () => {
     await $fetch(`/api/v1/worlds/${worldId}/growth`, { method: 'DELETE', body: input })
     await refreshGrowth()
   })
 }
 
-/** @param mode 增量或完整重建。 @returns 批次创建和状态刷新完成时结束。 */
+/** @param mode 结合新增素材或完整重建。 @returns 批次创建和状态刷新完成时结束。 */
 async function analyzeWorldGrowth(mode: 'incremental' | 'full_rebuild'): Promise<void> {
-  await runAction('世界成长分析已排队；稍后刷新状态查看 AI 提案', async () => {
+  await runAction('世界成长提炼任务已排队；完成后会生成待校准草稿', async () => {
     await runWithAiLoading({
-      title: 'AI 正在启动世界成长分析',
-      description: mode === 'incremental' ? '系统正在提交新增世界资料分析任务。' : '系统正在提交全部世界资料重新分析任务。',
-      completionHint: '任务进入队列后会返回当前页面，可稍后刷新查看 AI 提案。',
+      title: 'AI 正在启动世界成长提炼',
+      description: mode === 'incremental' ? '系统正在结合新增素材生成完整提示词草稿。' : '系统正在从全部启用素材重新生成完整提示词草稿。',
+      completionHint: '任务进入队列后会返回当前页面，可稍后刷新查看草稿。',
     }, async () => await $fetch(`/api/v1/worlds/${worldId}/growth/analyze`, { method: 'POST', body: { mode } }))
     await refreshAnalysis()
   })
 }
 
-/** @param decision 单项人工审核。 @returns 应用和成长工作区刷新完成时结束。 */
-async function reviewWorldGrowthProposal(decision: {
-  proposalId: string
-  action: 'accept' | 'reject'
-  reviewed?: ProposedLearningContentView | null
-}): Promise<void> {
-  if (!growthAnalysis.value) return
-  await runAction(decision.action === 'accept' ? '世界成长提案已确认并应用' : '世界成长提案已拒绝', async () => {
-    await $fetch(`/api/v1/analysis-batches/${growthAnalysis.value!.id}/review`, { method: 'POST', body: { decisions: [decision] } })
-    await Promise.all([refreshAnalysis(), refreshGrowth()])
+/** @returns 同步刷新世界成长提炼状态和提示词草稿时结束。 */
+async function refreshWorldGrowthAnalysis(): Promise<void> {
+  await Promise.all([refreshAnalysis(), refreshGrowth()])
+}
+
+/** @param input 完整世界成长提示词与基线版本。 @returns 草稿保存和工作区刷新完成时结束。 */
+async function saveWorldGrowthPromptDraft(input: SaveLearningPromptDraftInput): Promise<void> {
+  await runAction('世界成长提示词草稿已保存，尚未生效', async () => {
+    await $fetch(`/api/v1/worlds/${worldId}/growth/prompt/draft`, { method: 'PUT', body: input })
+    await refreshGrowth()
+  })
+}
+
+/** @returns 删除世界成长未发布草稿和工作区刷新完成时结束。 */
+async function deleteWorldGrowthPromptDraft(): Promise<void> {
+  await runAction('世界成长提示词草稿已删除', async () => {
+    await $fetch(`/api/v1/worlds/${worldId}/growth/prompt/draft`, { method: 'DELETE' })
+    await refreshGrowth()
+  })
+}
+
+/** @param input 发布版本变更说明。 @returns 草稿发布和工作区刷新完成时结束。 */
+async function publishWorldGrowthPromptDraft(input: PublishLearningPromptDraftInput): Promise<void> {
+  await runAction('世界成长提示词已发布，之后创建的新任务将固定使用这一版', async () => {
+    await $fetch(`/api/v1/worlds/${worldId}/growth/prompt/publish`, { method: 'POST', body: input })
+    await refreshGrowth()
+  })
+}
+
+/** @param input 历史版本 UUID。 @returns 校准草稿创建和工作区刷新完成时结束。 */
+async function createWorldGrowthPromptDraftFromVersion(input: CreateLearningPromptDraftFromVersionInput): Promise<void> {
+  await runAction('已基于历史版本创建校准草稿，当前已发布版本未改变', async () => {
+    await $fetch(`/api/v1/worlds/${worldId}/growth/prompt/draft-from-version`, { method: 'POST', body: input })
+    await refreshGrowth()
   })
 }
 
@@ -188,7 +228,8 @@ async function linkSources(sourceIds: string[]): Promise<void> {
     }
     finally {
       // 单项接口可能在批量处理中途失败，仍需刷新已成功写入的关联。
-      await Promise.all([refresh(), refreshSources()])
+      // 成长资料选择器使用独立请求，资料关系变化后必须同步刷新，避免标签切换后仍显示旧列表。
+      await Promise.all([refresh(), refreshSources(), refreshGrowth()])
     }
   })
 }
@@ -201,7 +242,7 @@ async function linkSources(sourceIds: string[]): Promise<void> {
 async function unlinkSource(sourceId: string): Promise<void> {
   await runAction('资料已移出这个世界，资料本身仍保留', async () => {
     await $fetch(`/api/v1/sources/${sourceId}/links/${encodeURIComponent(`world:${worldId}`)}`, { method: 'DELETE' })
-    await Promise.all([refresh(), refreshSources()])
+    await Promise.all([refresh(), refreshSources(), refreshGrowth()])
   })
 }
 
@@ -248,7 +289,7 @@ async function updatePersonaWorld(persona: PersonaSummary, targetWorldId: string
 async function updateLinkedSourceStatus(input: { sourceId: string, isEnabled: boolean }): Promise<void> {
   await runAction(input.isEnabled ? '资料已启用' : '资料已禁用', async () => {
     await $fetch(`/api/v1/sources/${input.sourceId}/status`, { method: 'PATCH', body: { isEnabled: input.isEnabled } })
-    await Promise.all([refresh(), refreshSources()])
+    await Promise.all([refresh(), refreshSources(), refreshGrowth()])
   })
 }
 
@@ -263,7 +304,7 @@ async function createPastedSource(input: CreateSourceWithTargetsInput): Promise<
       method: 'POST',
       body: { ...input, targets: [{ targetType: 'world', targetId: worldId }] },
     })
-    await Promise.all([refresh(), refreshSources()])
+    await Promise.all([refresh(), refreshSources(), refreshGrowth()])
   })
 }
 
@@ -293,7 +334,7 @@ async function importSourceFile(input: SourceFileSubmission): Promise<void> {
         failures.push(`${item.file.name}：${getApiErrorMessage(requestError, '导入失败')}`)
       }
     }
-    if (succeeded > 0) await Promise.all([refresh(), refreshSources()])
+    if (succeeded > 0) await Promise.all([refresh(), refreshSources(), refreshGrowth()])
     if (failures.length > 0) {
       actionError.value = `成功 ${succeeded} 个，失败 ${failures.length} 个。${failures.join('；')}`
     }
@@ -437,7 +478,8 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
           </template>
           <div class="space-y-3 text-sm text-muted">
             <p>灵魂保存会直接进入新任务的稳定世界提示词。</p>
-            <p>成长从已启用的世界资料中分析，候选仍需人工确认。</p>
+            <p>成长来自世界资料库中选出的重要资料，以及你手工添加的独立文档。</p>
+            <p>AI 综合素材生成完整草稿；人工校准并发布后，世界成长提示词才会固定进入新任务。</p>
             <p>世界没有人物式记忆，不会从人物处理过程反向形成长期规则。</p>
           </div>
         </UCard>
@@ -447,16 +489,28 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
         @save="saveSoulVersion" />
 
       <div v-else-if="selectedTab === 'growth'" class="space-y-6">
+        <GrowthMaterialPanel
+          subject-label="世界"
+          :items="growthWorkspace.materials"
+          :sources="growthWorkspace.sources"
+          :loading="actionLoading"
+          @import-sources="importWorldGrowthSources"
+          @create="createWorldGrowthMaterial"
+          @update="updateWorldGrowthMaterial"
+          @status="updateWorldGrowthMaterialStatus"
+          @delete="deleteWorldGrowthMaterials"
+        />
         <AnalysisPanel title="世界成长" :batch="growthAnalysis" :loading="actionLoading"
-          @analyze="analyzeWorldGrowth" @refresh="refreshAnalysis" @review="reviewWorldGrowthProposal" />
-        <div class="grid items-start gap-6 xl:grid-cols-2">
-          <LearningWorldGrowthSourcePanel :items="growthWorkspace.sources" :loading="actionLoading"
-            @status="updateWorldSourceStatus" />
-          <LearningGrowthRecordPanel subject-label="世界" :items="growthWorkspace.growth"
-            :sources="growthWorkspace.sources.map(item => ({ id: item.id, label: item.name, content: item.content, isEnabled: item.isEnabled }))" :loading="actionLoading"
-            @import-sources="importWorldGrowthSources" @update="updateWorldGrowth"
-            @status="updateWorldGrowthStatus" @delete="deleteWorldGrowth" />
-        </div>
+          @analyze="analyzeWorldGrowth" @refresh="refreshWorldGrowthAnalysis" />
+        <LearningPromptPanel
+          title="世界成长"
+          :workspace="growthWorkspace.prompt"
+          :loading="actionLoading"
+          @save="saveWorldGrowthPromptDraft"
+          @delete-draft="deleteWorldGrowthPromptDraft"
+          @publish="publishWorldGrowthPromptDraft"
+          @draft-from-version="createWorldGrowthPromptDraftFromVersion"
+        />
       </div>
 
       <ContentSubjectSourceManager v-else-if="selectedTab === 'sources'" subject-type="world"

@@ -50,7 +50,7 @@ describe('SqliteDatabase', () => {
       ORDER BY name
     `).all()
     expect(tables).toEqual([{ name: 'administrators' }, { name: 'task_jobs' }])
-    expect(current.getClient().prepare(`SELECT COUNT(*) AS count FROM __drizzle_migrations`).get()).toEqual({ count: 5 })
+    expect(current.getClient().prepare(`SELECT COUNT(*) AS count FROM __drizzle_migrations`).get()).toEqual({ count: 6 })
     expect(current.getClient().prepare(`PRAGMA table_info(source_materials)`).all()).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'is_enabled', notnull: 1, dflt_value: '1' }),
     ]))
@@ -199,6 +199,83 @@ describe('SqliteDatabase', () => {
       expect(columns.map(column => column.name)).not.toContain('chapters_json')
       expect(columns.map(column => column.name)).not.toContain('runtime_summary')
     }
+    expect(database.getClient().prepare('PRAGMA foreign_key_check').all()).toEqual([])
+  })
+
+  it('学习提示词迁移把旧来源和候选转为素材，并合并旧有效成长与记忆', () => {
+    temporaryDirectory = mkdtempSync(resolve(tmpdir(), 'ren-yang-learning-prompt-upgrade-test-'))
+    const oldMigrationsDirectory = resolve(temporaryDirectory, 'old-drizzle')
+    mkdirSync(resolve(oldMigrationsDirectory, 'meta'), { recursive: true })
+    for (const migration of [
+      '0000_baseline.sql', '0001_source_material_status.sql', '0002_persona_world_status.sql',
+      '0003_soul_prompt_text.sql', '0004_soul_save_immediately.sql',
+    ]) {
+      copyFileSync(resolve(process.cwd(), `drizzle/${migration}`), resolve(oldMigrationsDirectory, migration))
+    }
+    writeFileSync(resolve(oldMigrationsDirectory, 'meta/_journal.json'), JSON.stringify({
+      version: '7', dialect: 'sqlite', entries: [
+        { idx: 0, version: '6', when: 1788028900254, tag: '0000_baseline', breakpoints: true },
+        { idx: 1, version: '6', when: 1788036380272, tag: '0001_source_material_status', breakpoints: true },
+        { idx: 2, version: '6', when: 1788042164727, tag: '0002_persona_world_status', breakpoints: true },
+        { idx: 3, version: '6', when: 1788075317577, tag: '0003_soul_prompt_text', breakpoints: true },
+        { idx: 4, version: '6', when: 1788081200000, tag: '0004_soul_save_immediately', breakpoints: true },
+      ],
+    }))
+
+    database = new SqliteDatabase({ dataDirectory: temporaryDirectory, migrationsDirectory: oldMigrationsDirectory })
+    const client = database.getClient()
+    client.prepare(`INSERT INTO worlds (id, name, summary, is_enabled, created_at, updated_at) VALUES ('world-1', '旧世界', '', 1, 1000, 2000)`).run()
+    client.prepare(`INSERT INTO personas (id, world_id, name, origin, is_enabled, created_at, updated_at) VALUES ('persona-1', 'world-1', '旧人物', 'original', 1, 1000, 2000)`).run()
+    client.prepare(`
+      INSERT INTO source_materials (
+        id, name, role, input_type, content_hash, content_text, original_file_path, is_enabled, created_at, updated_at
+      ) VALUES ('source-1', '旧世界资料', 'reference', 'paste', ?, '旧世界资料正文。', NULL, 1, 1000, 1000)
+    `).run('1'.repeat(64))
+    client.prepare(`INSERT INTO world_sources (world_id, source_id, priority, is_enabled, updated_at) VALUES ('world-1', 'source-1', 10, 1, 1000)`).run()
+    client.prepare(`
+      INSERT INTO growth_records (
+        id, subject_type, world_id, persona_id, current_revision_id, status, superseded_by_id, created_at, updated_at
+      ) VALUES
+        ('growth-active', 'world', 'world-1', NULL, 'growth-revision-active', 'active', NULL, 1000, 1000),
+        ('growth-candidate', 'world', 'world-1', NULL, 'growth-revision-candidate', 'candidate', NULL, 1100, 1100)
+    `).run()
+    client.prepare(`
+      INSERT INTO growth_revisions (
+        id, growth_id, revision_no, content, content_hash, scope, importance, conflict_summary, created_by, created_at
+      ) VALUES
+        ('growth-revision-active', 'growth-active', 1, '旧有效世界成长。', ?, '所有新任务', 5, NULL, 'user', 1000),
+        ('growth-revision-candidate', 'growth-candidate', 1, '旧候选世界成长。', ?, '所有新任务', 3, NULL, 'user', 1100)
+    `).run('2'.repeat(64), '3'.repeat(64))
+    client.prepare(`
+      INSERT INTO memory_records (
+        id, persona_id, current_revision_id, memory_type, status, superseded_by_id,
+        openviking_uri, created_at, updated_at
+      ) VALUES ('memory-active', 'persona-1', 'memory-revision-active', 'experience', 'active', NULL, NULL, 1200, 1200)
+    `).run()
+    client.prepare(`
+      INSERT INTO memory_revisions (
+        id, memory_id, revision_no, content, content_hash, scope, importance,
+        independent_evidence_count, conflict_summary, created_by, created_at
+      ) VALUES ('memory-revision-active', 'memory-active', 1, '旧有效人物记忆。', ?, '所有新任务', 4, 2, NULL, 'analysis', 1200)
+    `).run('4'.repeat(64))
+    database.close()
+
+    database = new SqliteDatabase({ dataDirectory: temporaryDirectory, migrationsDirectory: resolve(process.cwd(), 'drizzle') })
+    expect(database.getClient().prepare(`
+      SELECT title, source_type, importance FROM growth_materials WHERE world_id = 'world-1' ORDER BY source_type, title
+    `).all()).toEqual([
+      { title: '迁移的旧成长候选', source_type: 'legacy', importance: 3 },
+      { title: '旧世界资料', source_type: 'source_material', importance: 3 },
+    ])
+    expect(database.getClient().prepare(`
+      SELECT learning_prompts.prompt_type, learning_prompt_versions.prompt_text, learning_prompt_versions.created_by
+      FROM learning_prompts
+      INNER JOIN learning_prompt_versions ON learning_prompt_versions.id = learning_prompts.active_version_id
+      ORDER BY learning_prompts.prompt_type
+    `).all()).toEqual([
+      { prompt_type: 'persona_memory', prompt_text: '旧有效人物记忆。', created_by: 'migration' },
+      { prompt_type: 'world_growth', prompt_text: '旧有效世界成长。', created_by: 'migration' },
+    ])
     expect(database.getClient().prepare('PRAGMA foreign_key_check').all()).toEqual([])
   })
 

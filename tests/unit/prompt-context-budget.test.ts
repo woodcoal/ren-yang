@@ -48,6 +48,9 @@ describe('提示词分层 Token 预算', () => {
       fixedInputTokens: 1_000,
       worldSoulTokens: 200,
       personaSoulTokens: 300,
+      worldGrowthTokens: 0,
+      personaGrowthTokens: 0,
+      personaMemoryTokens: 0,
       candidates: [candidate('source', 60, 1), candidate('source', 60, 2)],
     })
 
@@ -58,23 +61,22 @@ describe('提示词分层 Token 预算', () => {
     expect(result.used.sources).toBe(60)
   })
 
-  it('总预算不足时优先保留世界成长和人物成长', () => {
+  it('固定成长和记忆提示词计入父子预算，并在总预算不足时跳过普通资料', () => {
     const result = selectPromptContextByBudget({
       parameters: parameters({ contextWindowTokens: 5_000, reservedOutputTokens: 512, safetyMarginTokens: 0 }),
-      fixedInputTokens: 4_350,
+      fixedInputTokens: 4_450,
       worldSoulTokens: 100,
       personaSoulTokens: 100,
-      candidates: [
-        candidate('source', 50, 1),
-        candidate('persona_memory', 50, 2),
-        candidate('persona_growth', 50, 3),
-        candidate('world_growth', 50, 4),
-      ],
+      worldGrowthTokens: 50,
+      personaGrowthTokens: 50,
+      personaMemoryTokens: 50,
+      candidates: [candidate('source', 50, 1)],
     })
 
-    expect(result.selected.map(item => item.category)).toEqual(['world_growth', 'persona_growth'])
-    expect(result.skipped.map(item => item.category)).toEqual(['persona_memory', 'source'])
+    expect(result.selected).toEqual([])
+    expect(result.skipped.map(item => item.category)).toEqual(['source'])
     expect(result.skipped.every(item => item.skippedReason === 'total_budget')).toBe(true)
+    expect(result.used).toMatchObject({ worldGrowth: 50, personaGrowth: 50, personaMemory: 50 })
   })
 
   it('不可省略人物灵魂超过子预算时明确失败', () => {
@@ -83,7 +85,23 @@ describe('提示词分层 Token 预算', () => {
       fixedInputTokens: 1_000,
       worldSoulTokens: 0,
       personaSoulTokens: 801,
+      worldGrowthTokens: 0,
+      personaGrowthTokens: 0,
+      personaMemoryTokens: 0,
       candidates: [],
     })).toThrow('人物灵魂提示词超过人物灵魂预算')
+  })
+
+  it('固定人物记忆提示词超过独立预算时明确失败', () => {
+    expect(() => selectPromptContextByBudget({
+      parameters: parameters(),
+      fixedInputTokens: 1_000,
+      worldSoulTokens: 0,
+      personaSoulTokens: 200,
+      worldGrowthTokens: 0,
+      personaGrowthTokens: 0,
+      personaMemoryTokens: 601,
+      candidates: [],
+    })).toThrow('人物记忆提示词超过人物记忆预算')
   })
 })

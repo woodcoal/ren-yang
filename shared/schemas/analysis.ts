@@ -39,6 +39,12 @@ export const modelIterationResultSchema = z.object({
   summary: z.string().trim().min(1).max(4_000),
 })
 
+/** 文本模型综合全部素材后返回的一份完整学习提示词草稿。 */
+export const modelLearningPromptResultSchema = z.object({
+  promptText: z.string().trim().min(1, '提炼后的提示词不能为空').max(20_000, '提炼后的提示词不能超过 20000 字'),
+  summary: z.string().trim().min(1, '提炼摘要不能为空').max(4_000, '提炼摘要不能超过 4000 字'),
+})
+
 /** 用户对一项提案的审核决定。 */
 export const iterationProposalDecisionSchema = z.object({
   proposalId: z.string().uuid('提案标识无效'),
@@ -54,4 +60,5 @@ export const reviewIterationProposalsSchema = z.object({
 
 export type CreateAnalysisBatchInput = z.infer<typeof createAnalysisBatchSchema>
 export type ModelIterationResult = z.infer<typeof modelIterationResultSchema>
+export type ModelLearningPromptResult = z.infer<typeof modelLearningPromptResultSchema>
 export type ReviewIterationProposalsInput = z.infer<typeof reviewIterationProposalsSchema>

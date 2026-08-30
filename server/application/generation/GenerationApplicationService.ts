@@ -31,6 +31,7 @@ import type {
   RunSummary,
 } from '../../../shared/types/generation'
 import type { SystemCapabilitiesResult } from '../../../shared/types/system'
+import type { LearningPromptVersionView } from '../../../shared/types/learning'
 import type { PersonaRecord, PersonaVersionRecord } from '../../domain/content/ContentModels'
 import { ImageAssetError } from '../../domain/generation/ImageAssetError'
 import type { ArtifactBlockRecord, GenerationRunRecord, TextModelUsage } from '../../domain/generation/GenerationModels'
@@ -118,8 +119,8 @@ export interface GenerationApplicationServiceDependencies {
   sourceProcessor: SourceContentProcessor
   /** 调用前执行分层提示词预算的 Token 计数器。 */
   tokenCounter: TokenCounter
-  /** 成长、记忆状态校验和人物处理记录事实源。 */
-  learning: Pick<LearningRepository, 'listGrowth' | 'listMemories' | 'createPersonaOperationRecord'>
+  /** 当前学习提示词和人物处理记录事实源。 */
+  learning: Pick<LearningRepository, 'findLearningPromptWorkspace' | 'createPersonaOperationRecord'>
   /** OpenViking 启用时使用的 Session 异步队列。 */
   contextSyncQueue?: ContextSyncTaskQueue
 }
@@ -482,6 +483,14 @@ export class GenerationApplicationService implements TaskHandler {
     const effectivePersona = world ? persona : { ...persona, worldId: null }
     const worldVersion = world?.activeVersionId ? await this.dependencies.content.findWorldVersion(world.activeVersionId) : null
     const activeWorldVersion = worldVersion?.status === 'published' ? worldVersion : null
+    const [worldGrowthWorkspace, personaGrowthWorkspace, personaMemoryWorkspace] = await Promise.all([
+      world ? this.dependencies.learning.findLearningPromptWorkspace('world_growth', world.id) : Promise.resolve(null),
+      this.dependencies.learning.findLearningPromptWorkspace('persona_growth', persona.id),
+      this.dependencies.learning.findLearningPromptWorkspace('persona_memory', persona.id),
+    ])
+    const worldGrowthVersion = worldGrowthWorkspace?.activeVersion ?? null
+    const personaGrowthVersion = personaGrowthWorkspace?.activeVersion ?? null
+    const personaMemoryVersion = personaMemoryWorkspace?.activeVersion ?? null
     const query = 'content' in input ? input.content : input.requirement
     let contextSearch
     try {
@@ -499,6 +508,9 @@ export class GenerationApplicationService implements TaskHandler {
     const emptyPromptContext: PromptContext = {
       persona: version.snapshot,
       world: activeWorldVersion?.snapshot ?? null,
+      worldGrowthPrompt: worldGrowthVersion?.promptText ?? null,
+      personaGrowthPrompt: personaGrowthVersion?.promptText ?? null,
+      personaMemoryPrompt: personaMemoryVersion?.promptText ?? null,
       scene,
       evidence: [],
     }
@@ -509,6 +521,9 @@ export class GenerationApplicationService implements TaskHandler {
       ? this.dependencies.tokenCounter.count(tokenCounterModel, activeWorldVersion.snapshot.promptText)
       : { tokens: 0, mode: 'estimated' as const, counter: 'none' }
     const personaSoulCount = this.dependencies.tokenCounter.count(tokenCounterModel, version.snapshot.promptText)
+    const worldGrowthCount = countOptionalPrompt(this.dependencies.tokenCounter, tokenCounterModel, worldGrowthVersion?.promptText)
+    const personaGrowthCount = countOptionalPrompt(this.dependencies.tokenCounter, tokenCounterModel, personaGrowthVersion?.promptText)
+    const personaMemoryCount = countOptionalPrompt(this.dependencies.tokenCounter, tokenCounterModel, personaMemoryVersion?.promptText)
     const prepared = await this.preparePromptBudgetCandidates(
       effectivePersona,
       contextSearch.candidates,
@@ -521,6 +536,9 @@ export class GenerationApplicationService implements TaskHandler {
         fixedInputTokens,
         worldSoulTokens: worldSoulCount.tokens,
         personaSoulTokens: personaSoulCount.tokens,
+        worldGrowthTokens: worldGrowthCount.tokens,
+        personaGrowthTokens: personaGrowthCount.tokens,
+        personaMemoryTokens: personaMemoryCount.tokens,
         candidates: prepared.valid.map(item => item.budget),
       })
     }
@@ -566,14 +584,23 @@ export class GenerationApplicationService implements TaskHandler {
         metadata: { worldVersionId: activeWorldVersion.id },
       })
     }
-    const selectedSnapshots = selection.selected.map(candidate => toPromptContextItemSnapshot(candidate, null))
+    const fixedLearningPrompts = [
+      toFixedLearningPromptEvidence(this.dependencies.identifiers.create(), worldGrowthVersion, 'world_growth', 'growth', worldGrowthCount.tokens, this.dependencies.sourceProcessor),
+      toFixedLearningPromptEvidence(this.dependencies.identifiers.create(), personaGrowthVersion, 'persona_growth', 'growth', personaGrowthCount.tokens, this.dependencies.sourceProcessor),
+      toFixedLearningPromptEvidence(this.dependencies.identifiers.create(), personaMemoryVersion, 'persona_memory', 'memory', personaMemoryCount.tokens, this.dependencies.sourceProcessor),
+    ].filter((item): item is { evidence: NewEvidenceSnapshot, snapshot: PromptContextItemSnapshot } => item !== null)
+    const selectedSnapshots = [
+      ...fixedLearningPrompts.map(item => item.snapshot),
+      ...selection.selected.map(candidate => toPromptContextItemSnapshot(candidate, null)),
+    ]
     const skippedSnapshots = [
       ...selection.skipped.map(candidate => toPromptContextItemSnapshot(candidate, candidate.skippedReason)),
       ...prepared.invalid,
     ]
     const promptContextSnapshot: PromptContextSnapshot = {
       tokenCounter: personaSoulCount.counter,
-      tokenCountExact: personaSoulCount.mode === 'exact' && (!activeWorldVersion || worldSoulCount.mode === 'exact'),
+      tokenCountExact: [personaSoulCount, worldSoulCount, worldGrowthCount, personaGrowthCount, personaMemoryCount]
+        .every(item => item.mode === 'exact' || item.tokens === 0),
       availableInputTokens: selection.availableInputTokens,
       estimatedInputTokens,
       budgets: {
@@ -606,7 +633,8 @@ export class GenerationApplicationService implements TaskHandler {
       promptContextSnapshot,
       evidence: [
         ...userSettings,
-        ...selectedEvidence.map(item => ({ ...item, rank: item.rank + userSettings.length })),
+        ...fixedLearningPrompts.map((item, index) => ({ ...item.evidence, rank: userSettings.length + index })),
+        ...selectedEvidence.map(item => ({ ...item, rank: item.rank + userSettings.length + fixedLearningPrompts.length })),
       ],
       timestamp,
     })
@@ -659,19 +687,11 @@ export class GenerationApplicationService implements TaskHandler {
     candidates: Awaited<ReturnType<ContextProvider['search']>>['candidates'],
     model: string,
   ): Promise<PreparedPromptCandidates> {
-    const [personaSources, worldSources, personaGrowth, worldGrowth, memories] = await Promise.all([
+    const [personaSources, worldSources] = await Promise.all([
       this.dependencies.content.listPersonaSources(persona.id),
       persona.worldId ? this.dependencies.content.listWorldSources(persona.worldId) : Promise.resolve([]),
-      this.dependencies.learning.listGrowth('persona', persona.id),
-      persona.worldId ? this.dependencies.learning.listGrowth('world', persona.worldId) : Promise.resolve([]),
-      this.dependencies.learning.listMemories(persona.id),
     ])
     const sources = new Map([...worldSources, ...personaSources].map(item => [item.id, item]))
-    const learning = new Map([
-      ...worldGrowth.filter(item => item.status === 'active').map(item => [`world_growth:${item.id}`, item] as const),
-      ...personaGrowth.filter(item => item.status === 'active').map(item => [`persona_growth:${item.id}`, item] as const),
-      ...memories.filter(item => item.status === 'active').map(item => [`persona_memory:${item.id}`, item] as const),
-    ])
     const valid: PreparedPromptCandidates['valid'] = []
     const invalid: PromptContextItemSnapshot[] = []
     const seen = new Set<string>()
@@ -695,10 +715,8 @@ export class GenerationApplicationService implements TaskHandler {
       }
       const uniqueKey = promptBudgetCandidateKey(budget)
       const source = candidate.sourceId ? sources.get(candidate.sourceId) : null
-      const learningRecord = learning.get(`${candidate.entityType}:${candidate.entityId}`)
       const isValid = candidate.entityType === 'source'
-        ? Boolean(source && source.contentText.includes(candidate.content))
-        : Boolean(learningRecord && this.dependencies.sourceProcessor.hash(learningRecord.content) === candidate.contentHash)
+        && Boolean(source && source.contentText.includes(candidate.content))
       if (!isValid || seen.has(uniqueKey)) {
         invalid.push(toPromptContextItemSnapshot(budget, 'scope_or_state_invalid'))
         continue
@@ -1054,7 +1072,20 @@ export class GenerationApplicationService implements TaskHandler {
     const evidence = await this.dependencies.runs.listEvidence(run.id)
     const worldEvidence = evidence.find(item => typeof item.metadata.worldVersionId === 'string')
     const world = worldEvidence ? worldSnapshotSchema.parse(JSON.parse(worldEvidence.content)) : null
-    return { persona: version.snapshot, world, scene: run.scene, evidence: evidence.filter(item => item.role !== 'user_setting') }
+    const fixedLearningPrompts = new Map(
+      evidence
+        .filter(item => item.metadata.fixedLearningPrompt === true && typeof item.metadata.learningPromptType === 'string')
+        .map(item => [item.metadata.learningPromptType as string, item.content]),
+    )
+    return {
+      persona: version.snapshot,
+      world,
+      worldGrowthPrompt: fixedLearningPrompts.get('world_growth') ?? null,
+      personaGrowthPrompt: fixedLearningPrompts.get('persona_growth') ?? null,
+      personaMemoryPrompt: fixedLearningPrompts.get('persona_memory') ?? null,
+      scene: run.scene,
+      evidence: evidence.filter(item => item.role !== 'user_setting' && item.metadata.fixedLearningPrompt !== true),
+    }
   }
 
   /** @param id 人物 UUID。 @returns 人物。 */
@@ -1205,6 +1236,67 @@ interface PreparedPromptCandidates {
   }>
   /** 因范围、状态、正文变化或重复被拒绝的候选。 */
   invalid: PromptContextItemSnapshot[]
+}
+
+/**
+ * 统计可选已发布学习提示词正文的 Token。
+ * @param tokenCounter 当前运行使用的 Token 计数器。
+ * @param model 当前文本模型名称。
+ * @param promptText 已发布完整提示词；尚未发布时为空。
+ * @returns 与 Token 计数器一致的计数结果；空提示词固定返回零。
+ */
+function countOptionalPrompt(tokenCounter: TokenCounter, model: string, promptText: string | undefined): ReturnType<TokenCounter['count']> {
+  return promptText
+    ? tokenCounter.count(model, promptText)
+    : { tokens: 0, mode: 'estimated', counter: 'none' }
+}
+
+/**
+ * 把已发布学习提示词转换为运行证据和预算快照，确保后续执行始终读取创建运行时的固定版本。
+ * @param evidenceId 新证据 UUID。
+ * @param version 已发布学习提示词版本；尚未发布时为空。
+ * @param category 学习提示词业务类型和预算分类。
+ * @param role 证据角色。
+ * @param estimatedTokens 创建运行时估算的 Token 数。
+ * @param sourceProcessor 正文哈希处理器。
+ * @returns 可原子写入的固定证据与审计快照；无版本时返回 null。
+ */
+function toFixedLearningPromptEvidence(
+  evidenceId: string,
+  version: LearningPromptVersionView | null,
+  category: Exclude<PromptContextCategory, 'source'>,
+  role: 'growth' | 'memory',
+  estimatedTokens: number,
+  sourceProcessor: SourceContentProcessor,
+): { evidence: NewEvidenceSnapshot, snapshot: PromptContextItemSnapshot } | null {
+  if (!version) return null
+  const contentHash = sourceProcessor.hash(version.promptText)
+  return {
+    evidence: {
+      id: evidenceId,
+      sourceId: null,
+      chunkId: null,
+      role,
+      content: version.promptText,
+      contentHash,
+      rank: 0,
+      metadata: {
+        fixedLearningPrompt: true,
+        learningPromptType: category,
+        learningPromptVersionId: version.id,
+        category,
+        entityId: version.id,
+      },
+    },
+    snapshot: {
+      entityId: version.id,
+      category,
+      role,
+      contentHash,
+      estimatedTokens,
+      skippedReason: null,
+    },
+  }
 }
 
 /** @param candidate 预算候选。 @returns 可区分同一资料不同切片正文的稳定键。 */

@@ -50,29 +50,9 @@ export class SqliteContextProvider implements ContextProvider {
         linked_sources.priority, bm25(source_chunks_fts), source_chunks.ordinal
       LIMIT ?
     `).all(request.personaId, request.worldId ?? '', ftsQuery, request.limit).map(toEvidenceCandidate)
-    const learningRows = this.client.prepare(`
-      SELECT learning_fts.entity_type, learning_fts.entity_id, learning_fts.content,
-        CASE learning_fts.entity_type
-          WHEN 'memory' THEN memory_revisions.content_hash
-          ELSE growth_revisions.content_hash
-        END AS content_hash
-      FROM learning_fts
-      LEFT JOIN memory_records ON learning_fts.entity_type = 'memory'
-        AND memory_records.id = learning_fts.entity_id
-      LEFT JOIN memory_revisions ON memory_revisions.id = memory_records.current_revision_id
-      LEFT JOIN growth_records ON learning_fts.entity_type IN ('persona_growth', 'world_growth')
-        AND growth_records.id = learning_fts.entity_id
-      LEFT JOIN growth_revisions ON growth_revisions.id = growth_records.current_revision_id
-      WHERE learning_fts MATCH ? AND (
-        (learning_fts.entity_type IN ('memory', 'persona_growth') AND learning_fts.subject_id = ?)
-        OR (learning_fts.entity_type = 'world_growth' AND learning_fts.subject_id = ?)
-      )
-      ORDER BY bm25(learning_fts), learning_fts.entity_id
-      LIMIT ?
-    `).all(ftsQuery, request.personaId, request.worldId ?? '', request.limit).map(toLearningCandidate)
     return {
       provider: 'sqlite_fts5' as const,
-      candidates: [...learningRows, ...sourceRows].slice(0, request.limit),
+      candidates: sourceRows.slice(0, request.limit),
     }
   }
 }
@@ -116,23 +96,5 @@ function toEvidenceCandidate(value: unknown): EvidenceCandidate {
     content: String(row.content),
     contentHash: String(row.content_hash),
     priority: Number(row.priority),
-  }
-}
-
-/** @param value SQLite 人物成长或记忆全文检索行。 @returns 不伪装成资料外键的证据候选。 */
-function toLearningCandidate(value: unknown): EvidenceCandidate {
-  const row = value as Record<string, unknown>
-  return {
-    entityType: row.entity_type === 'memory'
-      ? 'persona_memory'
-      : row.entity_type as 'world_growth' | 'persona_growth',
-    entityId: String(row.entity_id),
-    sourceId: null,
-    chunkId: null,
-    role: row.entity_type === 'memory' ? 'memory' : 'growth',
-    heading: row.entity_type === 'memory' ? '有效记忆' : '有效成长',
-    content: String(row.content),
-    contentHash: String(row.content_hash),
-    priority: 0,
   }
 }

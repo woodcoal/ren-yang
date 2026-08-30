@@ -1,4 +1,4 @@
-import type { GrowthRecordView } from '#shared/types/learning'
+import type { GrowthMaterialView, GrowthRecordView } from '#shared/types/learning'
 
 /** 成长资料导入弹窗使用的只读来源。 */
 export interface GrowthSourceOption {
@@ -8,17 +8,31 @@ export interface GrowthSourceOption {
   label: string
   /** 将由服务端重新读取并导入的当前正文。 */
   content: string
-  /** 来源当前是否参加自动成长分析；人工导入不受此状态限制。 */
+  /** 来源当前是否允许参加普通任务检索；不影响人工导入。 */
   isEnabled: boolean
+  /** 当前来源是否已经进入成长素材池。 */
+  isImported?: boolean
 }
 
-/** 修改成长弹窗提交内容。 */
+/** 旧成长修订弹窗兼容提交内容；新页面不再使用。 */
 export interface GrowthEditorSubmission {
   /** 稳定成长 UUID。 */
   id: string
   /** 成长正文。 */
   content: string
   /** 重要程度，1–5。 */
+  importance: number
+}
+
+/** 新增或修改成长素材弹窗提交内容。 */
+export interface GrowthMaterialEditorSubmission {
+  /** 修改时的成长素材 UUID；新增时为空。 */
+  id?: string
+  /** 素材标题。 */
+  title: string
+  /** 素材正文。 */
+  content: string
+  /** AI 提炼权重，1–5。 */
   importance: number
 }
 
@@ -36,5 +50,8 @@ export interface GrowthImportSubmission {
   items: GrowthImportItem[]
 }
 
-/** 成长编辑弹窗接收的当前修订。 */
+/** 成长编辑弹窗接收的当前素材快照。 */
+export type EditableGrowthMaterial = GrowthMaterialView
+
+/** 旧成长修订弹窗兼容类型；新页面不再使用。 */
 export type EditableGrowthRecord = GrowthRecordView

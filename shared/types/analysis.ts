@@ -8,7 +8,7 @@ export interface AnalysisBatchInputView {
   /** 批次输入 UUID，供模型和证据链引用。 */
   id: string
   /** 原始数据类型。 */
-  inputType: 'world_source' | 'persona_feedback_source' | 'persona_operation_record' | 'openviking_memory'
+  inputType: 'growth_material' | 'persona_operation_record' | 'world_source' | 'persona_feedback_source' | 'openviking_memory'
   /** SQLite 原始数据 UUID。 */
   inputId: string
   /** 输入标题或摘要。 */
@@ -17,6 +17,8 @@ export interface AnalysisBatchInputView {
   contentSnapshot: string | null
   /** 正文哈希。 */
   contentHash: string
+  /** AI 提炼时的人工权重，1 到 5。 */
+  importance: number
   /** 是否属于本次增量的新输入。 */
   isNew: boolean
   /** 原始正文当前是否仍可用。 */
@@ -85,6 +87,8 @@ export interface AnalysisBatchView {
   inputs: AnalysisBatchInputView[]
   /** AI 迭代提案。 */
   proposals: IterationProposalView[]
+  /** 新模型生成完整提示词草稿时返回的提炼摘要。 */
+  resultSummary: string | null
   /** 失败稳定代码。 */
   errorCode: string | null
   /** 脱敏错误。 */

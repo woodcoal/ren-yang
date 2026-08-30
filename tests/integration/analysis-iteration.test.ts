@@ -5,6 +5,7 @@ import { resolve } from 'node:path'
 import { AnalysisApplicationService } from '../../server/application/analysis/AnalysisApplicationService'
 import { ContentApplicationService } from '../../server/application/content/ContentApplicationService'
 import { SoulApplicationService } from '../../server/application/content/SoulApplicationService'
+import { LearningApplicationService } from '../../server/application/learning/LearningApplicationService'
 import { WorkerApplicationService } from '../../server/application/tasks/WorkerApplicationService'
 import { LocalSourceFileStorage } from '../../server/infrastructure/content/LocalSourceFileStorage'
 import { NodeSourceContentProcessor } from '../../server/infrastructure/content/NodeSourceContentProcessor'
@@ -42,25 +43,27 @@ class TestClock implements Clock {
   }
 }
 
-/** 根据批次输入返回一条新增成长提案的固定测试模型。 */
+/** 返回一份完整世界成长提示词草稿的固定测试模型。 */
 class AnalysisTextModel implements TextModelPort {
+  /** 收到的最后一次模型请求。 */
+  lastRequest: TextModelRequest | null = null
+
   /** @returns 固定非敏感模型快照。 */
   getConfiguredModel() {
     return { provider: 'openai_compatible' as const, model: 'analysis-test-model', endpointOrigin: 'https://model.test' }
   }
 
-  /** @param request 结构化分析请求。 @returns 引用真实批次输入 UUID 的固定提案。 */
+  /**
+   * 返回符合新学习提示词契约的完整草稿。
+   * @param request 结构化分析请求。
+   * @returns 固定完整提示词和提炼摘要。
+   */
   async generateStructured(request: TextModelRequest): Promise<TextModelResponse> {
-    const rawInputs = /<不可信原始输入>(.*?)<\/不可信原始输入>/s.exec(request.userPrompt)?.[1] ?? '[]'
-    const inputs = JSON.parse(rawInputs) as Array<{ id: string }>
+    this.lastRequest = request
     return {
       structuredOutput: {
-        proposals: [{
-          operation: 'add', targetType: 'growth', targetIds: [],
-          proposed: { content: '城邦规划必须优先考虑稳定水运。', scope: '涉及城邦规划时', importance: 4 },
-          evidenceInputIds: [inputs[0]!.id], conflicts: [], rationale: '资料明确说明城邦依水而建。',
-        }],
-        summary: '发现一条可复用世界规则。',
+        promptText: '进行城邦规划时，优先保障稳定水运，并明确区分确定事实与推断。',
+        summary: '综合水运资料，形成城邦规划经验。',
       },
       usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
     }
@@ -69,10 +72,10 @@ class AnalysisTextModel implements TextModelPort {
 
 let directory: string
 let database: SqliteDatabase
-let content: ContentApplicationService
-let souls: SoulApplicationService
 let analysis: AnalysisApplicationService
+let learning: LearningApplicationService
 let worker: WorkerApplicationService
+let model: AnalysisTextModel
 let worldId: string
 
 beforeEach(async () => {
@@ -80,34 +83,44 @@ beforeEach(async () => {
   database = new SqliteDatabase({ dataDirectory: directory, migrationsDirectory: resolve(process.cwd(), 'drizzle') })
   const identifiers = new SequentialIdentifierGenerator()
   const clock = new TestClock()
+  const tokenCounter = new ConservativeTokenCounter()
   const contentRepository = new SqliteContentRepository(database.getClient())
   const learningRepository = new SqliteLearningRepository(database.getClient())
   const processor = new NodeSourceContentProcessor(identifiers)
-  content = new ContentApplicationService({
+  const content = new ContentApplicationService({
     repository: contentRepository,
     souls: contentRepository,
     identifiers,
     clock,
-    tokenCounter: new ConservativeTokenCounter(),
+    tokenCounter,
     tokenBudgets: { world: 2_500, persona: 3_500 },
     sourceProcessor: processor,
     sourceFiles: new LocalSourceFileStorage(directory),
   })
-  souls = new SoulApplicationService({
+  const souls = new SoulApplicationService({
     content: contentRepository,
     souls: contentRepository,
     identifiers,
     clock,
-    tokenCounter: new ConservativeTokenCounter(),
+    tokenCounter,
     tokenBudgets: { world: 2_500, persona: 3_500 },
   })
+  learning = new LearningApplicationService({
+    content: contentRepository,
+    learning: learningRepository,
+    identifiers,
+    clock,
+    tokenCounter,
+    promptTokenBudgets: { world_growth: 2_500, persona_growth: 2_500, persona_memory: 3_000 },
+  })
   const analysisRepository = new SqliteAnalysisRepository(database.getClient())
+  model = new AnalysisTextModel()
   analysis = new AnalysisApplicationService({
     content: contentRepository,
     souls: contentRepository,
     learning: learningRepository,
     analysis: analysisRepository,
-    model: new AnalysisTextModel(),
+    model,
     identifiers,
     clock,
   })
@@ -118,16 +131,13 @@ beforeEach(async () => {
     leaseDurationMs: 60_000,
   })
   const world = await content.createWorld({
-    name: '水城世界', summary: '',
-    snapshot: {
-      promptText: '城邦文明依赖河网。',
-    },
-    changeSummary: '建立世界',
+    name: '水城世界', summary: '', snapshot: { promptText: '城邦文明依赖河网。' }, changeSummary: '建立世界',
   })
   worldId = world.world.id
   await souls.publishDraft('world', worldId)
   const source = await content.createPastedSource({ name: '城邦资料', role: 'canon_fact', content: '主要城邦依水而建，运输依赖河道。' })
   await content.linkSource(source.source.id, { targetType: 'world', targetId: worldId, priority: 10 })
+  await learning.importGrowthSources('world', worldId, { items: [{ sourceId: source.source.id, importance: 5 }] })
 })
 
 afterEach(() => {
@@ -135,51 +145,54 @@ afterEach(() => {
   rmSync(directory, { recursive: true, force: true })
 })
 
-describe('AI 迭代提案与人工审核', () => {
-  it('模型分析只形成待审核提案，人工接受后才创建有效成长', async () => {
+describe('AI 综合提炼学习提示词', () => {
+  it('综合全部启用素材生成不生效草稿，保留评分并等待人工发布', async () => {
     const queued = await analysis.createBatch('world_growth', worldId, { mode: 'incremental' })
-    expect(queued).toMatchObject({ status: 'queued', proposals: [] })
-    expect(database.getClient().prepare(`SELECT COUNT(*) AS count FROM growth_records`).get()).toEqual({ count: 0 })
+    expect(queued).toMatchObject({ status: 'queued', resultSummary: null, proposals: [] })
+    expect((await learning.getWorldGrowthWorkspace(worldId)).prompt.activeVersion).toBeNull()
 
     await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: true })
-    const proposed = await analysis.getBatch(queued.id)
-    expect(proposed).toMatchObject({ status: 'awaiting_review' })
-    expect(proposed.proposals).toEqual([expect.objectContaining({ operation: 'add', status: 'pending' })])
-    expect(database.getClient().prepare(`SELECT COUNT(*) AS count FROM growth_records`).get()).toEqual({ count: 0 })
-
-    const reviewed = await analysis.review(queued.id, {
-      decisions: [{
-        proposalId: proposed.proposals[0]!.id,
-        action: 'accept',
-        reviewed: { content: '水路稳定性是城邦规划的首要条件。', scope: '规划城邦时', importance: 5 },
-      }],
+    const completed = await analysis.getBatch(queued.id)
+    expect(completed).toMatchObject({
+      status: 'completed', resultSummary: '综合水运资料，形成城邦规划经验。', proposals: [],
+      inputs: [expect.objectContaining({ inputType: 'growth_material', importance: 5 })],
     })
-    expect(reviewed).toMatchObject({ status: 'completed' })
-    expect(database.getClient().prepare(`
-      SELECT growth_records.status, growth_revisions.content, growth_revisions.scope, growth_revisions.importance
-      FROM growth_records INNER JOIN growth_revisions ON growth_revisions.id = growth_records.current_revision_id
-    `).get()).toEqual({ status: 'active', content: '水路稳定性是城邦规划的首要条件。', scope: '所有新任务', importance: 5 })
-    expect(database.getClient().prepare(`SELECT COUNT(*) AS count FROM growth_revision_evidence`).get()).toEqual({ count: 1 })
+    expect(model.lastRequest?.userPrompt).toContain('"importance":5')
+
+    const workspace = await learning.getWorldGrowthWorkspace(worldId)
+    expect(workspace.prompt).toMatchObject({
+      activeVersion: null,
+      draft: {
+        promptText: '进行城邦规划时，优先保障稳定水运，并明确区分确定事实与推断。',
+        sourceAnalysisBatchId: queued.id,
+        createdBy: 'analysis',
+      },
+    })
   })
 
-  it('增量分析不会在没有新增输入时重复创建批次，完整重建仍可人工发起', async () => {
+  it('增量提炼不会重复消费同正文同评分素材，完整重建仍可发起', async () => {
     const first = await analysis.createBatch('world_growth', worldId, { mode: 'incremental' })
     await worker.executeNext()
     await expect(analysis.createBatch('world_growth', worldId, { mode: 'incremental' }))
       .rejects.toMatchObject({ code: 'NO_NEW_ANALYSIS_INPUT', statusCode: 409 })
+
     const rebuild = await analysis.createBatch('world_growth', worldId, { mode: 'full_rebuild' })
     expect(rebuild).toMatchObject({ mode: 'full_rebuild', status: 'queued' })
     expect(rebuild.id).not.toBe(first.id)
   })
 
-  it('拒绝提案只记录审核结果，不创建长期内容', async () => {
+  it('人工发布 AI 草稿后才形成当前提示词版本', async () => {
     const batch = await analysis.createBatch('world_growth', worldId, { mode: 'incremental' })
     await worker.executeNext()
-    const proposed = await analysis.getBatch(batch.id)
-    const reviewed = await analysis.review(batch.id, {
-      decisions: [{ proposalId: proposed.proposals[0]!.id, action: 'reject', reason: '这只是局部城市规则' }],
+    const published = await learning.publishLearningPromptDraft('world_growth', worldId, { changeSummary: '确认水运规划经验' })
+    expect(published).toMatchObject({
+      versionNo: 1,
+      promptText: '进行城邦规划时，优先保障稳定水运，并明确区分确定事实与推断。',
+      sourceAnalysisBatchId: batch.id,
+      createdBy: 'analysis',
     })
-    expect(reviewed.proposals[0]).toMatchObject({ status: 'rejected', reviewReason: '这只是局部城市规则' })
-    expect(database.getClient().prepare(`SELECT COUNT(*) AS count FROM growth_records`).get()).toEqual({ count: 0 })
+    expect((await learning.getWorldGrowthWorkspace(worldId)).prompt).toMatchObject({
+      activeVersion: { id: published.id }, draft: null,
+    })
   })
 })

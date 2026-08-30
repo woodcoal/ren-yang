@@ -16,7 +16,7 @@ import type {
 } from '../../ports/FeedbackRepository'
 import { insertAuditEvent } from './AuditSql'
 
-/** 使用 SQLite 短事务保存反馈、确认动作和人物反馈资料事实。 */
+/** 使用 SQLite 短事务保存反馈、确认动作和人物成长原始素材。 */
 export class SqliteFeedbackRepository implements FeedbackRepository {
   /**
    * 创建反馈事实源仓储。
@@ -132,7 +132,7 @@ export class SqliteFeedbackRepository implements FeedbackRepository {
     `).run(feedbackId, targetType, JSON.stringify(resolution), timestamp, feedbackId, feedbackId).changes === 1
   }
 
-  /** @param command 原始反馈、所属人物和新反馈资料事实。 @returns 是否原子确认并创建人物反馈资料。 */
+  /** @param command 原始反馈、所属人物和新成长素材事实。 @returns 是否原子确认并创建人物成长素材。 */
   async confirmPersonaLearningFeedback(command: ConfirmPersonaLearningFeedbackCommand): Promise<boolean> {
     return this.client.transaction(() => {
       const value = this.client.prepare(`
@@ -163,18 +163,34 @@ export class SqliteFeedbackRepository implements FeedbackRepository {
         command.timestamp,
         command.timestamp,
       )
+      // 反馈资料表继续承担 OpenViking 投影兼容；同一固定内容同时成为新成长流程可见的独立素材。
+      this.client.prepare(`
+        INSERT INTO growth_materials (
+          id, subject_type, world_id, persona_id, title, content_snapshot, content_hash,
+          source_type, source_id, source_hash, importance, is_enabled, created_at, updated_at
+        ) VALUES (?, 'persona', NULL, ?, ?, ?, ?, 'manual', NULL, NULL, 3, 1, ?, ?)
+      `).run(
+        command.feedbackSourceId,
+        command.personaId,
+        command.title,
+        content,
+        contentHash,
+        command.timestamp,
+        command.timestamp,
+      )
       this.client.prepare(`
         INSERT INTO feedback_resolutions (feedback_id, target_type, resolution_json, confirmed_at)
         VALUES (?, 'persona', ?, ?)
       `).run(command.feedbackId, JSON.stringify({
         feedbackSourceId: command.feedbackSourceId,
+        growthMaterialId: command.feedbackSourceId,
         personaId: command.personaId,
-        action: 'created_learning_source',
+        action: 'created_growth_material',
       }), command.timestamp)
       insertAuditEvent(this.client, {
         actor: 'administrator',
-        action: 'feedback_promoted_to_learning_source',
-        targetType: 'persona_feedback_source',
+        action: 'feedback_promoted_to_growth_material',
+        targetType: 'growth_material',
         targetId: command.feedbackSourceId,
         details: { feedbackId: command.feedbackId, personaId: command.personaId },
         timestamp: command.timestamp,

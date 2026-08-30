@@ -27,6 +27,12 @@ export interface PromptBudgetSelectionInput {
   worldSoulTokens: number
   /** 人物灵魂提示词 Token。 */
   personaSoulTokens: number
+  /** 当前世界成长提示词 Token。 */
+  worldGrowthTokens: number
+  /** 当前人物成长提示词 Token。 */
+  personaGrowthTokens: number
+  /** 当前人物记忆提示词 Token。 */
+  personaMemoryTokens: number
   /** 已经过 SQLite 范围和状态校验，且按相关性排列的候选。 */
   candidates: PromptBudgetCandidate[]
 }
@@ -56,14 +62,21 @@ export function selectPromptContextByBudget(input: PromptBudgetSelectionInput): 
   if (input.worldSoulTokens > parameters.worldBudgetTokens) throw new Error('世界灵魂提示词超过世界总预算')
   if (input.personaSoulTokens > parameters.personaSoulBudgetTokens) throw new Error('人物灵魂提示词超过人物灵魂预算')
   if (input.personaSoulTokens > parameters.personaBudgetTokens) throw new Error('人物灵魂提示词超过人物总预算')
+  if (input.worldGrowthTokens > parameters.worldGrowthBudgetTokens) throw new Error('世界成长提示词超过世界成长预算')
+  if (input.worldSoulTokens + input.worldGrowthTokens > parameters.worldBudgetTokens) throw new Error('世界灵魂和成长提示词超过世界总预算')
+  if (input.personaGrowthTokens > parameters.personaGrowthBudgetTokens) throw new Error('人物成长提示词超过人物成长预算')
+  if (input.personaMemoryTokens > parameters.personaMemoryBudgetTokens) throw new Error('人物记忆提示词超过人物记忆预算')
+  if (input.personaSoulTokens + input.personaGrowthTokens + input.personaMemoryTokens > parameters.personaBudgetTokens) {
+    throw new Error('人物灵魂、成长和记忆提示词超过人物总预算')
+  }
   if (input.fixedInputTokens > availableInputTokens) throw new Error('系统规则、任务和不可省略灵魂已经超过可用输入预算')
 
   const used = {
-    world: input.worldSoulTokens,
-    worldGrowth: 0,
-    persona: input.personaSoulTokens,
-    personaGrowth: 0,
-    personaMemory: 0,
+    world: input.worldSoulTokens + input.worldGrowthTokens,
+    worldGrowth: input.worldGrowthTokens,
+    persona: input.personaSoulTokens + input.personaGrowthTokens + input.personaMemoryTokens,
+    personaGrowth: input.personaGrowthTokens,
+    personaMemory: input.personaMemoryTokens,
     sources: 0,
   }
   let totalUsed = input.fixedInputTokens

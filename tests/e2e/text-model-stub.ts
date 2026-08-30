@@ -24,6 +24,28 @@ function createStructuredOutput(body: string): string {
   const systemPrompt = payload.messages?.find(message => message.role === 'system')?.content ?? ''
   const userPrompt = payload.messages?.find(message => message.role === 'user')?.content ?? ''
 
+  // 三类学习提炼使用不同的确定文本，便于浏览器测试确认请求没有串到错误对象。
+  if (systemPrompt.includes('世界成长提示词提炼器')) {
+    return JSON.stringify({
+      promptText: '维护浮岛交通与港口规则的一致性，遇到资料冲突时明确适用条件。',
+      summary: '提炼浮岛交通和港口规则。',
+    })
+  }
+
+  if (systemPrompt.includes('人物成长提示词提炼器')) {
+    return JSON.stringify({
+      promptText: '表达时先给出结论，再用可核验的依据说明判断，并保持克制。',
+      summary: '提炼人物的表达与判断方式。',
+    })
+  }
+
+  if (systemPrompt.includes('人物记忆提示词提炼器')) {
+    return JSON.stringify({
+      promptText: '记住曾完成学院课程介绍；后续同类任务优先采用严谨、克制且便于导出的结构。',
+      summary: '从已完成任务提炼表达经验。',
+    })
+  }
+
   if (systemPrompt.includes('规划一份统一文档规格')) {
     return JSON.stringify({
       title: '学院观察',

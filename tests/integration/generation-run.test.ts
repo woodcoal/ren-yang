@@ -6,6 +6,7 @@ import { unzipSync } from 'fflate'
 import { ContentApplicationService } from '../../server/application/content/ContentApplicationService'
 import { SoulApplicationService } from '../../server/application/content/SoulApplicationService'
 import { DEFAULT_TEXT_PARAMETERS, GenerationApplicationService } from '../../server/application/generation/GenerationApplicationService'
+import { LearningApplicationService } from '../../server/application/learning/LearningApplicationService'
 import { WorkerApplicationService } from '../../server/application/tasks/WorkerApplicationService'
 import { LocalSourceFileStorage } from '../../server/infrastructure/content/LocalSourceFileStorage'
 import { LocalImageAssetStorage } from '../../server/infrastructure/content/LocalImageAssetStorage'
@@ -180,6 +181,7 @@ const PERSONA_SNAPSHOT: PersonaSnapshot = {
 let directory: string
 let database: SqliteDatabase
 let contentService: ContentApplicationService
+let learningService: LearningApplicationService
 let generation: GenerationApplicationService
 let worker: WorkerApplicationService
 let model: FixedTextModel
@@ -197,10 +199,11 @@ beforeEach(async () => {
   const contentRepository = new SqliteContentRepository(database.getClient())
   const learningRepository = new SqliteLearningRepository(database.getClient())
   const processor = new NodeSourceContentProcessor(identifiers)
+  const tokenCounter = new ConservativeTokenCounter()
   imageAssets = new LocalImageAssetStorage(directory)
   contentService = new ContentApplicationService({
     repository: contentRepository, souls: contentRepository, identifiers, clock: testClock,
-    tokenCounter: new ConservativeTokenCounter(), tokenBudgets: { world: 2_500, persona: 3_500 }, sourceProcessor: processor,
+    tokenCounter, tokenBudgets: { world: 2_500, persona: 3_500 }, sourceProcessor: processor,
     sourceFiles: new LocalSourceFileStorage(directory), imageAssets,
   })
   const source = await contentService.createPastedSource({
@@ -220,6 +223,14 @@ beforeEach(async () => {
     tokenBudgets: { world: 2_500, persona: 3_500 },
   }).publishDraft('persona', persona.persona.id)
   personaId = persona.persona.id
+  learningService = new LearningApplicationService({
+    content: contentRepository,
+    learning: learningRepository,
+    identifiers,
+    clock: testClock,
+    tokenCounter,
+    promptTokenBudgets: { world_growth: 2_500, persona_growth: 2_500, persona_memory: 3_000 },
+  })
   model = new FixedTextModel()
   imageModel = new FixedImageModel()
   generation = new GenerationApplicationService({
@@ -287,6 +298,14 @@ describe('阶段三纯文本运行', () => {
   })
 
   it('保存固定输入与证据快照并完成结构化兴趣判断', async () => {
+    await learningService.saveLearningPromptDraft('persona_growth', personaId, {
+      promptText: '回答时先给简洁结论。', baseVersionId: null,
+    })
+    await learningService.publishLearningPromptDraft('persona_growth', personaId, { changeSummary: '建立成长提示词' })
+    await learningService.saveLearningPromptDraft('persona_memory', personaId, {
+      promptText: '过去处理事实内容时会优先核验依据。', baseVersionId: null,
+    })
+    await learningService.publishLearningPromptDraft('persona_memory', personaId, { changeSummary: '建立记忆提示词' })
     model.invalidInterestOnce = true
     const created = await generation.createInterestRun({
       personaId,
@@ -301,17 +320,25 @@ describe('阶段三纯文本运行', () => {
       status: 'succeeded',
       result: { decision: 'interested', probability: 0.88, confidence: 0.82 },
       scene: { location: '图书馆' },
-      promptVersion: 'artifact-v7',
+      promptVersion: 'artifact-v8',
       contextProvider: 'sqlite_fts5',
       promptContext: {
         tokenCountExact: false,
         personaSoulVersionId: details.run.personaVersionId,
-        selected: [expect.objectContaining({ category: 'source', role: 'canon_fact', skippedReason: null })],
+        selected: [
+          expect.objectContaining({ category: 'persona_growth', role: 'growth', skippedReason: null }),
+          expect.objectContaining({ category: 'persona_memory', role: 'memory', skippedReason: null }),
+          expect.objectContaining({ category: 'source', role: 'canon_fact', skippedReason: null }),
+        ],
         skipped: [],
       },
     })
-    expect(details.evidence.map(item => item.role)).toEqual(['user_setting', 'canon_fact'])
-    expect(details.run.result?.supportingEvidenceIds).toEqual([details.evidence[1]!.id])
+    expect(details.evidence.map(item => item.role)).toEqual(['user_setting', 'growth', 'memory', 'canon_fact'])
+    expect(details.evidence[1]?.metadata).toMatchObject({ fixedLearningPrompt: true, learningPromptType: 'persona_growth' })
+    expect(details.evidence[2]?.metadata).toMatchObject({ fixedLearningPrompt: true, learningPromptType: 'persona_memory' })
+    expect(details.run.result?.supportingEvidenceIds).toEqual([details.evidence[3]!.id])
+    expect(model.requests.get('interest_assessment')?.userPrompt).toContain('<当前人物成长提示词>"回答时先给简洁结论。"</当前人物成长提示词>')
+    expect(model.requests.get('interest_assessment')?.userPrompt).toContain('<当前人物记忆提示词>"过去处理事实内容时会优先核验依据。"</当前人物记忆提示词>')
     expect(model.calls.get('interest_assessment')).toBe(2)
     expect(details.run.usage).toEqual({ inputTokens: 20, outputTokens: 10, totalTokens: 30 })
     expect(database.getClient().prepare(`

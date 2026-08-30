@@ -153,7 +153,7 @@ async function submitFeedback(input: SubmitFeedbackInput): Promise<void> {
   await executeAction(async () => {
     await runWithAiLoading({
       title: 'AI 正在分析反馈用途',
-      description: '模型正在判断反馈更适合作为本次修正、人物学习资料或其他长期依据。',
+      description: '模型正在判断反馈更适合作为本次修正、人物成长素材或其他长期依据。',
       completionHint: '完成后会展示分类建议，最终用途仍由你确认。',
     }, async () => await $fetch(`/api/v1/runs/${runId}/feedback`, { method: 'POST', body: input }))
     await refreshFeedback()
@@ -167,7 +167,7 @@ async function confirmFeedback(feedbackId: string, input: ConfirmFeedbackClassif
     await $fetch(`/api/v1/feedback/${feedbackId}/classify`, { method: 'POST', body: input })
     await Promise.all([refreshFeedback(), refreshPersona()])
     actionMessage.value = input.targetType === 'persona'
-      ? '已创建候选人物版本与修订提案'
+      ? '反馈已加入人物成长素材池，尚未改变当前提示词'
       : '反馈分类已确认，对应动作已执行'
   })
 }
@@ -337,7 +337,7 @@ function skippedReasonLabel(reason: string | null): string {
           </UCard>
 
           <UCard v-if="selectedTab === 'feedback'">
-            <template #header><div><h2 class="font-semibold text-highlighted">运行反馈</h2><p class="mt-1 text-sm text-muted">原始反馈不会直接改写人物；确认“作为人物学习资料”后，仍需成长分析和人工审核。</p></div></template>
+            <template #header><div><h2 class="font-semibold text-highlighted">运行反馈</h2><p class="mt-1 text-sm text-muted">原始反馈不会直接改写人物；确认“作为人物成长素材”后，仍需 AI 提炼、人工校准和发布。</p></div></template>
             <div class="space-y-5">
               <FeedbackForm :blocks="details.blocks" :loading="actionLoading" @submit="submitFeedback" />
               <template v-if="pendingFeedback.length">

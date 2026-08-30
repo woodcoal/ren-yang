@@ -275,6 +275,52 @@ export const personaFeedbackSources = sqliteTable(
   ],
 )
 
+/** 世界与人物共用的成长原始素材快照。 */
+export const growthMaterials = sqliteTable(
+  'growth_materials',
+  {
+    id: text('id').primaryKey(),
+    subjectType: text('subject_type').notNull(),
+    worldId: text('world_id').references(() => worlds.id, { onDelete: 'cascade' }),
+    personaId: text('persona_id').references(() => personas.id, { onDelete: 'cascade' }),
+    title: text('title').notNull(),
+    contentSnapshot: text('content_snapshot').notNull(),
+    contentHash: text('content_hash').notNull(),
+    sourceType: text('source_type').notNull(),
+    sourceId: text('source_id'),
+    sourceHash: text('source_hash'),
+    importance: integer('importance').notNull().default(3),
+    isEnabled: integer('is_enabled').notNull().default(1),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  table => [
+    index('growth_materials_world_enabled_index').on(table.worldId, table.isEnabled, table.updatedAt),
+    index('growth_materials_persona_enabled_index').on(table.personaId, table.isEnabled, table.updatedAt),
+    uniqueIndex('growth_materials_world_source_unique')
+      .on(table.worldId, table.sourceId)
+      .where(sql`${table.subjectType} = 'world' AND ${table.sourceType} = 'source_material'`),
+    uniqueIndex('growth_materials_persona_source_unique')
+      .on(table.personaId, table.sourceId)
+      .where(sql`${table.subjectType} = 'persona' AND ${table.sourceType} = 'source_material'`),
+    check('growth_materials_subject_type_check', sql`${table.subjectType} IN ('world', 'persona')`),
+    check('growth_materials_subject_check', sql`(
+      (${table.subjectType} = 'world' AND ${table.worldId} IS NOT NULL AND ${table.personaId} IS NULL)
+      OR (${table.subjectType} = 'persona' AND ${table.personaId} IS NOT NULL AND ${table.worldId} IS NULL)
+    )`),
+    check('growth_materials_title_check', sql`length(trim(${table.title})) > 0`),
+    check('growth_materials_content_check', sql`length(trim(${table.contentSnapshot})) > 0`),
+    check('growth_materials_hash_check', sql`length(${table.contentHash}) = 64`),
+    check('growth_materials_source_type_check', sql`${table.sourceType} IN ('source_material', 'manual', 'legacy')`),
+    check('growth_materials_source_check', sql`(
+      (${table.sourceType} = 'source_material' AND ${table.sourceId} IS NOT NULL AND ${table.sourceHash} IS NOT NULL)
+      OR ${table.sourceType} IN ('manual', 'legacy')
+    )`),
+    check('growth_materials_importance_check', sql`${table.importance} BETWEEN 1 AND 5`),
+    check('growth_materials_enabled_check', sql`${table.isEnabled} IN (0, 1)`),
+  ],
+)
+
 /** 世界与人物共用的逻辑成长记录。 */
 export const growthRecords = sqliteTable(
   'growth_records',
@@ -441,6 +487,7 @@ export const personaOperationRecords = sqliteTable(
     isEnabled: integer('is_enabled').notNull().default(1),
     contextSnapshotJson: text('context_snapshot_json').notNull(),
     sessionRecordId: text('session_record_id'),
+    importance: integer('importance').notNull().default(3),
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull(),
   },
@@ -452,6 +499,7 @@ export const personaOperationRecords = sqliteTable(
     check('persona_operation_records_enabled_check', sql`${table.isEnabled} IN (0, 1)`),
     check('persona_operation_records_decision_json_check', sql`${table.decisionJson} IS NULL OR json_valid(${table.decisionJson})`),
     check('persona_operation_records_context_json_check', sql`json_valid(${table.contextSnapshotJson})`),
+    check('persona_operation_records_importance_check', sql`${table.importance} BETWEEN 1 AND 5`),
   ],
 )
 
@@ -574,6 +622,7 @@ export const analysisBatchInputs = sqliteTable(
     contentHash: text('content_hash').notNull(),
     title: text('title').notNull(),
     contentSnapshot: text('content_snapshot'),
+    importance: integer('importance').notNull().default(3),
     isNew: integer('is_new').notNull().default(1),
     sourceAvailable: integer('source_available').notNull().default(1),
     createdAt: integer('created_at').notNull(),
@@ -581,8 +630,9 @@ export const analysisBatchInputs = sqliteTable(
   table => [
     uniqueIndex('analysis_batch_inputs_unique').on(table.batchId, table.inputType, table.inputId),
     index('analysis_batch_inputs_source_index').on(table.inputType, table.inputId),
-    check('analysis_batch_inputs_type_check', sql`${table.inputType} IN ('world_source', 'persona_feedback_source', 'persona_operation_record', 'openviking_memory')`),
+    check('analysis_batch_inputs_type_check', sql`${table.inputType} IN ('growth_material', 'persona_operation_record', 'world_source', 'persona_feedback_source', 'openviking_memory')`),
     check('analysis_batch_inputs_hash_check', sql`length(${table.contentHash}) = 64`),
+    check('analysis_batch_inputs_importance_check', sql`${table.importance} BETWEEN 1 AND 5`),
     check('analysis_batch_inputs_new_check', sql`${table.isNew} IN (0, 1)`),
     check('analysis_batch_inputs_available_check', sql`${table.sourceAvailable} IN (0, 1)`),
   ],
@@ -619,6 +669,77 @@ export const iterationProposals = sqliteTable(
     check('iteration_proposals_reviewed_json_check', sql`${table.reviewedJson} IS NULL OR json_valid(${table.reviewedJson})`),
     check('iteration_proposals_evidence_json_check', sql`json_valid(${table.evidenceInputIdsJson})`),
     check('iteration_proposals_conflicts_json_check', sql`json_valid(${table.conflictsJson})`),
+  ],
+)
+
+/** 世界成长、人物成长和人物记忆各自唯一的学习提示词。 */
+export const learningPrompts = sqliteTable(
+  'learning_prompts',
+  {
+    id: text('id').primaryKey(),
+    promptType: text('prompt_type').notNull(),
+    worldId: text('world_id').references(() => worlds.id, { onDelete: 'cascade' }),
+    personaId: text('persona_id').references(() => personas.id, { onDelete: 'cascade' }),
+    activeVersionId: text('active_version_id'),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  table => [
+    uniqueIndex('learning_prompts_world_type_unique').on(table.worldId, table.promptType),
+    uniqueIndex('learning_prompts_persona_type_unique').on(table.personaId, table.promptType),
+    check('learning_prompts_type_check', sql`${table.promptType} IN ('world_growth', 'persona_growth', 'persona_memory')`),
+    check('learning_prompts_subject_check', sql`(
+      (${table.promptType} = 'world_growth' AND ${table.worldId} IS NOT NULL AND ${table.personaId} IS NULL)
+      OR (${table.promptType} IN ('persona_growth', 'persona_memory') AND ${table.personaId} IS NOT NULL AND ${table.worldId} IS NULL)
+    )`),
+  ],
+)
+
+/** 已发布且不可变的完整学习提示词历史版本。 */
+export const learningPromptVersions = sqliteTable(
+  'learning_prompt_versions',
+  {
+    id: text('id').primaryKey(),
+    promptId: text('prompt_id').notNull().references(() => learningPrompts.id, { onDelete: 'cascade' }),
+    versionNo: integer('version_no').notNull(),
+    parentVersionId: text('parent_version_id'),
+    promptText: text('prompt_text').notNull(),
+    contentHash: text('content_hash').notNull(),
+    sourceAnalysisBatchId: text('source_analysis_batch_id').references(() => analysisBatches.id, { onDelete: 'set null' }),
+    changeSummary: text('change_summary').notNull(),
+    createdBy: text('created_by').notNull(),
+    publishedAt: integer('published_at').notNull(),
+  },
+  table => [
+    uniqueIndex('learning_prompt_versions_prompt_number_unique').on(table.promptId, table.versionNo),
+    index('learning_prompt_versions_prompt_published_index').on(table.promptId, table.publishedAt),
+    check('learning_prompt_versions_number_check', sql`${table.versionNo} > 0`),
+    check('learning_prompt_versions_text_check', sql`length(trim(${table.promptText})) > 0`),
+    check('learning_prompt_versions_hash_check', sql`length(${table.contentHash}) = 64`),
+    check('learning_prompt_versions_summary_check', sql`length(trim(${table.changeSummary})) > 0`),
+    check('learning_prompt_versions_creator_check', sql`${table.createdBy} IN ('analysis', 'user', 'migration')`),
+  ],
+)
+
+/** 发布前可编辑且不会进入任务的学习提示词草稿。 */
+export const learningPromptDrafts = sqliteTable(
+  'learning_prompt_drafts',
+  {
+    id: text('id').primaryKey(),
+    promptId: text('prompt_id').notNull().references(() => learningPrompts.id, { onDelete: 'cascade' }),
+    baseVersionId: text('base_version_id').references(() => learningPromptVersions.id, { onDelete: 'set null' }),
+    promptText: text('prompt_text').notNull(),
+    contentHash: text('content_hash').notNull(),
+    sourceAnalysisBatchId: text('source_analysis_batch_id').references(() => analysisBatches.id, { onDelete: 'set null' }),
+    createdBy: text('created_by').notNull(),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  table => [
+    uniqueIndex('learning_prompt_drafts_prompt_unique').on(table.promptId),
+    check('learning_prompt_drafts_text_check', sql`length(trim(${table.promptText})) > 0`),
+    check('learning_prompt_drafts_hash_check', sql`length(${table.contentHash}) = 64`),
+    check('learning_prompt_drafts_creator_check', sql`${table.createdBy} IN ('analysis', 'user', 'migration')`),
   ],
 )
 
@@ -927,6 +1048,7 @@ export const databaseSchema = {
   personaSources,
   worldSources,
   personaFeedbackSources,
+  growthMaterials,
   growthRecords,
   growthRevisions,
   growthRevisionEvidence,
@@ -940,6 +1062,9 @@ export const databaseSchema = {
   analysisBatches,
   analysisBatchInputs,
   iterationProposals,
+  learningPrompts,
+  learningPromptVersions,
+  learningPromptDrafts,
   evidenceSnapshots,
   documentSpecs,
   artifactDocuments,

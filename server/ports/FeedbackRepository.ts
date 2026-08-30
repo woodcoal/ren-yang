@@ -12,21 +12,21 @@ export interface FeedbackAggregate {
   resolution: FeedbackResolutionRecord | null
 }
 
-/** 人物反馈资料确认事务所需事实。 */
+/** 人物反馈转为成长素材的事务所需事实。 */
 export interface ConfirmPersonaLearningFeedbackCommand {
   /** 原始反馈 UUID。 */
   feedbackId: string
-  /** 新人物反馈资料 UUID。 */
+  /** 新成长素材与兼容反馈资料共用的 UUID。 */
   feedbackSourceId: string
   /** 反馈所属运行固定的人物 UUID。 */
   personaId: string
-  /** 成长页展示标题。 */
+  /** 成长素材池展示标题。 */
   title: string
   /** 统一确认时间。 */
   timestamp: number
 }
 
-/** 反馈、确认动作和人物反馈资料的事务事实源端口。 */
+/** 反馈、确认动作和人物成长素材的事务事实源端口。 */
 export interface FeedbackRepository {
   /** @param event 原始反馈。 @param suggestion AI 分类建议。 @returns 运行和块关系有效时为 true。 */
   createFeedback(event: FeedbackEventRecord, suggestion: FeedbackSuggestionRecord): Promise<boolean>
@@ -40,7 +40,7 @@ export interface FeedbackRepository {
   confirmArtifactFeedback(feedbackId: string, blockId: string, taskId: string, timestamp: number): Promise<boolean>
   /** @param feedbackId 反馈 UUID。 @param targetType 参数或资料目标。 @param resolution 业务结果。 @param timestamp 确认时间。 @returns 是否首次确认。 */
   confirmSimpleFeedback(feedbackId: string, targetType: 'parameters' | 'source_fact', resolution: Record<string, unknown>, timestamp: number): Promise<boolean>
-  /** @param command 原始反馈、所属人物和新反馈资料事实。 @returns 是否原子确认并创建人物反馈资料。 */
+  /** @param command 原始反馈、所属人物和新成长素材事实。 @returns 是否原子确认并创建人物成长素材。 */
   confirmPersonaLearningFeedback(command: ConfirmPersonaLearningFeedbackCommand): Promise<boolean>
   /** @param personaId 人物 UUID。 @returns 活动用例在前、停用用例在后的列表。 */
   listEvaluationCases(personaId: string): Promise<EvaluationCaseRecord[]>

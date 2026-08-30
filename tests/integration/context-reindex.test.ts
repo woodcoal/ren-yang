@@ -236,7 +236,7 @@ describe('OpenViking 可关闭索引与 SQLite 重建', () => {
     })
   })
 
-  it('FTS5 只检索已生效成长和记忆，不暴露候选内容', async () => {
+  it('FTS5 不再按相关性检索旧成长和记忆记录', async () => {
     database.getClient().prepare(`
       INSERT INTO personas (id, world_id, name, origin, active_soul_version_id, created_at, updated_at)
       VALUES ('00000000-0000-4000-8000-000000000200', NULL, '测试人物', 'original', NULL, 1000, 1000)
@@ -261,7 +261,7 @@ describe('OpenViking 可关闭索引与 SQLite 重建', () => {
 
     await expect(provider.search({
       personaId: '00000000-0000-4000-8000-000000000200', worldId: null, query: '长期偏好使用克制表达', limit: 5,
-    })).resolves.toMatchObject({ provider: 'sqlite_fts5', candidates: [{ role: 'memory', content: '长期偏好使用克制表达' }] })
+    })).resolves.toEqual({ provider: 'sqlite_fts5', candidates: [] })
     await expect(provider.search({
       personaId: '00000000-0000-4000-8000-000000000200', worldId: null, query: '候选偏好使用夸张表达', limit: 5,
     })).resolves.toEqual({ provider: 'sqlite_fts5', candidates: [] })
@@ -306,6 +306,8 @@ describe('OpenViking 可关闭索引与 SQLite 重建', () => {
       learning: new SqliteLearningRepository(database.getClient()),
       identifiers,
       clock,
+      tokenCounter: new ConservativeTokenCounter(),
+      promptTokenBudgets: { world_growth: 2_500, persona_growth: 2_500, persona_memory: 3_000 },
       contextSyncQueue: queue,
     })
     const openViking = new InMemoryOpenViking()

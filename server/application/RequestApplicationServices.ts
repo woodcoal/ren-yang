@@ -19,11 +19,11 @@ export interface RequestApplicationServices {
   soul: SoulApplicationService
   /** 世界成长、人物成长和人物记忆人工管理用例。 */
   learning: LearningApplicationService
-  /** AI 成长与记忆分析批次和人工提案审核用例。 */
+  /** AI 成长与记忆提炼批次用例。 */
   analysis: AnalysisApplicationService
   /** 兴趣判断、文档规划、生成和运行历史用例。 */
   generation: GenerationApplicationService
-  /** 反馈归因、一次性动作和人物学习资料确认用例。 */
+  /** 反馈归因、一次性动作和人物成长素材确认用例。 */
   feedback: FeedbackApplicationService
   /** OpenViking 检测、同步状态和全量重建用例。 */
   contextSynchronization: ContextSynchronizationApplicationService

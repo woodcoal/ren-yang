@@ -62,7 +62,7 @@ function confirm(): void {
       <select v-model="form.targetType" class="native-control">
         <option value="artifact">只修正当前产物</option>
         <option value="parameters">记录运行参数建议</option>
-        <option value="persona">作为人物学习资料</option>
+        <option value="persona">作为人物成长素材</option>
         <option value="source_fact">记录资料事实问题</option>
       </select>
     </UFormField>
@@ -77,8 +77,8 @@ function confirm(): void {
     <UAlert
       v-if="form.targetType === 'persona'"
       color="warning"
-      title="确认后加入人物反馈资料"
-      description="该资料会等待人物成长分析；AI 只能生成候选成长，必须由你审核后才会影响后续任务。不会直接修改人物灵魂或记忆。"
+      title="确认后加入人物成长素材池"
+      description="反馈会以默认 3 分作为独立素材；之后可调整评分并由 AI 提炼完整草稿，人工校准发布后才会进入新任务。不会直接修改人物灵魂或记忆。"
     />
 
     <template v-if="form.targetType === 'source_fact'">

@@ -3,13 +3,23 @@ import type { FormSubmitEvent } from '@nuxt/ui'
 import { computed, reactive, shallowRef } from 'vue'
 import type { CreateSourceWithTargetsInput, SaveSoulVersionInput, UpdatePersonaInput } from '#shared/schemas/content'
 import { updatePersonaSchema } from '#shared/schemas/content'
-import type { ImportGrowthSourcesInput, UpdateGrowthInput } from '#shared/schemas/learning'
+import type {
+  CreateGrowthMaterialInput,
+  CreateLearningPromptDraftFromVersionInput,
+  ImportGrowthSourcesInput,
+  PublishLearningPromptDraftInput,
+  SaveLearningPromptDraftInput,
+  UpdateGrowthMaterialInput,
+  UpdateOperationRecordInput,
+} from '#shared/schemas/learning'
 import type { ApiResponse } from '#shared/types/api'
 import type { DeletionImpact, PersonaDetails, SoulWorkspaceView, SourceDetails, SourceSummary, WorldSummary } from '#shared/types/content'
 import type { PersonaGrowthWorkspaceView, PersonaMemoryWorkspaceView } from '#shared/types/learning'
-import type { AnalysisBatchView, ProposedLearningContentView } from '#shared/types/analysis'
+import type { AnalysisBatchView } from '#shared/types/analysis'
 import AnalysisPanel from '../../components/analysis/AnalysisPanel.vue'
 import type { SourceFileSubmission } from '../../components/content/SourceImportForm.vue'
+import GrowthMaterialPanel from '../../components/learning/GrowthMaterialPanel.vue'
+import LearningPromptPanel from '../../components/learning/LearningPromptPanel.vue'
 import { getApiErrorMessage } from '../../utils/apiError'
 
 type PersonaTab = 'overview' | 'soul' | 'growth' | 'memory' | 'sources' | 'relations'
@@ -40,8 +50,14 @@ const details = computed(() => data.value?.data ?? null)
 const soul = computed(() => soulData.value?.data ?? null)
 const worlds = computed(() => worldData.value?.data ?? [])
 const allSources = computed(() => sourceData.value?.data ?? [])
-const growthWorkspace = computed(() => growthData.value?.data ?? { feedbackSources: [], growth: [] })
-const memoryWorkspace = computed(() => memoryData.value?.data ?? { operationRecords: [], memories: [] })
+const growthWorkspace = computed<PersonaGrowthWorkspaceView>(() => growthData.value?.data ?? {
+  sources: [], materials: [],
+  prompt: { promptType: 'persona_growth', activeVersion: null, draft: null, versions: [] },
+})
+const memoryWorkspace = computed<PersonaMemoryWorkspaceView>(() => memoryData.value?.data ?? {
+  operationRecords: [],
+  prompt: { promptType: 'persona_memory', activeVersion: null, draft: null, versions: [] },
+})
 const growthAnalysis = computed(() => growthAnalysisData.value?.data ?? null)
 const memoryAnalysis = computed(() => memoryAnalysisData.value?.data ?? null)
 const tabs: Array<{ id: PersonaTab, label: string }> = [
@@ -113,72 +129,60 @@ async function saveSoulVersion(input: SaveSoulVersionInput): Promise<void> {
   })
 }
 
-/** @param input 新人物反馈资料。 @returns 创建和成长工作区刷新完成时结束。 */
-async function createFeedbackSource(input: { title: string, content: string, sourceType: 'manual' }): Promise<void> {
-  await runAction('反馈资料已加入人物成长来源', async () => {
-    await $fetch(`/api/v1/personas/${personaId}/feedback-sources`, { method: 'POST', body: input })
-    await refreshGrowth()
-  })
-}
-
-/** @param input 反馈资料批量启用状态。 @returns 更新和成长工作区刷新完成时结束。 */
-async function updateFeedbackSourceStatus(input: { ids: string[], isEnabled: boolean }): Promise<void> {
-  await runAction(input.isEnabled ? '所选反馈资料已启用' : '所选反馈资料已禁用', async () => {
-    await $fetch(`/api/v1/personas/${personaId}/feedback-sources/status`, { method: 'PATCH', body: input })
-    await refreshGrowth()
-  })
-}
-
-/** @param input 待永久删除的反馈资料。 @returns 删除和成长工作区刷新完成时结束。 */
-async function deleteFeedbackSources(input: { ids: string[] }): Promise<void> {
-  await runAction('所选反馈资料已删除；已确认成长保持不变', async () => {
-    await $fetch(`/api/v1/personas/${personaId}/feedback-sources`, { method: 'DELETE', body: input })
-    await refreshGrowth()
-  })
-}
-
 /**
- * 按逐条人工评分把人物反馈资料批量导入成长候选。
- * @param input 资料 UUID 与重要程度评分。
- * @returns 整批导入和成长工作区刷新完成时结束。
+ * 按逐条人工评分把人物资料库内容批量复制为成长素材。
+ * @param input 资料 UUID 与 AI 提炼评分。
+ * @returns 整批导入和成长素材池刷新完成时结束。
  */
 async function importGrowthSources(input: ImportGrowthSourcesInput): Promise<void> {
-  await runAction(`已从 ${input.items.length} 项资料创建待确认成长`, async () => {
+  await runAction(`已从资料库导入 ${input.items.length} 项成长素材`, async () => {
     await $fetch(`/api/v1/personas/${personaId}/growth/import`, { method: 'POST', body: input })
     await refreshGrowth()
   })
 }
 
 /**
- * 修改人物成长并建立新的待确认修订。
- * @param input 成长 UUID 及新正文、重要程度。
- * @returns 修改和成长工作区刷新完成时结束。
+ * 手工添加只用于成长提炼的独立文档。
+ * @param input 素材标题、完整正文和评分。
+ * @returns 添加和成长素材池刷新完成时结束。
  */
-async function updateGrowth(input: UpdateGrowthInput & { id: string }): Promise<void> {
-  await runAction('成长新修订已保存，重新启用后进入新任务', async () => {
+async function createGrowthMaterial(input: CreateGrowthMaterialInput): Promise<void> {
+  await runAction('手工文档已加入人物成长素材池', async () => {
+    await $fetch(`/api/v1/personas/${personaId}/growth`, { method: 'POST', body: input })
+    await refreshGrowth()
+  })
+}
+
+/**
+ * 修改人物成长素材的固定标题、正文快照和评分。
+ * @param input 素材 UUID 与完整新内容。
+ * @returns 修改和成长素材池刷新完成时结束。
+ */
+async function updateGrowthMaterial(input: UpdateGrowthMaterialInput & { id: string }): Promise<void> {
+  await runAction('人物成长素材已修改', async () => {
     await $fetch(`/api/v1/personas/${personaId}/growth/${input.id}`, {
       method: 'PATCH',
-      body: { content: input.content, importance: input.importance },
+      body: { title: input.title, content: input.content, importance: input.importance },
     })
     await refreshGrowth()
   })
 }
 
-/** @param input 成长批量目标状态。 @returns 审核和成长工作区刷新完成时结束。 */
-async function updateGrowthStatus(input: { ids: string[], status: 'active' | 'archived' | 'rejected' }): Promise<void> {
-  await runAction('人物成长状态已更新', async () => {
+/** @param input 成长素材批量启用状态。 @returns 更新和成长素材池刷新完成时结束。 */
+async function updateGrowthMaterialStatus(input: { ids: string[], isEnabled: boolean }): Promise<void> {
+  await runAction(input.isEnabled ? '所选成长素材已参加提炼' : '所选成长素材已不参加提炼', async () => {
     await $fetch(`/api/v1/personas/${personaId}/growth/status`, { method: 'PATCH', body: input })
     await refreshGrowth()
   })
 }
 
 /**
- * 永久删除所选人物成长及其全部历史修订。
- * @param input 待删除成长 UUID 集合。
- * @returns 原子删除和成长工作区刷新完成时结束。
+ * 永久删除所选人物成长素材快照。
+ * @param input 待删除素材 UUID 集合。
+ * @returns 删除和成长素材池刷新完成时结束。
  */
-async function deleteGrowth(input: { ids: string[] }): Promise<void> {
-  await runAction('所选人物成长已永久删除', async () => {
+async function deleteGrowthMaterials(input: { ids: string[] }): Promise<void> {
+  await runAction('所选人物成长素材已删除', async () => {
     await $fetch(`/api/v1/personas/${personaId}/growth`, { method: 'DELETE', body: input })
     await refreshGrowth()
   })
@@ -186,54 +190,75 @@ async function deleteGrowth(input: { ids: string[] }): Promise<void> {
 
 /** @param input 处理记录批量启用状态。 @returns 更新和记忆工作区刷新完成时结束。 */
 async function updateOperationRecordStatus(input: { ids: string[], isEnabled: boolean }): Promise<void> {
-  await runAction(input.isEnabled ? '所选处理记录已参加记忆分析' : '所选处理记录已不参加记忆分析', async () => {
+  await runAction(input.isEnabled ? '所选历史任务已参加记忆提炼' : '所选历史任务已不参加记忆提炼', async () => {
     await $fetch(`/api/v1/personas/${personaId}/operation-records`, { method: 'PATCH', body: input })
     await refreshMemory()
   })
 }
 
-/** @param input 记忆批量目标状态。 @returns 审核和记忆工作区刷新完成时结束。 */
-async function updateMemoryStatus(input: { ids: string[], status: 'active' | 'archived' | 'rejected' }): Promise<void> {
-  await runAction('人物记忆状态已更新', async () => {
-    await $fetch(`/api/v1/personas/${personaId}/memories/status`, { method: 'PATCH', body: input })
+/** @param input 历史任务 UUID 和新评分。 @returns 评分更新和记忆工作区刷新完成时结束。 */
+async function updateOperationRecordImportance(input: UpdateOperationRecordInput & { id: string }): Promise<void> {
+  await runAction('历史任务提炼评分已更新', async () => {
+    await $fetch(`/api/v1/personas/${personaId}/operation-records/${input.id}`, {
+      method: 'PATCH', body: { importance: input.importance },
+    })
     await refreshMemory()
   })
 }
 
-/** @param memoryId 记忆 UUID。 @returns 转换和两个工作区刷新完成时结束。 */
-async function convertMemoryToFeedbackSource(memoryId: string): Promise<void> {
-  await runAction('记忆已复制为人物反馈资料，尚未自动形成成长', async () => {
-    await $fetch(`/api/v1/personas/${personaId}/memories/${memoryId}/to-feedback-source`, { method: 'POST' })
-    await Promise.all([refreshGrowth(), refreshMemory()])
-  })
-}
-
-/** @param target 成长或记忆。 @param mode 增量或完整重建。 @returns 批次创建和状态刷新完成时结束。 */
+/** @param target 成长或记忆。 @param mode 结合新增素材或完整重建。 @returns 批次创建和状态刷新完成时结束。 */
 async function analyzeLearning(target: 'growth' | 'memory', mode: 'incremental' | 'full_rebuild'): Promise<void> {
-  await runAction('分析任务已排队；稍后刷新状态查看 AI 提案', async () => {
+  await runAction('AI 提炼任务已排队；完成后会生成待校准草稿', async () => {
     const path = target === 'growth' ? 'growth' : 'memories'
     const targetLabel = target === 'growth' ? '成长' : '记忆'
     await runWithAiLoading({
-      title: `AI 正在启动人物${targetLabel}分析`,
-      description: mode === 'incremental' ? '系统正在提交新增资料分析任务。' : '系统正在提交全部资料重新分析任务。',
-      completionHint: '任务进入队列后会返回当前页面，可稍后刷新查看 AI 提案。',
+      title: `AI 正在启动人物${targetLabel}提炼`,
+      description: mode === 'incremental' ? '系统正在结合新增素材生成完整提示词草稿。' : '系统正在从全部启用素材重新生成完整提示词草稿。',
+      completionHint: '任务进入队列后会返回当前页面，可稍后刷新查看草稿。',
     }, async () => await $fetch(`/api/v1/personas/${personaId}/${path}/analyze`, { method: 'POST', body: { mode } }))
     await (target === 'growth' ? refreshGrowthAnalysis() : refreshMemoryAnalysis())
   })
 }
 
-/** @param target 成长或记忆。 @param decision 单项人工审核。 @returns 应用和相关工作区刷新完成时结束。 */
-async function reviewAnalysisProposal(target: 'growth' | 'memory', decision: {
-  proposalId: string
-  action: 'accept' | 'reject'
-  reviewed?: ProposedLearningContentView | null
-}): Promise<void> {
-  const batch = target === 'growth' ? growthAnalysis.value : memoryAnalysis.value
-  if (!batch) return
-  await runAction(decision.action === 'accept' ? '提案已人工确认并应用' : '提案已拒绝', async () => {
-    await $fetch(`/api/v1/analysis-batches/${batch.id}/review`, { method: 'POST', body: { decisions: [decision] } })
-    if (target === 'growth') await Promise.all([refreshGrowthAnalysis(), refreshGrowth()])
-    else await Promise.all([refreshMemoryAnalysis(), refreshMemory()])
+/** @param target 成长或记忆。 @returns 同步刷新分析状态和对应提示词草稿时结束。 */
+async function refreshLearningAnalysis(target: 'growth' | 'memory'): Promise<void> {
+  if (target === 'growth') await Promise.all([refreshGrowthAnalysis(), refreshGrowth()])
+  else await Promise.all([refreshMemoryAnalysis(), refreshMemory()])
+}
+
+/** @param target 成长或记忆。 @param input 完整提示词与基线版本。 @returns 草稿保存和工作区刷新完成时结束。 */
+async function saveLearningPromptDraft(target: 'growth' | 'memory', input: SaveLearningPromptDraftInput): Promise<void> {
+  await runAction('提示词草稿已保存，尚未生效', async () => {
+    const path = target === 'growth' ? 'growth' : 'memories'
+    await $fetch(`/api/v1/personas/${personaId}/${path}/prompt/draft`, { method: 'PUT', body: input })
+    await (target === 'growth' ? refreshGrowth() : refreshMemory())
+  })
+}
+
+/** @param target 成长或记忆。 @returns 删除未发布草稿和工作区刷新完成时结束。 */
+async function deleteLearningPromptDraft(target: 'growth' | 'memory'): Promise<void> {
+  await runAction('未发布提示词草稿已删除', async () => {
+    const path = target === 'growth' ? 'growth' : 'memories'
+    await $fetch(`/api/v1/personas/${personaId}/${path}/prompt/draft`, { method: 'DELETE' })
+    await (target === 'growth' ? refreshGrowth() : refreshMemory())
+  })
+}
+
+/** @param target 成长或记忆。 @param input 版本变更说明。 @returns 草稿发布和工作区刷新完成时结束。 */
+async function publishLearningPromptDraft(target: 'growth' | 'memory', input: PublishLearningPromptDraftInput): Promise<void> {
+  await runAction('提示词已发布，之后创建的新任务将固定使用这一版', async () => {
+    const path = target === 'growth' ? 'growth' : 'memories'
+    await $fetch(`/api/v1/personas/${personaId}/${path}/prompt/publish`, { method: 'POST', body: input })
+    await (target === 'growth' ? refreshGrowth() : refreshMemory())
+  })
+}
+
+/** @param target 成长或记忆。 @param input 历史版本 UUID。 @returns 校准草稿创建和工作区刷新完成时结束。 */
+async function createLearningPromptDraftFromVersion(target: 'growth' | 'memory', input: CreateLearningPromptDraftFromVersionInput): Promise<void> {
+  await runAction('已基于历史版本创建校准草稿，当前已发布版本未改变', async () => {
+    const path = target === 'growth' ? 'growth' : 'memories'
+    await $fetch(`/api/v1/personas/${personaId}/${path}/prompt/draft-from-version`, { method: 'POST', body: input })
+    await (target === 'growth' ? refreshGrowth() : refreshMemory())
   })
 }
 
@@ -254,7 +279,8 @@ async function linkSources(sourceIds: string[]): Promise<void> {
     }
     finally {
       // 单项接口可能在批量处理中途失败，仍需刷新已成功写入的关联。
-      await Promise.all([refresh(), refreshSources()])
+      // 成长资料选择器使用独立请求，资料关系变化后必须同步刷新，避免标签切换后仍显示旧列表。
+      await Promise.all([refresh(), refreshSources(), refreshGrowth()])
     }
   })
 }
@@ -267,7 +293,7 @@ async function linkSources(sourceIds: string[]): Promise<void> {
 async function unlinkSource(sourceId: string): Promise<void> {
   await runAction('资料已移出这个人物，资料本身仍保留', async () => {
     await $fetch(`/api/v1/sources/${sourceId}/links/${encodeURIComponent(`persona:${personaId}`)}`, { method: 'DELETE' })
-    await Promise.all([refresh(), refreshSources()])
+    await Promise.all([refresh(), refreshSources(), refreshGrowth()])
   })
 }
 
@@ -279,7 +305,7 @@ async function unlinkSource(sourceId: string): Promise<void> {
 async function updateLinkedSourceStatus(input: { sourceId: string, isEnabled: boolean }): Promise<void> {
   await runAction(input.isEnabled ? '资料已启用' : '资料已禁用', async () => {
     await $fetch(`/api/v1/sources/${input.sourceId}/status`, { method: 'PATCH', body: { isEnabled: input.isEnabled } })
-    await Promise.all([refresh(), refreshSources()])
+    await Promise.all([refresh(), refreshSources(), refreshGrowth()])
   })
 }
 
@@ -294,7 +320,7 @@ async function createPastedSource(input: CreateSourceWithTargetsInput): Promise<
       method: 'POST',
       body: { ...input, targets: [{ targetType: 'persona', targetId: personaId }] },
     })
-    await Promise.all([refresh(), refreshSources()])
+    await Promise.all([refresh(), refreshSources(), refreshGrowth()])
   })
 }
 
@@ -324,7 +350,7 @@ async function importSourceFile(input: SourceFileSubmission): Promise<void> {
         failures.push(`${item.file.name}：${getApiErrorMessage(requestError, '导入失败')}`)
       }
     }
-    if (succeeded > 0) await Promise.all([refresh(), refreshSources()])
+    if (succeeded > 0) await Promise.all([refresh(), refreshSources(), refreshGrowth()])
     if (failures.length > 0) {
       actionError.value = `成功 ${succeeded} 个，失败 ${failures.length} 个。${failures.join('；')}`
     }
@@ -461,9 +487,9 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
         <UCard>
           <template #header><h2 class="font-semibold text-highlighted">变化边界</h2></template>
           <div class="space-y-3 text-sm text-muted">
-            <p>成长来自你明确提供的人物反馈资料，确认前不会生效。</p>
-            <p>记忆来自人物多次有效处理记录，单次输出不会直接形成稳定记忆。</p>
-            <p>成长和记忆不会自动改写灵魂；吸收后需要保存新的灵魂版本。</p>
+            <p>成长来自人物资料库中选出的重要资料，以及你手工添加的独立文档。</p>
+            <p>记忆来自人物成功或部分成功的历史任务，记录实际做过的工作与形成的经验。</p>
+            <p>AI 只生成完整提示词草稿；人工校准并发布后，成长和记忆提示词才会固定进入新任务。</p>
           </div>
         </UCard>
       </div>
@@ -476,48 +502,58 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
       />
 
       <div v-else-if="selectedTab === 'growth'" class="space-y-6">
+        <GrowthMaterialPanel
+          subject-label="人物"
+          :items="growthWorkspace.materials"
+          :sources="growthWorkspace.sources"
+          :loading="actionLoading"
+          @import-sources="importGrowthSources"
+          @create="createGrowthMaterial"
+          @update="updateGrowthMaterial"
+          @status="updateGrowthMaterialStatus"
+          @delete="deleteGrowthMaterials"
+        />
         <AnalysisPanel
           title="人物成长"
           :batch="growthAnalysis"
           :loading="actionLoading"
           @analyze="analyzeLearning('growth', $event)"
-          @refresh="refreshGrowthAnalysis"
-          @review="reviewAnalysisProposal('growth', $event)"
+          @refresh="refreshLearningAnalysis('growth')"
         />
-        <div class="grid items-start gap-6 xl:grid-cols-2">
-          <LearningPersonaFeedbackSourcePanel
-          :items="growthWorkspace.feedbackSources"
+        <LearningPromptPanel
+          title="人物成长"
+          :workspace="growthWorkspace.prompt"
           :loading="actionLoading"
-          @create="createFeedbackSource"
-          @status="updateFeedbackSourceStatus"
-          @delete="deleteFeedbackSources"
+          @save="saveLearningPromptDraft('growth', $event)"
+          @delete-draft="deleteLearningPromptDraft('growth')"
+          @publish="publishLearningPromptDraft('growth', $event)"
+          @draft-from-version="createLearningPromptDraftFromVersion('growth', $event)"
         />
-          <LearningGrowthRecordPanel
-          subject-label="人物"
-          :items="growthWorkspace.growth"
-          :sources="growthWorkspace.feedbackSources.map(item => ({ id: item.id, label: item.title, content: item.content, isEnabled: item.isEnabled }))"
-          :loading="actionLoading"
-          @import-sources="importGrowthSources"
-          @update="updateGrowth"
-          @status="updateGrowthStatus"
-          @delete="deleteGrowth"
-          />
-        </div>
       </div>
 
       <div v-else-if="selectedTab === 'memory'" class="space-y-6">
+        <LearningOperationRecordPanel
+          :items="memoryWorkspace.operationRecords"
+          :loading="actionLoading"
+          @status="updateOperationRecordStatus"
+          @importance="updateOperationRecordImportance"
+        />
         <AnalysisPanel
           title="人物记忆"
           :batch="memoryAnalysis"
           :loading="actionLoading"
           @analyze="analyzeLearning('memory', $event)"
-          @refresh="refreshMemoryAnalysis"
-          @review="reviewAnalysisProposal('memory', $event)"
+          @refresh="refreshLearningAnalysis('memory')"
         />
-        <div class="grid items-start gap-6 xl:grid-cols-2">
-          <LearningOperationRecordPanel :items="memoryWorkspace.operationRecords" :loading="actionLoading" @status="updateOperationRecordStatus" />
-          <LearningMemoryRecordPanel :items="memoryWorkspace.memories" :loading="actionLoading" @status="updateMemoryStatus" @convert="convertMemoryToFeedbackSource" />
-        </div>
+        <LearningPromptPanel
+          title="人物记忆"
+          :workspace="memoryWorkspace.prompt"
+          :loading="actionLoading"
+          @save="saveLearningPromptDraft('memory', $event)"
+          @delete-draft="deleteLearningPromptDraft('memory')"
+          @publish="publishLearningPromptDraft('memory', $event)"
+          @draft-from-version="createLearningPromptDraftFromVersion('memory', $event)"
+        />
       </div>
 
       <ContentSubjectSourceManager

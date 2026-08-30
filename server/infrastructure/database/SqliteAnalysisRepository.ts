@@ -3,7 +3,7 @@ import type { Database as BetterSqliteDatabase } from 'better-sqlite3'
 import { proposedLearningContentSchema } from '../../../shared/schemas/analysis'
 import { textModelParametersSchema } from '../../../shared/schemas/generation'
 import { DEFAULT_GROWTH_SCOPE } from '../../../shared/schemas/learning'
-import type { ModelIterationResult, ReviewIterationProposalsInput } from '../../../shared/schemas/analysis'
+import type { ModelIterationResult, ModelLearningPromptResult, ReviewIterationProposalsInput } from '../../../shared/schemas/analysis'
 import type {
   AnalysisBatchInputView,
   AnalysisBatchView,
@@ -46,13 +46,13 @@ export class SqliteAnalysisRepository implements AnalysisRepository {
       const insertInput = this.client.prepare(`
         INSERT INTO analysis_batch_inputs (
           id, batch_id, input_type, input_id, content_hash, title,
-          content_snapshot, is_new, source_available, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+          content_snapshot, importance, is_new, source_available, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
       `)
       for (const input of record.inputs) {
         insertInput.run(
           input.id, record.id, input.inputType, input.inputId, input.contentHash,
-          input.title, input.content, input.isNew ? 1 : 0, record.timestamp,
+          input.title, input.content, input.importance, input.isNew ? 1 : 0, record.timestamp,
         )
       }
       this.client.prepare(`
@@ -81,7 +81,7 @@ export class SqliteAnalysisRepository implements AnalysisRepository {
   async listAnalyzedInputKeys(analysisType: AnalysisType, subjectId: string): Promise<string[]> {
     const column = analysisType === 'world_growth' ? 'world_id' : 'persona_id'
     return (this.client.prepare(`
-      SELECT DISTINCT analysis_batch_inputs.input_type || ':' || analysis_batch_inputs.input_id || ':' || analysis_batch_inputs.content_hash AS input_key
+      SELECT DISTINCT analysis_batch_inputs.input_type || ':' || analysis_batch_inputs.input_id || ':' || analysis_batch_inputs.content_hash || ':' || analysis_batch_inputs.importance AS input_key
       FROM analysis_batch_inputs
       INNER JOIN analysis_batches ON analysis_batches.id = analysis_batch_inputs.batch_id
       WHERE analysis_batches.analysis_type = ? AND analysis_batches.${column} = ?
@@ -149,6 +149,71 @@ export class SqliteAnalysisRepository implements AnalysisRepository {
         UPDATE analysis_batches SET raw_result_json = ?, status = 'awaiting_review',
           completed_at = ?, updated_at = ? WHERE id = ? AND status = 'running'
       `).run(JSON.stringify(result), timestamp, timestamp, batchId)
+      return true
+    }).immediate()
+  }
+
+  /**
+   * 原子完成分析批次，并把 AI 返回的完整提示词保存为不生效草稿。
+   * @param batchId 正在运行的分析批次 UUID。
+   * @param result 已通过共享 Schema 校验的完整提示词和摘要。
+   * @param promptId 当前对象尚无提示词容器时使用的 UUID。
+   * @param draftId 当前对象尚无草稿时使用的 UUID。
+   * @param timestamp 分析完成和草稿更新时间。
+   * @returns 批次仍处于运行状态并成功保存时为 true。
+   */
+  async saveLearningPromptResult(
+    batchId: string,
+    result: ModelLearningPromptResult,
+    promptId: string,
+    draftId: string,
+    timestamp: number,
+  ): Promise<boolean> {
+    return this.client.transaction(() => {
+      const batch = this.client.prepare(`
+        SELECT * FROM analysis_batches WHERE id = ? AND status = 'running'
+      `).get(batchId) as Record<string, unknown> | undefined
+      if (!batch) return false
+      const promptType = String(batch.analysis_type) as AnalysisType
+      const worldId = promptType === 'world_growth' ? String(batch.world_id) : null
+      const personaId = promptType === 'world_growth' ? null : String(batch.persona_id)
+      const scopeColumn = promptType === 'world_growth' ? 'world_id' : 'persona_id'
+      const subjectId = promptType === 'world_growth' ? worldId! : personaId!
+      this.client.prepare(`
+        INSERT OR IGNORE INTO learning_prompts (
+          id, prompt_type, world_id, persona_id, active_version_id, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, NULL, ?, ?)
+      `).run(promptId, promptType, worldId, personaId, timestamp, timestamp)
+      const prompt = this.client.prepare(`
+        SELECT id, active_version_id FROM learning_prompts
+        WHERE prompt_type = ? AND ${scopeColumn} = ?
+      `).get(promptType, subjectId) as { id: string, active_version_id: string | null }
+      this.client.prepare(`
+        INSERT INTO learning_prompt_drafts (
+          id, prompt_id, base_version_id, prompt_text, content_hash,
+          source_analysis_batch_id, created_by, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, 'analysis', ?, ?)
+        ON CONFLICT(prompt_id) DO UPDATE SET
+          base_version_id = excluded.base_version_id,
+          prompt_text = excluded.prompt_text,
+          content_hash = excluded.content_hash,
+          source_analysis_batch_id = excluded.source_analysis_batch_id,
+          created_by = 'analysis',
+          updated_at = excluded.updated_at
+      `).run(
+        draftId, prompt.id, prompt.active_version_id, result.promptText, hashContent(result.promptText),
+        batchId, timestamp, timestamp,
+      )
+      this.client.prepare(`UPDATE learning_prompts SET updated_at = ? WHERE id = ?`).run(timestamp, prompt.id)
+      this.client.prepare(`
+        UPDATE analysis_batches SET raw_result_json = ?, status = 'completed',
+          completed_at = ?, updated_at = ? WHERE id = ? AND status = 'running'
+      `).run(JSON.stringify(result), timestamp, timestamp, batchId)
+      insertAuditEvent(this.client, {
+        actor: 'administrator', action: 'learning_prompt_draft_generated',
+        targetType: 'analysis_batch', targetId: batchId, timestamp,
+        details: { promptType },
+      })
       return true
     }).immediate()
   }
@@ -397,6 +462,7 @@ export class SqliteAnalysisRepository implements AnalysisRepository {
       subjectId: String(analysisType === 'world_growth' ? row.world_id : row.persona_id),
       mode: row.mode as AnalysisBatchView['mode'], status: row.status as AnalysisBatchView['status'],
       baselineSoulVersionId: String(row.baseline_soul_version_id), inputs, proposals,
+      resultSummary: readAnalysisSummary(row.raw_result_json),
       errorCode: nullableString(row.error_code), errorMessage: nullableString(row.error_message),
       createdAt: Number(row.created_at), updatedAt: Number(row.updated_at), completedAt: nullableNumber(row.completed_at),
     }
@@ -409,7 +475,7 @@ function toBatchInput(value: unknown): AnalysisBatchInputView {
   return {
     id: String(row.id), inputType: row.input_type as AnalysisBatchInputView['inputType'], inputId: String(row.input_id),
     title: String(row.title), contentSnapshot: nullableString(row.content_snapshot), contentHash: String(row.content_hash),
-    isNew: Number(row.is_new) === 1, sourceAvailable: Number(row.source_available) === 1,
+    importance: Number(row.importance), isNew: Number(row.is_new) === 1, sourceAvailable: Number(row.source_available) === 1,
   }
 }
 
@@ -443,6 +509,22 @@ function nullableString(value: unknown): string | null {
 /** @param value 可空值。 @returns 数字或 null。 */
 function nullableNumber(value: unknown): number | null {
   return value === null || value === undefined ? null : Number(value)
+}
+
+/**
+ * 从新旧分析结果 JSON 中读取可展示摘要。
+ * @param value 可空的分析原始结果 JSON。
+ * @returns 新完整提示词结果的摘要；旧结果或无效 JSON 返回 null。
+ */
+function readAnalysisSummary(value: unknown): string | null {
+  if (value === null || value === undefined) return null
+  try {
+    const parsed = JSON.parse(String(value)) as Record<string, unknown>
+    return typeof parsed.summary === 'string' ? parsed.summary : null
+  }
+  catch {
+    return null
+  }
 }
 
 /** @param content 正文。 @returns SHA-256 十六进制哈希。 */

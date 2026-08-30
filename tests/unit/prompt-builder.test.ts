@@ -17,14 +17,20 @@ describe('真实模型提示契约', () => {
         constraints: '',
       },
       world: null,
+      worldGrowthPrompt: '遵循世界成长经验。',
+      personaGrowthPrompt: '回答先给结论。',
+      personaMemoryPrompt: '曾经成功处理事实型文章。',
       scene: null,
       evidence: [],
     }, '测试内容')
 
-    expect(GENERATION_PROMPT_VERSION).toBe('artifact-v7')
+    expect(GENERATION_PROMPT_VERSION).toBe('artifact-v8')
     expect(prompt.systemPrompt).toContain('factors 必须是对象数组')
     expect(prompt.systemPrompt).toContain('dimension、score、explanation')
     expect(prompt.systemPrompt).toContain('score 必须是 -1 到 1 的数字')
+    expect(prompt.userPrompt).toContain('<当前世界成长提示词>"遵循世界成长经验。"</当前世界成长提示词>')
+    expect(prompt.userPrompt).toContain('<当前人物成长提示词>"回答先给结论。"</当前人物成长提示词>')
+    expect(prompt.userPrompt).toContain('<当前人物记忆提示词>"曾经成功处理事实型文章。"</当前人物记忆提示词>')
   })
 
   it('明确声明文档格式是枚举字符串数组而不是说明对象', () => {
@@ -40,6 +46,9 @@ describe('真实模型提示契约', () => {
         constraints: '',
       },
       world: null,
+      worldGrowthPrompt: null,
+      personaGrowthPrompt: null,
+      personaMemoryPrompt: null,
       scene: null,
       evidence: [],
     }, '生成图文', '包含标题与插图', 1, 4, true)

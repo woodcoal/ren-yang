@@ -1,5 +1,5 @@
 import type { TextModelParameters } from '../../shared/schemas/generation'
-import type { ModelIterationResult, ReviewIterationProposalsInput } from '../../shared/schemas/analysis'
+import type { ModelIterationResult, ModelLearningPromptResult, ReviewIterationProposalsInput } from '../../shared/schemas/analysis'
 import type { AnalysisBatchView, AnalysisType } from '../../shared/types/analysis'
 import type { TextModelSnapshot } from '../domain/generation/GenerationModels'
 
@@ -8,7 +8,7 @@ export interface CreateAnalysisBatchInputRecord {
   /** 批次输入 UUID。 */
   id: string
   /** 原始数据类型。 */
-  inputType: 'world_source' | 'persona_feedback_source' | 'persona_operation_record' | 'openviking_memory'
+  inputType: 'growth_material' | 'persona_operation_record' | 'world_source' | 'persona_feedback_source' | 'openviking_memory'
   /** SQLite 原始数据 UUID。 */
   inputId: string
   /** 标题或摘要。 */
@@ -17,6 +17,8 @@ export interface CreateAnalysisBatchInputRecord {
   content: string
   /** SHA-256。 */
   contentHash: string
+  /** AI 提炼时的人工权重。 */
+  importance: number
   /** 是否属于本次新增输入。 */
   isNew: boolean
 }
@@ -77,6 +79,8 @@ export interface AnalysisRepository {
   startBatch(batchId: string, timestamp: number): Promise<AnalysisBatchRuntimeRecord | null>
   /** @param batchId 批次 UUID。 @param result 已校验模型结果。 @param timestamp 完成时间。 @returns 是否保存成功。 */
   saveAnalysisResult(batchId: string, result: ModelIterationResult, timestamp: number): Promise<boolean>
+  /** @param batchId 批次 UUID。 @param result 完整提示词提炼结果。 @param promptId 首次提示词容器 UUID。 @param draftId 草稿 UUID。 @param timestamp 完成时间。 @returns 是否原子保存批次和草稿。 */
+  saveLearningPromptResult(batchId: string, result: ModelLearningPromptResult, promptId: string, draftId: string, timestamp: number): Promise<boolean>
   /** @param batchId 批次 UUID。 @param code 稳定错误码。 @param message 脱敏错误。 @param timestamp 失败时间。 @returns 无返回值。 */
   failBatch(batchId: string, code: string, message: string, timestamp: number): Promise<void>
   /** @param batchId 批次 UUID。 @param input 审核决定。 @param timestamp 审核时间。 @returns 审核并幂等应用后的批次或 null。 */

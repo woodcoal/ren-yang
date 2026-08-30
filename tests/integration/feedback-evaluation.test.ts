@@ -126,7 +126,7 @@ afterEach(() => {
   rmSync(temporaryDirectory, { recursive: true, force: true })
 })
 
-describe('反馈分类与人物学习资料闭环', () => {
+describe('反馈分类与人物成长素材闭环', () => {
   it('最终数据库只保留新心智模型和反馈事实表', () => {
     const existing = database.getClient().prepare(`
       SELECT name FROM sqlite_master WHERE type = 'table' AND name IN (
@@ -146,7 +146,7 @@ describe('反馈分类与人物学习资料闭环', () => {
     ])
   })
 
-  it('用户确认人物学习后只创建反馈资料，不直接修改灵魂、成长或记忆', async () => {
+  it('用户确认人物学习后创建可见成长素材，但不直接修改灵魂或已发布提示词', async () => {
     const queue = new RecordingContextSyncQueue()
     const service = createService(new QueueTextModel([
       { targetType: 'persona', confidence: 0.96, rationale: '用户明确要求形成长期学习资料' },
@@ -158,7 +158,7 @@ describe('反馈分类与人物学习资料闭环', () => {
       targetType: 'persona', blockId: null, sourceId: null, hasEvidenceConflict: false,
     })
 
-    expect(confirmed.resolution).toMatchObject({ personaId: IDS.persona, action: 'created_learning_source' })
+    expect(confirmed.resolution).toMatchObject({ personaId: IDS.persona, action: 'created_growth_material' })
     const feedbackSourceId = String(confirmed.resolution?.feedbackSourceId)
     expect(database.getClient().prepare(`
       SELECT persona_id, content, source_type, source_id, is_enabled, deletion_state
@@ -171,15 +171,27 @@ describe('反馈分类与人物学习资料闭环', () => {
       is_enabled: 1,
       deletion_state: 'active',
     })
+    expect(database.getClient().prepare(`
+      SELECT persona_id, title, content_snapshot, source_type, importance, is_enabled
+      FROM growth_materials WHERE id = ?
+    `).get(feedbackSourceId)).toEqual({
+      persona_id: IDS.persona,
+      title: '运行反馈：以后回答时明确提到证据。',
+      content_snapshot: '以后回答时明确提到证据。',
+      source_type: 'manual',
+      importance: 3,
+      is_enabled: 1,
+    })
     expect(database.getClient().prepare('SELECT COUNT(*) AS count FROM soul_versions').get()).toEqual({ count: 1 })
     expect(database.getClient().prepare('SELECT COUNT(*) AS count FROM soul_drafts').get()).toEqual({ count: 0 })
     expect(database.getClient().prepare('SELECT COUNT(*) AS count FROM growth_records').get()).toEqual({ count: 0 })
     expect(database.getClient().prepare('SELECT COUNT(*) AS count FROM memory_records').get()).toEqual({ count: 0 })
+    expect(database.getClient().prepare('SELECT COUNT(*) AS count FROM learning_prompt_versions').get()).toEqual({ count: 0 })
     expect(queue.feedbackIds).toEqual([feedback.id])
     expect(queue.sourceIds).toEqual([feedbackSourceId])
   })
 
-  it('同一反馈只能确认一次，不能重复创建人物反馈资料', async () => {
+  it('同一反馈只能确认一次，不能重复创建人物成长素材', async () => {
     const service = createService(new QueueTextModel([
       { targetType: 'persona', confidence: 0.9, rationale: '人物学习资料' },
     ]))
@@ -194,6 +206,7 @@ describe('反馈分类与人物学习资料闭环', () => {
       targetType: 'persona', blockId: null, sourceId: null, hasEvidenceConflict: false,
     })).rejects.toMatchObject({ code: 'FEEDBACK_ALREADY_CLASSIFIED' })
     expect(database.getClient().prepare('SELECT COUNT(*) AS count FROM persona_feedback_sources').get()).toEqual({ count: 1 })
+    expect(database.getClient().prepare('SELECT COUNT(*) AS count FROM growth_materials').get()).toEqual({ count: 1 })
   })
 
   it('当前产物、参数和资料事实反馈只执行各自允许的动作', async () => {
@@ -235,6 +248,7 @@ describe('反馈分类与人物学习资料闭环', () => {
       automaticMindChange: false,
     })
     expect(database.getClient().prepare('SELECT COUNT(*) AS count FROM persona_feedback_sources').get()).toEqual({ count: 0 })
+    expect(database.getClient().prepare('SELECT COUNT(*) AS count FROM growth_materials').get()).toEqual({ count: 0 })
   })
 
   it('回归用例仍可独立维护，等待后续灵魂提案评测复用', async () => {

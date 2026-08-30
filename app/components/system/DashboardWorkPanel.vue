@@ -60,7 +60,7 @@ function formatDateTime(timestamp: number): string {
         <div class="section-heading-copy">
           <p class="eyebrow">01 · 优先处理</p>
           <h2 id="dashboard-priority-heading">需要你作决定</h2>
-          <p>反馈只有在确认用途后才会执行一次性动作或成为人物学习资料。</p>
+          <p>反馈只有在确认用途后才会执行一次性动作或成为人物成长素材。</p>
         </div>
         <NuxtLink to="/feedback" class="section-link">进入学习中心</NuxtLink>
       </div>
@@ -70,7 +70,7 @@ function formatDateTime(timestamp: number): string {
           <span class="log-row-meta">反馈分类</span>
           <div class="log-row-main">
             <NuxtLink to="/feedback" class="log-row-title">确认反馈会影响哪一部分</NuxtLink>
-            <span class="log-row-description">系统建议仅作参考，需要你确认是修正本次结果、记录参数建议、人物学习资料还是资料事实问题。</span>
+            <span class="log-row-description">系统建议仅作参考，需要你确认是修正本次结果、记录参数建议、人物成长素材还是资料事实问题。</span>
           </div>
           <span class="log-row-end"><UBadge color="warning" variant="subtle">待处理 {{ pendingFeedbackCount }}</UBadge></span>
         </article>

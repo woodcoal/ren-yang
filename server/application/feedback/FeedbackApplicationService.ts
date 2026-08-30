@@ -43,7 +43,7 @@ export const FEEDBACK_MODEL_PARAMETERS = {
   sourceBudgetTokens: 5_000,
 }
 
-/** 反馈分类和人物学习资料确认所需依赖。 */
+/** 反馈分类和人物成长素材确认所需依赖。 */
 export interface FeedbackApplicationServiceDependencies {
   /** 反馈事件、确认结果和人物反馈资料事务事实源。 */
   repository: FeedbackRepository
@@ -57,7 +57,7 @@ export interface FeedbackApplicationServiceDependencies {
   contextSyncQueue?: ContextSyncTaskQueue
 }
 
-/** 编排反馈归因、一次性动作和显式人物学习资料创建。 */
+/** 编排反馈归因、一次性动作和显式人物成长素材创建。 */
 export class FeedbackApplicationService {
   /**
    * 创建反馈应用服务。
@@ -288,7 +288,7 @@ function toFeedbackView(aggregate: FeedbackAggregate): FeedbackView {
   }
 }
 
-/** @param content 原始反馈正文。 @returns 便于在人物成长页辨认的资料标题。 */
+/** @param content 原始反馈正文。 @returns 便于在人物成长素材池辨认的标题。 */
 function feedbackSourceTitle(content: string): string {
   const normalized = content.replaceAll(/\s+/g, ' ').trim()
   return `运行反馈：${normalized.length > 60 ? `${normalized.slice(0, 60)}…` : normalized}`
