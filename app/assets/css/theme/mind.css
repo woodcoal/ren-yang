@@ -76,6 +76,24 @@
     margin-top: 0.2rem;
   }
 
+  .growth-import-source {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    border: 1px solid var(--ui-border);
+    border-radius: var(--ui-radius);
+    background: var(--ui-bg-elevated);
+    padding: 0.875rem;
+  }
+
+  .growth-import-source > input {
+    margin-top: 0.3rem;
+  }
+
+  .growth-import-source[aria-disabled='true'] {
+    opacity: 0.68;
+  }
+
   .analysis-proposal {
     border: 1px solid var(--ui-border);
     border-radius: calc(var(--ui-radius) * 1.25);
@@ -103,6 +121,10 @@
     .learning-batch-bar {
       align-items: flex-start;
       flex-direction: column;
+    }
+
+    .growth-import-source {
+      flex-wrap: wrap;
     }
   }
 }

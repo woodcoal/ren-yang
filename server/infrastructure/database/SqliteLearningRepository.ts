@@ -13,6 +13,7 @@ import type {
   CreatePersonaOperationRecord,
   CreatePersonaFeedbackSourceRecord,
   LearningRepository,
+  UpdateGrowthRecord,
 } from '../../ports/LearningRepository'
 import { insertAuditEvent } from './AuditSql'
 
@@ -142,28 +143,60 @@ export class SqliteLearningRepository implements LearningRepository {
 
   /** @param record 创建命令。 @returns 无返回值。 */
   async createGrowth(record: CreateGrowthRecord): Promise<void> {
+    await this.createGrowthBatch([record])
+  }
+
+  /**
+   * 在一个短事务内批量创建成长及其第一版证据链。
+   * @param records 已由应用服务校验对象范围和来源正文的创建命令。
+   * @returns 整批创建并写入审计后结束；任意来源失效时整批回滚。
+   */
+  async createGrowthBatch(records: CreateGrowthRecord[]): Promise<void> {
     this.client.transaction(() => {
-      const worldId = record.subjectType === 'world' ? record.subjectId : null
-      const personaId = record.subjectType === 'persona' ? record.subjectId : null
-      this.client.prepare(`
-        INSERT INTO growth_records (
-          id, subject_type, world_id, persona_id, current_revision_id, status, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, 'candidate', ?, ?)
-      `).run(record.id, record.subjectType, worldId, personaId, record.revisionId, record.timestamp, record.timestamp)
+      for (const record of records) this.insertGrowth(record)
+    }).immediate()
+  }
+
+  /**
+   * 为指定成长建立新不可变修订，并继承上一版证据快照。
+   * @param record 已校验的新修订正文、范围、重要程度和对象范围。
+   * @returns 成长存在且不是已取代历史时返回 true，否则返回 false。
+   */
+  async updateGrowth(record: UpdateGrowthRecord): Promise<boolean> {
+    const scopeColumn = record.subjectType === 'world' ? 'world_id' : 'persona_id'
+    return this.client.transaction(() => {
+      const current = this.client.prepare(`
+        SELECT growth_records.current_revision_id, growth_revisions.revision_no
+        FROM growth_records
+        INNER JOIN growth_revisions ON growth_revisions.id = growth_records.current_revision_id
+        WHERE growth_records.id = ? AND growth_records.subject_type = ?
+          AND growth_records.${scopeColumn} = ? AND growth_records.status <> 'superseded'
+      `).get(record.id, record.subjectType, record.subjectId) as {
+        current_revision_id: string
+        revision_no: number
+      } | undefined
+      if (!current) return false
+
       this.client.prepare(`
         INSERT INTO growth_revisions (
           id, growth_id, revision_no, content, content_hash, scope, importance,
           conflict_summary, analysis_batch_id, created_by, created_at
-        ) VALUES (?, ?, 1, ?, ?, ?, ?, NULL, NULL, 'user', ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, 'user', ?)
       `).run(
-        record.revisionId, record.id, record.content, hashContent(record.content),
-        record.scope, record.importance, record.timestamp,
+        record.revisionId, record.id, Number(current.revision_no) + 1,
+        record.content, hashContent(record.content), record.scope, record.importance, record.timestamp,
       )
-      this.insertGrowthEvidence(record)
+      this.copyGrowthEvidence(current.current_revision_id, record.revisionId)
+      this.client.prepare(`
+        UPDATE growth_records
+        SET current_revision_id = ?, status = 'candidate', superseded_by_id = NULL, updated_at = ?
+        WHERE id = ?
+      `).run(record.revisionId, record.timestamp, record.id)
       insertAuditEvent(this.client, {
-        actor: 'administrator', action: 'growth_candidate_created',
+        actor: 'administrator', action: 'growth_revision_created',
         targetType: 'growth', targetId: record.id, timestamp: record.timestamp,
       })
+      return true
     }).immediate()
   }
 
@@ -174,6 +207,43 @@ export class SqliteLearningRepository implements LearningRepository {
       table: 'growth_records', scopeColumn, scopeId: subjectId, ids, status, timestamp,
       extraWhere: `subject_type = '${subjectType}'`,
     })
+  }
+
+  /**
+   * 核对所选成长全部属于当前对象后永久删除成长及其修订证据。
+   * @param subjectType 世界或人物对象类型。
+   * @param subjectId 当前世界或人物 UUID。
+   * @param ids 待删除成长 UUID；调用方保证非空且已去重。
+   * @param timestamp 审计事件使用的删除时间。
+   * @returns 全部删除时返回所选数量，范围不完整时返回零。
+   */
+  async deleteGrowth(subjectType: 'world' | 'persona', subjectId: string, ids: string[], timestamp: number): Promise<number> {
+    const scopeColumn = subjectType === 'world' ? 'world_id' : 'persona_id'
+    return this.client.transaction(() => {
+      const placeholders = createPlaceholders(ids)
+      const row = this.client.prepare(`
+        SELECT COUNT(*) AS count FROM growth_records
+        WHERE subject_type = ? AND ${scopeColumn} = ? AND id IN (${placeholders})
+      `).get(subjectType, subjectId, ...ids) as { count: number }
+      if (Number(row.count) !== ids.length) return 0
+
+      // 解除其他历史记录对待删成长的“已被取代”文字关系，避免保留悬空标识。
+      this.client.prepare(`
+        UPDATE growth_records SET superseded_by_id = NULL
+        WHERE superseded_by_id IN (${placeholders})
+      `).run(...ids)
+      const changes = this.client.prepare(`
+        DELETE FROM growth_records
+        WHERE subject_type = ? AND ${scopeColumn} = ? AND id IN (${placeholders})
+      `).run(subjectType, subjectId, ...ids).changes
+      for (const id of ids) {
+        insertAuditEvent(this.client, {
+          actor: 'administrator', action: 'growth_deleted',
+          targetType: 'growth', targetId: id, timestamp,
+        })
+      }
+      return changes
+    }).immediate()
   }
 
   /** @param personaId 人物 UUID。 @returns 人物处理记录。 */
@@ -342,6 +412,60 @@ export class SqliteLearningRepository implements LearningRepository {
       `).run(input.status, input.timestamp, input.scopeId, ...input.ids)
       return input.ids.length
     }).immediate()
+  }
+
+  /**
+   * 在调用方事务中写入一条成长、第一版修订、证据快照和审计事件。
+   * @param record 单条成长创建命令。
+   * @returns 写入完成时结束；来源范围不一致时抛错并由外层事务回滚。
+   */
+  private insertGrowth(record: CreateGrowthRecord): void {
+    const worldId = record.subjectType === 'world' ? record.subjectId : null
+    const personaId = record.subjectType === 'persona' ? record.subjectId : null
+    this.client.prepare(`
+      INSERT INTO growth_records (
+        id, subject_type, world_id, persona_id, current_revision_id, status, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, 'candidate', ?, ?)
+    `).run(record.id, record.subjectType, worldId, personaId, record.revisionId, record.timestamp, record.timestamp)
+    this.client.prepare(`
+      INSERT INTO growth_revisions (
+        id, growth_id, revision_no, content, content_hash, scope, importance,
+        conflict_summary, analysis_batch_id, created_by, created_at
+      ) VALUES (?, ?, 1, ?, ?, ?, ?, NULL, NULL, 'user', ?)
+    `).run(
+      record.revisionId, record.id, record.content, hashContent(record.content),
+      record.scope, record.importance, record.timestamp,
+    )
+    this.insertGrowthEvidence(record)
+    insertAuditEvent(this.client, {
+      actor: 'administrator', action: 'growth_candidate_created',
+      targetType: 'growth', targetId: record.id, timestamp: record.timestamp,
+    })
+  }
+
+  /**
+   * 把上一版不可变证据快照复制到新的人工修订。
+   * @param sourceRevisionId 上一版成长修订 UUID。
+   * @param targetRevisionId 新成长修订 UUID。
+   * @returns 全部证据使用新关系 UUID 复制完成时结束。
+   */
+  private copyGrowthEvidence(sourceRevisionId: string, targetRevisionId: string): void {
+    const rows = this.client.prepare(`
+      SELECT source_type, source_id, source_hash, source_title, relationship, source_available
+      FROM growth_revision_evidence WHERE growth_revision_id = ?
+    `).all(sourceRevisionId) as Array<Record<string, unknown>>
+    const insert = this.client.prepare(`
+      INSERT INTO growth_revision_evidence (
+        id, growth_revision_id, source_type, source_id, source_hash,
+        source_title, relationship, source_available
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `)
+    for (const row of rows) {
+      insert.run(
+        randomUUID(), targetRevisionId, String(row.source_type), String(row.source_id),
+        String(row.source_hash), String(row.source_title), String(row.relationship), Number(row.source_available),
+      )
+    }
   }
 
   /**

@@ -47,6 +47,26 @@ export interface CreateGrowthRecord {
   timestamp: number
 }
 
+/** 创建成长新修订的持久化命令。 */
+export interface UpdateGrowthRecord {
+  /** 稳定成长 UUID。 */
+  id: string
+  /** 新修订 UUID。 */
+  revisionId: string
+  /** 所属对象类型。 */
+  subjectType: 'world' | 'persona'
+  /** 所属对象 UUID。 */
+  subjectId: string
+  /** 新成长正文。 */
+  content: string
+  /** 新适用范围。 */
+  scope: string
+  /** 新重要程度。 */
+  importance: number
+  /** 修订时间。 */
+  timestamp: number
+}
+
 /** 创建人物处理记录的持久化命令。 */
 export interface CreatePersonaOperationRecord {
   /** 处理记录 UUID。 */
@@ -87,8 +107,14 @@ export interface LearningRepository {
   listGrowth(subjectType: 'world' | 'persona', subjectId: string): Promise<GrowthRecordView[]>
   /** @param record 创建命令。 @returns 无返回值。 */
   createGrowth(record: CreateGrowthRecord): Promise<void>
+  /** @param records 已完整校验的批量创建命令。 @returns 整批原子创建完成时结束。 */
+  createGrowthBatch(records: CreateGrowthRecord[]): Promise<void>
+  /** @param record 新修订命令。 @returns 成长存在且修订成功时为 true。 */
+  updateGrowth(record: UpdateGrowthRecord): Promise<boolean>
   /** @param subjectType 对象类型。 @param subjectId 对象 UUID。 @param ids 成长 UUID。 @param status 目标状态。 @param timestamp 更新时间。 @returns 更新数量。 */
   updateGrowthStates(subjectType: 'world' | 'persona', subjectId: string, ids: string[], status: 'active' | 'archived' | 'rejected', timestamp: number): Promise<number>
+  /** @param subjectType 对象类型。 @param subjectId 对象 UUID。 @param ids 成长 UUID。 @param timestamp 删除时间。 @returns 原子删除数量。 */
+  deleteGrowth(subjectType: 'world' | 'persona', subjectId: string, ids: string[], timestamp: number): Promise<number>
 
   /** @param personaId 人物 UUID。 @returns 人物处理记录。 */
   listPersonaOperationRecords(personaId: string): Promise<PersonaOperationRecordView[]>

@@ -136,6 +136,67 @@ describe('成长与记忆事实管理闭环', () => {
     expect(database.getClient().prepare(`SELECT source_available FROM growth_revision_evidence`).all()).toEqual([{ source_available: 0 }])
   })
 
+  it('人物反馈资料可按评分直接导入人物成长候选', async () => {
+    const persona = await createPersona()
+    const feedback = await learning.createPersonaFeedbackSource(persona.id, {
+      title: '结构反馈', content: '回答需要先给结论，再说明依据。', sourceType: 'manual', sourceId: null,
+    })
+
+    const imported = await learning.importGrowthSources('persona', persona.id, {
+      scope: '所有回答', items: [{ sourceId: feedback.id, importance: 5 }],
+    })
+
+    expect(imported.growth).toEqual([expect.objectContaining({
+      content: '回答需要先给结论，再说明依据。', scope: '所有回答', importance: 5,
+      status: 'candidate', evidenceCount: 1,
+    })])
+  })
+
+  it('世界资料可按评分批量导入成长，修改产生新修订且支持批量删除', async () => {
+    const world = await content.createWorld({
+      name: '批量导入世界', summary: '',
+      snapshot: { promptText: '基础规则' },
+      changeSummary: '建立世界',
+    })
+    const firstSource = await content.createPastedSource({ name: '水运资料', role: 'canon_fact', content: '城邦依水而建。' })
+    const secondSource = await content.createPastedSource({ name: '贸易资料', role: 'reference', content: '港口促进区域贸易。' })
+    await content.linkSource(firstSource.source.id, { targetType: 'world', targetId: world.world.id, priority: 10 })
+    await content.linkSource(secondSource.source.id, { targetType: 'world', targetId: world.world.id, priority: 20 })
+
+    const imported = await learning.importGrowthSources('world', world.world.id, {
+      scope: '规划城邦时',
+      items: [
+        { sourceId: firstSource.source.id, importance: 5 },
+        { sourceId: secondSource.source.id, importance: 3 },
+      ],
+    })
+    expect(imported.growth).toEqual(expect.arrayContaining([
+      expect.objectContaining({ content: '城邦依水而建。', scope: '规划城邦时', importance: 5, evidenceCount: 1 }),
+      expect.objectContaining({ content: '港口促进区域贸易。', scope: '规划城邦时', importance: 3, evidenceCount: 1 }),
+    ]))
+
+    const firstGrowth = imported.growth.find(item => item.content === '城邦依水而建。')!
+    const updated = await learning.updateGrowth('world', world.world.id, firstGrowth.id, {
+      content: '城邦规划必须优先保障稳定水运。', scope: '规划大型城邦时', importance: 4,
+    })
+    expect(updated.growth.find(item => item.id === firstGrowth.id)).toMatchObject({
+      content: '城邦规划必须优先保障稳定水运。', revisionNo: 2, status: 'candidate', evidenceCount: 1,
+    })
+    expect(database.getClient().prepare(`
+      SELECT revision_no FROM growth_revisions WHERE growth_id = ? ORDER BY revision_no
+    `).all(firstGrowth.id)).toEqual([{ revision_no: 1 }, { revision_no: 2 }])
+    expect(database.getClient().prepare(`
+      SELECT COUNT(*) AS count FROM growth_revision_evidence
+      WHERE growth_revision_id IN (SELECT id FROM growth_revisions WHERE growth_id = ?)
+    `).get(firstGrowth.id)).toEqual({ count: 2 })
+
+    const growthIds = imported.growth.map(item => item.id)
+    const deleted = await learning.deleteGrowth('world', world.world.id, { ids: growthIds })
+    expect(deleted.growth).toEqual([])
+    expect(database.getClient().prepare(`SELECT COUNT(*) AS count FROM growth_revisions`).get()).toEqual({ count: 0 })
+    expect(database.getClient().prepare(`SELECT COUNT(*) AS count FROM growth_revision_evidence`).get()).toEqual({ count: 0 })
+  })
+
   it('人物处理记录可禁用，记忆确认后可显式转为成长反馈资料', async () => {
     const persona = await createPersona()
     const version = await souls.publishDraft('persona', persona.id)

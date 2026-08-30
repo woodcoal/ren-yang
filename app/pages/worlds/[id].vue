@@ -3,6 +3,7 @@ import type { FormSubmitEvent } from '@nuxt/ui'
 import { computed, reactive, shallowRef } from 'vue'
 import type { CreateSourceWithTargetsInput, SaveSoulVersionInput, UpdateWorldInput } from '#shared/schemas/content'
 import { updateWorldSchema } from '#shared/schemas/content'
+import type { ImportGrowthSourcesInput, UpdateGrowthInput } from '#shared/schemas/learning'
 import type { ApiResponse } from '#shared/types/api'
 import type { DeletionImpact, PersonaSummary, SoulWorkspaceView, SourceDetails, SourceSummary, WorldDetails } from '#shared/types/content'
 import type { WorldGrowthWorkspaceView } from '#shared/types/learning'
@@ -106,10 +107,49 @@ async function createWorldGrowth(input: { content: string, scope: string, import
   })
 }
 
+/**
+ * 按逐条人工评分把世界资料批量导入成长候选。
+ * @param input 共用适用范围和资料 UUID、重要程度评分。
+ * @returns 整批导入和成长工作区刷新完成时结束。
+ */
+async function importWorldGrowthSources(input: ImportGrowthSourcesInput): Promise<void> {
+  await runAction(`已从 ${input.items.length} 项资料创建待确认成长`, async () => {
+    await $fetch(`/api/v1/worlds/${worldId}/growth/import`, { method: 'POST', body: input })
+    await refreshGrowth()
+  })
+}
+
+/**
+ * 修改世界成长并建立新的待确认修订。
+ * @param input 成长 UUID 及新正文、适用范围和重要程度。
+ * @returns 修改和成长工作区刷新完成时结束。
+ */
+async function updateWorldGrowth(input: UpdateGrowthInput & { id: string }): Promise<void> {
+  await runAction('成长新修订已保存，重新启用后进入新任务', async () => {
+    await $fetch(`/api/v1/worlds/${worldId}/growth/${input.id}`, {
+      method: 'PATCH',
+      body: { content: input.content, scope: input.scope, importance: input.importance },
+    })
+    await refreshGrowth()
+  })
+}
+
 /** @param input 世界成长批量目标状态。 @returns 审核和成长工作区刷新完成时结束。 */
 async function updateWorldGrowthStatus(input: { ids: string[], status: 'active' | 'archived' | 'rejected' }): Promise<void> {
   await runAction('世界成长状态已更新', async () => {
     await $fetch(`/api/v1/worlds/${worldId}/growth/status`, { method: 'PATCH', body: input })
+    await refreshGrowth()
+  })
+}
+
+/**
+ * 永久删除所选世界成长及其全部历史修订。
+ * @param input 待删除成长 UUID 集合。
+ * @returns 原子删除和成长工作区刷新完成时结束。
+ */
+async function deleteWorldGrowth(input: { ids: string[] }): Promise<void> {
+  await runAction('所选世界成长已永久删除', async () => {
+    await $fetch(`/api/v1/worlds/${worldId}/growth`, { method: 'DELETE', body: input })
     await refreshGrowth()
   })
 }
@@ -421,8 +461,9 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
           <LearningWorldGrowthSourcePanel :items="growthWorkspace.sources" :loading="actionLoading"
             @status="updateWorldSourceStatus" />
           <LearningGrowthRecordPanel subject-label="世界" :items="growthWorkspace.growth"
-            :sources="growthWorkspace.sources.map(item => ({ id: item.id, label: item.name }))" :loading="actionLoading"
-            @create="createWorldGrowth" @status="updateWorldGrowthStatus" />
+            :sources="growthWorkspace.sources.map(item => ({ id: item.id, label: item.name, content: item.content, isEnabled: item.isEnabled }))" :loading="actionLoading"
+            @create="createWorldGrowth" @import-sources="importWorldGrowthSources" @update="updateWorldGrowth"
+            @status="updateWorldGrowthStatus" @delete="deleteWorldGrowth" />
         </div>
       </div>
 

@@ -37,8 +37,35 @@ export const createGrowthSchema = z.object({
   sourceIds: z.array(z.string().uuid('来源标识无效')).max(100, '一次最多引用 100 项来源').default([]),
 })
 
+/** 修改成长当前修订输入；来源证据由上一版不可变继承。 */
+export const updateGrowthSchema = createGrowthSchema.omit({ sourceIds: true })
+
+/** 单份资料导入成长时的来源与人工评分。 */
+export const importGrowthSourceItemSchema = z.object({
+  sourceId: z.string().uuid('来源标识无效'),
+  importance: z.number().int('资料评分必须是整数').min(1, '资料评分不能低于 1').max(5, '资料评分不能高于 5'),
+})
+
+/** 将多份原始资料分别导入为成长候选。 */
+export const importGrowthSourcesSchema = z.object({
+  scope: z.string().trim().min(1, '适用范围不能为空').max(500, '适用范围不能超过 500 字'),
+  items: z.array(importGrowthSourceItemSchema).min(1, '至少选择一份资料').max(100, '一次最多导入 100 份资料'),
+}).superRefine((value, context) => {
+  if (new Set(value.items.map(item => item.sourceId)).size !== value.items.length) {
+    context.addIssue({ code: 'custom', path: ['items'], message: '同一份资料不能重复导入' })
+  }
+})
+
+/** 批量永久删除成长输入。 */
+export const deleteGrowthSchema = z.object({
+  ids: z.array(z.string().uuid('成长标识无效')).min(1, '至少选择一项成长').max(100, '一次最多删除 100 项成长'),
+})
+
 export type BatchEnabledStateInput = z.infer<typeof batchEnabledStateSchema>
 export type BatchLearningStatusInput = z.infer<typeof batchLearningStatusSchema>
 export type CreatePersonaFeedbackSourceInput = z.infer<typeof createPersonaFeedbackSourceSchema>
 export type DeletePersonaFeedbackSourcesInput = z.infer<typeof deletePersonaFeedbackSourcesSchema>
 export type CreateGrowthInput = z.infer<typeof createGrowthSchema>
+export type UpdateGrowthInput = z.infer<typeof updateGrowthSchema>
+export type ImportGrowthSourcesInput = z.infer<typeof importGrowthSourcesSchema>
+export type DeleteGrowthInput = z.infer<typeof deleteGrowthSchema>

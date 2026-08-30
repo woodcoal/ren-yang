@@ -3,6 +3,7 @@ import type { FormSubmitEvent } from '@nuxt/ui'
 import { computed, reactive, shallowRef } from 'vue'
 import type { CreateSourceWithTargetsInput, SaveSoulVersionInput, UpdatePersonaInput } from '#shared/schemas/content'
 import { updatePersonaSchema } from '#shared/schemas/content'
+import type { ImportGrowthSourcesInput, UpdateGrowthInput } from '#shared/schemas/learning'
 import type { ApiResponse } from '#shared/types/api'
 import type { DeletionImpact, PersonaDetails, SoulWorkspaceView, SourceDetails, SourceSummary, WorldSummary } from '#shared/types/content'
 import type { PersonaGrowthWorkspaceView, PersonaMemoryWorkspaceView } from '#shared/types/learning'
@@ -144,10 +145,49 @@ async function createGrowth(input: { content: string, scope: string, importance:
   })
 }
 
+/**
+ * 按逐条人工评分把人物反馈资料批量导入成长候选。
+ * @param input 共用适用范围和资料 UUID、重要程度评分。
+ * @returns 整批导入和成长工作区刷新完成时结束。
+ */
+async function importGrowthSources(input: ImportGrowthSourcesInput): Promise<void> {
+  await runAction(`已从 ${input.items.length} 项资料创建待确认成长`, async () => {
+    await $fetch(`/api/v1/personas/${personaId}/growth/import`, { method: 'POST', body: input })
+    await refreshGrowth()
+  })
+}
+
+/**
+ * 修改人物成长并建立新的待确认修订。
+ * @param input 成长 UUID 及新正文、适用范围和重要程度。
+ * @returns 修改和成长工作区刷新完成时结束。
+ */
+async function updateGrowth(input: UpdateGrowthInput & { id: string }): Promise<void> {
+  await runAction('成长新修订已保存，重新启用后进入新任务', async () => {
+    await $fetch(`/api/v1/personas/${personaId}/growth/${input.id}`, {
+      method: 'PATCH',
+      body: { content: input.content, scope: input.scope, importance: input.importance },
+    })
+    await refreshGrowth()
+  })
+}
+
 /** @param input 成长批量目标状态。 @returns 审核和成长工作区刷新完成时结束。 */
 async function updateGrowthStatus(input: { ids: string[], status: 'active' | 'archived' | 'rejected' }): Promise<void> {
   await runAction('人物成长状态已更新', async () => {
     await $fetch(`/api/v1/personas/${personaId}/growth/status`, { method: 'PATCH', body: input })
+    await refreshGrowth()
+  })
+}
+
+/**
+ * 永久删除所选人物成长及其全部历史修订。
+ * @param input 待删除成长 UUID 集合。
+ * @returns 原子删除和成长工作区刷新完成时结束。
+ */
+async function deleteGrowth(input: { ids: string[] }): Promise<void> {
+  await runAction('所选人物成长已永久删除', async () => {
+    await $fetch(`/api/v1/personas/${personaId}/growth`, { method: 'DELETE', body: input })
     await refreshGrowth()
   })
 }
@@ -463,10 +503,13 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
           <LearningGrowthRecordPanel
           subject-label="人物"
           :items="growthWorkspace.growth"
-          :sources="growthWorkspace.feedbackSources.map(item => ({ id: item.id, label: item.title }))"
+          :sources="growthWorkspace.feedbackSources.map(item => ({ id: item.id, label: item.title, content: item.content, isEnabled: item.isEnabled }))"
           :loading="actionLoading"
           @create="createGrowth"
+          @import-sources="importGrowthSources"
+          @update="updateGrowth"
           @status="updateGrowthStatus"
+          @delete="deleteGrowth"
           />
         </div>
       </div>

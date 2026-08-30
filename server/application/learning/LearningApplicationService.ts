@@ -3,7 +3,10 @@ import type {
   BatchLearningStatusInput,
   CreateGrowthInput,
   CreatePersonaFeedbackSourceInput,
+  DeleteGrowthInput,
   DeletePersonaFeedbackSourcesInput,
+  ImportGrowthSourcesInput,
+  UpdateGrowthInput,
 } from '../../../shared/schemas/learning'
 import type {
   PersonaFeedbackSourceView,
@@ -17,6 +20,9 @@ import type { IdentifierGenerator } from '../../ports/IdentifierGenerator'
 import type { LearningRepository } from '../../ports/LearningRepository'
 import type { ContextSyncTaskQueue } from '../../ports/ContextSyncTaskQueue'
 import { ApplicationError } from '../errors/ApplicationError'
+
+/** 人工成长正文与共享 Schema 一致的最大字符数。 */
+const MAX_GROWTH_CONTENT_LENGTH = 20_000
 
 /** 统一学习应用服务依赖。 */
 export interface LearningApplicationServiceDependencies {
@@ -134,6 +140,72 @@ export class LearningApplicationService {
       : await this.getPersonaGrowthWorkspace(subjectId)
   }
 
+  /**
+   * 把多份当前对象的原始资料分别导入为待确认成长，并使用人工评分作为重要程度。
+   * @param subjectType 世界或人物对象类型。
+   * @param subjectId 当前世界或人物 UUID。
+   * @param input 共用适用范围及每份资料的 UUID、1–5 分评分。
+   * @returns 整批原子创建后的最新成长工作区。
+   */
+  async importGrowthSources(subjectType: 'world' | 'persona', subjectId: string, input: ImportGrowthSourcesInput): Promise<WorldGrowthWorkspaceView | PersonaGrowthWorkspaceView> {
+    await this.requireSubject(subjectType, subjectId)
+    const availableSources = subjectType === 'world'
+      ? await this.dependencies.learning.listWorldGrowthSources(subjectId)
+      : (await this.dependencies.learning.listPersonaFeedbackSources(subjectId))
+          .filter(source => source.deletionState === 'active')
+    const sourceMap = new Map(availableSources.map(source => [source.id, source]))
+    const records = input.items.map((item) => {
+      const source = sourceMap.get(item.sourceId)
+      if (!source) throw new ApplicationError('RESOURCE_SCOPE_MISMATCH', '部分导入资料不存在或不属于当前对象', 409)
+      const content = source.content.trim()
+      if (content.length > MAX_GROWTH_CONTENT_LENGTH) {
+        const title = 'name' in source ? source.name : source.title
+        throw new ApplicationError('CONTENT_TOO_LARGE', `资料“${title}”正文超过 20000 字，请先整理后再导入`, 422)
+      }
+      return {
+        id: this.dependencies.identifiers.create(),
+        revisionId: this.dependencies.identifiers.create(),
+        subjectType,
+        subjectId,
+        content,
+        scope: input.scope,
+        importance: item.importance,
+        sourceIds: [item.sourceId],
+        timestamp: this.dependencies.clock.now(),
+      }
+    })
+    await this.dependencies.learning.createGrowthBatch(records)
+    return subjectType === 'world'
+      ? await this.getWorldGrowthWorkspace(subjectId)
+      : await this.getPersonaGrowthWorkspace(subjectId)
+  }
+
+  /**
+   * 修改成长正文并建立新的不可变修订；新修订恢复为待确认状态。
+   * @param subjectType 世界或人物对象类型。
+   * @param subjectId 当前世界或人物 UUID。
+   * @param growthId 待修改成长 UUID。
+   * @param input 新正文、适用范围和重要程度。
+   * @returns 修改后的最新成长工作区。
+   */
+  async updateGrowth(subjectType: 'world' | 'persona', subjectId: string, growthId: string, input: UpdateGrowthInput): Promise<WorldGrowthWorkspaceView | PersonaGrowthWorkspaceView> {
+    await this.requireSubject(subjectType, subjectId)
+    const updated = await this.dependencies.learning.updateGrowth({
+      id: growthId,
+      revisionId: this.dependencies.identifiers.create(),
+      subjectType,
+      subjectId,
+      content: input.content,
+      scope: input.scope,
+      importance: input.importance,
+      timestamp: this.dependencies.clock.now(),
+    })
+    if (!updated) throw new ApplicationError('RESOURCE_NOT_FOUND', '成长不存在、已被取代或不属于当前对象', 404)
+    return subjectType === 'world'
+      ? await this.getWorldGrowthWorkspace(subjectId)
+      : await this.getPersonaGrowthWorkspace(subjectId)
+  }
+
   /** @param subjectType 对象类型。 @param subjectId 对象 UUID。 @param input 批量目标状态。 @returns 更新后的成长工作区。 */
   async updateGrowthStates(subjectType: 'world' | 'persona', subjectId: string, input: BatchLearningStatusInput): Promise<WorldGrowthWorkspaceView | PersonaGrowthWorkspaceView> {
     await this.requireSubject(subjectType, subjectId)
@@ -142,6 +214,23 @@ export class LearningApplicationService {
       subjectType, subjectId, ids, input.status, this.dependencies.clock.now(),
     )
     requireCompleteBatch(changes, ids.length, '部分成长不存在、不属于当前对象或状态不允许该操作')
+    return subjectType === 'world'
+      ? await this.getWorldGrowthWorkspace(subjectId)
+      : await this.getPersonaGrowthWorkspace(subjectId)
+  }
+
+  /**
+   * 永久删除当前对象下选中的成长、全部修订和证据快照。
+   * @param subjectType 世界或人物对象类型。
+   * @param subjectId 当前世界或人物 UUID。
+   * @param input 待删除成长 UUID 集合。
+   * @returns 原子删除后的最新成长工作区。
+   */
+  async deleteGrowth(subjectType: 'world' | 'persona', subjectId: string, input: DeleteGrowthInput): Promise<WorldGrowthWorkspaceView | PersonaGrowthWorkspaceView> {
+    await this.requireSubject(subjectType, subjectId)
+    const ids = uniqueIds(input.ids)
+    const changes = await this.dependencies.learning.deleteGrowth(subjectType, subjectId, ids, this.dependencies.clock.now())
+    requireCompleteBatch(changes, ids.length, '部分成长不存在或不属于当前对象')
     return subjectType === 'world'
       ? await this.getWorldGrowthWorkspace(subjectId)
       : await this.getPersonaGrowthWorkspace(subjectId)
