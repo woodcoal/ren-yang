@@ -218,8 +218,34 @@ test('首次设置、灵魂保存、文档确认及三格式导出形成可复�
   await page.getByRole('button', { name: '灵魂', exact: true }).click()
   await expect(page.getByLabel('人物灵魂提示词')).toHaveValue('严谨克制的学院观察员，关注课程、档案与古代文献，表达冷静简洁。')
 
-  // 人物成长允许直接录入独立文档，AI 生成的完整草稿仍需人工校准和发布。
-  await page.getByRole('button', { name: '成长', exact: true }).click()
+  // 第三方记录拥有独立标签，并在弹窗中完成新增、修改、启停和删除。
+  await page.getByRole('button', { name: '三方记录', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '第三方记录素材池', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '添加记录', exact: true }).click()
+  await page.getByLabel('发生日期').fill('2026-08-30')
+  await page.getByLabel('做了什么事情').fill('完成了一次第三方资料校对。')
+  await page.getByLabel('记忆提炼评分').fill('4')
+  await page.getByRole('button', { name: '添加记录', exact: true }).last().click()
+  await expect(page.getByText('第三方记录已加入人物记忆素材池', { exact: true })).toBeVisible()
+  await expect(page.getByLabel('每页第三方记录数量')).toBeVisible()
+  await page.getByRole('button', { name: '修改', exact: true }).click()
+  await page.getByLabel('做了什么事情').fill('完成了一次第三方资料校对并记录结论。')
+  await page.getByRole('button', { name: '保存修改', exact: true }).click()
+  await expect(page.getByText('第三方记录已修改', { exact: true })).toBeVisible()
+  await page.getByLabel('选择第三方记录：2026-08-30').check()
+  await page.getByRole('button', { name: '批量禁用', exact: true }).click()
+  await expect(page.getByText('所选第三方记录已不参加记忆提炼', { exact: true })).toBeVisible()
+  await page.getByLabel('选择第三方记录：2026-08-30').check()
+  await page.getByRole('button', { name: '批量启用', exact: true }).click()
+  await expect(page.getByText('所选第三方记录已参加记忆提炼', { exact: true })).toBeVisible()
+  await page.getByLabel('选择第三方记录：2026-08-30').check()
+  await page.getByRole('button', { name: '批量删除', exact: true }).click()
+  await page.getByRole('button', { name: '确认永久删除', exact: true }).click()
+  await expect(page.getByText('所选第三方记录已删除', { exact: true })).toBeVisible()
+
+  // 人物成长素材单独分页管理，成长标签只负责提炼和提示词。
+  await page.getByRole('button', { name: '成长素材', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '人物成长素材池', exact: true })).toBeVisible()
   await page.getByRole('button', { name: '手工添加文档', exact: true }).click()
   await page.getByLabel('素材标题').fill('表达与判断经验')
   await page.getByLabel('文档正文').fill('先给结论，再说明可核验依据；不确定时明确边界。')
@@ -227,7 +253,11 @@ test('首次设置、灵魂保存、文档确认及三格式导出形成可复�
   await page.getByRole('button', { name: '添加素材', exact: true }).click()
   await expect(page.getByText('手工文档已加入人物成长素材池', { exact: true })).toBeVisible()
   await expect(page.getByText('表达与判断经验', { exact: true })).toBeVisible()
+  await expect(page.getByLabel('每页素材数量')).toBeVisible()
 
+  await page.getByRole('button', { name: '成长', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '人物成长 AI 提炼', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '人物成长素材池', exact: true })).toHaveCount(0)
   await extractAndPublishLearningPrompt(page, {
     title: '人物成长',
     expectedDraft: '表达时先给出结论，再用可核验的依据说明判断，并保持克制。',
@@ -273,8 +303,9 @@ test('首次设置、灵魂保存、文档确认及三格式导出形成可复�
   // 成功任务自动形成记忆原始素材，可人工评分、批量启停，再提炼成独立记忆提示词。
   await page.goto(personaWorkspaceUrl)
   await waitForHydration(page)
-  await page.getByRole('button', { name: '记忆', exact: true }).click()
+  await page.getByRole('button', { name: '记录', exact: true }).click()
   await expect(page.getByRole('heading', { name: '历史任务素材池', exact: true })).toBeVisible()
+  await expect(page.getByLabel('每页历史任务数量')).toBeVisible()
   await expect(page.getByText('图文任务已全部完成，共处理 2 个内容块。', { exact: true })).toBeVisible()
   await page.getByLabel('修改图文创作任务的提炼评分').fill('5')
   await page.getByLabel('修改图文创作任务的提炼评分').press('Tab')
@@ -285,6 +316,12 @@ test('首次设置、灵魂保存、文档确认及三格式导出形成可复�
   await page.getByLabel('选择历史任务素材：图文创作任务').check()
   await page.getByRole('button', { name: '批量启用', exact: true }).click()
   await expect(page.getByText('所选历史任务已参加记忆提炼', { exact: true })).toBeVisible()
+
+  // 记忆标签只保留提炼与提示词操作，不再混入两类记录列表。
+  await page.getByRole('button', { name: '记忆', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '人物记忆 AI 提炼', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '历史任务素材池', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: '第三方记录素材池', exact: true })).toHaveCount(0)
 
   await extractAndPublishLearningPrompt(page, {
     title: '人物记忆',

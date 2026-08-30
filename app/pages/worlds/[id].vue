@@ -176,7 +176,9 @@ async function analyzeWorldGrowth(mode: 'incremental' | 'full_rebuild'): Promise
 
 /** @returns 同步刷新世界成长提炼状态和提示词草稿时结束。 */
 async function refreshWorldGrowthAnalysis(): Promise<void> {
-  await Promise.all([refreshAnalysis(), refreshGrowth()])
+  // 先读取批次状态，再读取草稿，避免 Worker 恰好完成时页面短暂显示已完成但没有草稿。
+  await refreshAnalysis()
+  await refreshGrowth()
 }
 
 /** @param input 完整世界成长提示词与基线版本。 @returns 草稿保存和工作区刷新完成时结束。 */

@@ -54,17 +54,14 @@ class AnalysisTextModel implements TextModelPort {
   }
 
   /**
-   * 返回符合新学习提示词契约的完整草稿。
-   * @param request 结构化分析请求。
-   * @returns 固定完整提示词和提炼摘要。
+   * 返回符合学习提炼契约的纯文本完整草稿。
+   * @param request 学习分析请求。
+   * @returns 固定完整提示词正文。
    */
   async generateStructured(request: TextModelRequest): Promise<TextModelResponse> {
     this.lastRequest = request
     return {
-      structuredOutput: {
-        promptText: '进行城邦规划时，优先保障稳定水运，并明确区分确定事实与推断。',
-        summary: '综合水运资料，形成城邦规划经验。',
-      },
+      structuredOutput: '进行城邦规划时，优先保障稳定水运，并明确区分确定事实与推断。',
       usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
     }
   }
@@ -155,10 +152,11 @@ describe('AI 综合提炼学习提示词', () => {
     await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: true })
     const completed = await analysis.getBatch(queued.id)
     expect(completed).toMatchObject({
-      status: 'completed', resultSummary: '综合水运资料，形成城邦规划经验。', proposals: [],
+      status: 'completed', resultSummary: 'AI 已根据全部启用素材生成完整提示词草稿。', proposals: [],
       inputs: [expect.objectContaining({ inputType: 'growth_material', importance: 5 })],
     })
     expect(model.lastRequest?.userPrompt).toContain('"importance":5')
+    expect(model.lastRequest).toMatchObject({ responseFormat: 'text' })
 
     const workspace = await learning.getWorldGrowthWorkspace(worldId)
     expect(workspace.prompt).toMatchObject({

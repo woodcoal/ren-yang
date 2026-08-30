@@ -11,11 +11,13 @@ export interface TextModelRequest {
   parameters: TextModelParameters
   /** 供供应商和诊断识别的结构名称。 */
   responseSchemaName: string
+  /** 供应商响应格式；省略时保持现有 JSON 对象模式。 */
+  responseFormat?: 'json_object' | 'text'
 }
 
 /** 文本模型结构化调用结果。 */
 export interface TextModelResponse {
-  /** 从供应商响应提取并 JSON.parse 后的未知值。 */
+  /** 从供应商响应提取的纯文本，或解析后的 JSON 未知值。 */
   structuredOutput: unknown
   /** 供应商返回的可选用量。 */
   usage: TextModelUsage
@@ -30,9 +32,9 @@ export interface TextModelPort {
   getConfiguredModel(): TextModelSnapshot | null
 
   /**
-   * 执行一次要求 JSON 对象的文本模型调用。
+   * 执行一次文本模型调用，并按请求格式返回纯文本或 JSON 对象。
    * @param request 已完成提示分层和参数解析的请求。
-   * @returns 解析后的结构化结果和用量。
+   * @returns 提取后的模型结果和用量。
    */
   generateStructured(request: TextModelRequest): Promise<TextModelResponse>
 }

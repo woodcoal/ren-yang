@@ -23,7 +23,7 @@ import GrowthMaterialPanel from '../../components/learning/GrowthMaterialPanel.v
 import LearningPromptPanel from '../../components/learning/LearningPromptPanel.vue'
 import { getApiErrorMessage } from '../../utils/apiError'
 
-type PersonaTab = 'overview' | 'soul' | 'growth' | 'memory' | 'sources' | 'relations'
+type PersonaTab = 'overview' | 'soul' | 'growth_materials' | 'growth' | 'records' | 'external_records' | 'memory' | 'sources' | 'relations'
 
 const personaId = String(useRoute().params.id)
 const { runWithAiLoading } = useAiLoading()
@@ -64,7 +64,10 @@ const memoryAnalysis = computed(() => memoryAnalysisData.value?.data ?? null)
 const tabs: Array<{ id: PersonaTab, label: string }> = [
   { id: 'overview', label: '概览' },
   { id: 'soul', label: '灵魂' },
+  { id: 'growth_materials', label: '成长素材' },
   { id: 'growth', label: '成长' },
+  { id: 'records', label: '记录' },
+  { id: 'external_records', label: '三方记录' },
   { id: 'memory', label: '记忆' },
   { id: 'sources', label: '资料' },
   { id: 'relations', label: '基本信息' },
@@ -292,8 +295,15 @@ async function analyzeLearning(target: 'growth' | 'memory', mode: 'incremental' 
 
 /** @param target 成长或记忆。 @returns 同步刷新分析状态和对应提示词草稿时结束。 */
 async function refreshLearningAnalysis(target: 'growth' | 'memory'): Promise<void> {
-  if (target === 'growth') await Promise.all([refreshGrowthAnalysis(), refreshGrowth()])
-  else await Promise.all([refreshMemoryAnalysis(), refreshMemory()])
+  // 先读取批次状态，再读取草稿，避免 Worker 恰好完成时出现“已完成但编辑器仍为空”的竞态。
+  if (target === 'growth') {
+    await refreshGrowthAnalysis()
+    await refreshGrowth()
+  }
+  else {
+    await refreshMemoryAnalysis()
+    await refreshMemory()
+  }
 }
 
 /** @param target 成长或记忆。 @param input 完整提示词与基线版本。 @returns 草稿保存和工作区刷新完成时结束。 */
@@ -571,7 +581,7 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
         @save="saveSoulVersion"
       />
 
-      <div v-else-if="selectedTab === 'growth'" class="space-y-6">
+      <div v-else-if="selectedTab === 'growth_materials'" class="space-y-6">
         <GrowthMaterialPanel
           subject-label="人物"
           :items="growthWorkspace.materials"
@@ -583,6 +593,9 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
           @status="updateGrowthMaterialStatus"
           @delete="deleteGrowthMaterials"
         />
+      </div>
+
+      <div v-else-if="selectedTab === 'growth'" class="space-y-6">
         <AnalysisPanel
           title="人物成长"
           :batch="growthAnalysis"
@@ -601,7 +614,16 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
         />
       </div>
 
-      <div v-else-if="selectedTab === 'memory'" class="space-y-6">
+      <div v-else-if="selectedTab === 'records'" class="space-y-6">
+        <LearningOperationRecordPanel
+          :items="memoryWorkspace.operationRecords"
+          :loading="actionLoading"
+          @status="updateOperationRecordStatus"
+          @importance="updateOperationRecordImportance"
+        />
+      </div>
+
+      <div v-else-if="selectedTab === 'external_records'" class="space-y-6">
         <LearningExternalRecordPanel
           :items="memoryWorkspace.externalRecords"
           :loading="actionLoading"
@@ -610,12 +632,9 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
           @status="updateExternalRecordStatus"
           @delete="deleteExternalRecords"
         />
-        <LearningOperationRecordPanel
-          :items="memoryWorkspace.operationRecords"
-          :loading="actionLoading"
-          @status="updateOperationRecordStatus"
-          @importance="updateOperationRecordImportance"
-        />
+      </div>
+
+      <div v-else-if="selectedTab === 'memory'" class="space-y-6">
         <AnalysisPanel
           title="人物记忆"
           :batch="memoryAnalysis"

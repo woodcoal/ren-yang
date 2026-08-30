@@ -37,9 +37,9 @@ export class OpenAiCompatibleTextModel implements TextModelPort {
   }
 
   /**
-   * 调用 Chat Completions 并严格提取 JSON 对象。
-   * @param request 分层提示、固定参数和结构名称。
-   * @returns 解析后的未知结构及供应商用量。
+   * 调用 Chat Completions，并按请求提取纯文本或 JSON 对象。
+   * @param request 分层提示、固定参数、结构名称和响应格式。
+   * @returns 提取后的模型结果及供应商用量。
    * @throws TextModelError 能力缺失、超时、限流、网络或输出错误时抛出。
    */
   async generateStructured(request: TextModelRequest): Promise<TextModelResponse> {
@@ -51,22 +51,26 @@ export class OpenAiCompatibleTextModel implements TextModelPort {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), request.parameters.timeoutMs)
     try {
+      const requestBody: Record<string, unknown> = {
+        model: snapshot.model,
+        messages: [
+          { role: 'system', content: request.systemPrompt },
+          { role: 'user', content: request.userPrompt },
+        ],
+        temperature: request.parameters.temperature,
+        max_tokens: request.parameters.maxOutputTokens,
+      }
+      if (request.responseFormat !== 'text') {
+        // 仅结构化任务要求供应商启用 JSON 模式；提示词提炼直接接收正文。
+        requestBody.response_format = { type: 'json_object' }
+      }
       const response = await fetch(this.endpoint, {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
           authorization: `Bearer ${this.options.apiKey}`,
         },
-        body: JSON.stringify({
-          model: snapshot.model,
-          messages: [
-            { role: 'system', content: request.systemPrompt },
-            { role: 'user', content: request.userPrompt },
-          ],
-          temperature: request.parameters.temperature,
-          max_tokens: request.parameters.maxOutputTokens,
-          response_format: { type: 'json_object' },
-        }),
+        body: JSON.stringify(requestBody),
         signal: controller.signal,
       })
       if (!response.ok) {
@@ -79,7 +83,7 @@ export class OpenAiCompatibleTextModel implements TextModelPort {
       catch {
         throw new TextModelError('MODEL_OUTPUT_INVALID', '文本模型响应不是有效 JSON', true)
       }
-      return parseResponse(payload)
+      return parseResponse(payload, request.responseFormat ?? 'json_object')
     }
     catch (error: unknown) {
       if (error instanceof TextModelError) throw error
@@ -102,11 +106,12 @@ function mapHttpError(status: number): TextModelError {
 }
 
 /**
- * 校验 Chat Completions 外层结构并解析首个文本 JSON。
+ * 校验 Chat Completions 外层结构，并按指定格式提取首个响应正文。
  * @param value 供应商返回的未知 JSON。
- * @returns 结构化结果和用量。
+ * @param responseFormat 业务要求的响应正文格式。
+ * @returns 提取后的模型结果和用量。
  */
-function parseResponse(value: unknown): TextModelResponse {
+function parseResponse(value: unknown, responseFormat: 'json_object' | 'text'): TextModelResponse {
   if (typeof value !== 'object' || value === null) {
     throw new TextModelError('MODEL_OUTPUT_INVALID', '文本模型响应结构无效', true)
   }
@@ -115,9 +120,9 @@ function parseResponse(value: unknown): TextModelResponse {
   const first = Array.isArray(choices) ? choices[0] as Record<string, unknown> | undefined : undefined
   const message = first?.message as Record<string, unknown> | undefined
   if (typeof message?.content !== 'string') {
-    throw new TextModelError('MODEL_OUTPUT_INVALID', '文本模型没有返回 JSON 文本', true)
+    throw new TextModelError('MODEL_OUTPUT_INVALID', '文本模型没有返回文本内容', true)
   }
-  const structuredOutput = parseStructuredContent(message.content)
+  const structuredOutput = responseFormat === 'text' ? message.content : parseStructuredContent(message.content)
   const usage = response.usage as Record<string, unknown> | undefined
   return {
     structuredOutput,

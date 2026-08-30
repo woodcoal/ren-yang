@@ -15,35 +15,26 @@ async function readBody(request: IncomingMessage): Promise<string> {
 }
 
 /**
- * 根据分层系统提示返回确定的 OpenAI-compatible JSON 内容。
+ * 根据分层系统提示返回确定的 OpenAI-compatible 模型内容。
  * @param body Chat Completions 请求正文。
- * @returns 字符串形式的模型 JSON 输出。
+ * @returns 学习提炼使用纯文本，其他结构化任务使用 JSON 文本。
  */
-function createStructuredOutput(body: string): string {
+function createModelOutput(body: string): string {
   const payload = JSON.parse(body) as { messages?: Array<{ role?: string, content?: string }> }
   const systemPrompt = payload.messages?.find(message => message.role === 'system')?.content ?? ''
   const userPrompt = payload.messages?.find(message => message.role === 'user')?.content ?? ''
 
   // 三类学习提炼使用不同的确定文本，便于浏览器测试确认请求没有串到错误对象。
   if (systemPrompt.includes('世界成长提示词提炼器')) {
-    return JSON.stringify({
-      promptText: '维护浮岛交通与港口规则的一致性，遇到资料冲突时明确适用条件。',
-      summary: '提炼浮岛交通和港口规则。',
-    })
+    return '维护浮岛交通与港口规则的一致性，遇到资料冲突时明确适用条件。'
   }
 
   if (systemPrompt.includes('人物成长提示词提炼器')) {
-    return JSON.stringify({
-      promptText: '表达时先给出结论，再用可核验的依据说明判断，并保持克制。',
-      summary: '提炼人物的表达与判断方式。',
-    })
+    return '表达时先给出结论，再用可核验的依据说明判断，并保持克制。'
   }
 
   if (systemPrompt.includes('人物记忆提示词提炼器')) {
-    return JSON.stringify({
-      promptText: '记住曾完成学院课程介绍；后续同类任务优先采用严谨、克制且便于导出的结构。',
-      summary: '从已完成任务提炼表达经验。',
-    })
+    return '记住曾完成学院课程介绍；后续同类任务优先采用严谨、克制且便于导出的结构。'
   }
 
   if (systemPrompt.includes('规划一份统一文档规格')) {
@@ -96,7 +87,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
   }
 
   try {
-    const content = createStructuredOutput(await readBody(request))
+    const content = createModelOutput(await readBody(request))
     sendJson(response, 200, {
       choices: [{ message: { role: 'assistant', content } }],
       usage: { prompt_tokens: 20, completion_tokens: 10, total_tokens: 30 },

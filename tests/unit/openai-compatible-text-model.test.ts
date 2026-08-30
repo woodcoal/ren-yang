@@ -62,6 +62,21 @@ describe('OpenAiCompatibleTextModel', () => {
     expect(init?.headers).toMatchObject({ authorization: 'Bearer secret-key' })
   })
 
+  it('纯文本模式直接返回提示词正文且不要求供应商输出 JSON', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      choices: [{ message: { content: '进行城邦规划时，优先保障稳定水运。' } }],
+    }), { status: 200, headers: { 'content-type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetchMock)
+    const request = { ...REQUEST, responseFormat: 'text' as const }
+
+    await expect(createModel().generateStructured(request)).resolves.toMatchObject({
+      structuredOutput: '进行城邦规划时，优先保障稳定水运。',
+    })
+    const [, init] = fetchMock.mock.calls[0]!
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>
+    expect(body).not.toHaveProperty('response_format')
+  })
+
   it('兼容模型使用 Markdown 代码围栏包裹的 JSON 对象', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       choices: [{ message: { content: '```json\n{"answer":"ok"}\n```' } }],
