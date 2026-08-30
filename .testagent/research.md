@@ -27,3 +27,21 @@
 - SQLite 是唯一业务事实源，迁移必须保留已有数据并通过外键完整性检查。
 - 页面只调用应用服务，控制器不得越过服务层访问数据库。
 - 用户原有未提交修改位于 `app/pages/worlds/[id].vue` 和 `nuxt.config.ts`，不得覆盖或提交。
+
+## 2026-08-30 列表快速创建与加载反馈增量
+
+### 验收清单
+
+- 人物和世界列表创建弹窗同时采集名称、灵魂提示词和可选 AI 整理标记。
+- 未选择 AI 时，以用户名称和去除首尾空白后的原始提示词直接创建草稿，不调用模型。
+- 选择 AI 时，先调用独立灵魂整理应用服务，成功后再创建对象；整理失败不得产生人物或世界。
+- 灵魂详情修改成功后关闭弹窗；请求失败时保持弹窗与输入。
+- 灵魂详情选择 AI 整理后显示最高层级全屏模糊加载框。
+- 创建和灵魂整理加载图标使用独立公共 CSS 关键帧旋转，不依赖可能失效的工具类动画。
+
+### 目标与现有测试配对
+
+- `QuickCreateSubjectModal.vue`、人物/世界列表页继续由 `tests/components/subject-list-creation.test.ts` 和 `tests/components/content-forms.test.ts` 覆盖。
+- `SoulWorkspace.vue` 继续由 `tests/components/content-forms.test.ts` 覆盖。
+- `SoulApplicationService.ts` 已由 `tests/integration/content-management.test.ts` 覆盖；新增创建前独立整理行为复用该测试模型。
+- 静态配对扫描识别上述服务与共享 Schema 已有测试引用；Vue SFC 因分析器只扫描 TypeScript，不作为未配对结论。该结果是静态标识配对，不代表行或分支覆盖率。

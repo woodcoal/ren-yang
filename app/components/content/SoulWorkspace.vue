@@ -2,7 +2,7 @@
 import type { FormSubmitEvent } from '@nuxt/ui'
 import { computed, reactive, shallowRef, watch } from 'vue'
 import { saveSoulDraftSchema, type SaveSoulDraftInput } from '#shared/schemas/content'
-import type { SoulVersionView, SoulWorkspaceView } from '#shared/types/content'
+import type { SoulDraftView, SoulVersionView, SoulWorkspaceView } from '#shared/types/content'
 
 /** 灵魂工作区属性。 */
 interface Props {
@@ -81,18 +81,19 @@ function formatTime(timestamp: number): string {
 }
 
 /**
- * AI 或手动保存完成后，把服务端返回的最终草稿同步回仍然打开的文本框。
- * @param updatedAt 草稿最后更新时间；没有草稿时为 undefined。
+ * AI 或手动保存成功后同步服务端草稿并关闭编辑弹窗；失败时父组件不会更新草稿，弹窗保持打开。
+ * @param draft 服务端刷新后的当前草稿；没有草稿时为 null。
  * @returns 无返回值。
  */
-function synchronizeSavedDraft(updatedAt: number | undefined): void {
-  if (!editorOpen.value || updatedAt === undefined || !props.workspace.draft) return
-  editor.baseVersionId = props.workspace.draft.baseVersionId
-  editor.snapshot.promptText = props.workspace.draft.snapshot.promptText
+function synchronizeSavedDraft(draft: SoulDraftView | null): void {
+  if (!editorOpen.value || !draft) return
+  editor.baseVersionId = draft.baseVersionId
+  editor.snapshot.promptText = draft.snapshot.promptText
   editor.autoAnalyze = false
+  editorOpen.value = false
 }
 
-watch(() => props.workspace.draft?.updatedAt, synchronizeSavedDraft)
+watch(() => props.workspace.draft, synchronizeSavedDraft)
 </script>
 
 <template>
@@ -178,5 +179,26 @@ watch(() => props.workspace.draft?.updatedAt, synchronizeSavedDraft)
         </UForm>
       </template>
     </UModal>
+
+    <Teleport to="body">
+      <div
+        v-if="editorOpen && editor.autoAnalyze && loading"
+        data-soul-analysis-overlay
+        class="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-default/55 px-6 text-center backdrop-blur-md"
+        role="status"
+        aria-live="assertive"
+        aria-busy="true"
+      >
+        <div class="relative mb-7 flex size-20 items-center justify-center" aria-hidden="true">
+          <span class="absolute inset-0 animate-ping rounded-full bg-primary/20" />
+          <span data-soul-analysis-spinner class="subject-processing-spinner relative flex size-14 items-center justify-center">
+            <UIcon name="i-lucide-loader-circle" class="size-14 text-primary" />
+          </span>
+        </div>
+        <strong class="text-xl text-highlighted">AI 正在整理{{ subjectLabel }}灵魂</strong>
+        <p class="mt-3 max-w-lg text-sm leading-6 text-muted">整理和结构校验可能需要几十秒，请保持当前页面开启，不要重复提交。</p>
+        <p class="mt-1 max-w-lg text-sm leading-6 text-muted">完成后会自动关闭编辑窗口；整理结果仍是未发布修改稿。</p>
+      </div>
+    </Teleport>
   </div>
 </template>

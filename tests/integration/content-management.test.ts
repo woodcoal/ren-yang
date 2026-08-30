@@ -266,6 +266,28 @@ describe('人物、世界与资料管理闭环', () => {
     expect(model.requests[0]?.userPrompt).toContain('城市在天上，坐船出门。')
   })
 
+  it('创建前独立整理灵魂不写入人物、世界或草稿', async () => {
+    const model = new RecordingTextModel({ promptText: '谨慎的档案管理员；资料不足时明确说明未知。' })
+    const repository = new SqliteContentRepository(database.getClient())
+    const analyzedSoulService = new SoulApplicationService({
+      content: repository,
+      souls: repository,
+      identifiers: new SequentialIdentifierGenerator(),
+      clock,
+      tokenCounter: new ConservativeTokenCounter(),
+      model,
+      tokenBudgets: { world: 2_500, persona: 3_500 },
+    })
+
+    await expect(analyzedSoulService.analyzePrompt('persona', '谨慎的档案管理员。')).resolves.toEqual({
+      promptText: '谨慎的档案管理员；资料不足时明确说明未知。',
+    })
+    expect(model.requests).toHaveLength(1)
+    expect(database.getClient().prepare('SELECT COUNT(*) AS count FROM personas').get()).toEqual({ count: 0 })
+    expect(database.getClient().prepare('SELECT COUNT(*) AS count FROM worlds').get()).toEqual({ count: 0 })
+    expect(database.getClient().prepare('SELECT COUNT(*) AS count FROM soul_drafts').get()).toEqual({ count: 0 })
+  })
+
   it('自动分析不可用或输出无效时不覆盖原草稿', async () => {
     const created = await service.createPersona({
       name: '失败保护测试人物',

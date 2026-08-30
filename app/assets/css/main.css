@@ -6,6 +6,7 @@
 @import './theme/data.css';
 @import './theme/workflow.css';
 @import './theme/mind.css';
+@import './theme/processing.css';
 @import './theme/authentication.css';
 
 @layer components {

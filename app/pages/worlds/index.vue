@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, shallowRef, watch } from 'vue'
+import type { QuickCreateSubjectInput } from '#shared/schemas/content'
 import type { ApiResponse } from '#shared/types/api'
-import type { WorldDetails, WorldDraftView, WorldPageView, WorldStatusUpdateResult } from '#shared/types/content'
+import type { SoulSnapshot, WorldDetails, WorldPageView, WorldStatusUpdateResult } from '#shared/types/content'
 import { getApiErrorMessage } from '../../utils/apiError'
 
 const route = useRoute()
@@ -73,16 +74,26 @@ function updateCurrentPageSelection(event: Event): void {
   selectedWorldIds.value = (event.target as HTMLInputElement).checked ? [...pageWorldIds.value] : []
 }
 
-/** @param prompt 用户确认的世界描述。 @returns 生成、创建和导航全部完成时结束。 */
-async function createWorld(prompt: string): Promise<void> {
+/**
+ * 按用户选择直接保存原文或先用 AI 整理，再创建世界草稿并进入详情。
+ * @param input 用户确认的世界名称、灵魂提示词和整理方式。
+ * @returns 整理、创建和导航全部完成时结束。
+ */
+async function createWorld(input: QuickCreateSubjectInput): Promise<void> {
   loading.value = true
   errorMessage.value = null
   try {
-    const draft = await $fetch<ApiResponse<WorldDraftView>>('/api/v1/worlds/draft', { method: 'POST', body: { prompt } })
+    let snapshot: SoulSnapshot = { promptText: input.promptText }
+    if (input.autoAnalyze) {
+      const analyzed = await $fetch<ApiResponse<SoulSnapshot>>('/api/v1/soul/analyze', {
+        method: 'POST', body: { subjectType: 'world', promptText: input.promptText },
+      })
+      snapshot = analyzed.data
+    }
     const created = await $fetch<ApiResponse<WorldDetails>>('/api/v1/worlds', {
       method: 'POST', body: {
-        name: draft.data.name, summary: draft.data.summary, snapshot: draft.data.snapshot,
-        changeSummary: '根据自然语言生成初始世界灵魂草稿',
+        name: input.name, summary: '', snapshot,
+        changeSummary: input.autoAnalyze ? 'AI 整理初始世界灵魂草稿' : '按原文建立初始世界灵魂草稿',
       },
     })
     await navigateTo(`/worlds/${created.data.world.id}`)

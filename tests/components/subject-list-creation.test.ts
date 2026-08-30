@@ -2,7 +2,7 @@ import { createError, readBody } from 'h3'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DOMWrapper, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
-import type { UpdatePersonasStatusInput, UpdateWorldsStatusInput } from '#shared/schemas/content'
+import type { AnalyzeSoulPromptInput, UpdatePersonasStatusInput, UpdateWorldsStatusInput } from '#shared/schemas/content'
 import type { PersonaSummary, WorldSummary } from '#shared/types/content'
 import PersonasPage from '../../app/pages/personas/index.vue'
 import WorldsPage from '../../app/pages/worlds/index.vue'
@@ -13,10 +13,9 @@ const personaSnapshot = {
 const worldSnapshot = {
   promptText: '人类生活在依靠浮石能量稳定的浮岛。',
 }
-const personaDraftRequests: unknown[] = []
 const personaCreateRequests: unknown[] = []
-const worldDraftRequests: unknown[] = []
 const worldCreateRequests: unknown[] = []
+const soulAnalyzeRequests: AnalyzeSoulPromptInput[] = []
 const personaStatusRequests: UpdatePersonasStatusInput[] = []
 const worldStatusRequests: UpdateWorldsStatusInput[] = []
 
@@ -86,18 +85,15 @@ registerEndpoint('/api/v1/worlds', {
     throw createError({ statusCode: 503, message: '测试创建失败' })
   },
 })
-registerEndpoint('/api/v1/personas/draft', {
+registerEndpoint('/api/v1/soul/analyze', {
   method: 'POST',
   handler: async (event) => {
-    personaDraftRequests.push(await readBody(event))
-    return { data: { name: '林默', snapshot: personaSnapshot, warnings: [] } }
-  },
-})
-registerEndpoint('/api/v1/worlds/draft', {
-  method: 'POST',
-  handler: async (event) => {
-    worldDraftRequests.push(await readBody(event))
-    return { data: { name: '浮岛纪元', summary: '浮岛世界', snapshot: worldSnapshot } }
+    const input = await readBody<AnalyzeSoulPromptInput>(event)
+    soulAnalyzeRequests.push(input)
+    if (input.promptText === '触发整理失败。') {
+      throw createError({ statusCode: 503, message: '测试整理失败' })
+    }
+    return { data: input.subjectType === 'persona' ? personaSnapshot : worldSnapshot }
   },
 })
 registerEndpoint('/api/v1/personas/status', {
@@ -124,39 +120,50 @@ registerEndpoint('/api/v1/worlds/status', {
 })
 
 /**
- * 按用户操作打开快速创建弹窗、输入描述并提交。
+ * 按用户操作打开快速创建弹窗、输入名称和提示词并提交。
  * @param wrapper 当前人物或世界列表页包装器。
  * @param openLabel 列表页创建按钮的可见文字。
  * @param submitLabel 弹窗确认按钮的可见文字。
- * @param prompt 填入编辑框的自然语言描述。
- * @returns 弹窗中的原生文本框，用于验证失败后内容保留。
+ * @param name 填入名称输入框的对象名称。
+ * @param promptText 填入编辑框的灵魂提示词。
+ * @param autoAnalyze 是否选择 AI 整理。
+ * @returns 弹窗中的名称与提示词输入元素，用于验证失败后内容保留。
  */
 async function submitQuickCreate(
   wrapper: VueWrapper,
   openLabel: string,
   submitLabel: string,
-  prompt: string,
-): Promise<HTMLTextAreaElement> {
+  name: string,
+  promptText: string,
+  autoAnalyze: boolean,
+): Promise<{ nameInput: HTMLInputElement, promptTextarea: HTMLTextAreaElement }> {
   await wrapper.findAll('button').find(button => button.text() === openLabel)!.trigger('click')
   await flushPromises()
-  const textarea = document.querySelector<HTMLTextAreaElement>('textarea')
-  expect(textarea).toBeDefined()
-  await new DOMWrapper(textarea!).setValue(prompt)
+  const nameInput = document.querySelector<HTMLInputElement>('[data-quick-create-form] input[type="text"]')
+  const promptTextarea = document.querySelector<HTMLTextAreaElement>('[data-quick-create-form] textarea')
+  expect(nameInput).toBeDefined()
+  expect(promptTextarea).toBeDefined()
+  await new DOMWrapper(nameInput!).setValue(name)
+  await new DOMWrapper(promptTextarea!).setValue(promptText)
+  if (autoAnalyze) {
+    const analyzeCheckbox = document.querySelector<HTMLElement>('[data-quick-create-auto-analyze]')
+    expect(analyzeCheckbox).toBeDefined()
+    await new DOMWrapper(analyzeCheckbox!).trigger('click')
+  }
   const submitButton = [...document.querySelectorAll<HTMLButtonElement>('button')]
     .find(button => button.textContent?.includes(submitLabel))
   expect(submitButton).toBeDefined()
   await new DOMWrapper(submitButton!).trigger('click')
   await flushPromises()
   await flushPromises()
-  return textarea!
+  return { nameInput: nameInput!, promptTextarea: promptTextarea! }
 }
 
 describe('世界与人物列表快速初始化', () => {
   beforeEach(() => {
-    personaDraftRequests.length = 0
     personaCreateRequests.length = 0
-    worldDraftRequests.length = 0
     worldCreateRequests.length = 0
+    soulAnalyzeRequests.length = 0
     personaStatusRequests.length = 0
     worldStatusRequests.length = 0
     personaItems = createPersonaItems()
@@ -167,31 +174,76 @@ describe('世界与人物列表快速初始化', () => {
     document.body.innerHTML = ''
   })
 
-  it('人物按原创且无关联方式生成后创建，创建失败保留原文', async () => {
+  it('列表创建未选择 AI 时按原始提示词直接创建人物和世界', async () => {
     const wrapper = await mountSuspended(PersonasPage, { route: '/personas' })
-    const prompt = '创建一名谨慎且重视证据的档案员'
-    const textarea = await submitQuickCreate(wrapper, '创建人物', '生成并创建人物', prompt)
+    const personaPrompt = '谨慎且重视证据的档案员。'
+    const personaInputs = await submitQuickCreate(wrapper, '创建人物', '直接创建人物', '林默', personaPrompt, false)
 
-    expect(personaDraftRequests).toEqual([{ prompt, origin: 'original', worldId: null, sourceIds: [] }])
+    expect(soulAnalyzeRequests).toEqual([])
     expect(personaCreateRequests).toEqual([{
-      name: '林默', origin: 'original', worldId: null, sourceIds: [], snapshot: personaSnapshot,
-      changeSummary: '根据自然语言生成初始人物灵魂草稿',
+      name: '林默', origin: 'original', worldId: null, sourceIds: [], snapshot: { promptText: personaPrompt },
+      changeSummary: '按原文建立初始人物灵魂草稿',
     }])
-    expect(textarea.value).toBe(prompt)
+    expect(personaInputs.nameInput.value).toBe('林默')
+    expect(personaInputs.promptTextarea.value).toBe(personaPrompt)
+    expect(document.body.textContent).toContain('创建失败')
+    wrapper.unmount()
+    document.body.innerHTML = ''
+
+    const worldWrapper = await mountSuspended(WorldsPage, { route: '/worlds' })
+    const worldPrompt = '浮岛依靠浮石能量维持稳定。'
+    const worldInputs = await submitQuickCreate(worldWrapper, '创建世界', '直接创建世界', '浮岛纪元', worldPrompt, false)
+
+    expect(soulAnalyzeRequests).toEqual([])
+    expect(worldCreateRequests).toEqual([{
+      name: '浮岛纪元', summary: '', snapshot: { promptText: worldPrompt },
+      changeSummary: '按原文建立初始世界灵魂草稿',
+    }])
+    expect(worldInputs.nameInput.value).toBe('浮岛纪元')
+    expect(worldInputs.promptTextarea.value).toBe(worldPrompt)
     expect(document.body.textContent).toContain('创建失败')
   })
 
-  it('世界生成名称摘要和灵魂后创建，创建失败保留原文', async () => {
-    const wrapper = await mountSuspended(WorldsPage, { route: '/worlds' })
-    const prompt = '创建一个浮岛与风帆船构成的世界'
-    const textarea = await submitQuickCreate(wrapper, '创建世界', '生成并创建世界', prompt)
+  it('列表创建选择 AI 时先整理提示词再创建且保留用户名称', async () => {
+    const personaWrapper = await mountSuspended(PersonasPage, { route: '/personas' })
+    await submitQuickCreate(personaWrapper, '创建人物', 'AI 整理并创建人物', '用户指定人物名', '原始人物提示词。', true)
 
-    expect(worldDraftRequests).toEqual([{ prompt }])
-    expect(worldCreateRequests).toEqual([{
-      name: '浮岛纪元', summary: '浮岛世界', snapshot: worldSnapshot,
-      changeSummary: '根据自然语言生成初始世界灵魂草稿',
+    expect(soulAnalyzeRequests).toEqual([{ subjectType: 'persona', promptText: '原始人物提示词。' }])
+    expect(personaCreateRequests).toEqual([{
+      name: '用户指定人物名', origin: 'original', worldId: null, sourceIds: [], snapshot: personaSnapshot,
+      changeSummary: 'AI 整理初始人物灵魂草稿',
     }])
-    expect(textarea.value).toBe(prompt)
+    personaWrapper.unmount()
+    document.body.innerHTML = ''
+
+    const worldWrapper = await mountSuspended(WorldsPage, { route: '/worlds' })
+    await submitQuickCreate(worldWrapper, '创建世界', 'AI 整理并创建世界', '用户指定世界名', '原始世界提示词。', true)
+
+    expect(soulAnalyzeRequests).toEqual([
+      { subjectType: 'persona', promptText: '原始人物提示词。' },
+      { subjectType: 'world', promptText: '原始世界提示词。' },
+    ])
+    expect(worldCreateRequests).toEqual([{
+      name: '用户指定世界名', summary: '', snapshot: worldSnapshot,
+      changeSummary: 'AI 整理初始世界灵魂草稿',
+    }])
+  })
+
+  it('列表创建 AI 整理失败时不创建对象并保留输入', async () => {
+    const wrapper = await mountSuspended(PersonasPage, { route: '/personas' })
+    const inputs = await submitQuickCreate(
+      wrapper,
+      '创建人物',
+      'AI 整理并创建人物',
+      '失败保护人物',
+      '触发整理失败。',
+      true,
+    )
+
+    expect(soulAnalyzeRequests).toEqual([{ subjectType: 'persona', promptText: '触发整理失败。' }])
+    expect(personaCreateRequests).toEqual([])
+    expect(inputs.nameInput.value).toBe('失败保护人物')
+    expect(inputs.promptTextarea.value).toBe('触发整理失败。')
     expect(document.body.textContent).toContain('创建失败')
   })
 

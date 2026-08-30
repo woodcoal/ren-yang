@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, ref, shallowRef, watch } from 'vue'
+import type { QuickCreateSubjectInput } from '#shared/schemas/content'
 import type { ApiResponse } from '#shared/types/api'
-import type { PersonaDetails, PersonaDraftView, PersonaPageView, PersonaStatusUpdateResult, PersonaSummary } from '#shared/types/content'
+import type { PersonaDetails, PersonaPageView, PersonaStatusUpdateResult, PersonaSummary, SoulSnapshot } from '#shared/types/content'
 import { getApiErrorMessage } from '../../utils/apiError'
 
 const route = useRoute()
@@ -84,18 +85,26 @@ function openCreateModal(): void {
   showCreate.value = true
 }
 
-/** @param prompt 用户确认的人物描述。 @returns 生成、创建和导航全部完成时结束。 */
-async function createPersona(prompt: string): Promise<void> {
+/**
+ * 按用户选择直接保存原文或先用 AI 整理，再创建人物草稿并进入详情。
+ * @param input 用户确认的人物名称、灵魂提示词和整理方式。
+ * @returns 整理、创建和导航全部完成时结束。
+ */
+async function createPersona(input: QuickCreateSubjectInput): Promise<void> {
   createLoading.value = true
   createErrorMessage.value = null
   try {
-    const draft = await $fetch<ApiResponse<PersonaDraftView>>('/api/v1/personas/draft', {
-      method: 'POST', body: { prompt, origin: 'original', worldId: null, sourceIds: [] },
-    })
+    let snapshot: SoulSnapshot = { promptText: input.promptText }
+    if (input.autoAnalyze) {
+      const analyzed = await $fetch<ApiResponse<SoulSnapshot>>('/api/v1/soul/analyze', {
+        method: 'POST', body: { subjectType: 'persona', promptText: input.promptText },
+      })
+      snapshot = analyzed.data
+    }
     const created = await $fetch<ApiResponse<PersonaDetails>>('/api/v1/personas', {
       method: 'POST', body: {
-        name: draft.data.name, origin: 'original', worldId: null, sourceIds: [], snapshot: draft.data.snapshot,
-        changeSummary: '根据自然语言生成初始人物灵魂草稿',
+        name: input.name, origin: 'original', worldId: null, sourceIds: [], snapshot,
+        changeSummary: input.autoAnalyze ? 'AI 整理初始人物灵魂草稿' : '按原文建立初始人物灵魂草稿',
       },
     })
     await navigateTo(`/personas/${created.data.persona.id}`)

@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { DOMWrapper, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
 import PersonaDraftAssistant from '../../app/components/content/PersonaDraftAssistant.vue'
@@ -29,35 +31,49 @@ async function selectSourceTarget(wrapper: VueWrapper, searchTerm: string, optio
 }
 
 describe('阶段二内容表单', () => {
-  it('快速创建弹窗只提交自然语言且失败时保留原文', async () => {
+  it('快速创建弹窗提交名称、原始提示词和可选 AI 整理方式', async () => {
     const wrapper = await mountSuspended(QuickCreateSubjectModal, {
       props: { open: true, subjectType: 'world', loading: false, errorMessage: '模型暂时不可用' },
     })
     await flushPromises()
 
-    const textarea = document.querySelector<HTMLTextAreaElement>('textarea')
+    const nameInput = document.querySelector<HTMLInputElement>('[data-quick-create-form] input[type="text"]')
+    const textarea = document.querySelector<HTMLTextAreaElement>('[data-quick-create-form] textarea')
+    expect(nameInput).toBeDefined()
     expect(textarea).toBeDefined()
-    await new DOMWrapper(textarea!).setValue('创建一个浮岛与风帆船构成的世界')
+    await new DOMWrapper(nameInput!).setValue('浮岛纪元')
+    await new DOMWrapper(textarea!).setValue('浮岛与风帆船构成的世界。')
     const submitButton = [...document.querySelectorAll<HTMLButtonElement>('button')]
-      .find(button => button.textContent?.includes('生成并创建世界'))
+      .find(button => button.textContent?.includes('直接创建世界'))
     expect(submitButton).toBeDefined()
     await new DOMWrapper(submitButton!).trigger('click')
     await flushPromises()
 
-    expect(wrapper.emitted('submit')).toEqual([['创建一个浮岛与风帆船构成的世界']])
-    expect(textarea!.value).toBe('创建一个浮岛与风帆船构成的世界')
+    expect(wrapper.emitted('submit')).toEqual([[{
+      name: '浮岛纪元', promptText: '浮岛与风帆船构成的世界。', autoAnalyze: false,
+    }]])
+    expect(nameInput!.value).toBe('浮岛纪元')
+    expect(textarea!.value).toBe('浮岛与风帆船构成的世界。')
     expect(document.body.textContent).toContain('模型暂时不可用')
     expect(document.body.textContent).toContain('创建后仍是待确认草稿')
 
+    const analyzeCheckbox = document.querySelector<HTMLElement>('[data-quick-create-auto-analyze]')
+    expect(analyzeCheckbox).toBeDefined()
+    await new DOMWrapper(analyzeCheckbox!).trigger('click')
+    expect(document.body.textContent).toContain('AI 只整理灵魂提示词，名称保持不变')
+
     await wrapper.setProps({ loading: true, errorMessage: null })
     await flushPromises()
-    expect(document.body.textContent).toContain('AI 正在生成世界初始设定')
+    expect(document.body.textContent).toContain('AI 正在整理世界灵魂')
     expect(document.body.textContent).toContain('请保持当前页面开启，不要重复提交')
     expect(document.querySelector('[data-subject-creation-overlay]')?.className).toContain('fixed')
     expect(document.querySelector('[data-subject-creation-overlay]')?.className).toContain('z-[9999]')
     expect(document.querySelector('[data-subject-creation-overlay]')?.className).toContain('bg-default/55')
     expect(document.querySelector('[data-subject-creation-overlay]')?.className).toContain('backdrop-blur-md')
-    expect(document.querySelector('[data-subject-creation-spinner]')?.className).toContain('animate-spin')
+    expect(document.querySelector('[data-subject-creation-spinner]')?.className).toContain('subject-processing-spinner')
+    const processingStyles = readFileSync(resolve(process.cwd(), 'app/assets/css/theme/processing.css'), 'utf8')
+    expect(processingStyles).toContain('@keyframes subject-processing-spin')
+    expect(processingStyles).toContain('animation: subject-processing-spin 800ms linear infinite')
     expect(document.querySelector('textarea')).toBeNull()
   })
 
@@ -144,7 +160,7 @@ describe('阶段二内容表单', () => {
     expect(wrapper.text()).toContain('直接进入人物任务')
   })
 
-  it('灵魂使用单文本弹窗，可选择原文保存或自动分析且不会直接发布', async () => {
+  it('灵魂修改成功后关闭弹窗，AI 处理期间显示可旋转的全屏加载层', async () => {
     const snapshot = { promptText: '当前灵魂提示词' }
     const wrapper = await mountSuspended(SoulWorkspace, {
       props: {
@@ -186,6 +202,18 @@ describe('阶段二内容表单', () => {
     }])
     expect(wrapper.emitted('publish')).toBeUndefined()
 
+    const savedDraft = {
+      id: '00000000-0000-4000-8000-000000000002', subjectType: 'world' as const,
+      subjectId: '00000000-0000-4000-8000-000000000010', baseVersionId: '00000000-0000-4000-8000-000000000001',
+      snapshot: { promptText: '用户原始灵魂文本' }, changeSummary: '手动修改灵魂提示词', createdAt: 2_000, updatedAt: 2_000,
+    }
+    await wrapper.setProps({ workspace: { ...wrapper.props('workspace'), draft: savedDraft } })
+    await flushPromises()
+    expect(document.querySelector('[data-soul-prompt-form]')).toBeNull()
+
+    await wrapper.findAll('button').find(button => button.text() === '修改灵魂')!.trigger('click')
+    await flushPromises()
+
     const analyzeCheckbox = document.querySelector<HTMLElement>('[data-soul-auto-analyze]')
     expect(analyzeCheckbox).toBeDefined()
     await new DOMWrapper(analyzeCheckbox!).trigger('click')
@@ -196,6 +224,27 @@ describe('阶段二内容表单', () => {
     await flushPromises()
     expect(wrapper.emitted('save')?.[1]?.[0]).toMatchObject({ autoAnalyze: true })
     expect(wrapper.emitted('publish')).toBeUndefined()
+
+    await wrapper.setProps({ loading: true })
+    await flushPromises()
+    expect(document.querySelector('[data-soul-analysis-overlay]')?.className).toContain('z-[9999]')
+    expect(document.querySelector('[data-soul-analysis-overlay]')?.className).toContain('backdrop-blur-md')
+    expect(document.querySelector('[data-soul-analysis-spinner]')?.className).toContain('subject-processing-spinner')
+    expect(document.body.textContent).toContain('AI 正在整理世界灵魂')
+
+    await wrapper.setProps({ loading: false })
+    await flushPromises()
+    expect(document.querySelector('[data-soul-prompt-form]')).not.toBeNull()
+
+    await wrapper.setProps({
+      workspace: {
+        ...wrapper.props('workspace'),
+        draft: { ...savedDraft, snapshot: { promptText: 'AI 整理后的灵魂文本' }, updatedAt: 3_000 },
+      },
+    })
+    await flushPromises()
+    expect(document.querySelector('[data-soul-prompt-form]')).toBeNull()
+    expect(document.querySelector('[data-soul-analysis-overlay]')).toBeNull()
 
     await wrapper.findAll('button').find(button => button.text() === '复制为修改稿')!.trigger('click')
     expect(wrapper.emitted('from-version')).toEqual([['00000000-0000-4000-8000-000000000001']])

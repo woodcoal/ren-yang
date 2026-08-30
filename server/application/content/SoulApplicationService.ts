@@ -254,7 +254,7 @@ export class SoulApplicationService {
    * @param promptText 用户输入的原始灵魂提示词。
    * @returns 已校验并规范化的单文本灵魂快照。
    */
-  private async analyzePrompt(subjectType: SoulSubjectType, promptText: string): Promise<SoulSnapshot> {
+  async analyzePrompt(subjectType: SoulSubjectType, promptText: string): Promise<SoulSnapshot> {
     const model = this.dependencies.model
     if (!model?.getConfiguredModel()) {
       throw new ApplicationError('CAPABILITY_DISABLED', '文本模型尚未配置，不能自动分析灵魂提示词', 422)
