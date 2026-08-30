@@ -162,6 +162,12 @@ export const saveSoulDraftSchema = z.object({
   autoAnalyze: z.boolean().default(false),
 })
 
+/** 保存后立即成为当前灵魂的单文本版本输入。 */
+export const saveSoulVersionSchema = z.object({
+  baseVersionId: z.string().uuid('基础版本标识无效').nullable(),
+  snapshot: soulSnapshotSchema,
+})
+
 /** 模型整理灵魂提示词后的结构化响应。 */
 export const analyzedSoulPromptSchema = soulSnapshotSchema
 
@@ -267,6 +273,7 @@ export type UpdateWorldStatusInput = z.infer<typeof updateWorldStatusSchema>
 export type UpdateWorldsStatusInput = z.infer<typeof updateWorldsStatusSchema>
 export type CreateWorldVersionInput = z.infer<typeof createWorldVersionSchema>
 export type SaveSoulDraftInput = z.infer<typeof saveSoulDraftSchema>
+export type SaveSoulVersionInput = z.infer<typeof saveSoulVersionSchema>
 export type CreateSoulDraftFromVersionInput = z.infer<typeof createSoulDraftFromVersionSchema>
 export type CreateSourceInput = z.infer<typeof createSourceSchema>
 export type SourceCreationTarget = z.infer<typeof sourceCreationTargetSchema>

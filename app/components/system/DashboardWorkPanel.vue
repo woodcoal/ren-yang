@@ -123,7 +123,7 @@ function formatDateTime(timestamp: number): string {
         <div class="section-heading-copy">
           <p class="eyebrow">03 · 人物空间</p>
           <h2 id="dashboard-personas-heading">最近使用的人物</h2>
-          <p>人物是否已有发布版本，决定了能否直接发起任务。</p>
+          <p>已启用的人物可以直接发起任务，禁用后仍保留全部历史。</p>
         </div>
         <NuxtLink to="/personas" class="section-link">查看人物列表</NuxtLink>
       </div>
@@ -132,12 +132,12 @@ function formatDateTime(timestamp: number): string {
         <article v-for="persona in recentPersonas" :key="persona.id" class="archive-panel">
           <div class="flex flex-wrap items-center justify-between gap-3">
             <span class="log-row-meta">{{ originLabels[persona.origin] }}</span>
-            <UBadge :color="persona.activeVersionId ? 'success' : 'warning'" variant="subtle">{{ persona.activeVersionId ? '可执行任务' : '只有修改稿' }}</UBadge>
+            <UBadge :color="persona.isEnabled ? 'success' : 'neutral'" variant="subtle">{{ persona.isEnabled ? '已启用' : '已禁用' }}</UBadge>
           </div>
           <h3 class="mt-4">
             <NuxtLink :to="`/personas/${persona.id}`" class="log-row-title">{{ persona.name }}</NuxtLink>
           </h3>
-          <p class="mt-2 text-sm">{{ persona.currentSummary || '尚无已发布人物摘要' }}</p>
+          <p class="mt-2 text-sm">{{ persona.currentSummary || '暂无灵魂提示词' }}</p>
           <p class="mt-3 text-xs">版本 {{ persona.versionCount }} · 资料 {{ persona.sourceCount }} · {{ persona.worldName || '未关联世界' }}</p>
           <NuxtLink :to="`/personas/${persona.id}`" class="section-link mt-3">进入人物工作区</NuxtLink>
         </article>

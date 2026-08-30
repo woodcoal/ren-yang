@@ -28,7 +28,7 @@ const title = computed(() => {
   return isPersona.value ? '快速创建人物' : '快速创建世界'
 })
 const description = computed(() => {
-  if (props.loading) return state.autoAnalyze ? '正在调用 AI 整理灵魂提示词并保存修改稿。' : '正在保存原始灵魂提示词。'
+  if (props.loading) return state.autoAnalyze ? '正在调用 AI 整理灵魂提示词并创建对象。' : '正在保存原始灵魂提示词。'
   return isPersona.value
     ? '填写人物名称和完整灵魂提示词；是否交给 AI 整理由你决定。'
     : '填写世界名称和完整灵魂提示词；是否交给 AI 整理由你决定。'
@@ -96,8 +96,8 @@ watch(open, (isOpen, wasOpen) => {
         <UAlert
           color="neutral"
           variant="subtle"
-          title="创建后仍是待确认草稿"
-          :description="state.autoAnalyze ? 'AI 只整理灵魂提示词，名称保持不变；进入详情后仍需确认发布。' : '名称和灵魂提示词按当前输入保存；进入详情后仍需确认发布。'"
+          title="创建后立即启用"
+          :description="state.autoAnalyze ? 'AI 只整理灵魂提示词，名称保持不变；创建后立即使用整理结果。' : '名称和灵魂提示词按当前输入保存，创建后立即使用。'"
         />
         <UAlert v-if="errorMessage" color="error" title="创建失败" :description="errorMessage" />
         <div class="flex justify-end gap-2">

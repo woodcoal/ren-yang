@@ -199,7 +199,8 @@ beforeEach(async () => {
   const processor = new NodeSourceContentProcessor(identifiers)
   imageAssets = new LocalImageAssetStorage(directory)
   contentService = new ContentApplicationService({
-    repository: contentRepository, souls: contentRepository, identifiers, clock: testClock, sourceProcessor: processor,
+    repository: contentRepository, souls: contentRepository, identifiers, clock: testClock,
+    tokenCounter: new ConservativeTokenCounter(), tokenBudgets: { world: 2_500, persona: 3_500 }, sourceProcessor: processor,
     sourceFiles: new LocalSourceFileStorage(directory), imageAssets,
   })
   const source = await contentService.createPastedSource({

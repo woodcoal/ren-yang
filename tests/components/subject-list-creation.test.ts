@@ -182,7 +182,7 @@ describe('世界与人物列表快速初始化', () => {
     expect(soulAnalyzeRequests).toEqual([])
     expect(personaCreateRequests).toEqual([{
       name: '林默', origin: 'original', worldId: null, sourceIds: [], snapshot: { promptText: personaPrompt },
-      changeSummary: '按原文建立初始人物灵魂草稿',
+      changeSummary: '按原文建立初始人物灵魂',
     }])
     expect(personaInputs.nameInput.value).toBe('林默')
     expect(personaInputs.promptTextarea.value).toBe(personaPrompt)
@@ -197,7 +197,7 @@ describe('世界与人物列表快速初始化', () => {
     expect(soulAnalyzeRequests).toEqual([])
     expect(worldCreateRequests).toEqual([{
       name: '浮岛纪元', summary: '', snapshot: { promptText: worldPrompt },
-      changeSummary: '按原文建立初始世界灵魂草稿',
+      changeSummary: '按原文建立初始世界灵魂',
     }])
     expect(worldInputs.nameInput.value).toBe('浮岛纪元')
     expect(worldInputs.promptTextarea.value).toBe(worldPrompt)
@@ -211,7 +211,7 @@ describe('世界与人物列表快速初始化', () => {
     expect(soulAnalyzeRequests).toEqual([{ subjectType: 'persona', promptText: '原始人物提示词。' }])
     expect(personaCreateRequests).toEqual([{
       name: '用户指定人物名', origin: 'original', worldId: null, sourceIds: [], snapshot: personaSnapshot,
-      changeSummary: 'AI 整理初始人物灵魂草稿',
+      changeSummary: 'AI 整理初始人物灵魂',
     }])
     personaWrapper.unmount()
     document.body.innerHTML = ''
@@ -225,7 +225,7 @@ describe('世界与人物列表快速初始化', () => {
     ])
     expect(worldCreateRequests).toEqual([{
       name: '用户指定世界名', summary: '', snapshot: worldSnapshot,
-      changeSummary: 'AI 整理初始世界灵魂草稿',
+      changeSummary: 'AI 整理初始世界灵魂',
     }])
   })
 
@@ -247,11 +247,13 @@ describe('世界与人物列表快速初始化', () => {
     expect(document.body.textContent).toContain('创建失败')
   })
 
-  it('人物与世界列表默认每页十项且批量启用与禁用均需确认', async () => {
+  it('人物与世界列表移除设定状态且默认每页十项并保留启停确认', async () => {
     const personaWrapper = await mountSuspended(PersonasPage, { route: '/personas' })
     await flushPromises()
 
     expect(personaWrapper.text()).not.toContain('已选择')
+    expect(personaWrapper.text()).not.toContain('设定状态')
+    expect(personaWrapper.text()).not.toContain('待确认设定')
     const personaPageSize = personaWrapper.findAllComponents({ name: 'USelect' })[0]!
     expect(personaPageSize.props('modelValue')).toBe(10)
     expect(personaPageSize.props('items').map((item: { value: number }) => item.value)).toEqual([5, 10, 20, 50, 100])
@@ -293,6 +295,8 @@ describe('世界与人物列表快速初始化', () => {
 
     const worldWrapper = await mountSuspended(WorldsPage, { route: '/worlds' })
     await flushPromises()
+    expect(worldWrapper.text()).not.toContain('设定状态')
+    expect(worldWrapper.text()).not.toContain('本页待确认')
     expect(worldWrapper.text()).not.toContain('已选择')
     const worldPageSize = worldWrapper.findAllComponents({ name: 'USelect' })[0]!
     expect(worldPageSize.props('modelValue')).toBe(10)

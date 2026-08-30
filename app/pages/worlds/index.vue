@@ -28,8 +28,7 @@ const worldPage = computed<WorldPageView>(() => data.value?.data ?? {
   items: [], total: 0, page: requestedPage.value, pageSize: requestedPageSize.value, totalPages: 1,
 })
 const worlds = computed(() => worldPage.value.items)
-const usableWorldCount = computed(() => worlds.value.filter(world => world.isEnabled && world.activeVersionId).length)
-const pendingWorldCount = computed(() => worlds.value.filter(world => world.isEnabled && !world.activeVersionId).length)
+const usableWorldCount = computed(() => worlds.value.filter(world => world.isEnabled).length)
 const disabledWorldCount = computed(() => worlds.value.filter(world => !world.isEnabled).length)
 const showCreate = shallowRef(false)
 const loading = shallowRef(false)
@@ -75,7 +74,7 @@ function updateCurrentPageSelection(event: Event): void {
 }
 
 /**
- * 按用户选择直接保存原文或先用 AI 整理，再创建世界草稿并进入详情。
+ * 按用户选择直接保存原文或先用 AI 整理，再创建世界当前灵魂并进入详情。
  * @param input 用户确认的世界名称、灵魂提示词和整理方式。
  * @returns 整理、创建和导航全部完成时结束。
  */
@@ -93,7 +92,7 @@ async function createWorld(input: QuickCreateSubjectInput): Promise<void> {
     const created = await $fetch<ApiResponse<WorldDetails>>('/api/v1/worlds', {
       method: 'POST', body: {
         name: input.name, summary: '', snapshot,
-        changeSummary: input.autoAnalyze ? 'AI 整理初始世界灵魂草稿' : '按原文建立初始世界灵魂草稿',
+        changeSummary: input.autoAnalyze ? 'AI 整理初始世界灵魂' : '按原文建立初始世界灵魂',
       },
     })
     await navigateTo(`/worlds/${created.data.world.id}`)
@@ -178,8 +177,6 @@ async function changePageSize(pageSize: number): Promise<void> {
           }}</strong></div>
       <div class="status-cell"><span class="status-kicker">本页可使用</span><strong class="status-value">{{ usableWorldCount
           }}</strong></div>
-      <div class="status-cell"><span class="status-kicker">本页待确认</span><strong class="status-value">{{ pendingWorldCount
-          }}</strong></div>
       <div class="status-cell"><span class="status-kicker">本页已禁用</span><strong class="status-value">{{
           disabledWorldCount }}</strong></div>
     </div>
@@ -217,7 +214,6 @@ async function changePageSize(pageSize: number): Promise<void> {
               <th>使用关系</th>
               <th>版本</th>
               <th>启用状态</th>
-              <th>设定状态</th>
               <th>操作</th>
             </tr>
           </thead>
@@ -233,10 +229,6 @@ async function changePageSize(pageSize: number): Promise<void> {
               <td data-label="启用状态">
                 <UBadge :color="world.isEnabled ? 'success' : 'neutral'" variant="subtle">{{ world.isEnabled ? '已启用' :
                   '已禁用' }}</UBadge>
-              </td>
-              <td data-label="设定状态">
-                <UBadge :color="world.activeVersionId ? 'success' : 'warning'" variant="subtle">{{ world.activeVersionId
-                  ? '已有可用设定' : '等待确认设定' }}</UBadge>
               </td>
               <td data-label="操作">
                 <UButton :to="`/worlds/${world.id}`" color="neutral" variant="ghost" size="xs"

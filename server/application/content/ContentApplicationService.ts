@@ -49,7 +49,12 @@ import type { Clock } from '../../ports/Clock'
 import type { ContentRepository, SourceCreationLinkRecord } from '../../ports/ContentRepository'
 import type { ContextSyncTaskQueue } from '../../ports/ContextSyncTaskQueue'
 import type { IdentifierGenerator } from '../../ports/IdentifierGenerator'
+import type { TokenCounter, TokenCountResult } from '../../ports/TokenCounter'
 import type { ImageAssetStorage } from '../../ports/ImageAssetStorage'
+import { ImageAssetError } from '../../domain/generation/ImageAssetError'
+import type { ImageModelPort } from '../../ports/ImageModelPort'
+import { ImageModelError } from '../../ports/ImageModelPort'
+import type { PersonaAvatarFile, PersonaAvatarStorage } from '../../ports/PersonaAvatarStorage'
 import type { DecodedSourceFile, SourceContentProcessor, SourceFileStorage } from '../../ports/SourceContentPorts'
 import { StorageCapacityError } from '../../ports/StorageCapacity'
 import { ApplicationError } from '../errors/ApplicationError'
@@ -86,12 +91,20 @@ export interface ContentApplicationServiceDependencies {
   identifiers: IdentifierGenerator
   /** 可测试时钟。 */
   clock: Clock
+  /** 创建对象初始灵魂时使用的 Token 计数端口。 */
+  tokenCounter: TokenCounter
+  /** 世界和人物初始灵魂的最大 Token 数。 */
+  tokenBudgets: { world: number, persona: number }
   /** 资料正文处理端口。 */
   sourceProcessor: SourceContentProcessor
   /** 原始资料文件存储端口。 */
   sourceFiles: SourceFileStorage
   /** 可选阶段四运行资产清理端口。 */
   imageAssets?: Pick<ImageAssetStorage, 'deleteRunAssets'>
+  /** 可选人物头像文件存储；未注入时人物摘要不返回头像地址。 */
+  personaAvatars?: PersonaAvatarStorage
+  /** 可选图片模型；生成人物头像时必须已经配置。 */
+  imageModel?: ImageModelPort
   /** OpenViking 启用时提供的持久资料同步与删除队列；关闭时不注入。 */
   contextSyncQueue?: ContextSyncTaskQueue
 }
@@ -144,7 +157,81 @@ export class ContentApplicationService {
   }
 
   /**
-   * 创建人物、初始候选版本和可选资料关联。
+   * 保存用户上传的人物头像。
+   * @param personaId 人物 UUID。
+   * @param bytes 浏览器上传的图片字节。
+   * @param mediaType 浏览器声明的图片媒体类型。
+   * @returns 更新头像后的人物摘要。
+   */
+  async uploadPersonaAvatar(personaId: string, bytes: Uint8Array, mediaType: string | null): Promise<PersonaSummary> {
+    const persona = await this.requirePersona(personaId)
+    if (bytes.byteLength > 2 * 1024 * 1024) {
+      throw new ApplicationError('AVATAR_TOO_LARGE', '上传头像不能超过 2 MB', 422)
+    }
+    try {
+      await this.requirePersonaAvatarStorage().saveAvatar(personaId, bytes, mediaType)
+    }
+    catch (error: unknown) {
+      throw mapAvatarStorageError(error, 422)
+    }
+    return await this.toPersonaSummary(persona)
+  }
+
+  /**
+   * 根据人物当前名称和灵魂提示词生成并保存 1:1 头像。
+   * @param personaId 人物 UUID。
+   * @returns 更新头像后的人物摘要。
+   */
+  async generatePersonaAvatar(personaId: string): Promise<PersonaSummary> {
+    const persona = await this.requirePersona(personaId)
+    const imageModel = this.dependencies.imageModel
+    if (!imageModel?.getConfiguredModel()) {
+      throw new ApplicationError('CAPABILITY_DISABLED', '图片模型尚未配置，不能生成人物头像', 422)
+    }
+    if (!persona.activeVersionId) {
+      throw new ApplicationError('PERSONA_VERSION_NOT_ACTIVE', '人物当前灵魂版本缺失，不能生成头像', 409)
+    }
+    const version = await this.dependencies.repository.findPersonaVersion(persona.activeVersionId)
+    if (!version || version.status !== 'published') {
+      throw new ApplicationError('PERSONA_VERSION_NOT_ACTIVE', '人物当前灵魂版本不可用，不能生成头像', 409)
+    }
+
+    try {
+      const response = await imageModel.generate({
+        prompt: buildPersonaAvatarPrompt(persona.name, version.snapshot.promptText),
+        aspectRatio: '1:1',
+        timeoutMs: 120_000,
+      })
+      await this.requirePersonaAvatarStorage().saveAvatar(
+        personaId,
+        response.bytes,
+        response.declaredMediaType,
+      )
+    }
+    catch (error: unknown) {
+      if (error instanceof ImageModelError) throw mapAvatarModelError(error)
+      throw mapAvatarStorageError(error, 502)
+    }
+    return await this.toPersonaSummary(persona)
+  }
+
+  /**
+   * 读取人物头像文件。
+   * @param personaId 人物 UUID。
+   * @returns 已校验的头像字节与媒体类型。
+   */
+  async getPersonaAvatar(personaId: string): Promise<PersonaAvatarFile> {
+    await this.requirePersona(personaId)
+    try {
+      return await this.requirePersonaAvatarStorage().readAvatar(personaId)
+    }
+    catch (error: unknown) {
+      throw mapAvatarStorageError(error, 400)
+    }
+  }
+
+  /**
+   * 创建默认启用的人物、初始当前灵魂版本和可选资料关联。
    * @param input 已通过共享 Schema 校验的输入。
    * @returns 新人物详情。
    */
@@ -156,15 +243,19 @@ export class ContentApplicationService {
     await this.requireOptionalWorld(input.worldId ?? null)
     await this.requireSources(sourceIds)
 
+    const snapshot = normalizeSoulSnapshot(input.snapshot)
+    const count = this.requireSoulBudget('persona', snapshot.promptText)
     const personaId = this.dependencies.identifiers.create()
     await this.dependencies.repository.createPersona({
       id: personaId,
-      draftId: this.dependencies.identifiers.create(),
+      versionId: this.dependencies.identifiers.create(),
       worldId: input.worldId ?? null,
       name: input.name,
       origin: input.origin,
-      snapshot: normalizeSoulSnapshot(input.snapshot),
+      snapshot,
       changeSummary: input.changeSummary,
+      runtimeTokenCount: count.tokens,
+      tokenCounter: count.counter,
       sourceIds,
       timestamp: this.dependencies.clock.now(),
     })
@@ -240,11 +331,12 @@ export class ContentApplicationService {
    */
   async getPersonaDeletionImpact(personaId: string): Promise<DeletionImpact> {
     await this.requirePersona(personaId)
-    const [versions, sources, runHistory, runIds] = await Promise.all([
+    const [versions, sources, runHistory, runIds, hasAvatar] = await Promise.all([
       this.dependencies.repository.listPersonaVersions(personaId),
       this.dependencies.repository.listPersonaSources(personaId),
       this.dependencies.repository.getPersonaRunHistoryStatistics(personaId),
       this.dependencies.repository.listPersonaRunIds(personaId),
+      this.dependencies.personaAvatars?.hasAvatar(personaId) ?? false,
     ])
     return {
       resourceType: 'persona',
@@ -256,7 +348,10 @@ export class ContentApplicationService {
       relatedSources: sources.map(source => ({ id: source.id, name: source.name })),
       versionCount: versions.length,
       runHistory,
-      files: runIds.map(runId => `artifacts/${runId}`),
+      files: [
+        ...runIds.map(runId => `artifacts/${runId}`),
+        ...(hasAvatar ? [`avatars/${personaId}`] : []),
+      ],
     }
   }
 
@@ -275,6 +370,7 @@ export class ContentApplicationService {
     await this.enqueueSourceSynchronizations(sources.map(source => source.id))
     await this.enqueueUserReconciliation()
     if (this.dependencies.imageAssets) await this.dependencies.imageAssets.deleteRunAssets(runIds)
+    if (this.dependencies.personaAvatars) await this.dependencies.personaAvatars.deleteAvatar(personaId)
   }
 
   /**
@@ -321,23 +417,46 @@ export class ContentApplicationService {
   }
 
   /**
-   * 创建世界和初始候选版本。
+   * 创建默认启用的世界和初始当前灵魂版本。
    * @param input 已校验世界输入。
    * @returns 新世界详情。
    */
   async createWorld(input: CreateWorldInput): Promise<WorldDetails> {
+    const snapshot = normalizeSoulSnapshot(input.snapshot)
+    const count = this.requireSoulBudget('world', snapshot.promptText)
     const worldId = this.dependencies.identifiers.create()
     await this.dependencies.repository.createWorld({
       id: worldId,
-      draftId: this.dependencies.identifiers.create(),
+      versionId: this.dependencies.identifiers.create(),
       name: input.name,
       summary: input.summary,
-      snapshot: normalizeSoulSnapshot(input.snapshot),
+      snapshot,
       changeSummary: input.changeSummary,
+      runtimeTokenCount: count.tokens,
+      tokenCounter: count.counter,
       timestamp: this.dependencies.clock.now(),
     })
     await this.enqueueUserReconciliation()
     return await this.getWorld(worldId)
+  }
+
+  /**
+   * 计算初始灵魂提示词 Token 并拒绝超过对象预算的创建请求。
+   * @param subjectType 世界或人物类型，用于选择对应预算。
+   * @param promptText 已规范化且准备保存的灵魂提示词。
+   * @returns 计数结果，供仓储写入不可变版本审计字段。
+   */
+  private requireSoulBudget(subjectType: 'world' | 'persona', promptText: string): TokenCountResult {
+    const count = this.dependencies.tokenCounter.count(null, promptText)
+    const budget = this.dependencies.tokenBudgets[subjectType]
+    if (count.tokens > budget) {
+      throw new ApplicationError(
+        'SOUL_TOKEN_BUDGET_EXCEEDED',
+        `灵魂提示词预计 ${count.tokens} Token，超过当前 ${budget} Token 限制，请先精简文本`,
+        422,
+      )
+    }
+    return count
   }
 
   /**
@@ -839,13 +958,26 @@ export class ContentApplicationService {
     const sources = knownSources ?? await this.dependencies.repository.listPersonaSources(persona.id)
     const active = versions.find(version => version.id === persona.activeVersionId)
     const world = persona.worldId ? await this.dependencies.repository.findWorld(persona.worldId) : null
+    const avatarUrl = this.dependencies.personaAvatars && await this.dependencies.personaAvatars.hasAvatar(persona.id)
+      ? `/api/v1/personas/${persona.id}/avatar`
+      : null
     return {
       ...persona,
       worldName: world?.name ?? null,
+      avatarUrl,
       currentSummary: active?.snapshot.promptText ?? null,
       versionCount: versions.length,
       sourceCount: sources.length,
     }
+  }
+
+  /**
+   * 返回运行时已注入的人物头像存储。
+   * @returns 可用的人物头像存储端口。
+   */
+  private requirePersonaAvatarStorage(): PersonaAvatarStorage {
+    if (!this.dependencies.personaAvatars) throw new ApplicationError('CAPABILITY_DISABLED', '人物头像存储尚未启用', 503)
+    return this.dependencies.personaAvatars
   }
 
   /**
@@ -936,4 +1068,53 @@ function diffSoulSnapshots(before: PersonaSnapshot, after: PersonaSnapshot): Ver
     })
   }
   return differences
+}
+
+/**
+ * 构造只用于单张人物头像的视觉提示词。
+ * @param name 人物展示名称。
+ * @param soulPrompt 当前已发布灵魂提示词。
+ * @returns 限长且明确禁止文字水印的 1:1 头像提示词。
+ */
+function buildPersonaAvatarPrompt(name: string, soulPrompt: string): string {
+  const boundedSoul = soulPrompt.slice(0, 6_000)
+  return [
+    '生成人物头像，正方形 1:1 构图。',
+    `人物名称：${name}`,
+    `人物设定：${boundedSoul}`,
+    '要求：单人半身或头肩肖像，主体居中，面部或核心形象清晰，背景简洁；不得出现文字、标志、水印、边框或多人。',
+  ].join('\n')
+}
+
+/**
+ * 把人物头像文件错误转换为稳定应用错误。
+ * @param error 存储端抛出的未知错误。
+ * @param invalidStatus 图片内容无效时使用的 HTTP 状态码。
+ * @returns 可继续抛出的应用错误或原始 Error。
+ */
+function mapAvatarStorageError(error: unknown, invalidStatus: number): Error {
+  if (error instanceof ApplicationError) return error
+  if (error instanceof StorageCapacityError) return new ApplicationError('INSUFFICIENT_STORAGE', error.message, 507)
+  if (error instanceof ImageAssetError) {
+    const statusCode = error.code === 'ASSET_NOT_FOUND' ? 404 : error.code === 'ASSET_PATH_INVALID' ? 400 : invalidStatus
+    return new ApplicationError(error.code, error.message, statusCode)
+  }
+  return error instanceof Error ? error : new Error('人物头像存储失败')
+}
+
+/**
+ * 把图片供应商错误转换为同步头像生成接口的 HTTP 错误。
+ * @param error 图片模型端口返回的稳定错误。
+ * @returns 可安全返回客户端的应用错误。
+ */
+function mapAvatarModelError(error: ImageModelError): ApplicationError {
+  const statusCodes: Record<ImageModelError['code'], number> = {
+    CAPABILITY_DISABLED: 422,
+    IMAGE_PROVIDER_TIMEOUT: 504,
+    IMAGE_PROVIDER_RATE_LIMITED: 429,
+    IMAGE_PROVIDER_UNAVAILABLE: 503,
+    IMAGE_OUTPUT_INVALID: 502,
+    IMAGE_DOWNLOAD_BLOCKED: 502,
+  }
+  return new ApplicationError(error.code, error.message, statusCodes[error.code])
 }

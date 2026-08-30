@@ -28,8 +28,7 @@ const personaPage = computed<PersonaPageView>(() => data.value?.data ?? {
   items: [], total: 0, page: requestedPage.value, pageSize: requestedPageSize.value, totalPages: 1,
 })
 const personas = computed(() => personaPage.value.items)
-const usablePersonaCount = computed(() => personas.value.filter(persona => persona.isEnabled && persona.activeVersionId).length)
-const pendingPersonaCount = computed(() => personas.value.filter(persona => persona.isEnabled && !persona.activeVersionId).length)
+const usablePersonaCount = computed(() => personas.value.filter(persona => persona.isEnabled).length)
 const disabledPersonaCount = computed(() => personas.value.filter(persona => !persona.isEnabled).length)
 const showCreate = shallowRef(false)
 const createLoading = shallowRef(false)
@@ -86,7 +85,7 @@ function openCreateModal(): void {
 }
 
 /**
- * 按用户选择直接保存原文或先用 AI 整理，再创建人物草稿并进入详情。
+ * 按用户选择直接保存原文或先用 AI 整理，再创建人物当前灵魂并进入详情。
  * @param input 用户确认的人物名称、灵魂提示词和整理方式。
  * @returns 整理、创建和导航全部完成时结束。
  */
@@ -104,7 +103,7 @@ async function createPersona(input: QuickCreateSubjectInput): Promise<void> {
     const created = await $fetch<ApiResponse<PersonaDetails>>('/api/v1/personas', {
       method: 'POST', body: {
         name: input.name, origin: 'original', worldId: null, sourceIds: [], snapshot,
-        changeSummary: input.autoAnalyze ? 'AI 整理初始人物灵魂草稿' : '按原文建立初始人物灵魂草稿',
+        changeSummary: input.autoAnalyze ? 'AI 整理初始人物灵魂' : '按原文建立初始人物灵魂',
       },
     })
     await navigateTo(`/personas/${created.data.persona.id}`)
@@ -177,7 +176,7 @@ async function changePageSize(pageSize: number): Promise<void> {
 
 <template>
   <div>
-    <ContentPageHeader title="人物工作区" description="查看每个人物当前是否可工作，以及其灵魂版本、所属世界、资料和待确认状态。">
+    <ContentPageHeader title="人物工作区" description="查看每个人物的启用状态、灵魂版本、所属世界和资料。">
       <ContentQuickCreateSubjectModal v-model:open="showCreate" subject-type="persona" :loading="createLoading"
         :error-message="createErrorMessage" @submit="createPersona">
         <UButton icon="i-lucide-plus">创建人物</UButton>
@@ -187,14 +186,13 @@ async function changePageSize(pageSize: number): Promise<void> {
     <div class="status-strip page-status-strip" aria-label="人物状态摘要">
       <div class="status-cell"><span class="status-kicker">全部人物</span><strong class="status-value">{{ personaPage.total }}</strong></div>
       <div class="status-cell"><span class="status-kicker">本页可创建任务</span><strong class="status-value">{{ usablePersonaCount }}</strong></div>
-      <div class="status-cell"><span class="status-kicker">本页待确认设定</span><strong class="status-value">{{ pendingPersonaCount }}</strong></div>
       <div class="status-cell"><span class="status-kicker">本页已禁用</span><strong class="status-value">{{ disabledPersonaCount }}</strong></div>
     </div>
 
     <UAlert v-if="actionErrorMessage" class="mb-5" color="error" title="操作失败" :description="actionErrorMessage" />
     <UAlert v-if="error" color="error" title="人物列表加载失败" :actions="[{ label: '重试', onClick: () => refresh() }]" />
     <section v-else-if="personas.length" class="content-section" aria-labelledby="persona-list-heading">
-      <div class="section-heading"><div class="section-heading-copy"><p class="eyebrow">人物状态</p><h2 id="persona-list-heading">可工作的人物与待确认事项</h2><p>禁用只影响后续新任务，历史记录、人物设定和资料关系仍会保留。</p></div></div>
+      <div class="section-heading"><div class="section-heading-copy"><p class="eyebrow">人物状态</p><h2 id="persona-list-heading">已建立的人物</h2><p>禁用只影响后续新任务，历史记录、人物设定和资料关系仍会保留。</p></div></div>
       <div class="content-toolbar !rounded-none !bg-transparent !border-0">
         <span v-if="selectedPersonaIds.length > 0" class="text-sm text-muted">已选择 {{ selectedPersonaIds.length }} 个人物</span><span v-else aria-hidden="true"></span>
         <div class="flex items-center justify-end gap-1">
@@ -208,14 +206,16 @@ async function changePageSize(pageSize: number): Promise<void> {
         <table class="content-table">
           <thead><tr><th><input type="checkbox" aria-label="选择当前页全部人物" :checked="allPagePersonasSelected"
             :indeterminate="somePagePersonasSelected" :disabled="pagePersonaIds.length === 0" @change="updateCurrentPageSelection"></th>
-            <th>人物</th><th>世界</th><th>版本与资料</th><th>启用状态</th><th>设定状态</th><th>操作</th></tr></thead>
+            <th>人物</th><th>世界</th><th>版本与资料</th><th>启用状态</th><th>操作</th></tr></thead>
           <tbody><tr v-for="persona in personas" :key="persona.id">
             <td data-label="选择"><input type="checkbox" :aria-label="`选择人物：${persona.name}`" :checked="selectedPersonaIds.includes(persona.id)" @change="updatePersonaSelection(persona.id, $event)"></td>
-            <td data-label="人物"><strong class="content-table-title">{{ persona.name }}</strong><span class="content-table-description">{{ persona.currentSummary || '还没有确认使用的人物设定' }}</span></td>
+            <td data-label="人物"><div class="flex min-w-0 items-center gap-3">
+              <ContentPersonaAvatar :name="persona.name" :url="persona.avatarUrl" />
+              <div class="min-w-0"><strong class="content-table-title">{{ persona.name }}</strong><span class="content-table-description">{{ persona.currentSummary || '暂无灵魂提示词' }}</span></div>
+            </div></td>
             <td data-label="世界"><span class="content-table-title">{{ persona.worldName || '独立人物' }}</span><span class="content-table-description">{{ originLabels[persona.origin] }}</span></td>
             <td data-label="版本与资料"><span>{{ persona.versionCount }} 条修改记录</span><span class="content-table-description">{{ persona.sourceCount }} 项参考资料</span></td>
             <td data-label="启用状态"><UBadge :color="persona.isEnabled ? 'success' : 'neutral'" variant="subtle">{{ persona.isEnabled ? '已启用' : '已禁用' }}</UBadge></td>
-            <td data-label="设定状态"><UBadge :color="persona.activeVersionId ? 'success' : 'warning'" variant="subtle">{{ persona.activeVersionId ? '已有可用设定' : '等待确认设定' }}</UBadge></td>
             <td data-label="操作"><UButton :to="`/personas/${persona.id}`" color="neutral" variant="ghost" size="xs"
               icon="i-lucide-chevron-right" :aria-label="`查看与维护：${persona.name}`" /></td>
           </tr></tbody>

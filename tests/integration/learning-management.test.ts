@@ -52,6 +52,8 @@ beforeEach(() => {
     souls: repository,
     identifiers,
     clock,
+    tokenCounter: new ConservativeTokenCounter(),
+    tokenBudgets: { world: 2_500, persona: 3_500 },
     sourceProcessor: new NodeSourceContentProcessor(identifiers),
     sourceFiles: new LocalSourceFileStorage(temporaryDirectory),
   })

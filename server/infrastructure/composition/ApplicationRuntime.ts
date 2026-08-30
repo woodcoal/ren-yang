@@ -17,6 +17,7 @@ import { NuxtAuthenticationSession } from '../authentication/NuxtAuthenticationS
 import { ScryptPasswordHasher } from '../authentication/ScryptPasswordHasher'
 import { LocalSourceFileStorage } from '../content/LocalSourceFileStorage'
 import { LocalImageAssetStorage } from '../content/LocalImageAssetStorage'
+import { LocalPersonaAvatarStorage } from '../content/LocalPersonaAvatarStorage'
 import { NodeSourceContentProcessor } from '../content/NodeSourceContentProcessor'
 import { SqliteContextProvider } from '../context/SqliteContextProvider'
 import { DrizzleAdministratorRepository } from '../database/DrizzleAdministratorRepository'
@@ -142,7 +143,9 @@ export class ApplicationRuntime {
     const sourceProcessor = new NodeSourceContentProcessor(identifiers)
     const storageCapacity = new NodeStorageCapacityGuard(options.minimumFreeDiskBytes)
     const imageAssets = new LocalImageAssetStorage(options.dataDirectory, storageCapacity)
+    const personaAvatars = new LocalPersonaAvatarStorage(options.dataDirectory, storageCapacity)
     const textModel = new OpenAiCompatibleTextModel(options.textModel ?? { endpoint: '', apiKey: '', model: '' })
+    const imageModel = new OpenAiCompatibleImageModel(options.imageModel ?? { endpoint: '', apiKey: '', model: '' })
     const tokenCounter = new ConservativeTokenCounter()
     const contextRepository = new SqliteContextIndexRepository(this.sqlite.getClient())
     const openVikingOptions = options.openViking ?? { enabled: false, endpoint: '', apiKey: '', timeoutMs: 60_000 }
@@ -160,9 +163,13 @@ export class ApplicationRuntime {
       souls: contentRepository,
       identifiers,
       clock: this.clock,
+      tokenCounter,
+      tokenBudgets: { world: 2_500, persona: 3_500 },
       sourceProcessor,
       sourceFiles: new LocalSourceFileStorage(options.dataDirectory, storageCapacity),
       imageAssets,
+      personaAvatars,
+      imageModel,
       contextSyncQueue,
     })
     this.soulService = new SoulApplicationService({
@@ -195,7 +202,7 @@ export class ApplicationRuntime {
       content: contentRepository,
       context: contextProvider,
       model: textModel,
-      imageModel: new OpenAiCompatibleImageModel(options.imageModel ?? { endpoint: '', apiKey: '', model: '' }),
+      imageModel,
       imageAssets,
       identifiers,
       clock: this.clock,

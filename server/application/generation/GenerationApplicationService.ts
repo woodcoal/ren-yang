@@ -172,7 +172,7 @@ export class GenerationApplicationService implements TaskHandler {
       const worldRecord = await this.dependencies.content.findWorld(input.worldId)
       if (!worldRecord) throw new ApplicationError('RESOURCE_NOT_FOUND', '世界不存在', 404)
       if (!worldRecord.activeVersionId) {
-        throw new ApplicationError('WORLD_VERSION_NOT_ACTIVE', '所选世界尚无已发布版本', 409)
+        throw new ApplicationError('WORLD_VERSION_NOT_ACTIVE', '所选世界当前灵魂版本缺失', 409)
       }
       const version = await this.dependencies.content.findWorldVersion(worldRecord.activeVersionId)
       if (!version || version.status !== 'published') {
@@ -476,7 +476,7 @@ export class GenerationApplicationService implements TaskHandler {
     }
     const persona = await this.requirePersona(personaId)
     if (!persona.isEnabled) throw new ApplicationError('RESOURCE_DISABLED', '人物已禁用，不能创建新任务', 409)
-    if (!persona.activeVersionId) throw new ApplicationError('PERSONA_VERSION_NOT_ACTIVE', '人物尚无已发布当前版本', 409)
+    if (!persona.activeVersionId) throw new ApplicationError('PERSONA_VERSION_NOT_ACTIVE', '人物当前灵魂版本缺失，请重新保存灵魂提示词', 409)
     const version = await this.requirePublishedPersonaVersion(persona.activeVersionId, persona.id)
     const parameters = await this.resolveParameters(profileId)
     const template = templateId ? await this.requireFormatTemplate(templateId) : { spec: DEFAULT_FORMAT_TEMPLATE }

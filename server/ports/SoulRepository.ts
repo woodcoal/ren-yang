@@ -14,6 +14,12 @@ export interface PublishSoulDraftRecord {
   timestamp: number
 }
 
+/** 直接保存并启用灵魂历史版本所需的完整持久化命令。 */
+export interface SaveSoulVersionRecord {
+  /** 已校验且可直接保存的不可变版本。 */
+  version: SoulVersionRecord
+}
+
 /** 灵魂草稿、不可变版本和当前版本指针的事实源端口。 */
 export interface SoulRepository {
   /**
@@ -53,6 +59,13 @@ export interface SoulRepository {
    * @returns 版本或 null。
    */
   findSoulVersion(versionId: string): Promise<SoulVersionRecord | null>
+
+  /**
+   * 原子保存不可变灵魂版本并切换当前版本指针。
+   * @param record 已完成预算校验的版本命令。
+   * @returns 保存成功后的版本；对象已经不存在时返回 null。
+   */
+  saveSoulVersion(record: SaveSoulVersionRecord): Promise<SoulVersionRecord | null>
 
   /**
    * 原子发布草稿、切换当前版本指针并删除已发布草稿。

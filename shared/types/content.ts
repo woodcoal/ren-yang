@@ -100,6 +100,8 @@ export interface PersonaSummary {
   worldName: string | null
   /** 人物展示名称。 */
   name: string
+  /** 已设置头像时返回受认证保护的读取地址，否则为 null。 */
+  avatarUrl: string | null
   /** 人物来源模式。 */
   origin: 'original' | 'source_based' | 'hybrid'
   /** 当前已发布版本 UUID。 */

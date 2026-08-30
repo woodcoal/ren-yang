@@ -50,7 +50,7 @@ describe('SqliteDatabase', () => {
       ORDER BY name
     `).all()
     expect(tables).toEqual([{ name: 'administrators' }, { name: 'task_jobs' }])
-    expect(current.getClient().prepare(`SELECT COUNT(*) AS count FROM __drizzle_migrations`).get()).toEqual({ count: 4 })
+    expect(current.getClient().prepare(`SELECT COUNT(*) AS count FROM __drizzle_migrations`).get()).toEqual({ count: 5 })
     expect(current.getClient().prepare(`PRAGMA table_info(source_materials)`).all()).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'is_enabled', notnull: 1, dflt_value: '1' }),
     ]))
@@ -142,7 +142,7 @@ describe('SqliteDatabase', () => {
     expect(database.getClient().prepare('PRAGMA foreign_key_check').all()).toEqual([])
   })
 
-  it('灵魂单文本迁移保留旧运行摘要并移除旧结构字段', () => {
+  it('保存即生效迁移保留旧版本并把现有草稿提升为当前历史版本', () => {
     temporaryDirectory = mkdtempSync(resolve(tmpdir(), 'ren-yang-soul-prompt-upgrade-test-'))
     const oldMigrationsDirectory = resolve(temporaryDirectory, 'old-drizzle')
     mkdirSync(resolve(oldMigrationsDirectory, 'meta'), { recursive: true })
@@ -182,9 +182,17 @@ describe('SqliteDatabase', () => {
     expect(database.getClient().prepare('SELECT prompt_text FROM soul_versions WHERE id = ?').get('version-1')).toEqual({
       prompt_text: '旧世界发布提示词。',
     })
-    expect(database.getClient().prepare('SELECT prompt_text FROM soul_drafts WHERE id = ?').get('draft-1')).toEqual({
-      prompt_text: '旧世界草稿提示词。',
+    expect(database.getClient().prepare(`
+      SELECT prompt_text, parent_version_id, token_counter FROM soul_versions WHERE id = ?
+    `).get('draft-1')).toEqual({
+      prompt_text: '旧世界草稿提示词。', parent_version_id: 'version-1', token_counter: 'utf8-bytes-v1:migration',
     })
+    expect(database.getClient().prepare('SELECT active_soul_version_id FROM worlds WHERE id = ?').get('world-1')).toEqual({
+      active_soul_version_id: 'draft-1',
+    })
+    expect(database.getClient().prepare('SELECT COUNT(*) AS count FROM soul_versions WHERE world_id = ?').get('world-1'))
+      .toEqual({ count: 2 })
+    expect(database.getClient().prepare('SELECT COUNT(*) AS count FROM soul_drafts').get()).toEqual({ count: 0 })
     for (const table of ['soul_versions', 'soul_drafts']) {
       const columns = database.getClient().prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>
       expect(columns.map(column => column.name)).toContain('prompt_text')

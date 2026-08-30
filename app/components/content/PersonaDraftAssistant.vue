@@ -33,8 +33,8 @@ const state = reactive<GeneratePersonaDraftInput>({
   sourceIds: [],
 })
 
-/** 只有已有发布版本的世界才能作为模型事实上下文。 */
-const publishedWorlds = computed(() => props.worlds.filter(world => world.activeVersionId))
+/** 只有启用且当前灵魂完整的世界才能作为模型事实上下文。 */
+const availableWorlds = computed(() => props.worlds.filter(world => world.isEnabled && world.activeVersionId))
 
 /**
  * 上送 Nuxt UI 已通过共享 Schema 校验的草稿生成输入。
@@ -73,10 +73,10 @@ function handleSubmit(event: FormSubmitEvent<GeneratePersonaDraftInput>): void {
             { label: '混合型', value: 'hybrid' },
           ]" :disabled="loading" />
         </UFormField>
-        <UFormField name="worldId" label="已发布世界（可选）">
+        <UFormField name="worldId" label="可用世界（可选）">
           <select v-model="state.worldId" class="native-control" :disabled="loading">
             <option :value="null">不使用世界</option>
-            <option v-for="world in publishedWorlds" :key="world.id" :value="world.id">{{ world.name }}</option>
+            <option v-for="world in availableWorlds" :key="world.id" :value="world.id">{{ world.name }}</option>
           </select>
         </UFormField>
         <UFormField name="sourceIds" label="参考资料（最多 8 项）">

@@ -1,4 +1,4 @@
-import { analyzedSoulPromptSchema, type CreateSoulDraftFromVersionInput, type SaveSoulDraftInput } from '../../../shared/schemas/content'
+import { analyzedSoulPromptSchema, type CreateSoulDraftFromVersionInput, type SaveSoulDraftInput, type SaveSoulVersionInput } from '../../../shared/schemas/content'
 import type { TextModelParameters } from '../../../shared/schemas/generation'
 import type { SoulDraftView, SoulSnapshot, SoulVersionView, SoulWorkspaceView } from '../../../shared/types/content'
 import type { SoulDraftRecord, SoulSubjectType, SoulVersionRecord } from '../../domain/content/ContentModels'
@@ -37,7 +37,7 @@ const SOUL_ANALYSIS_PARAMETERS: TextModelParameters = {
   sourceBudgetTokens: 0,
 }
 
-/** 灵魂发布时使用的最小预算配置。 */
+/** 灵魂保存为当前版本时使用的最小预算配置。 */
 export interface SoulTokenBudgets {
   /** 世界灵魂提示词最多可占 Token。 */
   world: number
@@ -55,7 +55,7 @@ export interface SoulApplicationServiceDependencies {
   identifiers: IdentifierGenerator
   /** 可测试时钟。 */
   clock: Clock
-  /** 发布时 Token 计数端口。 */
+  /** 保存灵魂版本时使用的 Token 计数端口。 */
   tokenCounter: TokenCounter
   /** 可选执行灵魂文本整理的模型端口。 */
   model?: TextModelPort
@@ -63,7 +63,7 @@ export interface SoulApplicationServiceDependencies {
   tokenBudgets: SoulTokenBudgets
 }
 
-/** 管理世界与人物共用的灵魂草稿和不可变发布版本。 */
+/** 管理世界与人物共用的当前灵魂、不可变历史版本和旧草稿兼容流程。 */
 export class SoulApplicationService {
   /**
    * 创建灵魂应用服务。
@@ -90,6 +90,55 @@ export class SoulApplicationService {
       draft: draft ? toSoulDraftView(draft) : null,
       versions: versions.map(toSoulVersionView),
     }
+  }
+
+  /**
+   * 保存新的不可变灵魂历史版本并立即设为当前使用版本。
+   * @param subjectType 世界或人物类型。
+   * @param subjectId 对象 UUID。
+   * @param input 用户编辑后的单文本提示词和可选历史基线。
+   * @returns 已经成为当前版本的完整公开视图。
+   */
+  async saveVersion(
+    subjectType: SoulSubjectType,
+    subjectId: string,
+    input: SaveSoulVersionInput,
+  ): Promise<SoulVersionView> {
+    const activeVersionId = await this.requireSubject(subjectType, subjectId)
+    await this.requireOptionalBaseVersion(subjectType, subjectId, input.baseVersionId)
+    const snapshot = normalizeSoulSnapshot(input.snapshot)
+    const count = this.dependencies.tokenCounter.count(null, snapshot.promptText)
+    const budget = this.dependencies.tokenBudgets[subjectType]
+    if (count.tokens > budget) {
+      throw new ApplicationError(
+        'SOUL_TOKEN_BUDGET_EXCEEDED',
+        `灵魂提示词预计 ${count.tokens} Token，超过当前 ${budget} Token 限制，请先精简文本`,
+        422,
+      )
+    }
+    const timestamp = this.dependencies.clock.now()
+    const baseVersionId = input.baseVersionId ?? activeVersionId
+    const version = await this.dependencies.souls.saveSoulVersion({
+      version: {
+        id: this.dependencies.identifiers.create(),
+        subjectType,
+        subjectId,
+        parentVersionId: baseVersionId,
+        status: 'published',
+        snapshot,
+        runtimeTokenCount: count.tokens,
+        tokenCounter: count.counter,
+        changeSummary: baseVersionId && activeVersionId && baseVersionId !== activeVersionId
+          ? '回溯历史提示词并保存'
+          : '修改灵魂提示词',
+        publishedAt: timestamp,
+        createdAt: timestamp,
+      },
+    })
+    if (!version) {
+      throw new ApplicationError('RESOURCE_NOT_FOUND', subjectType === 'world' ? '世界不存在' : '人物不存在', 404)
+    }
+    return toSoulVersionView(version)
   }
 
   /**
@@ -170,9 +219,11 @@ export class SoulApplicationService {
    * @returns 新发布的不可变灵魂版本。
    */
   async publishDraft(subjectType: SoulSubjectType, subjectId: string): Promise<SoulVersionView> {
-    await this.requireSubject(subjectType, subjectId)
+    const activeVersionId = await this.requireSubject(subjectType, subjectId)
     const draft = await this.dependencies.souls.findSoulDraft(subjectType, subjectId)
     if (!draft) {
+      const activeVersion = activeVersionId ? await this.dependencies.souls.findSoulVersion(activeVersionId) : null
+      if (activeVersion) return toSoulVersionView(activeVersion)
       throw new ApplicationError('SOUL_DRAFT_NOT_FOUND', '当前没有可发布的灵魂草稿', 404)
     }
     const count = this.dependencies.tokenCounter.count(null, draft.snapshot.promptText)

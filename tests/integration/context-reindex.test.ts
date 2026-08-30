@@ -14,6 +14,7 @@ import { SqliteContextIndexRepository } from '../../server/infrastructure/databa
 import { SqliteContextSyncTaskQueue } from '../../server/infrastructure/database/SqliteContextSyncTaskQueue'
 import { SqliteDatabase } from '../../server/infrastructure/database/SqliteDatabase'
 import { SqliteLearningRepository } from '../../server/infrastructure/database/SqliteLearningRepository'
+import { ConservativeTokenCounter } from '../../server/infrastructure/model/ConservativeTokenCounter'
 import { SqliteContextProvider } from '../../server/infrastructure/context/SqliteContextProvider'
 import { SqliteTaskJobRepository } from '../../server/infrastructure/database/SqliteTaskJobRepository'
 import type { Clock } from '../../server/ports/Clock'
@@ -454,6 +455,8 @@ describe('OpenViking 可关闭索引与 SQLite 重建', () => {
       repository: new SqliteContentRepository(database.getClient()),
       identifiers,
       clock,
+      tokenCounter: new ConservativeTokenCounter(),
+      tokenBudgets: { world: 2_500, persona: 3_500 },
       sourceProcessor: new NodeSourceContentProcessor(identifiers),
       sourceFiles: new LocalSourceFileStorage(temporaryDirectory),
       contextSyncQueue: new SqliteContextSyncTaskQueue(database.getClient()),
@@ -518,6 +521,8 @@ describe('OpenViking 可关闭索引与 SQLite 重建', () => {
       repository: new SqliteContentRepository(database.getClient()),
       identifiers,
       clock: new IncrementingClock(),
+      tokenCounter: new ConservativeTokenCounter(),
+      tokenBudgets: { world: 2_500, persona: 3_500 },
       sourceProcessor: new NodeSourceContentProcessor(identifiers),
       sourceFiles: new LocalSourceFileStorage(temporaryDirectory),
     })

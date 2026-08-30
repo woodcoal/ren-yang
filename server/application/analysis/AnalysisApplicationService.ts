@@ -145,7 +145,7 @@ export class AnalysisApplicationService implements TaskHandler {
   /** @param analysisType 分析类型。 @param subjectId 对象 UUID。 @param mode 分析模式。 @returns 固定输入、基线和灵魂版本。 */
   private async prepareBatch(analysisType: AnalysisType, subjectId: string, mode: 'incremental' | 'full_rebuild') {
     const subject = await this.requireSubject(analysisType, subjectId)
-    if (!subject.activeVersionId) throw new ApplicationError('SOUL_NOT_PUBLISHED', '请先发布当前灵魂，再分析成长或记忆', 409)
+    if (!subject.activeVersionId) throw new ApplicationError('SOUL_VERSION_MISSING', '当前灵魂版本缺失，请重新保存灵魂提示词', 409)
     const soul = await this.dependencies.souls.findSoulVersion(subject.activeVersionId)
     if (!soul) throw new ApplicationError('VERSION_CONFLICT', '当前灵魂版本不存在', 409)
     const analyzedKeys = new Set(await this.dependencies.analysis.listAnalyzedInputKeys(analysisType, subjectId))

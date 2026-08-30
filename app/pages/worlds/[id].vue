@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { FormSubmitEvent } from '@nuxt/ui'
 import { computed, reactive, shallowRef } from 'vue'
-import type { CreateSourceWithTargetsInput, SaveSoulDraftInput, UpdateWorldInput } from '#shared/schemas/content'
+import type { CreateSourceWithTargetsInput, SaveSoulVersionInput, UpdateWorldInput } from '#shared/schemas/content'
 import { updateWorldSchema } from '#shared/schemas/content'
 import type { ApiResponse } from '#shared/types/api'
 import type { DeletionImpact, SoulWorkspaceView, SourceDetails, SourceSummary, WorldDetails } from '#shared/types/content'
@@ -75,51 +75,14 @@ async function saveMetadata(event: FormSubmitEvent<UpdateWorldInput>): Promise<v
 }
 
 /**
- * 保存世界当前灵魂草稿。
- * @param input 完整草稿输入。
- * @returns 保存和刷新完成时结束。
+ * 保存世界灵魂并立即生成新的当前历史版本。
+ * @param input 当前编辑文本和历史基线。
+ * @returns 保存、详情和历史刷新完成时结束。
  */
-async function saveSoulDraft(input: SaveSoulDraftInput): Promise<void> {
-  await runAction('世界灵魂修改稿已保存，尚未影响人物任务', async () => {
-    await $fetch(`/api/v1/worlds/${worldId}/soul/draft`, { method: 'PUT', body: input })
+async function saveSoulVersion(input: SaveSoulVersionInput): Promise<void> {
+  await runAction('世界灵魂已保存，之后创建的新任务将使用这一版', async () => {
+    await $fetch(`/api/v1/worlds/${worldId}/soul`, { method: 'PUT', body: input })
     await Promise.all([refresh(), refreshSoul()])
-  })
-}
-
-/**
- * 发布世界当前灵魂草稿。
- * @returns 发布和刷新完成时结束。
- */
-async function publishSoul(): Promise<void> {
-  await runAction('世界灵魂已发布，之后创建的新任务将使用这一版', async () => {
-    await $fetch(`/api/v1/worlds/${worldId}/soul/publish`, { method: 'POST' })
-    await Promise.all([refresh(), refreshSoul()])
-  })
-}
-
-/**
- * 删除世界当前未发布灵魂草稿。
- * @returns 删除和刷新完成时结束。
- */
-async function deleteSoulDraft(): Promise<void> {
-  await runAction('未发布的世界灵魂修改稿已删除', async () => {
-    await $fetch(`/api/v1/worlds/${worldId}/soul/draft`, { method: 'DELETE' })
-    await Promise.all([refresh(), refreshSoul()])
-  })
-}
-
-/**
- * 从世界历史版本建立新的当前草稿。
- * @param versionId 历史灵魂版本 UUID。
- * @returns 创建和刷新完成时结束。
- */
-async function createDraftFromVersion(versionId: string): Promise<void> {
-  await runAction('历史世界灵魂已复制为修改稿', async () => {
-    await $fetch(`/api/v1/worlds/${worldId}/soul/draft-from-version`, {
-      method: 'POST',
-      body: { versionId },
-    })
-    await refreshSoul()
   })
 }
 
@@ -372,12 +335,11 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
       <div class="status-strip page-status-strip mb-6">
         <div class="status-cell"><span class="status-kicker">关联人物</span><strong class="status-value">{{
           details.personas.length }} 个</strong></div>
-        <div class="status-cell"><span class="status-kicker">当前灵魂</span><strong class="status-value">{{
-          soul.activeVersion ? '已发布，可用于任务' : '尚未发布' }}</strong></div>
+        <div class="status-cell"><span class="status-kicker">当前灵魂</span><strong class="status-value">已保存并使用</strong></div>
         <div class="status-cell"><span class="status-kicker">世界资料</span><strong class="status-value">{{
           details.sources.length }} 项</strong></div>
-        <div class="status-cell"><span class="status-kicker">待确认修改</span><strong class="status-value">{{ !soul.draft ?
-          '需修改灵魂稿' : '没有灵魂修改稿' }}</strong></div>
+        <div class="status-cell"><span class="status-kicker">提示词历史</span><strong class="status-value">{{
+          soul.versions.length }} 个版本</strong></div>
       </div>
 
       <nav class="mind-tabs mb-6" aria-label="世界工作区标签">
@@ -391,7 +353,7 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
             <h2 class="font-semibold text-highlighted">当前世界状态</h2>
           </template>
           <p class="whitespace-pre-wrap text-sm leading-6 text-muted">{{ soul.activeVersion?.snapshot.promptText ||
-            '世界还没有发布灵魂。发布前，关联人物的新任务不会读取世界。' }}</p>
+            '世界还没有可用的灵魂提示词。' }}</p>
           <UButton class="mt-4" color="neutral" variant="soft" @click="selectTab('soul')">查看和编辑世界灵魂</UButton>
         </UCard>
         <UCard>
@@ -407,7 +369,7 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
       </div>
 
       <ContentSoulWorkspace v-else-if="selectedTab === 'soul'" :workspace="soul" :loading="actionLoading"
-        @save="saveSoulDraft" @publish="publishSoul" @delete="deleteSoulDraft" @from-version="createDraftFromVersion" />
+        @save="saveSoulVersion" />
 
       <div v-else-if="selectedTab === 'growth'" class="space-y-6">
         <AnalysisPanel title="世界成长" :batch="growthAnalysis" :loading="actionLoading"

@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { readBody } from 'h3'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { DOMWrapper, flushPromises, type VueWrapper } from '@vue/test-utils'
-import { mountSuspended } from '@nuxt/test-utils/runtime'
+import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
 import PersonaDraftAssistant from '../../app/components/content/PersonaDraftAssistant.vue'
 import PersonaForm from '../../app/components/content/PersonaForm.vue'
 import QuickCreateSubjectModal from '../../app/components/content/QuickCreateSubjectModal.vue'
@@ -10,6 +11,21 @@ import SourceImportForm from '../../app/components/content/SourceImportForm.vue'
 import SubjectSourceManager from '../../app/components/content/SubjectSourceManager.vue'
 import WorldForm from '../../app/components/content/WorldForm.vue'
 import SoulWorkspace from '../../app/components/content/SoulWorkspace.vue'
+
+/** 灵魂编辑器发出的 AI 整理请求。 */
+const soulAnalysisRequests: Array<{ subjectType: 'world' | 'persona', promptText: string }> = []
+/** 完成当前挂起 AI 请求的测试回调。 */
+let resolveSoulAnalysis: ((value: { data: { promptText: string } }) => void) | null = null
+
+registerEndpoint('/api/v1/soul/analyze', {
+  method: 'POST',
+  handler: async (event) => {
+    soulAnalysisRequests.push(await readBody(event))
+    return await new Promise<{ data: { promptText: string } }>((resolveAnalysis) => {
+      resolveSoulAnalysis = resolveAnalysis
+    })
+  },
+})
 
 /**
  * 按用户可见文本在资料对象标签选择器中搜索并选择一项。
@@ -55,7 +71,7 @@ describe('阶段二内容表单', () => {
     expect(nameInput!.value).toBe('浮岛纪元')
     expect(textarea!.value).toBe('浮岛与风帆船构成的世界。')
     expect(document.body.textContent).toContain('模型暂时不可用')
-    expect(document.body.textContent).toContain('创建后仍是待确认草稿')
+    expect(document.body.textContent).toContain('创建后立即启用')
 
     const analyzeCheckbox = document.querySelector<HTMLElement>('[data-quick-create-auto-analyze]')
     expect(analyzeCheckbox).toBeDefined()
@@ -160,95 +176,86 @@ describe('阶段二内容表单', () => {
     expect(wrapper.text()).toContain('直接进入人物任务')
   })
 
-  it('灵魂修改成功后关闭弹窗，AI 处理期间显示可旋转的全屏加载层', async () => {
-    const snapshot = { promptText: '当前灵魂提示词' }
+  it('灵魂直接编辑，AI 与历史只回填文本且保存后才生效', async () => {
+    soulAnalysisRequests.length = 0
+    resolveSoulAnalysis = null
+    const activeVersion = {
+      id: '00000000-0000-4000-8000-000000000002', subjectType: 'world' as const,
+      subjectId: '00000000-0000-4000-8000-000000000010', parentVersionId: '00000000-0000-4000-8000-000000000001',
+      status: 'published' as const, snapshot: { promptText: '当前灵魂提示词' }, runtimeTokenCount: 10, tokenCounter: 'test',
+      changeSummary: '当前版本', publishedAt: 2_000, createdAt: 2_000,
+    }
+    const oldVersion = {
+      ...activeVersion,
+      id: '00000000-0000-4000-8000-000000000001', parentVersionId: null,
+      snapshot: { promptText: '历史灵魂提示词' }, changeSummary: '初始版本', publishedAt: 1_000, createdAt: 1_000,
+    }
     const wrapper = await mountSuspended(SoulWorkspace, {
       props: {
         loading: false,
         workspace: {
           subjectType: 'world', subjectId: '00000000-0000-4000-8000-000000000010', draft: null,
-          activeVersion: {
-            id: '00000000-0000-4000-8000-000000000001', subjectType: 'world',
-            subjectId: '00000000-0000-4000-8000-000000000010', parentVersionId: null,
-            status: 'published', snapshot, runtimeTokenCount: 10, tokenCounter: 'test',
-            changeSummary: '初始版本', publishedAt: 1_000, createdAt: 1_000,
-          },
-          versions: [{
-            id: '00000000-0000-4000-8000-000000000001', subjectType: 'world',
-            subjectId: '00000000-0000-4000-8000-000000000010', parentVersionId: null,
-            status: 'published', snapshot, runtimeTokenCount: 10, tokenCounter: 'test',
-            changeSummary: '初始版本', publishedAt: 1_000, createdAt: 1_000,
-          }],
+          activeVersion,
+          versions: [activeVersion, oldVersion],
         },
       },
     })
 
-    expect(wrapper.text()).toContain('历史版本只读')
-    await wrapper.findAll('button').find(button => button.text() === '修改灵魂')!.trigger('click')
-    await flushPromises()
-    const promptTextarea = document.querySelector<HTMLTextAreaElement>('[data-soul-prompt-form] textarea')
-    expect(promptTextarea).toBeDefined()
-    expect(promptTextarea!.value).toBe('当前灵魂提示词')
-    await new DOMWrapper(promptTextarea!).setValue('  用户原始灵魂文本  ')
-    const saveButton = [...document.querySelectorAll<HTMLButtonElement>('button')]
-      .find(button => button.textContent?.trim() === '保存修改稿')
-    expect(saveButton).toBeDefined()
-    await new DOMWrapper(saveButton!).trigger('click')
-    await flushPromises()
-    expect(wrapper.emitted('save')?.[0]).toEqual([{
-      baseVersionId: '00000000-0000-4000-8000-000000000001',
-      snapshot: { promptText: '用户原始灵魂文本' },
-      autoAnalyze: false,
-    }])
-    expect(wrapper.emitted('publish')).toBeUndefined()
+    const promptTextarea = wrapper.get<HTMLTextAreaElement>('[data-soul-prompt-form] textarea')
+    expect(promptTextarea.element.value).toBe('当前灵魂提示词')
+    expect(wrapper.find('[data-soul-analyze-button]').exists()).toBe(true)
+    expect(wrapper.find('[data-soul-history-button]').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('确认并发布')
 
-    const savedDraft = {
-      id: '00000000-0000-4000-8000-000000000002', subjectType: 'world' as const,
-      subjectId: '00000000-0000-4000-8000-000000000010', baseVersionId: '00000000-0000-4000-8000-000000000001',
-      snapshot: { promptText: '用户原始灵魂文本' }, changeSummary: '手动修改灵魂提示词', createdAt: 2_000, updatedAt: 2_000,
-    }
-    await wrapper.setProps({ workspace: { ...wrapper.props('workspace'), draft: savedDraft } })
+    await promptTextarea.setValue('需要 AI 整理的提示词')
+    await wrapper.get('[data-soul-analyze-button]').trigger('click')
     await flushPromises()
-    expect(document.querySelector('[data-soul-prompt-form]')).toBeNull()
-
-    await wrapper.findAll('button').find(button => button.text() === '修改灵魂')!.trigger('click')
-    await flushPromises()
-
-    const analyzeCheckbox = document.querySelector<HTMLElement>('[data-soul-auto-analyze]')
-    expect(analyzeCheckbox).toBeDefined()
-    await new DOMWrapper(analyzeCheckbox!).trigger('click')
-    const analyzeButton = [...document.querySelectorAll<HTMLButtonElement>('button')]
-      .find(button => button.textContent?.trim() === '分析并保存修改稿')
-    expect(analyzeButton).toBeDefined()
-    await new DOMWrapper(analyzeButton!).trigger('click')
-    await flushPromises()
-    expect(wrapper.emitted('save')?.[1]?.[0]).toMatchObject({ autoAnalyze: true })
-    expect(wrapper.emitted('publish')).toBeUndefined()
-
-    await wrapper.setProps({ loading: true })
-    await flushPromises()
+    expect(soulAnalysisRequests).toEqual([{ subjectType: 'world', promptText: '需要 AI 整理的提示词' }])
     expect(document.querySelector('[data-soul-analysis-overlay]')?.className).toContain('z-[9999]')
     expect(document.querySelector('[data-soul-analysis-overlay]')?.className).toContain('backdrop-blur-md')
     expect(document.querySelector('[data-soul-analysis-spinner]')?.className).toContain('subject-processing-spinner')
     expect(document.body.textContent).toContain('AI 正在整理世界灵魂')
+    expect(wrapper.emitted('save')).toBeUndefined()
 
-    await wrapper.setProps({ loading: false })
+    const completeAnalysis = resolveSoulAnalysis
+    expect(completeAnalysis).not.toBeNull()
+    completeAnalysis!({ data: { promptText: 'AI 整理后的灵魂提示词' } })
+    await vi.waitFor(() => expect(promptTextarea.element.value).toBe('AI 整理后的灵魂提示词'))
+    expect(document.querySelector('[data-soul-analysis-overlay]')).toBeNull()
+    expect(wrapper.emitted('save')).toBeUndefined()
+
+    await wrapper.get('[data-soul-history-button]').trigger('click')
     await flushPromises()
-    expect(document.querySelector('[data-soul-prompt-form]')).not.toBeNull()
+    expect(document.querySelector('[data-soul-history-list]')).not.toBeNull()
+    const oldVersionButton = [...document.querySelectorAll<HTMLButtonElement>('[data-soul-history-list] button')]
+      .find(button => button.textContent?.includes('历史灵魂提示词'))
+    expect(oldVersionButton).toBeDefined()
+    await new DOMWrapper(oldVersionButton!).trigger('click')
+    await flushPromises()
+    expect(promptTextarea.element.value).toBe('历史灵魂提示词')
+    expect(wrapper.emitted('save')).toBeUndefined()
 
+    const saveButton = wrapper.findAll<HTMLButtonElement>('button')
+      .find(button => button.text().trim() === '保存')
+    expect(saveButton).toBeDefined()
+    await wrapper.get('[data-soul-prompt-form]').trigger('submit')
+    await flushPromises()
+    expect(wrapper.emitted('save')).toEqual([[{
+      baseVersionId: oldVersion.id,
+      snapshot: { promptText: '历史灵魂提示词' },
+    }]])
+
+    const savedVersion = {
+      ...activeVersion,
+      id: '00000000-0000-4000-8000-000000000003', parentVersionId: oldVersion.id,
+      snapshot: { promptText: '历史灵魂提示词' }, changeSummary: '回溯历史提示词并保存',
+      publishedAt: 3_000, createdAt: 3_000,
+    }
     await wrapper.setProps({
-      workspace: {
-        ...wrapper.props('workspace'),
-        draft: { ...savedDraft, snapshot: { promptText: 'AI 整理后的灵魂文本' }, updatedAt: 3_000 },
-      },
+      workspace: { ...wrapper.props('workspace'), activeVersion: savedVersion, versions: [savedVersion, activeVersion, oldVersion] },
     })
     await flushPromises()
-    expect(document.querySelector('[data-soul-prompt-form]')).toBeNull()
-    expect(document.querySelector('[data-soul-analysis-overlay]')).toBeNull()
-
-    await wrapper.findAll('button').find(button => button.text() === '复制为修改稿')!.trigger('click')
-    expect(wrapper.emitted('from-version')).toEqual([['00000000-0000-4000-8000-000000000001']])
-    expect(wrapper.emitted('publish')).toBeUndefined()
+    expect(promptTextarea.element.value).toBe('历史灵魂提示词')
   })
 
   it('人物与世界共用资料区使用新标签页查看资料，并确认启停与解除关联', async () => {

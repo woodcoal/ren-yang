@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { FormSubmitEvent } from '@nuxt/ui'
 import { computed, reactive, shallowRef } from 'vue'
-import type { CreateSourceWithTargetsInput, SaveSoulDraftInput, UpdatePersonaInput } from '#shared/schemas/content'
+import type { CreateSourceWithTargetsInput, SaveSoulVersionInput, UpdatePersonaInput } from '#shared/schemas/content'
 import { updatePersonaSchema } from '#shared/schemas/content'
 import type { ApiResponse } from '#shared/types/api'
 import type { DeletionImpact, PersonaDetails, SoulWorkspaceView, SourceDetails, SourceSummary, WorldSummary } from '#shared/types/content'
@@ -85,51 +85,22 @@ async function saveMetadata(event: FormSubmitEvent<UpdatePersonaInput>): Promise
 }
 
 /**
- * 保存人物当前灵魂草稿。
- * @param input 完整草稿输入。
- * @returns 保存和工作区刷新完成时结束。
+ * 头像上传或生成成功后刷新人物详情。
+ * @returns 最新人物摘要加载完成时结束。
  */
-async function saveSoulDraft(input: SaveSoulDraftInput): Promise<void> {
-  await runAction('灵魂修改稿已保存，尚未影响新任务', async () => {
-    await $fetch(`/api/v1/personas/${personaId}/soul/draft`, { method: 'PUT', body: input })
-    await Promise.all([refresh(), refreshSoul()])
-  })
+async function refreshPersonaAvatar(): Promise<void> {
+  await refresh()
 }
 
 /**
- * 发布人物当前灵魂草稿。
- * @returns 发布和页面刷新完成时结束。
+ * 保存人物灵魂并立即生成新的当前历史版本。
+ * @param input 当前编辑文本和历史基线。
+ * @returns 保存、详情和历史刷新完成时结束。
  */
-async function publishSoul(): Promise<void> {
-  await runAction('灵魂已发布，之后创建的新任务将使用这一版', async () => {
-    await $fetch(`/api/v1/personas/${personaId}/soul/publish`, { method: 'POST' })
+async function saveSoulVersion(input: SaveSoulVersionInput): Promise<void> {
+  await runAction('人物灵魂已保存，之后创建的新任务将使用这一版', async () => {
+    await $fetch(`/api/v1/personas/${personaId}/soul`, { method: 'PUT', body: input })
     await Promise.all([refresh(), refreshSoul()])
-  })
-}
-
-/**
- * 删除人物当前未发布灵魂草稿。
- * @returns 删除和页面刷新完成时结束。
- */
-async function deleteSoulDraft(): Promise<void> {
-  await runAction('未发布的灵魂修改稿已删除', async () => {
-    await $fetch(`/api/v1/personas/${personaId}/soul/draft`, { method: 'DELETE' })
-    await Promise.all([refresh(), refreshSoul()])
-  })
-}
-
-/**
- * 从历史版本建立新的当前灵魂草稿。
- * @param versionId 历史灵魂版本 UUID。
- * @returns 创建和页面刷新完成时结束。
- */
-async function createDraftFromVersion(versionId: string): Promise<void> {
-  await runAction('历史版本已复制为修改稿，发布前不会影响任务', async () => {
-    await $fetch(`/api/v1/personas/${personaId}/soul/draft-from-version`, {
-      method: 'POST',
-      body: { versionId },
-    })
-    await refreshSoul()
   })
 }
 
@@ -409,11 +380,11 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
   <div>
     <ContentPageHeader
       :title="details?.persona.name || '人物工作区'"
-      :description="details?.persona.currentSummary || '灵魂、成长和记忆的长期内容都需要人工确认后才会影响新任务。'"
+      :description="details?.persona.currentSummary || '管理人物灵魂、成长、记忆和资料。'"
     >
       <UButton v-if="details" color="neutral" variant="soft" :loading="actionLoading" @click="requestPersonaStatusChange">{{ details.persona.isEnabled ? '禁用人物' : '启用人物' }}</UButton>
       <UButton to="/personas" color="neutral" variant="ghost">返回人物列表</UButton>
-      <UButton v-if="details?.persona.isEnabled && details.persona.activeVersionId" to="/workbench">新建任务</UButton>
+      <UButton v-if="details?.persona.isEnabled" to="/workbench">新建任务</UButton>
     </ContentPageHeader>
 
     <UAlert v-if="error || !details || !soul" color="error" title="人物工作区加载失败" :actions="[{ label: '重试', onClick: () => Promise.all([refresh(), refreshSoul()]) }]" />
@@ -422,11 +393,19 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
       <UAlert v-if="actionMessage" class="mb-5" color="success" title="操作完成" :description="actionMessage" />
       <UAlert v-if="!details.persona.isEnabled" class="mb-6" color="warning" title="人物当前已禁用" description="人物设定、成长、记忆、资料关系和历史任务仍会保留，但不能用来创建新任务。" />
 
+      <ContentPersonaAvatarEditor
+        class="mb-6"
+        :persona-id="details.persona.id"
+        :persona-name="details.persona.name"
+        :avatar-url="details.persona.avatarUrl"
+        @updated="refreshPersonaAvatar"
+      />
+
       <div class="status-strip page-status-strip mb-6">
         <div class="status-cell"><span class="status-kicker">所属世界</span><strong class="status-value">{{ details.persona.worldName || '未关联世界' }}</strong></div>
-        <div class="status-cell"><span class="status-kicker">当前灵魂</span><strong class="status-value">{{ soul.activeVersion ? '已发布，可用于任务' : '尚未发布' }}</strong></div>
+        <div class="status-cell"><span class="status-kicker">当前灵魂</span><strong class="status-value">已保存并使用</strong></div>
         <div class="status-cell"><span class="status-kicker">参考资料</span><strong class="status-value">{{ details.sources.length }} 项</strong></div>
-        <div class="status-cell"><span class="status-kicker">待确认修改</span><strong class="status-value">{{ soul.draft ? '1 份灵魂修改稿' : '没有灵魂修改稿' }}</strong></div>
+        <div class="status-cell"><span class="status-kicker">提示词历史</span><strong class="status-value">{{ soul.versions.length }} 个版本</strong></div>
       </div>
 
       <nav class="mind-tabs mb-6" aria-label="人物工作区标签">
@@ -436,7 +415,7 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
       <div v-if="selectedTab === 'overview'" class="grid gap-6 xl:grid-cols-2">
         <UCard>
           <template #header><h2 class="font-semibold text-highlighted">当前人物状态</h2></template>
-          <p class="whitespace-pre-wrap text-sm leading-6 text-muted">{{ soul.activeVersion?.snapshot.promptText || '人物还没有发布灵魂。完善并发布灵魂后，才能稳定模拟这个人物。' }}</p>
+          <p class="whitespace-pre-wrap text-sm leading-6 text-muted">{{ soul.activeVersion?.snapshot.promptText || '人物还没有可用的灵魂提示词。' }}</p>
           <UButton class="mt-4" color="neutral" variant="soft" @click="selectTab('soul')">查看和编辑灵魂</UButton>
         </UCard>
         <UCard>
@@ -444,7 +423,7 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
           <div class="space-y-3 text-sm text-muted">
             <p>成长来自你明确提供的人物反馈资料，确认前不会生效。</p>
             <p>记忆来自人物多次有效处理记录，单次输出不会直接形成稳定记忆。</p>
-            <p>成长和记忆不会自动改写灵魂；吸收后仍需发布新灵魂。</p>
+            <p>成长和记忆不会自动改写灵魂；吸收后需要保存新的灵魂版本。</p>
           </div>
         </UCard>
       </div>
@@ -453,10 +432,7 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
         v-else-if="selectedTab === 'soul'"
         :workspace="soul"
         :loading="actionLoading"
-        @save="saveSoulDraft"
-        @publish="publishSoul"
-        @delete="deleteSoulDraft"
-        @from-version="createDraftFromVersion"
+        @save="saveSoulVersion"
       />
 
       <div v-else-if="selectedTab === 'growth'" class="space-y-6">
@@ -520,7 +496,7 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
       <div v-else class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
         <div class="space-y-6">
           <UCard>
-            <template #header><div><h2 class="font-semibold text-highlighted">基本信息</h2><p class="mt-1 text-sm text-muted">名称用于后台辨认；所属世界的已发布灵魂会进入人物的新任务。</p></div></template>
+            <template #header><div><h2 class="font-semibold text-highlighted">基本信息</h2><p class="mt-1 text-sm text-muted">名称用于后台辨认；所属世界当前使用的灵魂会进入人物的新任务。</p></div></template>
             <UForm :schema="updatePersonaSchema" :state="metadata" class="grid gap-4 md:grid-cols-2" @submit="saveMetadata">
               <UFormField name="name" label="人物名称" required><UInput v-model="metadata.name" class="w-full" /></UFormField>
               <UFormField name="worldId" label="所属世界">

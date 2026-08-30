@@ -88,6 +88,8 @@ beforeEach(async () => {
     souls: contentRepository,
     identifiers,
     clock,
+    tokenCounter: new ConservativeTokenCounter(),
+    tokenBudgets: { world: 2_500, persona: 3_500 },
     sourceProcessor: processor,
     sourceFiles: new LocalSourceFileStorage(directory),
   })

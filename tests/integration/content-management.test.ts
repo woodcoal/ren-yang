@@ -124,6 +124,8 @@ beforeEach(() => {
     souls: repository,
     identifiers,
     clock,
+    tokenCounter: new ConservativeTokenCounter(),
+    tokenBudgets: { world: 2_500, persona: 3_500 },
     sourceProcessor: new NodeSourceContentProcessor(identifiers),
     sourceFiles: new LocalSourceFileStorage(temporaryDirectory),
   })
@@ -163,7 +165,7 @@ describe('人物、世界与资料管理闭环', () => {
     ])
   })
 
-  it('无资料创建原创人物，草稿发布后不可变且历史版本只能复制为新草稿', async () => {
+  it('创建人物和世界时初始灵魂立即成为当前版本且对象默认启用', async () => {
     const created = await service.createPersona({
       name: '林默',
       origin: 'original',
@@ -172,32 +174,91 @@ describe('人物、世界与资料管理闭环', () => {
       snapshot: BASE_PERSONA_SNAPSHOT,
       changeSummary: '建立原创人物',
     })
-    expect(created.persona).toMatchObject({ activeVersionId: null, sourceCount: 0, versionCount: 0 })
-    expect(created.draft?.snapshot).toEqual(BASE_PERSONA_SNAPSHOT)
+    expect(created.persona).toMatchObject({
+      activeVersionId: expect.any(String), isEnabled: true, sourceCount: 0, versionCount: 1,
+    })
+    expect(created.versions).toHaveLength(1)
+    expect(created.versions[0]?.snapshot).toEqual(BASE_PERSONA_SNAPSHOT)
+    expect(created.draft).toBeNull()
+
+    const world = await service.createWorld({
+      name: '浮岛纪元', summary: '', snapshot: createWorldSnapshot('浮岛依靠浮石保持稳定。'), changeSummary: '建立世界',
+    })
+    expect(world.world).toMatchObject({ activeVersionId: expect.any(String), isEnabled: true, versionCount: 1 })
+    expect(world.versions[0]?.snapshot).toEqual({ promptText: '浮岛依靠浮石保持稳定。' })
+    expect(world.draft).toBeNull()
+    expect(database.getClient().prepare('SELECT COUNT(*) AS count FROM soul_drafts').get()).toEqual({ count: 0 })
+  })
+
+  it('保存灵魂立即生成不可变历史并切换当前版本', async () => {
+    const created = await service.createPersona({
+      name: '历史测试人物', origin: 'original', worldId: null, sourceIds: [],
+      snapshot: BASE_PERSONA_SNAPSHOT, changeSummary: '建立人物',
+    })
+    const initialVersionId = created.persona.activeVersionId!
 
     clock.timestamp = 2_000
-    const initialVersion = await soulService.publishDraft('persona', created.persona.id)
-    await soulService.saveDraft('persona', created.persona.id, {
-      baseVersionId: initialVersion.id,
+    const changedVersion = await soulService.saveVersion('persona', created.persona.id, {
+      baseVersionId: initialVersionId,
       snapshot: { promptText: '谨慎的档案管理员；表达冷静、简短，避免修辞。' },
-      autoAnalyze: false,
     })
+    const changedWorkspace = await soulService.getSoul('persona', created.persona.id)
+    expect(changedWorkspace.activeVersion?.id).toBe(changedVersion.id)
+    expect(changedWorkspace.versions).toHaveLength(2)
+    expect(changedWorkspace.versions.find(version => version.id === initialVersionId)?.snapshot).toEqual(BASE_PERSONA_SNAPSHOT)
+
     clock.timestamp = 3_000
-    const changedVersion = await soulService.publishDraft('persona', created.persona.id)
+    const restoredVersion = await soulService.saveVersion('persona', created.persona.id, {
+      baseVersionId: initialVersionId,
+      snapshot: BASE_PERSONA_SNAPSHOT,
+    })
+    const restoredWorkspace = await soulService.getSoul('persona', created.persona.id)
+    expect(restoredWorkspace.activeVersion?.id).toBe(restoredVersion.id)
+    expect(restoredWorkspace.activeVersion?.parentVersionId).toBe(initialVersionId)
+    expect(restoredWorkspace.activeVersion?.changeSummary).toBe('回溯历史提示词并保存')
+    expect(restoredWorkspace.versions).toHaveLength(3)
+    expect(restoredWorkspace.draft).toBeNull()
+  })
 
-    const differences = await service.comparePersonaVersions(initialVersion.id, changedVersion.id)
-    expect(differences).toEqual([{
-      field: 'promptText',
-      label: '灵魂提示词',
-      before: BASE_PERSONA_SNAPSHOT.promptText,
-      after: '谨慎的档案管理员；表达冷静、简短，避免修辞。',
-    }])
+  it('创建和保存灵魂在 Token 上限内成功且超限时不产生版本', async () => {
+    const created = await service.createPersona({
+      name: '预算边界人物', origin: 'original', worldId: null, sourceIds: [],
+      snapshot: { promptText: '界'.repeat(3_500) }, changeSummary: '建立预算边界人物',
+    })
+    const initialVersionId = created.persona.activeVersionId!
 
-    await soulService.createDraftFromVersion('persona', created.persona.id, { versionId: initialVersion.id })
-    const afterCopy = await soulService.getSoul('persona', created.persona.id)
-    expect(afterCopy.activeVersion?.id).toBe(changedVersion.id)
-    expect(afterCopy.draft).toMatchObject({ baseVersionId: initialVersion.id, snapshot: BASE_PERSONA_SNAPSHOT })
-    expect(afterCopy.versions).toHaveLength(2)
+    const boundaryVersion = await soulService.saveVersion('persona', created.persona.id, {
+      baseVersionId: initialVersionId,
+      snapshot: { promptText: '人'.repeat(3_500) },
+    })
+    await expect(soulService.saveVersion('persona', created.persona.id, {
+      baseVersionId: boundaryVersion.id,
+      snapshot: { promptText: '人'.repeat(3_501) },
+    })).rejects.toMatchObject<ApplicationError>({ code: 'SOUL_TOKEN_BUDGET_EXCEEDED', statusCode: 422 })
+
+    const workspace = await soulService.getSoul('persona', created.persona.id)
+    expect(workspace.activeVersion?.id).toBe(boundaryVersion.id)
+    expect(workspace.versions).toHaveLength(2)
+  })
+
+  it('保存灵魂拒绝使用其他对象的历史版本且不改变当前版本', async () => {
+    const first = await service.createPersona({
+      name: '第一位归属测试人物', origin: 'original', worldId: null, sourceIds: [],
+      snapshot: BASE_PERSONA_SNAPSHOT, changeSummary: '建立第一位人物',
+    })
+    const second = await service.createPersona({
+      name: '第二位归属测试人物', origin: 'original', worldId: null, sourceIds: [],
+      snapshot: BASE_PERSONA_SNAPSHOT, changeSummary: '建立第二位人物',
+    })
+
+    await expect(soulService.saveVersion('persona', first.persona.id, {
+      baseVersionId: second.persona.activeVersionId,
+      snapshot: { promptText: '不应保存到第一位人物。' },
+    })).rejects.toMatchObject<ApplicationError>({ code: 'VERSION_CONFLICT', statusCode: 409 })
+
+    const workspace = await soulService.getSoul('persona', first.persona.id)
+    expect(workspace.activeVersion?.id).toBe(first.persona.activeVersionId)
+    expect(workspace.versions).toHaveLength(1)
   })
 
   it('手动保存灵魂只移除首尾空白且不调用模型', async () => {
@@ -220,50 +281,15 @@ describe('人物、世界与资料管理闭环', () => {
       tokenBudgets: { world: 2_500, persona: 3_500 },
     })
 
-    const draft = await manualSoulService.saveDraft('persona', created.persona.id, {
-      baseVersionId: null,
+    const version = await manualSoulService.saveVersion('persona', created.persona.id, {
+      baseVersionId: created.persona.activeVersionId,
       snapshot: { promptText: '  第一段。\n\n  第二段。  ' },
-      autoAnalyze: false,
     })
 
-    expect(draft.snapshot.promptText).toBe('第一段。\n\n  第二段。')
-    expect(draft.changeSummary).toBe('手动修改灵魂提示词')
+    expect(version.snapshot.promptText).toBe('第一段。\n\n  第二段。')
+    expect(version.changeSummary).toBe('修改灵魂提示词')
+    expect((await manualSoulService.getSoul('persona', created.persona.id)).activeVersion?.id).toBe(version.id)
     expect(model.requests).toEqual([])
-  })
-
-  it('自动分析把模型整理结果保存为未发布草稿', async () => {
-    const created = await service.createWorld({
-      name: '自动整理测试世界',
-      summary: '',
-      snapshot: createWorldSnapshot('旧世界规则。'),
-      changeSummary: '建立世界',
-    })
-    const model = new RecordingTextModel({ promptText: '所有城市位于浮岛；远行依赖风帆船。' })
-    const analyzedSoulService = new SoulApplicationService({
-      content: new SqliteContentRepository(database.getClient()),
-      souls: new SqliteContentRepository(database.getClient()),
-      identifiers: new SequentialIdentifierGenerator(),
-      clock,
-      tokenCounter: new ConservativeTokenCounter(),
-      model,
-      tokenBudgets: { world: 2_500, persona: 3_500 },
-    })
-
-    const draft = await analyzedSoulService.saveDraft('world', created.world.id, {
-      baseVersionId: null,
-      snapshot: { promptText: '城市在天上，坐船出门。' },
-      autoAnalyze: true,
-    })
-    const workspace = await analyzedSoulService.getSoul('world', created.world.id)
-
-    expect(draft).toMatchObject({
-      snapshot: { promptText: '所有城市位于浮岛；远行依赖风帆船。' },
-      changeSummary: 'AI 整理灵魂提示词',
-    })
-    expect(workspace.activeVersion).toBeNull()
-    expect(workspace.draft?.snapshot).toEqual(draft.snapshot)
-    expect(model.requests).toHaveLength(1)
-    expect(model.requests[0]?.userPrompt).toContain('城市在天上，坐船出门。')
   })
 
   it('创建前独立整理灵魂不写入人物、世界或草稿', async () => {
@@ -288,7 +314,7 @@ describe('人物、世界与资料管理闭环', () => {
     expect(database.getClient().prepare('SELECT COUNT(*) AS count FROM soul_drafts').get()).toEqual({ count: 0 })
   })
 
-  it('自动分析不可用或输出无效时不覆盖原草稿', async () => {
+  it('自动分析不可用或输出无效时不改变当前灵魂版本', async () => {
     const created = await service.createPersona({
       name: '失败保护测试人物',
       origin: 'original',
@@ -297,7 +323,7 @@ describe('人物、世界与资料管理闭环', () => {
       snapshot: BASE_PERSONA_SNAPSHOT,
       changeSummary: '建立人物',
     })
-    const originalDraft = await soulService.getSoul('persona', created.persona.id)
+    const originalWorkspace = await soulService.getSoul('persona', created.persona.id)
     const repository = new SqliteContentRepository(database.getClient())
     /**
      * 创建使用指定测试模型的灵魂应用服务。
@@ -314,19 +340,18 @@ describe('人物、世界与资料管理闭环', () => {
       tokenBudgets: { world: 2_500, persona: 3_500 },
     })
 
-    await expect(createAnalyzedSoulService(new RecordingTextModel({}, false)).saveDraft('persona', created.persona.id, {
-      baseVersionId: null,
-      snapshot: { promptText: '不应保存的输入一。' },
-      autoAnalyze: true,
-    })).rejects.toMatchObject<ApplicationError>({ code: 'CAPABILITY_DISABLED', statusCode: 422 })
-    await expect(createAnalyzedSoulService(new RecordingTextModel({ promptText: '   ' })).saveDraft('persona', created.persona.id, {
-      baseVersionId: null,
-      snapshot: { promptText: '不应保存的输入二。' },
-      autoAnalyze: true,
-    })).rejects.toMatchObject<ApplicationError>({ code: 'MODEL_OUTPUT_INVALID', statusCode: 502 })
+    await expect(createAnalyzedSoulService(new RecordingTextModel({}, false)).analyzePrompt(
+      'persona',
+      '不应保存的输入一。',
+    )).rejects.toMatchObject<ApplicationError>({ code: 'CAPABILITY_DISABLED', statusCode: 422 })
+    await expect(createAnalyzedSoulService(new RecordingTextModel({ promptText: '   ' })).analyzePrompt(
+      'persona',
+      '不应保存的输入二。',
+    )).rejects.toMatchObject<ApplicationError>({ code: 'MODEL_OUTPUT_INVALID', statusCode: 502 })
     await expect(soulService.getSoul('persona', created.persona.id)).resolves.toMatchObject({
-      draft: { id: originalDraft.draft?.id, snapshot: BASE_PERSONA_SNAPSHOT },
-      activeVersion: null,
+      draft: null,
+      activeVersion: { id: originalWorkspace.activeVersion?.id, snapshot: BASE_PERSONA_SNAPSHOT },
+      versions: [{ id: originalWorkspace.activeVersion?.id }],
     })
   })
 
@@ -774,7 +799,7 @@ describe('人物、世界与资料管理闭环', () => {
     await expect(service.listSources()).resolves.toEqual([])
   })
 
-  it('灵魂发布和永久删除与对应审计记录在同一 SQLite 事务中完成', async () => {
+  it('灵魂保存和永久删除与对应审计记录在同一 SQLite 事务中完成', async () => {
     const source = await service.createPastedSource({ name: '临时资料', role: 'reference', content: '临时正文。' })
     const world = await service.createWorld({
       name: '临时世界', summary: '', snapshot: createWorldSnapshot('临时世界。'), changeSummary: '建立世界',
@@ -783,15 +808,21 @@ describe('人物、世界与资料管理闭环', () => {
       name: '临时人物', origin: 'original', worldId: null, sourceIds: [],
       snapshot: BASE_PERSONA_SNAPSHOT, changeSummary: '建立人物',
     })
-    await soulService.publishDraft('world', world.world.id)
-    await soulService.publishDraft('persona', persona.persona.id)
+    await soulService.saveVersion('world', world.world.id, {
+      baseVersionId: world.world.activeVersionId,
+      snapshot: createWorldSnapshot('修改后的临时世界。'),
+    })
+    await soulService.saveVersion('persona', persona.persona.id, {
+      baseVersionId: persona.persona.activeVersionId,
+      snapshot: { promptText: '修改后的临时人物。' },
+    })
     await service.deleteSource(source.source.id)
     await service.deleteWorld(world.world.id)
     await service.deletePersona(persona.persona.id)
 
     const audit = await new SqliteAuditRepository(database.getClient()).list(20)
     expect(audit.map(event => event.action)).toEqual(expect.arrayContaining([
-      'soul_version_published',
+      'soul_version_saved',
       'source_deleted',
       'world_deleted',
       'persona_deleted',

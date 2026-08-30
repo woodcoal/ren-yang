@@ -24,7 +24,7 @@ import type {
   WorldPageRecord,
   WorldVersionDeletionReferences,
 } from '../../ports/ContentRepository'
-import type { PublishSoulDraftRecord, SoulRepository } from '../../ports/SoulRepository'
+import type { PublishSoulDraftRecord, SaveSoulVersionRecord, SoulRepository } from '../../ports/SoulRepository'
 import { insertAuditEvent } from './AuditSql'
 
 /** 使用 SQLite 短事务实现人物、世界、版本、资料和 FTS5 数据访问。 */
@@ -57,7 +57,7 @@ export class SqliteContentRepository implements ContentRepository, SoulRepositor
   }
 
   /**
-   * 原子创建人物、初始灵魂草稿和资料关联。
+   * 原子创建默认启用的人物、初始当前灵魂版本和资料关联。
    * @param record 已验证的创建命令。
    * @returns 无返回值。
    */
@@ -67,18 +67,22 @@ export class SqliteContentRepository implements ContentRepository, SoulRepositor
         INSERT INTO personas (id, world_id, name, origin, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?)
       `).run(record.id, record.worldId, record.name, record.origin, record.timestamp, record.timestamp)
+      insertSoulVersion(this.client, {
+        id: record.versionId,
+        subjectType: 'persona',
+        subjectId: record.id,
+        parentVersionId: null,
+        status: 'published',
+        snapshot: record.snapshot,
+        runtimeTokenCount: record.runtimeTokenCount,
+        tokenCounter: record.tokenCounter,
+        changeSummary: record.changeSummary,
+        publishedAt: record.timestamp,
+        createdAt: record.timestamp,
+      })
       this.client.prepare(`
-        INSERT INTO soul_drafts (
-          id, subject_type, persona_id, base_version_id, prompt_text, change_summary, created_at, updated_at
-        ) VALUES (?, 'persona', ?, NULL, ?, ?, ?, ?)
-      `).run(
-        record.draftId,
-        record.id,
-        record.snapshot.promptText,
-        record.changeSummary,
-        record.timestamp,
-        record.timestamp,
-      )
+        UPDATE personas SET active_soul_version_id = ? WHERE id = ?
+      `).run(record.versionId, record.id)
       const link = this.client.prepare(`
         INSERT INTO persona_sources (persona_id, source_id, priority) VALUES (?, ?, 100)
       `)
@@ -220,7 +224,7 @@ export class SqliteContentRepository implements ContentRepository, SoulRepositor
   }
 
   /**
-   * 原子创建世界和初始灵魂草稿。
+   * 原子创建默认启用的世界和初始当前灵魂版本。
    * @param record 已验证的创建命令。
    * @returns 无返回值。
    */
@@ -229,18 +233,22 @@ export class SqliteContentRepository implements ContentRepository, SoulRepositor
       this.client.prepare(`
         INSERT INTO worlds (id, name, summary, created_at, updated_at) VALUES (?, ?, ?, ?, ?)
       `).run(record.id, record.name, record.summary, record.timestamp, record.timestamp)
+      insertSoulVersion(this.client, {
+        id: record.versionId,
+        subjectType: 'world',
+        subjectId: record.id,
+        parentVersionId: null,
+        status: 'published',
+        snapshot: record.snapshot,
+        runtimeTokenCount: record.runtimeTokenCount,
+        tokenCounter: record.tokenCounter,
+        changeSummary: record.changeSummary,
+        publishedAt: record.timestamp,
+        createdAt: record.timestamp,
+      })
       this.client.prepare(`
-        INSERT INTO soul_drafts (
-          id, subject_type, world_id, base_version_id, prompt_text, change_summary, created_at, updated_at
-        ) VALUES (?, 'world', ?, NULL, ?, ?, ?, ?)
-      `).run(
-        record.draftId,
-        record.id,
-        record.snapshot.promptText,
-        record.changeSummary,
-        record.timestamp,
-        record.timestamp,
-      )
+        UPDATE worlds SET active_soul_version_id = ? WHERE id = ?
+      `).run(record.versionId, record.id)
     })()
   }
 
@@ -437,6 +445,33 @@ export class SqliteContentRepository implements ContentRepository, SoulRepositor
   async findSoulVersion(versionId: string): Promise<SoulVersionRecord | null> {
     const row = this.client.prepare('SELECT * FROM soul_versions WHERE id = ?').get(versionId)
     return row ? toSoulVersion(row) : null
+  }
+
+  /**
+   * 原子保存不可变灵魂版本并将其设为对象当前版本。
+   * @param record 已完成预算与归属校验的版本命令。
+   * @returns 保存后的版本；对象已经不存在时返回 null。
+   */
+  async saveSoulVersion(record: SaveSoulVersionRecord): Promise<SoulVersionRecord | null> {
+    return this.client.transaction(() => {
+      const version = record.version
+      const subjectTable = version.subjectType === 'world' ? 'worlds' : 'personas'
+      const subject = this.client.prepare(`SELECT id FROM ${subjectTable} WHERE id = ?`).get(version.subjectId)
+      if (!subject) return null
+      insertSoulVersion(this.client, version)
+      this.client.prepare(`
+        UPDATE ${subjectTable} SET active_soul_version_id = ?, updated_at = ? WHERE id = ?
+      `).run(version.id, version.createdAt, version.subjectId)
+      insertAuditEvent(this.client, {
+        actor: 'administrator',
+        action: 'soul_version_saved',
+        targetType: 'soul_version',
+        targetId: version.id,
+        details: { subjectType: version.subjectType, subjectId: version.subjectId },
+        timestamp: version.createdAt,
+      })
+      return version
+    }).immediate()
   }
 
   /**
@@ -794,9 +829,37 @@ function toLikePattern(value: string): string {
 }
 
 /**
- * 在当前事务中批量写入资料切片。
- * @param client SQLite 客户端。
- * @param chunks 顺序稳定的切片。
+ * 写入一个已经完成归属和预算校验的不可变灵魂版本。
+ * @param client 当前事务使用的 SQLite 客户端。
+ * @param version 待写入的完整灵魂版本。
+ * @returns 无返回值；约束冲突时由 SQLite 抛错并回滚外层事务。
+ */
+function insertSoulVersion(client: BetterSqliteDatabase, version: SoulVersionRecord): void {
+  client.prepare(`
+    INSERT INTO soul_versions (
+      id, subject_type, world_id, persona_id, parent_version_id, prompt_text,
+      runtime_token_count, token_counter, change_summary, status, published_at, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    version.id,
+    version.subjectType,
+    version.subjectType === 'world' ? version.subjectId : null,
+    version.subjectType === 'persona' ? version.subjectId : null,
+    version.parentVersionId,
+    version.snapshot.promptText,
+    version.runtimeTokenCount,
+    version.tokenCounter,
+    version.changeSummary,
+    version.status,
+    version.publishedAt,
+    version.createdAt,
+  )
+}
+
+/**
+ * 批量写入同一资料已经规范化的检索切片。
+ * @param client 当前事务使用的 SQLite 客户端。
+ * @param chunks 待写入且顺序稳定的资料切片。
  * @returns 无返回值。
  */
 function insertChunks(client: BetterSqliteDatabase, chunks: SourceChunkRecord[]): void {

@@ -30,8 +30,8 @@ export interface SourceLinkRecord {
 export interface CreatePersonaRecord {
   /** 人物标识。 */
   id: string
-  /** 初始灵魂草稿标识。 */
-  draftId: string
+  /** 初始灵魂版本标识。 */
+  versionId: string
   /** 可选世界标识。 */
   worldId: string | null
   /** 人物名称。 */
@@ -42,6 +42,10 @@ export interface CreatePersonaRecord {
   snapshot: PersonaSnapshot
   /** 初始变化摘要。 */
   changeSummary: string
+  /** 初始灵魂提示词 Token 数。 */
+  runtimeTokenCount: number
+  /** 初始灵魂提示词计数器标识。 */
+  tokenCounter: string
   /** 初始关联资料。 */
   sourceIds: string[]
   /** 创建时间。 */
@@ -52,8 +56,8 @@ export interface CreatePersonaRecord {
 export interface CreateWorldRecord {
   /** 世界标识。 */
   id: string
-  /** 初始灵魂草稿标识。 */
-  draftId: string
+  /** 初始灵魂版本标识。 */
+  versionId: string
   /** 世界名称。 */
   name: string
   /** 世界摘要。 */
@@ -62,6 +66,10 @@ export interface CreateWorldRecord {
   snapshot: WorldSnapshot
   /** 初始变化摘要。 */
   changeSummary: string
+  /** 初始灵魂提示词 Token 数。 */
+  runtimeTokenCount: number
+  /** 初始灵魂提示词计数器标识。 */
+  tokenCounter: string
   /** 创建时间。 */
   timestamp: number
 }
