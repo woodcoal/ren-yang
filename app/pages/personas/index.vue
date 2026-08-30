@@ -211,10 +211,12 @@ async function changePageSize(pageSize: number): Promise<void> {
           <tbody><tr v-for="persona in personas" :key="persona.id">
             <td data-label="选择"><input type="checkbox" :aria-label="`选择人物：${persona.name}`" :checked="selectedPersonaIds.includes(persona.id)" @change="updatePersonaSelection(persona.id, $event)"></td>
             <td data-label="人物"><div class="flex min-w-0 items-center gap-3">
-              <ContentPersonaAvatar :name="persona.name" :url="persona.avatarUrl" />
-              <div class="min-w-0"><strong class="content-table-title">{{ persona.name }}</strong><span class="content-table-description">{{ persona.currentSummary || '暂无灵魂提示词' }}</span></div>
+              <NuxtLink :to="`/personas/${persona.id}`" data-persona-avatar-link :aria-label="`查看人物头像：${persona.name}`" class="shrink-0">
+                <ContentPersonaAvatar :name="persona.name" :url="persona.avatarUrl" />
+              </NuxtLink>
+              <div class="min-w-0"><NuxtLink :to="`/personas/${persona.id}`" data-persona-title-link class="content-table-title hover:underline"><strong>{{ persona.name }}</strong></NuxtLink><span class="content-table-description">{{ persona.currentSummary || '暂无灵魂提示词' }}</span></div>
             </div></td>
-            <td data-label="世界"><span class="content-table-title">{{ persona.worldName || '独立人物' }}</span></td>
+            <td data-label="世界"><NuxtLink v-if="persona.worldId" :to="`/worlds/${persona.worldId}`" class="content-table-title hover:underline">{{ persona.worldName }}</NuxtLink><span v-else class="content-table-title">独立人物</span></td>
             <td data-label="版本与资料"><span>{{ persona.versionCount }} 条修改记录</span><span class="content-table-description">{{ persona.sourceCount }} 项参考资料</span></td>
             <td data-label="启用状态"><UBadge :color="persona.isEnabled ? 'success' : 'neutral'" variant="subtle">{{ persona.isEnabled ? '已启用' : '已禁用' }}</UBadge></td>
             <td data-label="操作"><UButton :to="`/personas/${persona.id}`" color="neutral" variant="ghost" size="xs"

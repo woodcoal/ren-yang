@@ -5,6 +5,25 @@ import GrowthMaterialPanel from '../../app/components/learning/GrowthMaterialPan
 import LearningPromptPanel from '../../app/components/learning/LearningPromptPanel.vue'
 import OperationRecordPanel from '../../app/components/learning/OperationRecordPanel.vue'
 import ExternalRecordPanel from '../../app/components/learning/ExternalRecordPanel.vue'
+import type { AnalysisBatchView } from '../../shared/types/analysis'
+
+/** 已完成一次人物成长提示词生成的测试批次。 */
+const completedAnalysisBatch: AnalysisBatchView = {
+  id: '51000000-0000-4000-8000-000000000001',
+  analysisType: 'persona_growth',
+  subjectId: '51000000-0000-4000-8000-000000000002',
+  mode: 'full_rebuild',
+  status: 'completed',
+  baselineSoulVersionId: '51000000-0000-4000-8000-000000000003',
+  inputs: [],
+  proposals: [],
+  resultSummary: '已重新整理人物成长提示词。',
+  errorCode: null,
+  errorMessage: null,
+  createdAt: 1,
+  updatedAt: 1,
+  completedAt: 1,
+}
 
 describe('成长与记忆管理组件', () => {
   it('成长素材支持从资料库逐条评分批量导入', async () => {
@@ -117,7 +136,7 @@ describe('成长与记忆管理组件', () => {
     wrapper.unmount()
   })
 
-  it('完整提示词必须先保存草稿，再发布或基于历史版本校准', async () => {
+  it('完整提示词以单一编辑框完成 AI 重生成、历史载入和保存发布', async () => {
     const activeVersion = {
       id: '50000000-0000-4000-8000-000000000001', versionNo: 1, parentVersionId: null,
       promptText: '当前生效提示词。', sourceAnalysisBatchId: null, changeSummary: '建立提示词',
@@ -125,33 +144,48 @@ describe('成长与记忆管理组件', () => {
     }
     const draft = {
       id: '50000000-0000-4000-8000-000000000002', baseVersionId: activeVersion.id,
-      promptText: '待校准提示词。', sourceAnalysisBatchId: null, createdBy: 'user' as const,
+      promptText: '待校准提示词。', sourceAnalysisBatchId: completedAnalysisBatch.id, createdBy: 'analysis' as const,
       createdAt: 2, updatedAt: 2,
     }
     const wrapper = await mountSuspended(LearningPromptPanel, {
       props: {
-        title: '人物成长', loading: false,
+        title: '人物成长', loading: false, batch: completedAnalysisBatch,
         workspace: { promptType: 'persona_growth', activeVersion, draft, versions: [activeVersion] },
       },
     })
-    expect(wrapper.text()).toContain('只有已发布版本会固定进入')
+    expect(wrapper.findAll('textarea')).toHaveLength(1)
     expect(wrapper.get('[data-learning-prompt-editor]').element.value).toBe('待校准提示词。')
+    await wrapper.get('[data-learning-analyze-button]').trigger('click')
+    expect(wrapper.emitted('analyze')).toEqual([['full_rebuild']])
     await wrapper.get('[data-learning-prompt-editor]').setValue('人工校准后的完整提示词。')
-    const buttons = wrapper.findAll('button')
-    await buttons.find(button => button.text().includes('保存草稿'))!.trigger('click')
-    await buttons.find(button => button.text().includes('发布并用于新任务'))!.trigger('click')
-    expect(wrapper.emitted('save')).toEqual([[{
+    await wrapper.get('[data-learning-save-publish-button]').trigger('click')
+    expect(wrapper.emitted('saveAndPublish')).toEqual([[{
       promptText: '人工校准后的完整提示词。', baseVersionId: activeVersion.id,
     }]])
-    expect(wrapper.emitted('publish')).toEqual([[{ changeSummary: '发布校准后的提示词' }]])
 
-    await buttons.find(button => button.text().includes('基于此版本校准'))!.trigger('click')
+    await wrapper.get('[data-learning-history-button]').trigger('click')
     await flushPromises()
-    const rollbackButton = [...document.querySelectorAll<HTMLButtonElement>('button')]
-      .find(button => button.textContent?.includes('创建校准草稿'))
-    await new DOMWrapper(rollbackButton!).trigger('click')
-    expect(wrapper.emitted('draftFromVersion')).toEqual([[{ versionId: activeVersion.id }]])
+    const historyVersion = document.querySelector<HTMLButtonElement>('[data-learning-history-version]')
+    expect(historyVersion).toBeDefined()
+    await new DOMWrapper(historyVersion!).trigger('click')
+    expect(wrapper.get('[data-learning-prompt-editor]').element.value).toBe('当前生效提示词。')
     wrapper.unmount()
+  })
+
+  it('AI 提示词正在生成时禁止重复生成并允许刷新状态', async () => {
+    const wrapper = await mountSuspended(LearningPromptPanel, {
+      props: {
+        title: '人物记忆',
+        loading: false,
+        batch: { ...completedAnalysisBatch, status: 'queued', analysisType: 'persona_memory' },
+        workspace: { promptType: 'persona_memory', activeVersion: null, draft: null, versions: [] },
+      },
+    })
+
+    expect(wrapper.get('[data-learning-analyze-button]').attributes('disabled')).toBeDefined()
+    await wrapper.findAll('button').find(button => button.text().includes('刷新状态'))!.trigger('click')
+    expect(wrapper.emitted('refresh')).toEqual([[]])
+    expect(wrapper.text()).toContain('当前生成完成前不能重复提交')
   })
 
   it('历史任务素材支持分页、批量启停和逐条评分', async () => {
@@ -173,6 +207,7 @@ describe('成长与记忆管理组件', () => {
     const wrapper = await mountSuspended(OperationRecordPanel, { props: { items, loading: false } })
     expect(wrapper.text()).toContain('任务 1')
     expect(wrapper.text()).not.toContain('任务 11')
+    expect(wrapper.get(`a[href="/runs/${items[0]!.runId}"]`).text()).toBe('任务 1')
     const firstRow = wrapper.find('.learning-row')
     await firstRow.get('input[type="number"]').setValue(5)
     expect(wrapper.emitted('importance')).toEqual([[{ id: items[0]!.id, importance: 5 }]])

@@ -132,7 +132,7 @@ watch(pageSize, () => {
             @change="toggleSelection(item.id, ($event.target as HTMLInputElement).checked)">
           <div class="min-w-0 flex-1">
             <div class="flex flex-wrap items-center gap-2">
-              <strong class="text-sm text-highlighted">{{ item.title || operationLabel(item.operationType) }}</strong>
+              <NuxtLink :to="`/runs/${item.runId}`" class="text-sm font-semibold text-highlighted hover:underline">{{ item.title || operationLabel(item.operationType) }}</NuxtLink>
               <UBadge color="neutral" variant="soft">{{ operationLabel(item.operationType) }}</UBadge>
               <UBadge :color="item.isEnabled ? 'success' : 'neutral'" variant="soft">{{ item.isEnabled ? '参加提炼' : '不参加提炼' }}</UBadge>
             </div>

@@ -74,7 +74,7 @@ function normalizeSearchKeyword(value: string): string {
       <div v-if="addablePersonas.length" class="max-h-52 space-y-2 overflow-y-auto pr-1">
         <div v-for="persona in addablePersonas" :key="persona.id"
           class="flex items-center justify-between gap-3 rounded-md border border-default px-3 py-2 text-sm">
-          <span class="truncate font-medium text-highlighted">{{ persona.name }}</span>
+          <NuxtLink :to="`/personas/${persona.id}`" class="truncate font-medium text-highlighted hover:underline">{{ persona.name }}</NuxtLink>
           <UButton size="xs" color="primary" variant="soft" :disabled="loading" @click="emit('add', persona)">添加</UButton>
         </div>
       </div>

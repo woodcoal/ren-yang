@@ -39,23 +39,19 @@ interface LearningPromptFlowOptions {
   expectedDraft: string
   /** 浏览器中人工调整后准备发布的完整提示词。 */
   calibratedPrompt: string
-  /** 保存草稿成功后的页面反馈。 */
-  savedMessage: string
-  /** 发布成功后的页面反馈。 */
+  /** 保存发布成功后的页面反馈。 */
   publishedMessage: string
-  /** 写入不可变版本历史的变更说明。 */
-  changeSummary: string
 }
 
 /**
- * 执行一次 AI 提炼、人工校准、保存草稿和发布生效的完整浏览器流程。
+ * 执行一次 AI 重新生成、人工校准和保存发布的完整浏览器流程。
  * @param page 当前浏览器页面，页面中只能有一个可见的学习提示词工作台。
  * @param options 当前提示词类型的确定草稿、校准文本及成功反馈。
- * @returns 已发布文本在当前版本区域可见时结束。
+ * @returns 已发布文本保留在统一编辑框中时结束。
  */
 async function extractAndPublishLearningPrompt(page: Page, options: LearningPromptFlowOptions): Promise<void> {
-  await expect(page.getByRole('heading', { name: `${options.title} AI 提炼`, exact: true })).toBeVisible()
-  await page.getByRole('button', { name: '结合新增素材提炼', exact: true }).click()
+  await expect(page.getByRole('heading', { name: `${options.title}提示词`, exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '重新 AI 生成提示词', exact: true }).click()
 
   // Worker 异步消费提炼任务；反复使用页面提供的刷新动作，直到完整草稿已经落库。
   const completedAlert = page.getByText('完整提示词草稿已生成', { exact: true })
@@ -66,15 +62,12 @@ async function extractAndPublishLearningPrompt(page: Page, options: LearningProm
   await expect(completedAlert).toBeVisible()
 
   const editor = page.locator('[data-learning-prompt-editor]')
+  await expect(editor).toHaveCount(1)
   await expect(editor).toHaveValue(options.expectedDraft)
   await editor.fill(options.calibratedPrompt)
-  await page.getByRole('button', { name: '保存草稿', exact: true }).click()
-  await expect(page.getByText(options.savedMessage, { exact: true })).toBeVisible()
-  await page.getByLabel('发布说明').fill(options.changeSummary)
-  await page.getByRole('button', { name: '发布并用于新任务', exact: true }).click()
+  await page.getByRole('button', { name: '保存并发布', exact: true }).click()
   await expect(page.getByText(options.publishedMessage, { exact: true })).toBeVisible()
-  // 发布后正文同时出现在当前版本和历史版本中，首项固定对应当前已发布区域。
-  await expect(page.getByText(options.calibratedPrompt, { exact: true }).first()).toBeVisible()
+  await expect(editor).toHaveValue(options.calibratedPrompt)
 }
 
 test('首次设置、灵魂保存、文档确认及三格式导出形成可复现闭环', async ({ page }) => {
@@ -165,7 +158,7 @@ test('首次设置、灵魂保存、文档确认及三格式导出形成可复�
 
   // 世界成长从已关联资料复制固定快照，逐条评分后才交给 AI 综合提炼。
   await page.keyboard.press('Escape')
-  await page.getByRole('button', { name: '成长', exact: true }).click()
+  await page.getByRole('button', { name: '成长素材', exact: true }).click()
   await expect(page.getByRole('heading', { name: '世界成长素材池', exact: true })).toBeVisible()
   await page.getByRole('button', { name: '从资料库选择', exact: true }).click()
   await expect(page.getByRole('heading', { name: '从世界资料库选择成长素材', exact: true })).toBeVisible()
@@ -192,18 +185,18 @@ test('首次设置、灵魂保存、文档确认及三格式导出形成可复�
   await page.getByRole('button', { name: '批量启用', exact: true }).click()
   await expect(page.getByText('所选成长素材已参加提炼', { exact: true })).toBeVisible()
 
+  await page.getByRole('button', { name: '成长', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '世界成长素材池', exact: true })).toHaveCount(0)
   await extractAndPublishLearningPrompt(page, {
     title: '世界成长',
     expectedDraft: '维护浮岛交通与港口规则的一致性，遇到资料冲突时明确适用条件。',
     calibratedPrompt: '维护浮岛交通与港口规则的一致性；遇到资料冲突时明确适用条件，并优先采用最新人工确认。',
-    savedMessage: '世界成长提示词草稿已保存，尚未生效',
     publishedMessage: '世界成长提示词已发布，之后创建的新任务将固定使用这一版',
-    changeSummary: '建立世界成长提示词',
   })
 
   // 窄屏下关键区块应纵向排列，页面不能产生横向溢出。
   await page.setViewportSize({ width: 390, height: 844 })
-  await expect(page.getByRole('heading', { name: '世界成长素材池', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '世界成长提示词', exact: true })).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   await page.setViewportSize({ width: 1280, height: 720 })
 
@@ -256,29 +249,24 @@ test('首次设置、灵魂保存、文档确认及三格式导出形成可复�
   await expect(page.getByLabel('每页素材数量')).toBeVisible()
 
   await page.getByRole('button', { name: '成长', exact: true }).click()
-  await expect(page.getByRole('heading', { name: '人物成长 AI 提炼', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '人物成长提示词', exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: '人物成长素材池', exact: true })).toHaveCount(0)
   await extractAndPublishLearningPrompt(page, {
     title: '人物成长',
     expectedDraft: '表达时先给出结论，再用可核验的依据说明判断，并保持克制。',
     calibratedPrompt: '表达时先给结论，再用可核验依据说明判断；不确定时明确边界，并保持克制。',
-    savedMessage: '提示词草稿已保存，尚未生效',
     publishedMessage: '提示词已发布，之后创建的新任务将固定使用这一版',
-    changeSummary: '建立人物成长提示词',
   })
 
-  // 历史版本不会直接覆盖当前版本，只能复制成新草稿后再次校准发布。
-  await page.getByRole('button', { name: '基于此版本校准', exact: true }).click()
-  await expect(page.getByRole('heading', { name: '基于版本 1 创建草稿', exact: true })).toBeVisible()
-  await page.getByRole('button', { name: '创建校准草稿', exact: true }).click()
-  await expect(page.getByText('已基于历史版本创建校准草稿，当前已发布版本未改变', { exact: true })).toBeVisible()
+  // 历史版本只载入编辑框，用户再次保存发布后才成为新版本。
+  await page.getByRole('button', { name: '历史', exact: true }).click()
+  await page.locator('[data-learning-history-version]').first().click()
   await page.locator('[data-learning-prompt-editor]').fill('表达时先给结论，并按证据强弱组织说明；不确定时明确边界。')
-  await page.getByRole('button', { name: '保存草稿', exact: true }).click()
-  await expect(page.getByText('提示词草稿已保存，尚未生效', { exact: true })).toBeVisible()
-  await page.getByLabel('发布说明').fill('校准证据表达顺序')
-  await page.getByRole('button', { name: '发布并用于新任务', exact: true }).click()
+  await page.getByRole('button', { name: '保存并发布', exact: true }).click()
   await expect(page.getByText('提示词已发布，之后创建的新任务将固定使用这一版', { exact: true })).toBeVisible()
-  await expect(page.getByText('版本 2', { exact: true }).first()).toBeVisible()
+  await page.getByRole('button', { name: '历史', exact: true }).click()
+  await expect(page.locator('[data-learning-history-version]')).toHaveCount(2)
+  await page.keyboard.press('Escape')
 
   await page.getByRole('main').getByRole('link', { name: '新建任务', exact: true }).click()
   await page.getByLabel('任务类型').selectOption('generation')
@@ -319,7 +307,7 @@ test('首次设置、灵魂保存、文档确认及三格式导出形成可复�
 
   // 记忆标签只保留提炼与提示词操作，不再混入两类记录列表。
   await page.getByRole('button', { name: '记忆', exact: true }).click()
-  await expect(page.getByRole('heading', { name: '人物记忆 AI 提炼', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '人物记忆提示词', exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: '历史任务素材池', exact: true })).toHaveCount(0)
   await expect(page.getByRole('heading', { name: '第三方记录素材池', exact: true })).toHaveCount(0)
 
@@ -327,9 +315,7 @@ test('首次设置、灵魂保存、文档确认及三格式导出形成可复�
     title: '人物记忆',
     expectedDraft: '记住曾完成学院课程介绍；后续同类任务优先采用严谨、克制且便于导出的结构。',
     calibratedPrompt: '记住曾完成学院课程介绍；后续同类任务先规划严谨、克制且便于多格式导出的结构。',
-    savedMessage: '提示词草稿已保存，尚未生效',
     publishedMessage: '提示词已发布，之后创建的新任务将固定使用这一版',
-    changeSummary: '建立人物任务记忆',
   })
 
   await page.getByRole('link', { name: '系统中心', exact: true }).click()

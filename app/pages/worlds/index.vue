@@ -226,7 +226,7 @@ async function changePageSize(pageSize: number): Promise<void> {
             <tr v-for="world in worlds" :key="world.id">
               <td data-label="选择"><input type="checkbox" :aria-label="`选择世界：${world.name}`"
                   :checked="selectedWorldIds.includes(world.id)" @change="updateWorldSelection(world.id, $event)"></td>
-              <td data-label="世界"><strong class="content-table-title">{{ world.name }}</strong><span
+              <td data-label="世界"><NuxtLink :to="`/worlds/${world.id}`" data-world-title-link class="content-table-title hover:underline"><strong>{{ world.name }}</strong></NuxtLink><span
                   class="content-table-description">{{ world.summary || '未填写摘要' }}</span></td>
               <td data-label="使用关系"><span>{{ world.personaCount }} 个人物</span><span class="content-table-description">{{
                 world.sourceCount }} 项资料</span></td>

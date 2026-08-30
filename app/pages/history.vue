@@ -22,6 +22,8 @@ interface HistoryItem {
   createdAt: number
   detailsPath: string
   detailsLabel: string
+  /** 当前任务对象存在时可进入的人物或世界详情地址。 */
+  subjectPath: string | null
 }
 
 const route = useRoute()
@@ -75,6 +77,7 @@ const items = computed<HistoryItem[]>(() => {
     createdAt: run.createdAt,
     detailsPath: `/runs/${run.id}`,
     detailsLabel: '查看任务',
+    subjectPath: personaNames.has(run.personaId) ? `/personas/${run.personaId}` : null,
   }))
   const analyses: HistoryItem[] = (analysisData.value?.data ?? []).map(batch => ({
     id: batch.id,
@@ -91,6 +94,9 @@ const items = computed<HistoryItem[]>(() => {
     createdAt: batch.createdAt,
     detailsPath: batch.analysisType === 'world_growth' ? `/worlds/${batch.subjectId}` : `/personas/${batch.subjectId}`,
     detailsLabel: '查看对象',
+    subjectPath: batch.analysisType === 'world_growth'
+      ? worldNames.has(batch.subjectId) ? `/worlds/${batch.subjectId}` : null
+      : personaNames.has(batch.subjectId) ? `/personas/${batch.subjectId}` : null,
   }))
   return [...runs, ...analyses]
     .filter(item => !filters.personaId || (item.subjectType === 'persona' && item.subjectId === filters.personaId))
@@ -160,8 +166,8 @@ function formatTime(timestamp: number): string {
           <thead><tr><th>任务</th><th>对象</th><th>状态</th><th>创建时间</th><th>操作</th></tr></thead>
           <tbody>
             <tr v-for="item in items" :key="`${item.kind}:${item.id}`">
-              <td data-label="任务"><strong class="content-table-title">{{ item.kindLabel }}</strong><span class="content-table-description">{{ item.description }}</span></td>
-              <td data-label="对象"><span class="content-table-title">{{ item.subjectName }}</span><span class="content-table-description">{{ item.secondary }}</span></td>
+              <td data-label="任务"><NuxtLink :to="item.detailsPath" class="content-table-title hover:underline"><strong>{{ item.kindLabel }}</strong></NuxtLink><span class="content-table-description">{{ item.description }}</span></td>
+              <td data-label="对象"><NuxtLink v-if="item.subjectPath" :to="item.subjectPath" class="content-table-title hover:underline">{{ item.subjectName }}</NuxtLink><span v-else class="content-table-title">{{ item.subjectName }}</span><span class="content-table-description">{{ item.secondary }}</span></td>
               <td data-label="状态"><UBadge :color="statusColor(item.status)" variant="subtle">{{ statusLabels[item.status] }}</UBadge></td>
               <td data-label="创建时间"><span>{{ formatTime(item.createdAt) }}</span><span class="content-table-description">{{ item.id }}</span></td>
               <td data-label="操作"><UButton :to="item.detailsPath" color="neutral" variant="link">{{ item.detailsLabel }}</UButton></td>

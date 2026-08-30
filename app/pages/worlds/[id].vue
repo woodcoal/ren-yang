@@ -5,9 +5,7 @@ import type { CreateSourceWithTargetsInput, SaveSoulVersionInput, UpdateWorldInp
 import { updateWorldSchema } from '#shared/schemas/content'
 import type {
   CreateGrowthMaterialInput,
-  CreateLearningPromptDraftFromVersionInput,
   ImportGrowthSourcesInput,
-  PublishLearningPromptDraftInput,
   SaveLearningPromptDraftInput,
   UpdateGrowthMaterialInput,
 } from '#shared/schemas/learning'
@@ -15,13 +13,12 @@ import type { ApiResponse } from '#shared/types/api'
 import type { DeletionImpact, PersonaSummary, SoulWorkspaceView, SourceDetails, SourceSummary, WorldDetails } from '#shared/types/content'
 import type { WorldGrowthWorkspaceView } from '#shared/types/learning'
 import type { AnalysisBatchView } from '#shared/types/analysis'
-import AnalysisPanel from '../../components/analysis/AnalysisPanel.vue'
 import type { SourceFileSubmission } from '../../components/content/SourceImportForm.vue'
 import GrowthMaterialPanel from '../../components/learning/GrowthMaterialPanel.vue'
 import LearningPromptPanel from '../../components/learning/LearningPromptPanel.vue'
 import { getApiErrorMessage } from '../../utils/apiError'
 
-type WorldTab = 'overview' | 'soul' | 'growth' | 'sources' | 'relations'
+type WorldTab = 'overview' | 'soul' | 'growth_materials' | 'growth' | 'sources' | 'relations'
 
 const worldId = String(useRoute().params.id)
 const { runWithAiLoading } = useAiLoading()
@@ -53,6 +50,7 @@ const allPersonas = computed(() => personaData.value?.data ?? [])
 const tabs: Array<{ id: WorldTab, label: string }> = [
   { id: 'overview', label: '概览' },
   { id: 'soul', label: '灵魂' },
+  { id: 'growth_materials', label: '成长素材' },
   { id: 'growth', label: '成长' },
   { id: 'sources', label: '资料' },
   { id: 'relations', label: '人物与管理' },
@@ -181,34 +179,18 @@ async function refreshWorldGrowthAnalysis(): Promise<void> {
   await refreshGrowth()
 }
 
-/** @param input 完整世界成长提示词与基线版本。 @returns 草稿保存和工作区刷新完成时结束。 */
-async function saveWorldGrowthPromptDraft(input: SaveLearningPromptDraftInput): Promise<void> {
-  await runAction('世界成长提示词草稿已保存，尚未生效', async () => {
-    await $fetch(`/api/v1/worlds/${worldId}/growth/prompt/draft`, { method: 'PUT', body: input })
-    await refreshGrowth()
-  })
-}
-
-/** @returns 删除世界成长未发布草稿和工作区刷新完成时结束。 */
-async function deleteWorldGrowthPromptDraft(): Promise<void> {
-  await runAction('世界成长提示词草稿已删除', async () => {
-    await $fetch(`/api/v1/worlds/${worldId}/growth/prompt/draft`, { method: 'DELETE' })
-    await refreshGrowth()
-  })
-}
-
-/** @param input 发布版本变更说明。 @returns 草稿发布和工作区刷新完成时结束。 */
-async function publishWorldGrowthPromptDraft(input: PublishLearningPromptDraftInput): Promise<void> {
+/**
+ * 保存完整世界成长提示词，并立即发布为后续任务使用的新版本。
+ * @param input 完整提示词正文与历史基线。
+ * @returns 草稿保存、发布和世界成长工作区刷新完成时结束。
+ */
+async function saveAndPublishWorldGrowthPrompt(input: SaveLearningPromptDraftInput): Promise<void> {
   await runAction('世界成长提示词已发布，之后创建的新任务将固定使用这一版', async () => {
-    await $fetch(`/api/v1/worlds/${worldId}/growth/prompt/publish`, { method: 'POST', body: input })
-    await refreshGrowth()
-  })
-}
-
-/** @param input 历史版本 UUID。 @returns 校准草稿创建和工作区刷新完成时结束。 */
-async function createWorldGrowthPromptDraftFromVersion(input: CreateLearningPromptDraftFromVersionInput): Promise<void> {
-  await runAction('已基于历史版本创建校准草稿，当前已发布版本未改变', async () => {
-    await $fetch(`/api/v1/worlds/${worldId}/growth/prompt/draft-from-version`, { method: 'POST', body: input })
+    await $fetch(`/api/v1/worlds/${worldId}/growth/prompt/draft`, { method: 'PUT', body: input })
+    await $fetch(`/api/v1/worlds/${worldId}/growth/prompt/publish`, {
+      method: 'POST',
+      body: { changeSummary: '保存并发布校准后的提示词' },
+    })
     await refreshGrowth()
   })
 }
@@ -490,7 +472,7 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
       <ContentSoulWorkspace v-else-if="selectedTab === 'soul'" :workspace="soul" :loading="actionLoading"
         @save="saveSoulVersion" />
 
-      <div v-else-if="selectedTab === 'growth'" class="space-y-6">
+      <div v-else-if="selectedTab === 'growth_materials'" class="space-y-6">
         <GrowthMaterialPanel
           subject-label="世界"
           :items="growthWorkspace.materials"
@@ -502,16 +484,17 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
           @status="updateWorldGrowthMaterialStatus"
           @delete="deleteWorldGrowthMaterials"
         />
-        <AnalysisPanel title="世界成长" :batch="growthAnalysis" :loading="actionLoading"
-          @analyze="analyzeWorldGrowth" @refresh="refreshWorldGrowthAnalysis" />
+      </div>
+
+      <div v-else-if="selectedTab === 'growth'" class="space-y-6">
         <LearningPromptPanel
           title="世界成长"
           :workspace="growthWorkspace.prompt"
+          :batch="growthAnalysis"
           :loading="actionLoading"
-          @save="saveWorldGrowthPromptDraft"
-          @delete-draft="deleteWorldGrowthPromptDraft"
-          @publish="publishWorldGrowthPromptDraft"
-          @draft-from-version="createWorldGrowthPromptDraftFromVersion"
+          @analyze="analyzeWorldGrowth"
+          @refresh="refreshWorldGrowthAnalysis"
+          @save-and-publish="saveAndPublishWorldGrowthPrompt"
         />
       </div>
 

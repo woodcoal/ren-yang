@@ -23,16 +23,19 @@ const completedBatch: AnalysisBatchView = {
 }
 
 describe('成长与记忆 AI 提炼组件', () => {
-  it('人物和世界详情页显式使用完整提示词提炼面板', () => {
+  it('人物和世界详情页将 AI 提炼状态整合到统一提示词编辑器', () => {
     const pageSources = [
       readFileSync('app/pages/personas/[id].vue', 'utf8'),
       readFileSync('app/pages/worlds/[id].vue', 'utf8'),
     ]
     for (const pageSource of pageSources) {
-      expect(pageSource).toContain("import AnalysisPanel from '../../components/analysis/AnalysisPanel.vue'")
       expect(pageSource).toContain('LearningPromptPanel')
+      expect(pageSource).toContain(':batch=')
+      expect(pageSource).not.toContain("import AnalysisPanel from '../../components/analysis/AnalysisPanel.vue'")
       expect(pageSource).not.toContain('@review=')
     }
+    expect(pageSources[1]).toContain("{ id: 'growth_materials', label: '成长素材' }")
+    expect(pageSources[1]).toContain("selectedTab === 'growth_materials'")
   })
 
   it('提炼面板明确区分结合新增素材与全部素材重建', async () => {

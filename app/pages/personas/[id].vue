@@ -5,9 +5,7 @@ import type { CreateSourceWithTargetsInput, PersonaCredentialInput, SaveSoulVers
 import { updatePersonaSchema } from '#shared/schemas/content'
 import type {
   CreateGrowthMaterialInput,
-  CreateLearningPromptDraftFromVersionInput,
   ImportGrowthSourcesInput,
-  PublishLearningPromptDraftInput,
   SaveExternalRecordInput,
   SaveLearningPromptDraftInput,
   UpdateGrowthMaterialInput,
@@ -17,7 +15,6 @@ import type { ApiResponse } from '#shared/types/api'
 import type { DeletionImpact, PersonaCredentialSecretView, PersonaDetails, SoulWorkspaceView, SourceDetails, SourceSummary, WorldSummary } from '#shared/types/content'
 import type { PersonaGrowthWorkspaceView, PersonaMemoryWorkspaceView } from '#shared/types/learning'
 import type { AnalysisBatchView } from '#shared/types/analysis'
-import AnalysisPanel from '../../components/analysis/AnalysisPanel.vue'
 import type { SourceFileSubmission } from '../../components/content/SourceImportForm.vue'
 import GrowthMaterialPanel from '../../components/learning/GrowthMaterialPanel.vue'
 import LearningPromptPanel from '../../components/learning/LearningPromptPanel.vue'
@@ -306,38 +303,20 @@ async function refreshLearningAnalysis(target: 'growth' | 'memory'): Promise<voi
   }
 }
 
-/** @param target 成长或记忆。 @param input 完整提示词与基线版本。 @returns 草稿保存和工作区刷新完成时结束。 */
-async function saveLearningPromptDraft(target: 'growth' | 'memory', input: SaveLearningPromptDraftInput): Promise<void> {
-  await runAction('提示词草稿已保存，尚未生效', async () => {
-    const path = target === 'growth' ? 'growth' : 'memories'
-    await $fetch(`/api/v1/personas/${personaId}/${path}/prompt/draft`, { method: 'PUT', body: input })
-    await (target === 'growth' ? refreshGrowth() : refreshMemory())
-  })
-}
-
-/** @param target 成长或记忆。 @returns 删除未发布草稿和工作区刷新完成时结束。 */
-async function deleteLearningPromptDraft(target: 'growth' | 'memory'): Promise<void> {
-  await runAction('未发布提示词草稿已删除', async () => {
-    const path = target === 'growth' ? 'growth' : 'memories'
-    await $fetch(`/api/v1/personas/${personaId}/${path}/prompt/draft`, { method: 'DELETE' })
-    await (target === 'growth' ? refreshGrowth() : refreshMemory())
-  })
-}
-
-/** @param target 成长或记忆。 @param input 版本变更说明。 @returns 草稿发布和工作区刷新完成时结束。 */
-async function publishLearningPromptDraft(target: 'growth' | 'memory', input: PublishLearningPromptDraftInput): Promise<void> {
+/**
+ * 保存完整人物成长或记忆提示词，并立即发布为后续任务使用的新版本。
+ * @param target 成长或记忆。
+ * @param input 完整提示词正文与历史基线。
+ * @returns 草稿保存、发布和工作区刷新完成时结束。
+ */
+async function saveAndPublishLearningPrompt(target: 'growth' | 'memory', input: SaveLearningPromptDraftInput): Promise<void> {
   await runAction('提示词已发布，之后创建的新任务将固定使用这一版', async () => {
     const path = target === 'growth' ? 'growth' : 'memories'
-    await $fetch(`/api/v1/personas/${personaId}/${path}/prompt/publish`, { method: 'POST', body: input })
-    await (target === 'growth' ? refreshGrowth() : refreshMemory())
-  })
-}
-
-/** @param target 成长或记忆。 @param input 历史版本 UUID。 @returns 校准草稿创建和工作区刷新完成时结束。 */
-async function createLearningPromptDraftFromVersion(target: 'growth' | 'memory', input: CreateLearningPromptDraftFromVersionInput): Promise<void> {
-  await runAction('已基于历史版本创建校准草稿，当前已发布版本未改变', async () => {
-    const path = target === 'growth' ? 'growth' : 'memories'
-    await $fetch(`/api/v1/personas/${personaId}/${path}/prompt/draft-from-version`, { method: 'POST', body: input })
+    await $fetch(`/api/v1/personas/${personaId}/${path}/prompt/draft`, { method: 'PUT', body: input })
+    await $fetch(`/api/v1/personas/${personaId}/${path}/prompt/publish`, {
+      method: 'POST',
+      body: { changeSummary: '保存并发布校准后的提示词' },
+    })
     await (target === 'growth' ? refreshGrowth() : refreshMemory())
   })
 }
@@ -596,21 +575,14 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
       </div>
 
       <div v-else-if="selectedTab === 'growth'" class="space-y-6">
-        <AnalysisPanel
+        <LearningPromptPanel
           title="人物成长"
+          :workspace="growthWorkspace.prompt"
           :batch="growthAnalysis"
           :loading="actionLoading"
           @analyze="analyzeLearning('growth', $event)"
           @refresh="refreshLearningAnalysis('growth')"
-        />
-        <LearningPromptPanel
-          title="人物成长"
-          :workspace="growthWorkspace.prompt"
-          :loading="actionLoading"
-          @save="saveLearningPromptDraft('growth', $event)"
-          @delete-draft="deleteLearningPromptDraft('growth')"
-          @publish="publishLearningPromptDraft('growth', $event)"
-          @draft-from-version="createLearningPromptDraftFromVersion('growth', $event)"
+          @save-and-publish="saveAndPublishLearningPrompt('growth', $event)"
         />
       </div>
 
@@ -635,21 +607,14 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
       </div>
 
       <div v-else-if="selectedTab === 'memory'" class="space-y-6">
-        <AnalysisPanel
+        <LearningPromptPanel
           title="人物记忆"
+          :workspace="memoryWorkspace.prompt"
           :batch="memoryAnalysis"
           :loading="actionLoading"
           @analyze="analyzeLearning('memory', $event)"
           @refresh="refreshLearningAnalysis('memory')"
-        />
-        <LearningPromptPanel
-          title="人物记忆"
-          :workspace="memoryWorkspace.prompt"
-          :loading="actionLoading"
-          @save="saveLearningPromptDraft('memory', $event)"
-          @delete-draft="deleteLearningPromptDraft('memory')"
-          @publish="publishLearningPromptDraft('memory', $event)"
-          @draft-from-version="createLearningPromptDraftFromVersion('memory', $event)"
+          @save-and-publish="saveAndPublishLearningPrompt('memory', $event)"
         />
       </div>
 

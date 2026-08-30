@@ -57,6 +57,7 @@ describe('资料列表批量状态操作', () => {
       .find(button => button.props('icon') === 'i-lucide-chevron-right')
     expect(detailsButton).toBeDefined()
     expect(detailsButton!.props()).toMatchObject({ icon: 'i-lucide-chevron-right', size: 'xs', variant: 'ghost' })
+    expect(wrapper.get('a[data-source-title-link]').attributes('href')).toBe(`/sources/${enabledSourceId}`)
     expect(wrapper.get('a[aria-label="查看与维护：已启用资料"]').exists()).toBe(true)
     expect(wrapper.text()).not.toContain('已选择')
 

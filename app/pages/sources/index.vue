@@ -347,7 +347,7 @@ async function updateSelectedSourcesStatus(sourceIds: string[], isEnabled: boole
       <div v-if="searchResults" class="mt-4 space-y-3">
         <p v-if="searchResults.length === 0" class="text-sm text-muted">没有找到相关段落。</p>
         <div v-for="chunk in searchResults" :key="chunk.id" class="archive-panel">
-          <p class="text-xs font-medium text-primary">{{ chunk.heading || '无标题' }} · 第 {{ chunk.ordinal + 1 }} 段</p>
+          <NuxtLink :to="`/sources/${chunk.sourceId}`" class="text-xs font-medium text-primary hover:underline">{{ chunk.heading || '无标题' }} · 第 {{ chunk.ordinal + 1 }} 段</NuxtLink>
           <p class="mt-1 whitespace-pre-wrap text-sm text-muted">{{ chunk.content }}</p>
           <UButton :to="`/sources/${chunk.sourceId}`" color="neutral" variant="link" size="sm" class="mt-1 px-0">查看资料
           </UButton>
@@ -399,7 +399,7 @@ async function updateSelectedSourcesStatus(sourceIds: string[], isEnabled: boole
               <td data-label="选择"><input type="checkbox" :aria-label="`选择资料：${source.name}`"
                   :checked="selectedSourceIds.includes(source.id)" @change="updateSourceSelection(source.id, $event)">
               </td>
-              <td data-label="资料"><strong class="content-table-title">{{ source.name }}</strong><span
+              <td data-label="资料"><NuxtLink :to="`/sources/${source.id}`" data-source-title-link class="content-table-title hover:underline"><strong>{{ source.name }}</strong></NuxtLink><span
                   class="content-table-description">{{ source.contentText.slice(0, 120) }}{{ source.contentText.length >
                     120 ? '…' : '' }}</span></td>
               <td data-label="用途">
