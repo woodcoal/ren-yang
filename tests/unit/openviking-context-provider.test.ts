@@ -65,6 +65,23 @@ class FixedContextIndexRepository implements ContextIndexRepository {
   /** @returns 同步记录副本。 */
   async listSyncRecords() { return [...this.records] }
 
+  /** @param input 分页参数。 @returns 当前测试同步记录的分页结果。 */
+  async listSyncRecordsPage(input: { page: number, pageSize: 5 | 10 | 20 | 50 | 100 }) {
+    const total = this.records.length
+    const totalPages = Math.max(1, Math.ceil(total / input.pageSize))
+    const page = Math.min(input.page, totalPages)
+    return {
+      items: this.records.slice((page - 1) * input.pageSize, page * input.pageSize),
+      total,
+      page,
+      pageSize: input.pageSize,
+      totalPages,
+    }
+  }
+
+  /** @returns 当前测试同步失败记录数。 */
+  async countFailedSyncRecords() { return this.records.filter(record => record.status === 'failed').length }
+
   /** @param record 新同步记录。 @returns 无返回值。 */
   async saveSyncRecord(record: ContextSyncRecordView) { this.records = [record] }
 

@@ -43,6 +43,20 @@ export interface ContextSyncRecordView {
   updatedAt: number
 }
 
+/** 管理界面使用的 OpenViking 同步日志分页结果。 */
+export interface ContextSyncRecordPageView {
+  /** 当前页同步日志。 */
+  items: ContextSyncRecordView[]
+  /** 同步日志总数。 */
+  total: number
+  /** 实际返回页码；请求越界时收敛到最后一页。 */
+  page: number
+  /** 当前每页数量。 */
+  pageSize: 5 | 10 | 20 | 50 | 100
+  /** 总页数；无记录时为 1。 */
+  totalPages: number
+}
+
 /** OpenViking 全量重建结果。 */
 export interface ContextReindexResult {
   /** 固定目标提供器。 */

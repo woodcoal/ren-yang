@@ -1,6 +1,6 @@
 import type { Database as BetterSqliteDatabase } from 'better-sqlite3'
-import type { AuditEventView } from '../../../shared/types/system'
-import type { AuditRepository } from '../../ports/AuditRepository'
+import type { AuditEventPageView, AuditEventView } from '../../../shared/types/system'
+import type { AuditRepository, ListAuditEventPageInput } from '../../ports/AuditRepository'
 
 /** 使用 SQLite 保存和读取不可变关键动作审计历史。 */
 export class SqliteAuditRepository implements AuditRepository {
@@ -12,6 +12,17 @@ export class SqliteAuditRepository implements AuditRepository {
     return this.client.prepare(`
       SELECT * FROM audit_events ORDER BY created_at DESC, rowid DESC LIMIT ?
     `).all(limit).map(toAuditEvent)
+  }
+
+  /** @param input 分页参数。 @returns 新记录在前的审计分页结果。 */
+  async listPage(input: ListAuditEventPageInput): Promise<AuditEventPageView> {
+    const total = Number((this.client.prepare('SELECT COUNT(*) AS count FROM audit_events').get() as { count: number }).count)
+    const totalPages = Math.max(1, Math.ceil(total / input.pageSize))
+    const page = Math.min(input.page, totalPages)
+    const items = this.client.prepare(`
+      SELECT * FROM audit_events ORDER BY created_at DESC, rowid DESC LIMIT ? OFFSET ?
+    `).all(input.pageSize, (page - 1) * input.pageSize).map(toAuditEvent)
+    return { items, total, page, pageSize: input.pageSize, totalPages }
   }
 
 }

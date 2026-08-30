@@ -1,6 +1,6 @@
-import type { ContextReindexResult, ContextSyncRecordView } from '../../../shared/types/context'
+import type { ContextReindexResult, ContextSyncRecordPageView, ContextSyncRecordView } from '../../../shared/types/context'
 import type { Clock } from '../../ports/Clock'
-import type { ContextIndexRepository } from '../../ports/ContextIndexRepository'
+import type { ContextIndexRepository, ListSyncRecordPageInput } from '../../ports/ContextIndexRepository'
 import type { ContextProjectionEntityType, ContextSourceProjection } from '../../ports/ContextIndexRepository'
 import type { ContextSyncTaskQueue } from '../../ports/ContextSyncTaskQueue'
 import type { IdentifierGenerator } from '../../ports/IdentifierGenerator'
@@ -41,6 +41,16 @@ export class ContextSynchronizationApplicationService implements TaskHandler {
   /** @returns 当前全部资料同步事实。 */
   async listSyncRecords(): Promise<ContextSyncRecordView[]> {
     return await this.dependencies.repository.listSyncRecords()
+  }
+
+  /** @param input 分页参数。 @returns 当前同步日志分页结果。 */
+  async listSyncRecordsPage(input: ListSyncRecordPageInput): Promise<ContextSyncRecordPageView> {
+    return await this.dependencies.repository.listSyncRecordsPage(input)
+  }
+
+  /** @returns 当前同步失败记录数。 */
+  async countFailedSyncRecords(): Promise<number> {
+    return await this.dependencies.repository.countFailedSyncRecords()
   }
 
   /** @returns 主动联网检测结果；不修改索引或开关。 */

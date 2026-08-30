@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { Database as BetterSqliteDatabase } from 'better-sqlite3'
-import type { ContextSyncRecordView } from '../../../shared/types/context'
+import type { ContextSyncRecordPageView, ContextSyncRecordView } from '../../../shared/types/context'
 import type {
   ContextIndexRepository,
   ActiveLocalLearning,
@@ -10,6 +10,7 @@ import type {
   ContextSourceScope,
   DerivedMemoryDocument,
   PendingContextSessionSource,
+  ListSyncRecordPageInput,
 } from '../../ports/ContextIndexRepository'
 import { insertAuditEvent } from './AuditSql'
 
@@ -393,6 +394,25 @@ export class SqliteContextIndexRepository implements ContextIndexRepository {
   async listSyncRecords(): Promise<ContextSyncRecordView[]> {
     return this.client.prepare(`SELECT * FROM context_sync_records ORDER BY updated_at DESC, source_id`).all()
       .map(toSyncRecord)
+  }
+
+  /** @param input 分页参数。 @returns 最近更新在前的同步日志分页结果。 */
+  async listSyncRecordsPage(input: ListSyncRecordPageInput): Promise<ContextSyncRecordPageView> {
+    const total = Number((this.client.prepare('SELECT COUNT(*) AS count FROM context_sync_records').get() as { count: number }).count)
+    const totalPages = Math.max(1, Math.ceil(total / input.pageSize))
+    const page = Math.min(input.page, totalPages)
+    const items = this.client.prepare(`
+      SELECT * FROM context_sync_records
+      ORDER BY updated_at DESC, source_id, id LIMIT ? OFFSET ?
+    `).all(input.pageSize, (page - 1) * input.pageSize).map(toSyncRecord)
+    return { items, total, page, pageSize: input.pageSize, totalPages }
+  }
+
+  /** @returns 当前同步失败记录数。 */
+  async countFailedSyncRecords(): Promise<number> {
+    return Number((this.client.prepare(`
+      SELECT COUNT(*) AS count FROM context_sync_records WHERE status = 'failed'
+    `).get() as { count: number }).count)
   }
 
   /** @param record 完整同步事实。 @returns 无返回值。 */

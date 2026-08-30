@@ -1,34 +1,30 @@
 <script setup lang="ts">
 import { computed, shallowRef } from 'vue'
 import type { ApiResponse, AuthenticationSessionResult } from '#shared/types/api'
-import type { ContextReindexResult, ContextSyncRecordView, OpenVikingCapabilityView } from '#shared/types/context'
-import type { AuditEventView, SystemCapabilitiesResult } from '#shared/types/system'
+import type { ContextReindexResult, OpenVikingCapabilityView } from '#shared/types/context'
+import type { SystemCapabilitiesResult } from '#shared/types/system'
 import { getApiErrorMessage } from '../utils/apiError'
 
 /** 上下文同步状态接口。 */
 interface ContextStatusResponse {
   capability: OpenVikingCapabilityView
-  records: ContextSyncRecordView[]
+  failedCount: number
 }
 
 const [
   { data: capabilityData, error: capabilityError, refresh: refreshCapabilities },
   { data: statusData, error: statusError, refresh: refreshStatus },
-  { data: auditData, error: auditError, refresh: refreshAudit },
   { data: sessionData, error: sessionError },
 ] = await Promise.all([
   useFetch<ApiResponse<SystemCapabilitiesResult>>('/api/v1/system/capabilities'),
-  useFetch<ApiResponse<ContextStatusResponse>>('/api/v1/system/context/status'),
-  useFetch<ApiResponse<AuditEventView[]>>('/api/v1/system/audit?limit=50'),
+  useFetch<ApiResponse<ContextStatusResponse>>('/api/v1/system/context/summary'),
   useFetch<ApiResponse<AuthenticationSessionResult>>('/api/v1/auth/session'),
 ])
 const capabilities = computed(() => capabilityData.value?.data ?? null)
 const capability = computed(() => capabilityData.value?.data.openViking ?? statusData.value?.data.capability ?? null)
 const contextProvider = computed(() => capabilityData.value?.data.contextProvider ?? 'sqlite_fts5')
 const administrator = computed(() => sessionData.value?.data.administrator ?? null)
-const records = computed(() => statusData.value?.data.records ?? [])
-const failedSyncCount = computed(() => records.value.filter(record => record.status === 'failed').length)
-const auditEvents = computed(() => auditData.value?.data ?? [])
+const failedSyncCount = computed(() => statusData.value?.data.failedCount ?? 0)
 const actionLoading = shallowRef(false)
 const actionError = shallowRef<string | null>(null)
 const actionMessage = shallowRef<string | null>(null)
@@ -67,7 +63,7 @@ async function executeAction(action: () => Promise<void>): Promise<void> {
   actionMessage.value = null
   try {
     await action()
-    await Promise.all([refreshCapabilities(), refreshStatus(), refreshAudit()])
+    await Promise.all([refreshCapabilities(), refreshStatus()])
   }
   catch (error: unknown) {
     actionError.value = getApiErrorMessage(error, '上下文提供器操作失败')
@@ -77,15 +73,11 @@ async function executeAction(action: () => Promise<void>): Promise<void> {
   }
 }
 
-/** @param timestamp UTC Unix 毫秒。 @returns 本地时间。 */
-function formatTime(timestamp: number): string {
-  return new Date(timestamp).toLocaleString('zh-CN')
-}
 </script>
 
 <template>
   <div>
-    <ContentPageHeader title="系统中心" description="按能力、检索同步、备份和审计分区检查系统；浏览器只显示可确认的非敏感状态。" />
+    <ContentPageHeader title="系统中心" description="按能力、检索同步和备份分区检查系统；浏览器只显示可确认的非敏感状态。" />
     <div class="status-strip page-status-strip" aria-label="系统能力状态摘要">
       <div class="status-cell"><span class="status-kicker">文本生成</span><strong class="status-value">{{ capabilities?.textModel.configured ? '已配置' : '未配置' }}</strong></div>
       <div class="status-cell"><span class="status-kicker">图片能力</span><strong class="status-value">{{ capabilities?.imageModel.configured ? '已配置' : '未配置' }}</strong></div>
@@ -94,7 +86,7 @@ function formatTime(timestamp: number): string {
     </div>
     <UAlert v-if="actionError" class="mb-5" color="error" title="操作失败" :description="actionError" />
     <UAlert v-if="actionMessage" class="mb-5" color="success" title="操作完成" :description="actionMessage" />
-    <UAlert v-if="capabilityError || statusError || auditError || sessionError" class="mb-5" color="error" title="系统数据加载失败" />
+    <UAlert v-if="capabilityError || statusError || sessionError" class="mb-5" color="error" title="系统数据加载失败" />
 
     <div class="mt-8 mb-6 grid gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(20rem,0.6fr)]">
       <SystemCapabilityStatusPanel v-if="capabilities" :capabilities="capabilities" show-limits />
@@ -128,22 +120,18 @@ function formatTime(timestamp: number): string {
         </div>
       </section>
 
-      <section class="archive-panel" aria-labelledby="sync-record-heading">
-        <div class="section-heading"><div class="section-heading-copy"><p class="eyebrow">最近状态</p><h2 id="sync-record-heading">同步记录</h2></div></div>
-        <div v-if="records.length" class="log-list">
-          <div v-for="record in records" :key="record.id" class="p-3 text-sm not-last:border-b not-last:border-default">
-            <div class="flex justify-between gap-2"><span class="break-all">{{ record.sourceId }}</span><UBadge :color="record.status === 'synchronized' ? 'success' : record.status === 'failed' ? 'error' : 'neutral'" variant="subtle">{{ record.status }}</UBadge></div>
-            <p class="mt-2 break-all text-xs text-muted">{{ record.remoteUri ?? '尚无远端 URI' }}</p>
-            <p v-if="record.error" class="mt-2 text-xs text-error">{{ record.error }}</p>
-            <p class="mt-2 text-xs text-dimmed">{{ formatTime(record.updatedAt) }}</p>
-          </div>
-        </div>
-        <p v-else class="py-6 text-center text-sm text-muted">尚无同步记录。</p>
-      </section>
+      <UCard>
+        <template #header><h2 class="font-semibold text-highlighted">日志与审计</h2></template>
+        <p class="text-sm text-muted">同步日志和关键管理动作已迁移到独立页面，通过服务端分页查看，避免系统中心堆积长列表。</p>
+        <dl class="mt-5 grid gap-3 text-sm">
+          <div><dt class="text-muted">当前同步失败</dt><dd class="mt-1 font-medium text-highlighted">{{ failedSyncCount }} 项</dd></div>
+          <div><dt class="text-muted">记录范围</dt><dd class="mt-1">OpenViking 同步与系统审计</dd></div>
+        </dl>
+        <UButton class="mt-5" to="/system-records" color="neutral" variant="soft" icon="i-lucide-scroll-text">查看日志与审计</UButton>
+      </UCard>
     </div>
-    <div class="mt-6 grid gap-6 xl:grid-cols-2">
+    <div class="mt-6">
       <SystemBackupPanel />
-      <SystemAuditEventList :events="auditEvents" />
     </div>
   </div>
 </template>

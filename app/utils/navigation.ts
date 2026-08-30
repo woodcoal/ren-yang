@@ -52,6 +52,7 @@ export const appNavigationGroups: AppNavigationGroup[] = [
       { label: '内容模板', to: '/templates', icon: 'i-lucide-panels-top-left' },
       { label: '生成设置', to: '/parameter-profiles', icon: 'i-lucide-sliders-horizontal' },
       { label: '系统中心', to: '/settings', icon: 'i-lucide-settings-2' },
+      { label: '日志与审计', to: '/system-records', icon: 'i-lucide-scroll-text' },
     ],
   },
 ]

@@ -1,5 +1,5 @@
 import type { SourceRole } from '../domain/content/ContentModels'
-import type { ContextSyncRecordView } from '../../shared/types/context'
+import type { ContextSyncRecordPageView, ContextSyncRecordView } from '../../shared/types/context'
 
 /** OpenViking 同步使用的完整 SQLite 资料事实。 */
 export interface ContextSourceDocument {
@@ -117,6 +117,14 @@ export interface PendingContextSessionSource {
   sourceId: string
 }
 
+/** 同步日志分页查询参数。 */
+export interface ListSyncRecordPageInput {
+  /** 从 1 开始的页码。 */
+  page: number
+  /** 每页记录数。 */
+  pageSize: 5 | 10 | 20 | 50 | 100
+}
+
 /** SQLite 上下文同步记录和资料目录端口。 */
 export interface ContextIndexRepository {
   /** @returns SQLite 当前全部世界 User，以及无世界人物的隐藏 User；用于重建 OpenViking User 投影。 */
@@ -147,6 +155,10 @@ export interface ContextIndexRepository {
   finalizePersonaFeedbackSourceDeletion(sourceId: string, timestamp: number): Promise<void>
   /** @returns 全部 OpenViking 同步记录。 */
   listSyncRecords(): Promise<ContextSyncRecordView[]>
+  /** @param input 分页参数。 @returns 最近更新在前的同步日志分页结果。 */
+  listSyncRecordsPage(input: ListSyncRecordPageInput): Promise<ContextSyncRecordPageView>
+  /** @returns 当前同步失败记录数。 */
+  countFailedSyncRecords(): Promise<number>
   /** @param record 完整同步事实。 @returns 无返回值。 */
   saveSyncRecord(record: ContextSyncRecordView): Promise<void>
   /** @param id 已完成远端删除的投影记录 UUID。 @returns 无返回值。 */

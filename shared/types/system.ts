@@ -83,3 +83,17 @@ export interface AuditEventView {
   /** UTC Unix 毫秒。 */
   createdAt: number
 }
+
+/** 管理界面使用的审计记录分页结果。 */
+export interface AuditEventPageView {
+  /** 当前页审计记录。 */
+  items: AuditEventView[]
+  /** 符合条件的审计记录总数。 */
+  total: number
+  /** 实际返回页码；请求越界时收敛到最后一页。 */
+  page: number
+  /** 当前每页数量。 */
+  pageSize: 5 | 10 | 20 | 50 | 100
+  /** 总页数；无记录时为 1。 */
+  totalPages: number
+}

@@ -1,9 +1,8 @@
 import type { AdministratorRepository } from '../../ports/AdministratorRepository'
 import type { DatabaseHealthReader } from '../../ports/DatabaseHealth'
 import type { TaskQueueStatusReader, WorkerStatusReader } from '../../ports/TaskPorts'
-import type { SystemHealthResult } from '../../../shared/types/system'
-import type { AuditRepository } from '../../ports/AuditRepository'
-import type { AuditEventView } from '../../../shared/types/system'
+import type { AuditEventPageView, AuditEventView, SystemHealthResult } from '../../../shared/types/system'
+import type { AuditRepository, ListAuditEventPageInput } from '../../ports/AuditRepository'
 
 /** 系统状态应用服务的依赖。 */
 export interface SystemApplicationServiceDependencies {
@@ -56,5 +55,10 @@ export class SystemApplicationService {
   /** @param limit 最大返回数量。 @returns 新记录在前的关键动作审计历史。 */
   async listAuditEvents(limit: number): Promise<AuditEventView[]> {
     return await this.dependencies.audit.list(limit)
+  }
+
+  /** @param input 分页参数。 @returns 新记录在前的关键动作审计分页结果。 */
+  async listAuditEventsPage(input: ListAuditEventPageInput): Promise<AuditEventPageView> {
+    return await this.dependencies.audit.listPage(input)
   }
 }
