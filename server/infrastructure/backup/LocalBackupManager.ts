@@ -22,8 +22,14 @@ const DATABASE_NAME = 'app.sqlite'
 const FILE_PATH_PATTERN = /^(sources\/[0-9a-f-]{36}\.(txt|md)|artifacts\/[0-9a-f-]{36}\/assets\/[0-9a-f-]{36}\.(png|jpg|webp))$/i
 /** 压平迁移前完整数据库和第一版备份清单使用的迁移条数。 */
 const LEGACY_MIGRATION_COUNT = 10
-/** AI 配置迁移前最后一个已发布数据库结构版本。 */
-const PREVIOUS_MIGRATION_VERSION = 1788422400000
+/** 单一基线和压平前完整迁移链共用的数据库结构版本。 */
+const BASELINE_MIGRATION_VERSION = 1788422400000
+/** OpenViking 韧性迁移前最后一个已发布数据库结构版本。 */
+const PREVIOUS_MIGRATION_VERSION = 1788854400000
+/** 上一已发布版本从单一基线升级后的迁移条数。 */
+const PREVIOUS_MIGRATION_COUNT = 4
+/** 上一已发布版本从压平前完整迁移链升级后的迁移条数。 */
+const PREVIOUS_LEGACY_MIGRATION_COUNT = 13
 
 /** 当前迁移日志的稳定数据库身份。 */
 interface MigrationIdentity {
@@ -275,14 +281,17 @@ function inspectDatabase(databasePath: string, expectedMigration: MigrationIdent
 }
 
 /**
- * 接受当前完整迁移，或 AI 配置迁移前的单基线与完整十步历史链。
+ * 接受当前完整迁移、上一已发布版本，或单基线与完整十步历史链。
  * @param actual 备份数据库实际迁移身份。
  * @param expected 当前程序迁移身份。
  * @returns 数据库能够由当前程序安全升级时为 true。
  */
 function isCompatibleDatabaseMigration(actual: MigrationIdentity, expected: MigrationIdentity): boolean {
   if (actual.version === expected.version && actual.count === expected.count) return true
-  return actual.version === PREVIOUS_MIGRATION_VERSION
+  if (actual.version === PREVIOUS_MIGRATION_VERSION) {
+    return actual.count === PREVIOUS_MIGRATION_COUNT || actual.count === PREVIOUS_LEGACY_MIGRATION_COUNT
+  }
+  return actual.version === BASELINE_MIGRATION_VERSION
     && (actual.count === 1 || actual.count === LEGACY_MIGRATION_COUNT)
 }
 
@@ -362,7 +371,7 @@ function parseManifest(value: string): CompatibleBackupManifest {
 }
 
 /**
- * 确认备份清单指向当前单一基线或压平前的完整十步迁移链。
+ * 确认备份清单指向当前版本、上一已发布版本、单一基线或压平前完整迁移链。
  * @param manifest 已通过结构校验的新旧清单。
  * @param expectedMigration 当前程序迁移身份。
  * @returns 兼容时结束；版本不匹配时抛出错误。
@@ -374,6 +383,7 @@ function assertManifestMigrationCompatibility(
   const compatible = manifest.version === 2
     ? manifest.migrationVersion === expectedMigration.version
       || manifest.migrationVersion === PREVIOUS_MIGRATION_VERSION
+      || manifest.migrationVersion === BASELINE_MIGRATION_VERSION
     : manifest.migrationCount === LEGACY_MIGRATION_COUNT
   if (!compatible) throw new Error('备份迁移版本与当前程序不兼容')
 }

@@ -78,7 +78,7 @@ describe('SQLite 与引用文件备份恢复', () => {
     expect(validation.fileCount).toBe(3)
     expect(validation.manifest.version).toBe(2)
     if (validation.manifest.version !== 2) throw new Error('新建备份应使用第二版清单')
-    expect(validation.manifest.migrationVersion).toBe(1788854400000)
+    expect(validation.manifest.migrationVersion).toBe(1788940800000)
     expect(existsSync(resolve(backupDirectory, 'app.sqlite-wal'))).toBe(false)
     expect(existsSync(resolve(backupDirectory, 'app.sqlite-shm'))).toBe(false)
     for (const file of validation.manifest.files) {
@@ -156,6 +156,33 @@ describe('SQLite 与引用文件备份恢复', () => {
 
     await expect(service.validate(backupDirectory)).resolves.toMatchObject({
       manifest: { version: 1, migrationCount: 10 },
+    })
+  })
+
+  it('允许恢复 OpenViking 韧性迁移前生成的第二版备份', async () => {
+    const backupDirectory = await service.create()
+    const databasePath = resolve(backupDirectory, 'app.sqlite')
+    const previousDatabase = new Database(databasePath, { fileMustExist: true })
+    try {
+      previousDatabase.prepare(`DELETE FROM __drizzle_migrations WHERE created_at = ?`).run(1788940800000)
+    }
+    finally {
+      previousDatabase.close()
+    }
+
+    const manifestPath = resolve(backupDirectory, 'manifest.json')
+    const manifest = readManifest(manifestPath)
+    if (manifest.version !== 2) throw new Error('新建备份应使用第二版清单')
+    manifest.migrationVersion = 1788854400000
+    const databaseFile = manifest.files.find(file => file.path === 'app.sqlite')
+    if (!databaseFile) throw new Error('备份清单缺少 app.sqlite')
+    const databaseBytes = readFileSync(databasePath)
+    databaseFile.sizeBytes = databaseBytes.byteLength
+    databaseFile.sha256 = hash(databaseBytes)
+    writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
+
+    await expect(service.validate(backupDirectory)).resolves.toMatchObject({
+      manifest: { version: 2, migrationVersion: 1788854400000 },
     })
   })
 

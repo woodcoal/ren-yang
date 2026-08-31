@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { DrizzleAdministratorRepository } from '../../server/infrastructure/database/DrizzleAdministratorRepository'
@@ -46,13 +46,17 @@ describe('SqliteDatabase', () => {
 
     const tables = current.getClient().prepare(`
       SELECT name FROM sqlite_master
-      WHERE type = 'table' AND name IN ('administrators', 'task_jobs')
+      WHERE type = 'table' AND name IN ('administrators', 'openviking_sync_runtime', 'task_jobs')
       ORDER BY name
     `).all()
-    expect(tables).toEqual([{ name: 'administrators' }, { name: 'task_jobs' }])
+    expect(tables).toEqual([
+      { name: 'administrators' },
+      { name: 'openviking_sync_runtime' },
+      { name: 'task_jobs' },
+    ])
     expect(current.getClient().prepare(`
       SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations
-    `).get()).toEqual({ count: 4, version: 1788854400000 })
+    `).get()).toEqual({ count: 5, version: 1788940800000 })
     expect(current.getClient().prepare(`
       SELECT COUNT(*) AS count FROM ai_prompts WHERE active_version_id IS NOT NULL
     `).get()).toEqual({ count: 18 })
@@ -96,25 +100,40 @@ describe('SqliteDatabase', () => {
   })
 
   it('已完成压平前全部迁移的旧数据库不会重复执行单一基线', () => {
-    const current = createDatabase()
+    temporaryDirectory = mkdtempSync(resolve(tmpdir(), 'ren-yang-sqlite-legacy-test-'))
+    const dataDirectory = resolve(temporaryDirectory, 'data')
+    const migrationsDirectory = resolve(temporaryDirectory, 'migrations')
+    mkdirSync(resolve(migrationsDirectory, 'meta'), { recursive: true })
+    copyFileSync(resolve(process.cwd(), 'drizzle', '0000_schema.sql'), resolve(migrationsDirectory, '0000_schema.sql'))
+    writeFileSync(resolve(migrationsDirectory, 'meta', '_journal.json'), `${JSON.stringify({
+      version: '7',
+      dialect: 'sqlite',
+      entries: [{
+        idx: 0,
+        version: '6',
+        when: 1788422400000,
+        tag: '0000_schema',
+        breakpoints: true,
+      }],
+    }, null, 2)}\n`)
+    database = new SqliteDatabase({ dataDirectory, migrationsDirectory })
+    const current = database
     const client = current.getClient()
     client.prepare(`
       INSERT INTO source_materials (
         id, name, role, input_type, content_hash, content_text, original_file_path, created_at, updated_at
       ) VALUES ('source-1', '旧资料', 'reference', 'paste', ?, '压平前正文。', NULL, 1000, 1000)
     `).run('a'.repeat(64))
-    // 测试数据库已自动应用当前全部迁移；先移除 0001 产物，精确模拟只完成旧压平迁移的数据库。
-    client.prepare(`DELETE FROM ai_prompts WHERE code IN (
-      'analysis.persona_growth_extract', 'analysis.persona_growth_synthesize',
-      'analysis.world_growth_extract', 'analysis.world_growth_synthesize'
-    )`).run()
-    client.exec(`DROP TABLE ai_algorithm_step_configurations`)
-    client.exec(`DROP TABLE ai_algorithm_configuration_versions`)
-    client.exec(`DROP TABLE ai_algorithms`)
-    client.exec(`DROP TABLE ai_model_deployments`)
-    client.exec(`DROP TABLE ai_connections`)
-    client.exec(`DROP TABLE openviking_settings`)
-    client.exec(`ALTER TABLE analysis_batches DROP COLUMN algorithm_snapshot_json`)
+    client.prepare(`
+      INSERT INTO context_sync_records (
+        id, entity_type, source_id, scope_type, scope_id, user_id, provider,
+        content_hash, status, operation, error, created_at, updated_at
+      ) VALUES (
+        'sync-1', 'source_material', 'source-1', 'persona', 'persona-1', 'user-1', 'openviking',
+        ?, 'failed', 'upsert', '旧同步错误', 1000, 1000
+      )
+    `).run('b'.repeat(64))
+    // 以 0000 单基线的真实表结构配合十条历史记录，模拟压平前完整迁移链。
     client.prepare(`DELETE FROM __drizzle_migrations`).run()
     const insertMigration = client.prepare(`
       INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)
@@ -136,7 +155,7 @@ describe('SqliteDatabase', () => {
     database = null
 
     database = new SqliteDatabase({
-      dataDirectory: temporaryDirectory!,
+      dataDirectory,
       migrationsDirectory: resolve(process.cwd(), 'drizzle'),
     })
     expect(database.getClient().prepare(`
@@ -144,8 +163,20 @@ describe('SqliteDatabase', () => {
     `).get()).toEqual({ name: '旧资料', content_text: '压平前正文。', is_enabled: 1 })
     expect(database.getClient().prepare(`
       SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations
-    `).get()).toEqual({ count: 13, version: 1788854400000 })
+    `).get()).toEqual({ count: 14, version: 1788940800000 })
     expect(database.getClient().prepare(`SELECT COUNT(*) AS count FROM ai_algorithms`).get()).toEqual({ count: 4 })
+    expect(database.getClient().prepare(`SELECT name FROM sqlite_master
+      WHERE type = 'table' AND name = 'openviking_sync_runtime'`).get()).toEqual({ name: 'openviking_sync_runtime' })
+    expect(database.getClient().prepare(`
+      SELECT error, error_code, error_stage, failure_count, next_retry_at
+      FROM context_sync_records WHERE id = 'sync-1'
+    `).get()).toEqual({
+      error: '旧同步错误',
+      error_code: null,
+      error_stage: null,
+      failure_count: 0,
+      next_retry_at: null,
+    })
     expect(database.getClient().prepare(`PRAGMA table_info(ai_connections)`).all()).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'user_agent', notnull: 1, dflt_value: "''" }),
     ]))

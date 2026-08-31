@@ -29,6 +29,13 @@
       "when": 1788854400000,
       "tag": "0003_openviking_database_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1788940800000,
+      "tag": "0004_openviking_resilience",
+      "breakpoints": true
     }
   ]
 }
