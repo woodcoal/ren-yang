@@ -62,6 +62,25 @@ const routeSectionRules: Array<{ prefix: string, section: string }> = [
   { prefix: '/sources/', section: '人物空间' },
 ]
 
+/** 未直接出现在侧栏中的固定页面标题。 */
+const standalonePageTitles: Record<string, string> = {
+  '/login': '登录',
+  '/setup': '首次设置',
+  '/personas/new': '新建人物',
+  '/sources/search': '资料段落搜索',
+  '/parameter-profiles': '生成设置',
+  '/prompts': '提示词管理',
+  '/system-ai-settings': 'AI 设置',
+}
+
+/** 动态详情页使用的稳定浏览器标题。 */
+const dynamicPageTitleRules: Array<{ prefix: string, title: string }> = [
+  { prefix: '/runs/', title: '任务详情' },
+  { prefix: '/personas/', title: '人物详情' },
+  { prefix: '/worlds/', title: '世界详情' },
+  { prefix: '/sources/', title: '资料详情' },
+]
+
 /**
  * 判断导航项是否与当前路由匹配。
  * @param currentPath 当前 Nuxt 路由路径。
@@ -88,4 +107,22 @@ export function getPageRouteContext(currentPath: string): PageRouteContext {
   }
 
   return { section: '工作台' }
+}
+
+/**
+ * 获取当前路由的简洁浏览器标题。
+ * @param currentPath 当前 Nuxt 路由路径，不包含查询参数。
+ * @returns 侧栏页面名称、独立页面名称或动态详情页名称；未知页面返回通用名称。
+ */
+export function getPageDocumentTitle(currentPath: string): string {
+  const navigationItem = appNavigationGroups
+    .flatMap(group => group.items)
+    .find(item => item.to === currentPath)
+  if (navigationItem) return navigationItem.label
+
+  const standaloneTitle = standalonePageTitles[currentPath]
+  if (standaloneTitle) return standaloneTitle
+
+  const dynamicRule = dynamicPageTitleRules.find(rule => currentPath.startsWith(rule.prefix))
+  return dynamicRule?.title ?? '页面'
 }

@@ -115,6 +115,7 @@ test('首次设置、灵魂保存、文档确认及三格式导出形成可复�
   await expect(page.getByRole('heading', { name: '外部能力', exact: true })).toBeVisible()
 
   // 先创建可复用资料，再从世界详情直接关联，覆盖新的世界资料管理入口。
+  await page.getByRole('button', { name: '人物空间', exact: true }).click()
   await page.getByRole('link', { name: '资料库', exact: true }).click()
   await page.getByRole('button', { name: '导入资料', exact: true }).click()
   const pasteForm = page.locator('form').filter({ has: page.getByRole('button', { name: '导入文本', exact: true }) })
@@ -342,6 +343,7 @@ test('首次设置、灵魂保存、文档确认及三格式导出形成可复�
     publishedMessage: '提示词已发布，之后创建的新任务将固定使用这一版',
   })
 
+  await page.getByRole('button', { name: '系统', exact: true }).click()
   await page.getByRole('link', { name: '系统中心', exact: true }).click()
   await expect(page.getByRole('heading', { name: '账户安全', exact: true })).toBeVisible()
   await expect(page.getByText('当前管理员', { exact: true }).locator('..')).toContainText(ADMINISTRATOR.username)

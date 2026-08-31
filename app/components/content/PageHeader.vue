@@ -19,6 +19,8 @@ const slots = defineSlots<{
 }>()
 const route = useRoute()
 
+useHead(() => ({ title: props.title }))
+
 /** 当前页面所属导航分组。 */
 const routeContext = computed(() => getPageRouteContext(route.path))
 </script>

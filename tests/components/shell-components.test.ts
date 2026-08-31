@@ -2,9 +2,10 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
 import BrandMark from '../../app/components/brand/BrandMark.vue'
 import PageHeader from '../../app/components/content/PageHeader.vue'
+import AppSidebar from '../../app/components/shell/AppSidebar.vue'
 import AppTopbar from '../../app/components/shell/AppTopbar.vue'
 import ThemeSelector from '../../app/components/shell/ThemeSelector.vue'
-import { appNavigationGroups } from '../../app/utils/navigation'
+import { appNavigationGroups, getPageDocumentTitle } from '../../app/utils/navigation'
 
 describe('后台品牌与主题组件', () => {
   beforeEach(() => {
@@ -49,6 +50,27 @@ describe('后台品牌与主题组件', () => {
     expect(wrapper.find('.topbar-account').exists()).toBe(false)
   })
 
+  it('侧栏菜单分组默认只展开当前分组并允许独立切换', async () => {
+    const wrapper = await mountSuspended(AppSidebar, {
+      props: {
+        collapsed: false,
+        mobileOpen: false,
+        username: 'admin',
+        taskQueue: null,
+        capabilities: null,
+      },
+    })
+    const toggles = wrapper.findAll('.sidebar-navigation-title')
+
+    expect(toggles.map(toggle => toggle.attributes('aria-expanded'))).toEqual(['true', 'false', 'false'])
+    expect(wrapper.findAll('.sidebar-navigation-items--expanded')).toHaveLength(1)
+
+    await toggles[1]!.trigger('click')
+
+    expect(toggles[1]!.attributes('aria-expanded')).toBe('true')
+    expect(wrapper.findAll('.sidebar-navigation-items--expanded')).toHaveLength(2)
+  })
+
   it('页面标题保留面包屑但不再显示路由代码', async () => {
     const wrapper = await mountSuspended(PageHeader, {
       props: { title: '系统中心', description: '系统说明' },
@@ -78,5 +100,21 @@ describe('后台品牌与主题组件', () => {
     expect(systemGroup?.items).not.toContainEqual(expect.objectContaining({ to: '/prompts' }))
     expect(systemGroup?.items).not.toContainEqual(expect.objectContaining({ to: '/system-ai-settings' }))
     expect(systemGroup?.items).not.toContainEqual(expect.objectContaining({ to: '/parameter-profiles' }))
+  })
+
+  it('所有页面类型都能生成明确的浏览器标题', () => {
+    const pagePaths = [
+      '/', '/workbench', '/history', '/personas', '/personas/new', '/personas/persona-1',
+      '/worlds', '/worlds/world-1', '/sources', '/sources/search', '/sources/source-1',
+      '/runs/run-1', '/templates', '/ai-models', '/ai-algorithms', '/ai-settings', '/settings',
+      '/system-records', '/login', '/setup', '/parameter-profiles', '/prompts', '/system-ai-settings',
+    ]
+
+    expect(pagePaths.map(getPageDocumentTitle)).not.toContain('页面')
+    expect(getPageDocumentTitle('/')).toBe('今日工作')
+    expect(getPageDocumentTitle('/login')).toBe('登录')
+    expect(getPageDocumentTitle('/personas/persona-1')).toBe('人物详情')
+    expect(getPageDocumentTitle('/sources/search')).toBe('资料段落搜索')
+    expect(getPageDocumentTitle('/runs/run-1')).toBe('任务详情')
   })
 })
