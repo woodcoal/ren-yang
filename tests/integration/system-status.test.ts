@@ -29,7 +29,7 @@ describe('系统状态', () => {
     const client = database.getClient()
     const insert = client.prepare(`
       INSERT INTO task_jobs (id, type, payload_json, status, attempt_count, max_attempts, created_at, updated_at)
-      VALUES (?, 'test', '{}', ?, 0, 2, 1_000, 1_000)
+      VALUES (?, 'assess_interest', '{}', ?, 0, 2, 1_000, 1_000)
     `)
     insert.run('queued-job', 'queued')
     insert.run('running-job', 'running')
@@ -50,7 +50,7 @@ describe('系统状态', () => {
       healthy: true,
       setupRequired: true,
       worker: { activeJobId: 'running-job' },
-      taskQueue: { queued: 1, running: 1, cancelRequested: 0, total: 2 },
+      taskQueue: { userQueued: 1, queued: 1, running: 1, cancelRequested: 0, total: 2 },
     })
   })
 })

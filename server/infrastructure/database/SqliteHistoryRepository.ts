@@ -88,6 +88,8 @@ function buildHistoryQuery(input: ListHistoryPageInput): HistoryQuery {
           '无任务输入'
         ) AS description,
         COALESCE(json_extract(generation_runs.model_snapshot_json, '$.model'), '未知模型') AS secondary,
+        generation_runs.error_code AS error_code,
+        generation_runs.error_message AS error_message,
         generation_runs.created_at AS created_at
       FROM generation_runs
       INNER JOIN soul_versions ON soul_versions.id = generation_runs.persona_version_id
@@ -111,6 +113,8 @@ function buildHistoryQuery(input: ListHistoryPageInput): HistoryQuery {
           (SELECT COUNT(*) FROM analysis_batch_inputs WHERE batch_id = analysis_batches.id) || ' 项原始素材'
         ) AS description,
         CASE analysis_batches.mode WHEN 'incremental' THEN '结合新增素材' ELSE '全部素材重建' END AS secondary,
+        analysis_batches.error_code AS error_code,
+        analysis_batches.error_message AS error_message,
         analysis_batches.created_at AS created_at
       FROM analysis_batches
       LEFT JOIN worlds ON worlds.id = analysis_batches.world_id
@@ -139,6 +143,8 @@ function toHistoryItem(value: unknown): HistoryItemView {
     status: item.status as HistoryItemView['status'],
     description: String(item.description),
     secondary: String(item.secondary),
+    errorCode: item.error_code === null ? null : String(item.error_code),
+    errorMessage: item.error_message === null ? null : String(item.error_message),
     createdAt: Number(item.created_at),
   }
 }

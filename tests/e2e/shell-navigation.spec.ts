@@ -62,3 +62,53 @@ test('侧栏分组可收缩、滚动条隐藏且页面具有浏览器标题', as
   await expect(page.locator('.sidebar-navigation')).toHaveCSS('overflow-y', 'auto')
   await expect(page.locator('.sidebar-navigation')).toHaveCSS('scrollbar-width', 'none')
 })
+
+test('顶部队列只显示尚未领取的有效待处理数量', async ({ page }) => {
+  await enterApplication(page)
+
+  // 模拟健康摘要中同时存在排队、执行中和取消中的任务，验证顶部不会显示未终止任务总数。
+  await page.route('**/api/v1/system/health', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        data: {
+          healthy: true,
+          setupRequired: false,
+          database: { healthy: true, journalMode: 'wal', foreignKeysEnabled: true, integrity: 'ok' },
+          worker: { running: true, activeJobId: 'running-job', lastPollAt: Date.now(), lastError: null },
+          taskQueue: { userQueued: 2, queued: 12, running: 3, cancelRequested: 1, total: 16 },
+        },
+      }),
+    })
+  })
+
+  await page.waitForResponse(response => response.url().endsWith('/api/v1/system/health'))
+  await expect(page.locator('.topbar-status-link')).toHaveText('2 项待处理')
+  await expect(page.locator('.topbar-status-dot')).toHaveClass(/topbar-status-dot--active/)
+})
+
+test('任务列表直接显示失败原因', async ({ page }) => {
+  await enterApplication(page)
+
+  // 使用稳定的失败任务响应核验列表呈现，避免依赖外部模型实际失败。
+  await page.route('**/api/v1/history**', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        data: {
+          items: [{
+            sourceType: 'run', id: '70000000-0000-4000-8000-000000000001', kind: 'artifact_generation',
+            subjectType: 'persona', subjectId: '10000000-0000-4000-8000-000000000001', subjectName: '林默',
+            subjectExists: true, status: 'failed', description: '生成一篇人物小传', secondary: '测试模型',
+            errorCode: 'PROVIDER_UNAVAILABLE', errorMessage: '模型服务暂时不可用', createdAt: 1_000,
+          }],
+          total: 1, page: 1, pageSize: 10, totalPages: 1,
+        },
+      }),
+    })
+  })
+
+  await page.getByRole('link', { name: '任务记录', exact: true }).click()
+  await expect(page).toHaveURL(/\/history/)
+  await expect(page.getByText('PROVIDER_UNAVAILABLE：模型服务暂时不可用', { exact: true })).toBeVisible()
+})

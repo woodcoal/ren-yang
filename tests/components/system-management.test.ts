@@ -39,7 +39,7 @@ describe('系统管理组件', () => {
     const wrapper = await mountSuspended(NavigationStatus, {
       props: {
         username: 'e2e_admin',
-        taskQueue: { queued: 2, running: 1, cancelRequested: 0, total: 3 },
+        taskQueue: { userQueued: 2, queued: 2, running: 1, cancelRequested: 0, total: 3 },
         capabilities: CAPABILITIES,
       },
     })

@@ -147,6 +147,11 @@ function statusColor(status: HistoryStatus): 'error' | 'success' | 'warning' | '
   return 'neutral'
 }
 
+/** @param item 失败的统一任务记录。 @returns 可直接展示的错误码和失败原因，缺失时返回明确兜底说明。 */
+function failureDescription(item: HistoryItemView): string {
+  return [item.errorCode, item.errorMessage].filter(Boolean).join('：') || '未记录失败原因'
+}
+
 /** @returns 重新读取生成运行、后台提炼和对象名称。 */
 async function refreshAll(): Promise<void> {
   await Promise.all([refreshHistory(), refreshPersonas()])
@@ -232,6 +237,8 @@ function formatTime(timestamp: number): string {
                   </td>
                   <td data-label="状态">
                     <UBadge :color="statusColor(item.status)" variant="subtle">{{ statusLabels[item.status] }}</UBadge>
+                    <span v-if="item.status === 'failed'" class="content-table-description text-error">{{
+                      failureDescription(item) }}</span>
                   </td>
                   <td data-label="创建时间"><span>{{ formatTime(item.createdAt) }}</span><span
                       class="content-table-description">{{ item.id }}</span></td>

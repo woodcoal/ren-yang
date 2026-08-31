@@ -25,16 +25,21 @@ export class SqliteTaskJobRepository implements TaskJobRepository, TaskQueueStat
    * 统计排队、运行中和等待协作取消的持久任务。
    * @returns 管理界面使用的精确任务队列摘要。
    */
-  async getPendingSummary(): Promise<{ queued: number, running: number, cancelRequested: number, total: number }> {
+  async getPendingSummary(): Promise<{ userQueued: number, queued: number, running: number, cancelRequested: number, total: number }> {
     const row = this.client.prepare(`
       SELECT
+        COUNT(*) FILTER (
+          WHERE status = 'queued'
+            AND type IN ('assess_interest', 'plan_document', 'execute_document', 'execute_block', 'analyze_learning')
+        ) AS user_queued,
         COUNT(*) FILTER (WHERE status = 'queued') AS queued,
         COUNT(*) FILTER (WHERE status = 'running') AS running,
         COUNT(*) FILTER (WHERE status = 'cancel_requested') AS cancel_requested
       FROM task_jobs
       WHERE status IN ('queued', 'running', 'cancel_requested')
-    `).get() as { queued: number, running: number, cancel_requested: number }
+    `).get() as { user_queued: number, queued: number, running: number, cancel_requested: number }
     return {
+      userQueued: row.user_queued,
       queued: row.queued,
       running: row.running,
       cancelRequested: row.cancel_requested,

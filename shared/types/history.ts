@@ -22,6 +22,10 @@ export interface HistoryItemView {
   description: string
   /** 模型名称或分析模式说明。 */
   secondary: string
+  /** 失败时的稳定错误码；未失败或未记录时为空。 */
+  errorCode: string | null
+  /** 失败时可安全展示的原因；未失败或未记录时为空。 */
+  errorMessage: string | null
   /** 创建时间，UTC Unix 毫秒。 */
   createdAt: number
 }

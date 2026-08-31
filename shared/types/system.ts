@@ -42,6 +42,8 @@ export interface PublicWorkerStatus {
 
 /** 管理界面可见的持久任务队列摘要。 */
 export interface PublicTaskQueueStatus {
+  /** 尚未领取且会出现在任务记录中的用户任务数量。 */
+  userQueued: number
   /** 尚未领取的任务数量。 */
   queued: number
   /** 已被当前 Worker 领取的任务数量。 */

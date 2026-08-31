@@ -229,19 +229,21 @@ describe('SqliteDatabase', () => {
     const client = current.getClient()
     const insert = client.prepare(`
       INSERT INTO task_jobs (id, type, payload_json, status, attempt_count, max_attempts, created_at, updated_at)
-      VALUES (?, 'test', '{}', ?, 0, 2, 1_000, 1_000)
+      VALUES (?, ?, '{}', ?, 0, 2, 1_000, 1_000)
     `)
-    insert.run('queued-job', 'queued')
-    insert.run('running-job', 'running')
-    insert.run('cancel-requested-job', 'cancel_requested')
-    insert.run('succeeded-job', 'succeeded')
-    insert.run('failed-job', 'failed')
+    insert.run('queued-job', 'assess_interest', 'queued')
+    insert.run('internal-queued-job', 'sync_context_source', 'queued')
+    insert.run('running-job', 'assess_interest', 'running')
+    insert.run('cancel-requested-job', 'assess_interest', 'cancel_requested')
+    insert.run('succeeded-job', 'assess_interest', 'succeeded')
+    insert.run('failed-job', 'assess_interest', 'failed')
 
     await expect(new SqliteTaskJobRepository(client).getPendingSummary()).resolves.toEqual({
-      queued: 1,
+      userQueued: 1,
+      queued: 2,
       running: 1,
       cancelRequested: 1,
-      total: 3,
+      total: 4,
     })
   })
 

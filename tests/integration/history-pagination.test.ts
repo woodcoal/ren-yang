@@ -96,4 +96,23 @@ describe('统一任务记录分页', () => {
     expect(result).toMatchObject({ total: 2, page: 1, pageSize: 5, totalPages: 1 })
     expect(result.items.map(item => item.createdAt)).toEqual([600, 200])
   })
+
+  it('统一返回生成任务和分析任务的失败信息', async () => {
+    const client = database.getClient()
+    client.prepare(`
+      UPDATE generation_runs SET status = 'failed', error_code = 'MODEL_TIMEOUT', error_message = '模型响应超时'
+      WHERE created_at = 700
+    `).run()
+    client.prepare(`
+      UPDATE analysis_batches SET status = 'failed', error_code = 'OUTPUT_INVALID', error_message = '提炼结果结构无效'
+      WHERE created_at = 600
+    `).run()
+
+    const result = await repository.listPage({ page: 1, pageSize: 5, status: 'failed' })
+
+    expect(result.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ sourceType: 'run', errorCode: 'MODEL_TIMEOUT', errorMessage: '模型响应超时' }),
+      expect.objectContaining({ sourceType: 'analysis', errorCode: 'OUTPUT_INVALID', errorMessage: '提炼结果结构无效' }),
+    ]))
+  })
 })

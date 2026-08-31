@@ -50,6 +50,21 @@ describe('后台品牌与主题组件', () => {
     expect(wrapper.find('.topbar-account').exists()).toBe(false)
   })
 
+  it('顶部栏只显示尚未领取的有效待处理任务数量', async () => {
+    const wrapper = await mountSuspended(AppTopbar, {
+      props: {
+        sidebarCollapsed: false,
+        taskQueue: { userQueued: 2, queued: 12, running: 3, cancelRequested: 1, total: 16 },
+        logoutLoading: false,
+        logoutError: null,
+      },
+    })
+
+    expect(wrapper.get('.topbar-status-link').text()).toBe('2 项待处理')
+    expect(wrapper.get('.topbar-status-dot').classes()).toContain('topbar-status-dot--active')
+    expect(wrapper.text()).not.toContain('12 项待处理')
+  })
+
   it('侧栏菜单分组默认只展开当前分组并允许独立切换', async () => {
     const wrapper = await mountSuspended(AppSidebar, {
       props: {

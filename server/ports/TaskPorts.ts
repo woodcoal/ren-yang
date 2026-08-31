@@ -43,6 +43,8 @@ export interface TaskQueueStatusReader {
    * @returns 排队、运行中、请求取消和合计数量。
    */
   getPendingSummary(): Promise<{
+    /** 尚未领取且会出现在任务记录中的用户任务数量。 */
+    userQueued: number
     queued: number
     running: number
     cancelRequested: number
