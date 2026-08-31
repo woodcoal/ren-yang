@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
-import { ContextSynchronizationApplicationService } from '../../server/application/context/ContextSynchronizationApplicationService'
+import { ContextSynchronizationApplicationService, OPEN_VIKING_SECRET_CONTEXT } from '../../server/application/context/ContextSynchronizationApplicationService'
 import { ContentApplicationService } from '../../server/application/content/ContentApplicationService'
 import { LearningApplicationService } from '../../server/application/learning/LearningApplicationService'
 import { TaskRoutingApplicationService } from '../../server/application/tasks/TaskRoutingApplicationService'
@@ -14,9 +14,12 @@ import { SqliteContextIndexRepository } from '../../server/infrastructure/databa
 import { SqliteContextSyncTaskQueue } from '../../server/infrastructure/database/SqliteContextSyncTaskQueue'
 import { SqliteDatabase } from '../../server/infrastructure/database/SqliteDatabase'
 import { SqliteLearningRepository } from '../../server/infrastructure/database/SqliteLearningRepository'
+import { SqliteOpenVikingSettingsRepository } from '../../server/infrastructure/database/SqliteOpenVikingSettingsRepository'
 import { ConservativeTokenCounter } from '../../server/infrastructure/model/ConservativeTokenCounter'
+import { OpenVikingHttpContextProvider } from '../../server/infrastructure/context/OpenVikingHttpContextProvider'
 import { SqliteContextProvider } from '../../server/infrastructure/context/SqliteContextProvider'
 import { SqliteTaskJobRepository } from '../../server/infrastructure/database/SqliteTaskJobRepository'
+import { AesGcmSecretCipher } from '../../server/infrastructure/security/AesGcmSecretCipher'
 import type { Clock } from '../../server/ports/Clock'
 import { createTestAiPromptService } from '../support/createTestAiPromptService'
 import type { ContextSourceProjection } from '../../server/ports/ContextIndexRepository'
@@ -536,5 +539,68 @@ describe('OpenViking 可关闭索引与 SQLite 重建', () => {
     await content.createPastedSource({ name: '本地资料', role: 'reference', content: '只保存到 SQLite。' })
     expect(database.getClient().prepare(`SELECT COUNT(*) AS count FROM task_jobs WHERE type = 'sync_context_source'`).get())
       .toEqual({ count: 0 })
+  })
+
+  it('OpenViking 设置加密保存、留空保留密钥并在保存后立即用于 ADMIN 权限检测', async () => {
+    const settings = new SqliteOpenVikingSettingsRepository(database.getClient())
+    const secretCipher = new AesGcmSecretCipher('o'.repeat(32))
+    const requests: Array<{ url: string, init: RequestInit }> = []
+    const responses = [
+      new Response(JSON.stringify({ status: 'ok', healthy: true, version: '0.4.16', auth_mode: 'api_key' })),
+      new Response(JSON.stringify({ status: 'ok', result: [] })),
+      new Response(JSON.stringify({ status: 'ok', healthy: true, version: '0.4.17', auth_mode: 'api_key' })),
+      new Response(JSON.stringify({ status: 'ok', result: [] })),
+    ]
+    const repository = new SqliteContextIndexRepository(database.getClient())
+    const provider = new OpenVikingHttpContextProvider({
+      enabled: false, endpoint: '', apiKey: '', timeoutMs: 60_000, repository,
+      configurationSource: () => {
+        const current = settings.findCurrent()
+        return current
+          ? {
+              enabled: current.enabled,
+              endpoint: current.endpoint,
+              apiKey: current.apiKeyCiphertext
+                ? secretCipher.decrypt(current.apiKeyCiphertext, OPEN_VIKING_SECRET_CONTEXT)
+                : '',
+              timeoutMs: current.timeoutMs,
+            }
+          : { enabled: false, endpoint: '', apiKey: '', timeoutMs: 60_000 }
+      },
+      fetcher: (async (input: URL | RequestInfo, init?: RequestInit) => {
+        requests.push({ url: String(input), init: init ?? {} })
+        return responses.shift()!
+      }) as typeof fetch,
+    })
+    const service = new ContextSynchronizationApplicationService({
+      repository, openViking: provider, settings, secretCipher,
+      identifiers: new SequentialIdentifierGenerator(), clock: new IncrementingClock(),
+    })
+
+    await expect(service.updateSettings({
+      enabled: true, endpoint: 'https://first-ov.test', timeoutMs: 5_000,
+    })).rejects.toThrow('启用 OpenViking 前必须填写 ADMIN Key')
+
+    await expect(service.updateSettings({
+      enabled: true, endpoint: 'https://first-ov.test', apiKey: 'database-admin-key', timeoutMs: 5_000,
+    })).resolves.toMatchObject({ enabled: true, hasApiKey: true })
+    const firstCiphertext = (database.getClient().prepare(`
+      SELECT api_key_ciphertext FROM openviking_settings WHERE id = 'openviking_settings'
+    `).get() as { api_key_ciphertext: string }).api_key_ciphertext
+    expect(firstCiphertext).not.toContain('database-admin-key')
+    expect(secretCipher.decrypt(firstCiphertext, OPEN_VIKING_SECRET_CONTEXT)).toBe('database-admin-key')
+    expect(service.getCapability()).toMatchObject({ configured: true, enabled: true, endpointOrigin: 'https://first-ov.test' })
+    await expect(service.checkProvider()).resolves.toEqual({ healthy: true, version: '0.4.16', authMode: 'api_key' })
+
+    await expect(service.updateSettings({
+      enabled: true, endpoint: 'https://second-ov.test', timeoutMs: 6_000,
+    })).resolves.toMatchObject({ endpoint: 'https://second-ov.test', hasApiKey: true, timeoutMs: 6_000 })
+    expect((database.getClient().prepare(`
+      SELECT api_key_ciphertext FROM openviking_settings WHERE id = 'openviking_settings'
+    `).get() as { api_key_ciphertext: string }).api_key_ciphertext).toBe(firstCiphertext)
+    await expect(service.checkProvider()).resolves.toEqual({ healthy: true, version: '0.4.17', authMode: 'api_key' })
+    expect(requests.filter(request => new URL(request.url).pathname.includes('/admin/')).map(request => {
+      return new Headers(request.init.headers).get('x-api-key')
+    })).toEqual(['database-admin-key', 'database-admin-key'])
   })
 })

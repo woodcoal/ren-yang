@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { SystemAiSettingsApplicationService } from '../../server/application/systemAi/SystemAiSettingsApplicationService'
+import { SqliteAiConfigurationRepository } from '../../server/infrastructure/database/SqliteAiConfigurationRepository'
 import { SqliteDatabase } from '../../server/infrastructure/database/SqliteDatabase'
 import { SqliteSystemAiSettingsRepository } from '../../server/infrastructure/database/SqliteSystemAiSettingsRepository'
 
@@ -27,6 +28,8 @@ describe('系统 AI 设置', () => {
 
     await expect(service.getSettings()).resolves.toEqual({
       values: {
+        textModelDeploymentId: '',
+        imageModelDeploymentId: '',
         interestAnalysis: { temperature: 0.4, maxOutputTokens: 2_048, timeoutMs: 60_000, maxEvidenceChunks: 8 },
         contentAnalysis: { temperature: 0.2, maxOutputTokens: 4_096, timeoutMs: 60_000 },
         draftGeneration: { temperature: 0.4, maxOutputTokens: 2_048, timeoutMs: 60_000 },
@@ -66,6 +69,7 @@ describe('系统 AI 设置', () => {
 function createService(): SystemAiSettingsApplicationService {
   return new SystemAiSettingsApplicationService({
     repository: new SqliteSystemAiSettingsRepository(database.getClient()),
+    aiConfiguration: new SqliteAiConfigurationRepository(database.getClient()),
     clock: { now: () => 8_000 },
   })
 }

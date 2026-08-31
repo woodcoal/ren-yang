@@ -2,7 +2,7 @@
 import { computed, reactive, shallowRef } from 'vue'
 import { systemAiSettingsValuesSchema, type SystemAiSettingsValues } from '#shared/schemas/systemAi'
 import type { ApiResponse } from '#shared/types/api'
-import type { AiAlgorithmView } from '#shared/types/aiConfiguration'
+import type { AiAlgorithmView, AiModelDeploymentView } from '#shared/types/aiConfiguration'
 import type { AiPromptWorkspaceView } from '#shared/types/aiPrompt'
 import type { SystemAiOperation, SystemAiSettingsView } from '#shared/types/systemAi'
 import { getApiErrorMessage } from '../utils/apiError'
@@ -28,12 +28,15 @@ const sections: AiSettingsSection[] = [
 ]
 
 const route = useRoute()
-const [settingsRequest, promptRequest, algorithmRequest] = await Promise.all([
+const [settingsRequest, promptRequest, algorithmRequest, deploymentRequest] = await Promise.all([
   useFetch<ApiResponse<SystemAiSettingsView>>('/api/v1/system/ai-settings'),
   useFetch<ApiResponse<AiPromptWorkspaceView[]>>('/api/v1/ai-prompts'),
   useFetch<ApiResponse<AiAlgorithmView[]>>('/api/v1/ai/algorithms'),
+  useFetch<ApiResponse<AiModelDeploymentView[]>>('/api/v1/ai/model-deployments'),
 ])
 const values = reactive<SystemAiSettingsValues>(systemAiSettingsValuesSchema.parse(settingsRequest.data.value?.data.values ?? {
+  textModelDeploymentId: '',
+  imageModelDeploymentId: '',
   interestAnalysis: { temperature: 0.4, maxOutputTokens: 2_048, timeoutMs: 60_000, maxEvidenceChunks: 8 },
   contentAnalysis: { temperature: 0.2, maxOutputTokens: 4_096, timeoutMs: 60_000 },
   draftGeneration: { temperature: 0.4, maxOutputTokens: 2_048, timeoutMs: 60_000 },
@@ -41,6 +44,7 @@ const values = reactive<SystemAiSettingsValues>(systemAiSettingsValuesSchema.par
 }))
 const prompts = computed(() => promptRequest.data.value?.data ?? [])
 const algorithms = computed(() => algorithmRequest.data.value?.data ?? [])
+const deployments = computed(() => deploymentRequest.data.value?.data ?? [])
 const algorithmPromptCodes = computed(() => new Set(algorithms.value.flatMap(algorithm => algorithm.stepDefinitions.map(step => step.promptCode))))
 const requestedPromptCode = typeof route.query.code === 'string' ? route.query.code : ''
 const activeSectionCode = shallowRef<AiSettingsSection['code']>(findSettingsSectionCode(requestedPromptCode))
@@ -56,8 +60,10 @@ const currentPrompts = computed(() => prompts.value.filter(prompt => !algorithmP
 const nonAlgorithmPrompts = computed(() => prompts.value.filter(prompt => !algorithmPromptCodes.value.has(prompt.code)))
 const draftCount = computed(() => nonAlgorithmPrompts.value.filter(prompt => prompt.draft !== null).length)
 const updatedAt = computed(() => settingsRequest.data.value?.data.updatedAt ?? null)
-const requestsPending = computed(() => settingsRequest.status.value === 'pending' || promptRequest.status.value === 'pending' || algorithmRequest.status.value === 'pending')
-const requestFailed = computed(() => Boolean(settingsRequest.error.value || promptRequest.error.value || algorithmRequest.error.value))
+const requestsPending = computed(() => settingsRequest.status.value === 'pending' || promptRequest.status.value === 'pending'
+  || algorithmRequest.status.value === 'pending' || deploymentRequest.status.value === 'pending')
+const requestFailed = computed(() => Boolean(settingsRequest.error.value || promptRequest.error.value
+  || algorithmRequest.error.value || deploymentRequest.error.value))
 
 /**
  * 根据提示词编码确定它在 AI 设置页的业务分类。
@@ -149,7 +155,7 @@ async function saveSettings(submittedValues: SystemAiSettingsValues): Promise<vo
  * @returns 三类请求全部结束时完成。
  */
 async function refreshAll(): Promise<void> {
-  await Promise.all([settingsRequest.refresh(), promptRequest.refresh(), algorithmRequest.refresh()])
+  await Promise.all([settingsRequest.refresh(), promptRequest.refresh(), algorithmRequest.refresh(), deploymentRequest.refresh()])
 }
 
 /**
@@ -198,9 +204,9 @@ function formatTime(timestamp: number): string {
           <div class="section-heading-copy"><p class="eyebrow">当前分类</p><h2>{{ activeSection.label }}</h2><p>{{ activeSection.description }}</p></div>
         </div>
         <SystemAiSettingsForm
-          v-if="activeSection.operation"
           :model-value="values"
           :operation="activeSection.operation"
+          :deployments="deployments"
           :loading="loading"
           @submit="saveSettings"
         />

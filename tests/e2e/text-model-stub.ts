@@ -23,6 +23,28 @@ function createModelOutput(body: string): string {
   const payload = JSON.parse(body) as { messages?: Array<{ role?: string, content?: string }> }
   const systemPrompt = payload.messages?.find(message => message.role === 'system')?.content ?? ''
   const userPrompt = payload.messages?.find(message => message.role === 'user')?.content ?? ''
+  const inputPayload = /<不可信成长资料>([\s\S]*?)<\/不可信成长资料>/u.exec(userPrompt)?.[1]
+  const parsedInputs = inputPayload ? JSON.parse(inputPayload) as Array<{ id?: unknown }> : []
+  const evidenceId = typeof parsedInputs[0]?.id === 'string' ? parsedInputs[0].id : undefined
+
+  // 两阶段成长算法先返回引用真实输入 UUID 的原子结论，再返回完整提示词正文。
+  if (systemPrompt.includes('世界成长事实提取器')) {
+    if (!evidenceId) throw new Error('世界成长测试输入缺少证据 UUID')
+    return JSON.stringify({ facts: [{ statement: '维护浮岛交通与港口规则的一致性。', evidenceInputIds: [evidenceId], confidence: 0.95 }] })
+  }
+
+  if (systemPrompt.includes('世界成长提示词编译器')) {
+    return '维护浮岛交通与港口规则的一致性，遇到资料冲突时明确适用条件。'
+  }
+
+  if (systemPrompt.includes('人物成长事实提取器')) {
+    if (!evidenceId) throw new Error('人物成长测试输入缺少证据 UUID')
+    return JSON.stringify({ facts: [{ statement: '表达时先给出结论并保持克制。', evidenceInputIds: [evidenceId], confidence: 0.95 }] })
+  }
+
+  if (systemPrompt.includes('人物成长提示词编译器')) {
+    return '表达时先给出结论，再用可核验的依据说明判断，并保持克制。'
+  }
 
   // 三类学习提炼使用不同的确定文本，便于浏览器测试确认请求没有串到错误对象。
   if (systemPrompt.includes('世界成长提示词提炼器')) {

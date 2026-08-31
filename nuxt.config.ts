@@ -17,16 +17,6 @@ export default defineNuxtConfig({
   },
   runtimeConfig: {
     dataDirectory: './data',
-    textModel: {
-      endpoint: '',
-      apiKey: '',
-      model: '',
-    },
-    imageModel: {
-      endpoint: '',
-      apiKey: '',
-      model: '',
-    },
     feedback: {
       autoPublishLowRisk: false,
     },
@@ -37,12 +27,6 @@ export default defineNuxtConfig({
     logging: {
       maximumFileBytes: 5 * 1024 * 1024,
       retentionDays: 14,
-    },
-    openViking: {
-      enabled: false,
-      endpoint: '',
-      apiKey: '',
-      timeoutMs: 60_000,
     },
     session: {
       // 会话密钥仅在服务启动时由 NUXT_SESSION_PASSWORD 覆盖，禁止在构建期读取并固化。

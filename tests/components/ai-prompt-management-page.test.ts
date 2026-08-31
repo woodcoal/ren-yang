@@ -123,6 +123,7 @@ registerEndpoint('/api/v1/ai/algorithms', () => ({ data: [{
   stepDefinitions: [{ key: 'organize', name: '整理', description: '整理灵魂。', promptCode: 'content.persona_soul_analysis', ordinal: 0 }],
   steps: [],
 }] }))
+registerEndpoint('/api/v1/ai/model-deployments', () => ({ data: [] }))
 registerEndpoint('/api/v1/system/ai-settings', () => ({ data: {
   values: {
     interestAnalysis: { temperature: 0.4, maxOutputTokens: 2_048, timeoutMs: 60_000, maxEvidenceChunks: 8 },

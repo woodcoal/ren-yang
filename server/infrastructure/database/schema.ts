@@ -56,6 +56,24 @@ export const systemAiSettings = sqliteTable(
   ],
 )
 
+/** 管理员维护的唯一 OpenViking 配置；ADMIN Key 仅保存 AES-GCM 密文。 */
+export const openVikingSettings = sqliteTable(
+  'openviking_settings',
+  {
+    id: text('id').primaryKey(),
+    enabled: integer('enabled').notNull().default(0),
+    endpoint: text('endpoint').notNull().default(''),
+    apiKeyCiphertext: text('api_key_ciphertext').notNull().default(''),
+    timeoutMs: integer('timeout_ms').notNull().default(60_000),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  table => [
+    check('openviking_settings_singleton_check', sql`${table.id} = 'openviking_settings'`),
+    check('openviking_settings_enabled_check', sql`${table.enabled} IN (0, 1)`),
+    check('openviking_settings_timeout_check', sql`${table.timeoutMs} BETWEEN 1000 AND 300000`),
+  ],
+)
+
 /** 管理员维护的 AI 接口连接；访问凭据仅保存 AES-GCM 密文。 */
 export const aiConnections = sqliteTable(
   'ai_connections',
@@ -1226,6 +1244,7 @@ export const databaseSchema = {
   administrators,
   auditEvents,
   systemAiSettings,
+  openVikingSettings,
   aiConnections,
   aiModelDeployments,
   taskJobs,

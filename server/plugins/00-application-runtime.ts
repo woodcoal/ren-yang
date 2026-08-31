@@ -22,22 +22,6 @@ async function initializeApplicationRuntime(nitroApp: NitroApp): Promise<void> {
       // 本地会话密钥经过用途隔离的 HKDF 派生后用于数据库凭据加密，原始密钥不会写入数据库。
       credentialEncryptionSecret: config.session.password,
       minimumFreeDiskBytes: Number(config.limits.minimumFreeDiskBytes),
-      textModel: {
-        endpoint: config.textModel.endpoint,
-        apiKey: config.textModel.apiKey,
-        model: config.textModel.model,
-      },
-      imageModel: {
-        endpoint: config.imageModel.endpoint,
-        apiKey: config.imageModel.apiKey,
-        model: config.imageModel.model,
-      },
-      openViking: {
-        enabled: config.openViking.enabled,
-        endpoint: config.openViking.endpoint,
-        apiKey: config.openViking.apiKey,
-        timeoutMs: config.openViking.timeoutMs,
-      },
     })
     await runtime.start()
   }

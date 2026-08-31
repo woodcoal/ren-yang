@@ -8,6 +8,8 @@ import WorkbenchPage from '../../app/pages/workbench.vue'
 
 /** 测试页面读取与保存的完整系统 AI 参数。 */
 const settings: SystemAiSettingsValues = {
+  textModelDeploymentId: '',
+  imageModelDeploymentId: '',
   interestAnalysis: { temperature: 0.4, maxOutputTokens: 2_048, timeoutMs: 60_000, maxEvidenceChunks: 8 },
   contentAnalysis: { temperature: 0.2, maxOutputTokens: 4_096, timeoutMs: 60_000 },
   draftGeneration: { temperature: 0.4, maxOutputTokens: 2_048, timeoutMs: 60_000 },
@@ -35,6 +37,7 @@ registerEndpoint('/api/v1/system/ai-settings', {
 })
 registerEndpoint('/api/v1/ai-prompts', () => ({ data: [] }))
 registerEndpoint('/api/v1/ai/algorithms', () => ({ data: [] }))
+registerEndpoint('/api/v1/ai/model-deployments', () => ({ data: [] }))
 registerEndpoint('/api/v1/personas', () => ({ data: [] }))
 registerEndpoint('/api/v1/parameter-profiles', () => ({ data: [{
   id: '10000000-0000-4000-8000-000000000001', name: '图文方案', version: 1, values: {}, isActive: true, createdAt: 1_000,

@@ -6,11 +6,16 @@ export class SqliteContextSyncTaskQueue implements ContextSyncTaskQueue {
   /**
    * 创建 SQLite 增量同步任务队列。
    * @param client 已迁移 SQLite 客户端。
+   * @param isEnabled 当前数据库配置是否启用 OpenViking。
    */
-  constructor(private readonly client: BetterSqliteDatabase) {}
+  constructor(
+    private readonly client: BetterSqliteDatabase,
+    private readonly isEnabled: () => boolean = () => true,
+  ) {}
 
   /** @param taskId 新任务 UUID。 @param timestamp 创建时间。 @returns 无返回值；已有待处理对账时保持幂等。 */
   async enqueueUserReconciliation(taskId: string, timestamp: number): Promise<void> {
+    if (!this.isEnabled()) return
     this.client.prepare(`
       INSERT INTO task_jobs (
         id, run_id, type, payload_json, status, attempt_count, max_attempts, created_at, updated_at
@@ -36,6 +41,7 @@ export class SqliteContextSyncTaskQueue implements ContextSyncTaskQueue {
     timestamp: number,
     entityType: 'source_material' | 'persona_feedback_source' = 'source_material',
   ): Promise<void> {
+    if (!this.isEnabled()) return
     this.client.prepare(`
       INSERT INTO task_jobs (
         id, run_id, type, payload_json, status, attempt_count, max_attempts, created_at, updated_at
@@ -51,6 +57,7 @@ export class SqliteContextSyncTaskQueue implements ContextSyncTaskQueue {
 
   /** @param sourceType 生成运行或反馈。 @param sourceId 本地 UUID。 @param taskId 新任务 UUID。 @param timestamp 创建时间。 @returns 无返回值；同来源已有待处理任务时保持幂等。 */
   async enqueueSessionSynchronization(sourceType: 'run' | 'feedback', sourceId: string, taskId: string, timestamp: number): Promise<void> {
+    if (!this.isEnabled()) return
     this.client.prepare(`
       INSERT INTO task_jobs (
         id, run_id, type, payload_json, status, attempt_count, max_attempts, created_at, updated_at

@@ -10,6 +10,8 @@ export interface OpenAiCompatibleImageModelOptions {
   endpoint: string
   apiKey: string
   model: string
+  /** 请求供应商时使用的自定义 User-Agent；省略或空值时不覆盖默认请求头。 */
+  userAgent?: string
 }
 
 /** 单张供应商响应允许下载的最大字节数。 */
@@ -50,7 +52,11 @@ export class OpenAiCompatibleImageModel implements ImageModelPort {
     try {
       const response = await fetch(this.endpoint, {
         method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${this.options.apiKey}` },
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${this.options.apiKey}`,
+          ...(this.options.userAgent?.trim() ? { 'user-agent': this.options.userAgent.trim() } : {}),
+        },
         body: JSON.stringify({
           model: snapshot.model,
           prompt: request.prompt,

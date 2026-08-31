@@ -142,6 +142,40 @@ describe('OpenViking 原生 HTTP 上下文适配器', () => {
     expect(new Headers(requests[1]!.init.headers).get('x-api-key')).toBe('admin-key')
   })
 
+  it('数据库配置从关闭切换到启用后立即生效且更换 ADMIN Key 会重新检测权限', async () => {
+    const requests: Array<{ url: string, init: RequestInit }> = []
+    const responses = [
+      new Response(JSON.stringify({ status: 'ok', healthy: true, version: '0.4.16', auth_mode: 'api_key' })),
+      new Response(JSON.stringify({ status: 'ok', result: [] })),
+      new Response(JSON.stringify({ status: 'ok', healthy: true, version: '0.4.17', auth_mode: 'api_key' })),
+      new Response(JSON.stringify({ status: 'ok', result: [] })),
+    ]
+    let configuration = { enabled: false, endpoint: '', apiKey: '', timeoutMs: 5_000 }
+    const provider = new OpenVikingHttpContextProvider({
+      ...configuration,
+      repository: new FixedContextIndexRepository([]),
+      configurationSource: () => configuration,
+      fetcher: vi.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
+        requests.push({ url: String(input), init: init ?? {} })
+        return responses.shift()!
+      }) as unknown as typeof fetch,
+    })
+
+    expect(provider.getCapability()).toMatchObject({ configured: false, enabled: false })
+    configuration = { enabled: true, endpoint: 'https://first-ov.test', apiKey: 'first-admin-key', timeoutMs: 5_000 }
+    await expect(provider.checkHealth()).resolves.toEqual({ healthy: true, version: '0.4.16', authMode: 'api_key' })
+
+    configuration = { enabled: true, endpoint: 'https://second-ov.test', apiKey: 'second-admin-key', timeoutMs: 5_000 }
+    await expect(provider.checkHealth()).resolves.toEqual({ healthy: true, version: '0.4.17', authMode: 'api_key' })
+
+    expect(requests.map(request => new URL(request.url).origin)).toEqual([
+      'https://first-ov.test', 'https://first-ov.test', 'https://second-ov.test', 'https://second-ov.test',
+    ])
+    expect(requests.filter(request => new URL(request.url).pathname.includes('/admin/')).map(request => {
+      return new Headers(request.init.headers).get('x-api-key')
+    })).toEqual(['first-admin-key', 'second-admin-key'])
+  })
+
   it('把反馈写入世界 User Session，消息携带人物 Peer 且只允许提取 events', async () => {
     const requests: Array<{ url: string, init: RequestInit }> = []
     const memoryUri = 'viking://~/peers/persona-persona/memories/events/event-1.md'

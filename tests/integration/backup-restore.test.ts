@@ -78,7 +78,7 @@ describe('SQLite 与引用文件备份恢复', () => {
     expect(validation.fileCount).toBe(3)
     expect(validation.manifest.version).toBe(2)
     if (validation.manifest.version !== 2) throw new Error('新建备份应使用第二版清单')
-    expect(validation.manifest.migrationVersion).toBe(1788768000000)
+    expect(validation.manifest.migrationVersion).toBe(1788854400000)
     expect(existsSync(resolve(backupDirectory, 'app.sqlite-wal'))).toBe(false)
     expect(existsSync(resolve(backupDirectory, 'app.sqlite-shm'))).toBe(false)
     for (const file of validation.manifest.files) {

@@ -17,6 +17,62 @@ async function waitForHydration(page: Page): Promise<void> {
 }
 
 /**
+ * 通过已认证后台接口写入浏览器测试专用文本模型，并绑定默认模型和四个固定算法。
+ * @param page 已完成管理员设置且持有会话 Cookie 的页面。
+ * @returns 数据库 AI 配置全部发布完成时结束。
+ */
+async function configureTestAi(page: Page): Promise<void> {
+  /**
+   * 从当前页面发起同源已认证请求，确保使用浏览器刚由首次设置写入的会话 Cookie。
+   * @param path 后台接口路径。
+   * @param method HTTP 方法。
+   * @param body 可选 JSON 正文。
+   * @returns 解析后的统一响应 data。
+   */
+  async function request<T>(path: string, method: 'GET' | 'POST' | 'PUT', body?: unknown): Promise<T> {
+    const response = await page.evaluate(async (input) => {
+      const result = await fetch(input.path, {
+        method: input.method,
+        credentials: 'same-origin',
+        headers: input.body === undefined ? undefined : { 'content-type': 'application/json' },
+        body: input.body === undefined ? undefined : JSON.stringify(input.body),
+      })
+      return { ok: result.ok, status: result.status, text: await result.text() }
+    }, { path, method, body })
+    if (!response.ok) throw new Error(`浏览器测试后台配置失败（HTTP ${response.status}）：${response.text}`)
+    return (JSON.parse(response.text) as { data: T }).data
+  }
+
+  const connection = await request<{ id: string }>('/api/v1/ai/connections', 'POST', {
+    name: '浏览器测试接口', protocol: 'openai_compatible',
+    endpoint: 'http://127.0.0.1:4311/v1', userAgent: 'RenYang-E2E/1.0',
+    apiKey: 'e2e-placeholder', isEnabled: true,
+  })
+  const deployment = await request<{ id: string }>('/api/v1/ai/model-deployments', 'POST', {
+    connectionId: connection.id, name: '浏览器测试文本模型',
+    model: 'e2e-text-model', modality: 'text', isEnabled: true,
+  })
+
+  const settings = await request<{ values: Record<string, unknown> }>('/api/v1/system/ai-settings', 'GET')
+  await request('/api/v1/system/ai-settings', 'PUT', {
+    ...settings.values,
+    textModelDeploymentId: deployment.id,
+    imageModelDeploymentId: '',
+  })
+
+  const algorithms = await request<Array<{ code: string, stepDefinitions: Array<{ key: string }> }>>('/api/v1/ai/algorithms', 'GET')
+  for (const algorithm of algorithms) {
+    await request(`/api/v1/ai/algorithms/${algorithm.code}`, 'PUT', {
+      steps: algorithm.stepDefinitions.map(step => ({
+        stepKey: step.key,
+        modelDeploymentId: deployment.id,
+        parameters: { temperature: 0.2, maxOutputTokens: 4_096, timeoutMs: 60_000 },
+      })),
+    })
+  }
+}
+
+/**
  * 下载当前页面中的指定格式产物并确认服务端返回文件。
  * @param page 当前浏览器页面。
  * @param label 下载按钮的可见名称。
@@ -82,6 +138,7 @@ test('首次设置、灵魂保存、文档确认及三格式导出形成可复�
   await page.getByLabel('确认密码').fill(ADMINISTRATOR.password)
   await page.getByRole('button', { name: '完成设置并进入工作台', exact: true }).click()
   await expect(page.getByRole('heading', { name: '先处理会影响后续创作的事', exact: true })).toBeVisible()
+  await configureTestAi(page)
 
   await page.getByRole('button', { name: '退出登录', exact: true }).click()
   await expect(page).toHaveURL(/\/login$/)

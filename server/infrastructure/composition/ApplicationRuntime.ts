@@ -5,7 +5,7 @@ import { ContentApplicationService } from '../../application/content/ContentAppl
 import { SoulApplicationService } from '../../application/content/SoulApplicationService'
 import { GenerationApplicationService } from '../../application/generation/GenerationApplicationService'
 import { FeedbackApplicationService } from '../../application/feedback/FeedbackApplicationService'
-import { ContextSynchronizationApplicationService } from '../../application/context/ContextSynchronizationApplicationService'
+import { ContextSynchronizationApplicationService, OPEN_VIKING_SECRET_CONTEXT } from '../../application/context/ContextSynchronizationApplicationService'
 import { BackupApplicationService } from '../../application/backup/BackupApplicationService'
 import type { RequestApplicationServices } from '../../application/RequestApplicationServices'
 import { SystemApplicationService } from '../../application/system/SystemApplicationService'
@@ -33,8 +33,7 @@ import { SystemClock } from '../system/SystemClock'
 import { SystemIdentifierGenerator } from '../system/SystemIdentifierGenerator'
 import { ApplicationInstanceLock } from '../system/ApplicationInstanceLock'
 import { NodeStorageCapacityGuard } from '../system/NodeStorageCapacityGuard'
-import { OpenAiCompatibleTextModel } from '../models/OpenAiCompatibleTextModel'
-import { OpenAiCompatibleImageModel } from '../models/OpenAiCompatibleImageModel'
+import { SqliteConfiguredImageModel, SqliteConfiguredTextModel } from '../models/SqliteConfiguredModels'
 import { OpenVikingHttpContextProvider } from '../context/OpenVikingHttpContextProvider'
 import { SwitchableContextProvider } from '../context/SwitchableContextProvider'
 import { LocalBackupManager } from '../backup/LocalBackupManager'
@@ -54,6 +53,7 @@ import { AiConfigurationApplicationService } from '../../application/aiConfigura
 import { AiAlgorithmApplicationService } from '../../application/aiConfiguration/AiAlgorithmApplicationService'
 import { AiAlgorithmTestApplicationService } from '../../application/aiConfiguration/AiAlgorithmTestApplicationService'
 import { SqliteAiConfigurationRepository } from '../database/SqliteAiConfigurationRepository'
+import { SqliteOpenVikingSettingsRepository } from '../database/SqliteOpenVikingSettingsRepository'
 import { OpenAiCompatibleModelFactory } from '../models/OpenAiCompatibleModelFactory'
 
 /** 应用运行时组合配置。 */
@@ -70,35 +70,6 @@ export interface ApplicationRuntimeOptions {
   workerLeaseDurationMs?: number
   /** 每次创建新文件后必须保留的磁盘字节数。 */
   minimumFreeDiskBytes?: number
-  /** OpenAI-compatible 文本模型配置。 */
-  textModel?: {
-    /** API 根地址或 Chat Completions 完整接口 URL。 */
-    endpoint: string
-    /** 仓库外访问凭据。 */
-    apiKey: string
-    /** 供应商模型名称。 */
-    model: string
-  }
-  /** OpenAI-compatible 图片模型配置。 */
-  imageModel?: {
-    /** API 根地址或 Images Generations 完整接口 URL。 */
-    endpoint: string
-    /** 仓库外访问凭据。 */
-    apiKey: string
-    /** 供应商模型名称。 */
-    model: string
-  }
-  /** 可选 OpenViking 上下文索引配置。 */
-  openViking?: {
-    /** 是否作为新运行的上下文提供器。 */
-    enabled: boolean
-    /** OpenViking 服务根地址。 */
-    endpoint: string
-    /** 可选 API Key。 */
-    apiKey: string
-    /** 单次 HTTP 超时。 */
-    timeoutMs: number
-  }
 }
 
 /** 唯一组合根，负责连接基础设施适配器与应用服务。 */
@@ -162,10 +133,6 @@ export class ApplicationRuntime {
     }
     this.administratorRepository = new DrizzleAdministratorRepository(this.sqlite.db)
     const identifiers = new SystemIdentifierGenerator()
-    this.systemAiSettingsService = new SystemAiSettingsApplicationService({
-      repository: new SqliteSystemAiSettingsRepository(this.sqlite.getClient()),
-      clock: this.clock,
-    })
     const contentRepository = new SqliteContentRepository(this.sqlite.getClient())
     this.aiPromptService = new AiPromptApplicationService({
       repository: new SqliteAiPromptRepository(this.sqlite.getClient()),
@@ -177,10 +144,15 @@ export class ApplicationRuntime {
     const storageCapacity = new NodeStorageCapacityGuard(options.minimumFreeDiskBytes)
     const imageAssets = new LocalImageAssetStorage(options.dataDirectory, storageCapacity)
     const personaAvatars = new LocalPersonaAvatarStorage(options.dataDirectory, storageCapacity)
-    const textModel = new OpenAiCompatibleTextModel(options.textModel ?? { endpoint: '', apiKey: '', model: '' })
-    const imageModel = new OpenAiCompatibleImageModel(options.imageModel ?? { endpoint: '', apiKey: '', model: '' })
     const secretCipher = new AesGcmSecretCipher(options.credentialEncryptionSecret)
     const aiConfigurationRepository = new SqliteAiConfigurationRepository(this.sqlite.getClient())
+    this.systemAiSettingsService = new SystemAiSettingsApplicationService({
+      repository: new SqliteSystemAiSettingsRepository(this.sqlite.getClient()),
+      aiConfiguration: aiConfigurationRepository,
+      clock: this.clock,
+    })
+    const textModel = new SqliteConfiguredTextModel(this.sqlite.getClient(), secretCipher)
+    const imageModel = new SqliteConfiguredImageModel(this.sqlite.getClient(), secretCipher)
     const dynamicModelFactory = new OpenAiCompatibleModelFactory()
     this.aiConfigurationService = new AiConfigurationApplicationService({
       repository: aiConfigurationRepository,
@@ -199,15 +171,35 @@ export class ApplicationRuntime {
     this.aiAlgorithmTestService = new AiAlgorithmTestApplicationService({ algorithms: aiAlgorithms })
     const tokenCounter = new ConservativeTokenCounter()
     const contextRepository = new SqliteContextIndexRepository(this.sqlite.getClient())
-    const openVikingOptions = options.openViking ?? { enabled: false, endpoint: '', apiKey: '', timeoutMs: 60_000 }
-    const openViking = new OpenVikingHttpContextProvider({ ...openVikingOptions, repository: contextRepository })
-    const contextSyncQueue = openVikingOptions.enabled
-      ? new SqliteContextSyncTaskQueue(this.sqlite.getClient())
-      : undefined
+    const openVikingSettings = new SqliteOpenVikingSettingsRepository(this.sqlite.getClient())
+    const openViking = new OpenVikingHttpContextProvider({
+      enabled: false,
+      endpoint: '',
+      apiKey: '',
+      timeoutMs: 60_000,
+      repository: contextRepository,
+      configurationSource: () => {
+        const current = openVikingSettings.findCurrent()
+        return current
+          ? {
+              enabled: current.enabled,
+              endpoint: current.endpoint,
+              apiKey: current.apiKeyCiphertext
+                ? secretCipher.decrypt(current.apiKeyCiphertext, OPEN_VIKING_SECRET_CONTEXT)
+                : '',
+              timeoutMs: current.timeoutMs,
+            }
+          : { enabled: false, endpoint: '', apiKey: '', timeoutMs: 60_000 }
+      },
+    })
+    const contextSyncQueue = new SqliteContextSyncTaskQueue(
+      this.sqlite.getClient(),
+      () => openViking.getCapability().enabled,
+    )
     const contextProvider = new SwitchableContextProvider(
       new SqliteContextProvider(this.sqlite.getClient()),
       openViking,
-      openVikingOptions.enabled,
+      () => openViking.getCapability().enabled,
     )
     this.contentService = new ContentApplicationService({
       repository: contentRepository,
@@ -289,6 +281,8 @@ export class ApplicationRuntime {
     this.contextSynchronizationService = new ContextSynchronizationApplicationService({
       repository: contextRepository,
       openViking,
+      settings: openVikingSettings,
+      secretCipher,
       identifiers,
       clock: this.clock,
       taskQueue: contextSyncQueue,

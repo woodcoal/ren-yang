@@ -3,10 +3,14 @@ import { systemAiSettingsValuesSchema } from '../../../shared/schemas/systemAi'
 import type { TextModelParameters } from '../../../shared/schemas/generation'
 import type { SystemAiOperation, SystemAiSettingsView } from '../../../shared/types/systemAi'
 import type { Clock } from '../../ports/Clock'
+import type { AiConfigurationRepository } from '../../ports/AiConfigurationRepository'
 import type { SystemAiSettingsRepository } from '../../ports/SystemAiSettingsRepository'
+import { ApplicationError } from '../errors/ApplicationError'
 
 /** 尚未保存自定义设置时使用的系统 AI 参数。 */
 export const DEFAULT_SYSTEM_AI_SETTINGS: SystemAiSettingsValues = {
+  textModelDeploymentId: '',
+  imageModelDeploymentId: '',
   interestAnalysis: { temperature: 0.4, maxOutputTokens: 2_048, timeoutMs: 60_000, maxEvidenceChunks: 8 },
   contentAnalysis: { temperature: 0.2, maxOutputTokens: 4_096, timeoutMs: 60_000 },
   draftGeneration: { temperature: 0.4, maxOutputTokens: 2_048, timeoutMs: 60_000 },
@@ -17,6 +21,8 @@ export const DEFAULT_SYSTEM_AI_SETTINGS: SystemAiSettingsValues = {
 export interface SystemAiSettingsApplicationServiceDependencies {
   /** 当前设置事实源。 */
   repository: SystemAiSettingsRepository
+  /** 默认模型部署与连接的事实源。 */
+  aiConfiguration: Pick<AiConfigurationRepository, 'findConnection' | 'findModelDeployment'>
   /** 保存设置使用的可测试时钟。 */
   clock: Clock
 }
@@ -36,7 +42,29 @@ export class SystemAiSettingsApplicationService {
   /** @param values 四类完整参数。 @returns 保存后的当前设置。 */
   async updateSettings(values: SystemAiSettingsValues): Promise<SystemAiSettingsView> {
     const normalized = systemAiSettingsValuesSchema.parse(values)
+    await Promise.all([
+      this.requireEnabledDeployment(normalized.textModelDeploymentId, 'text'),
+      this.requireEnabledDeployment(normalized.imageModelDeploymentId, 'image'),
+    ])
     return await this.dependencies.repository.save(normalized, this.dependencies.clock.now())
+  }
+
+  /**
+   * 校验管理员选择的默认部署及所属连接当前均可用于新操作。
+   * @param deploymentId 可为空的模型部署 UUID。
+   * @param modality 目标文本或图片类型。
+   * @returns 未选择或校验通过时结束。
+   */
+  private async requireEnabledDeployment(deploymentId: string, modality: 'text' | 'image'): Promise<void> {
+    if (!deploymentId) return
+    const deployment = await this.dependencies.aiConfiguration.findModelDeployment(deploymentId)
+    if (!deployment || deployment.modality !== modality || !deployment.isEnabled) {
+      throw new ApplicationError('VALIDATION_FAILED', `${modality === 'text' ? '文本' : '图片'}模型部署无效或未启用`, 422)
+    }
+    const connection = await this.dependencies.aiConfiguration.findConnection(deployment.connectionId)
+    if (!connection?.isEnabled) {
+      throw new ApplicationError('VALIDATION_FAILED', `${modality === 'text' ? '文本' : '图片'}模型所属接口未启用`, 422)
+    }
   }
 
   /**

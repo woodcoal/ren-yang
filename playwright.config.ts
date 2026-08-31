@@ -43,10 +43,6 @@ export default defineConfig({
       env: {
         NUXT_DATA_DIRECTORY: resolve(process.cwd(), '.playwright-data'),
         NUXT_SESSION_PASSWORD: randomBytes(48).toString('base64url'),
-        NUXT_TEXT_MODEL_ENDPOINT: `http://127.0.0.1:${MODEL_STUB_PORT}/v1/chat/completions`,
-        // 仅使能力配置完整，不对应任何真实凭据。
-        NUXT_TEXT_MODEL_API_KEY: 'e2e-placeholder',
-        NUXT_TEXT_MODEL_MODEL: 'e2e-text-model',
         NUXT_LIMITS_MINIMUM_FREE_DISK_BYTES: '0',
         NITRO_HOST: '127.0.0.1',
         NITRO_PORT: String(APPLICATION_PORT),

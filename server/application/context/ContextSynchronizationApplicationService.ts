@@ -1,4 +1,5 @@
-import type { ContextReindexResult, ContextSyncRecordPageView, ContextSyncRecordView } from '../../../shared/types/context'
+import { updateOpenVikingSettingsSchema, type UpdateOpenVikingSettingsInput } from '../../../shared/schemas/context'
+import type { ContextReindexResult, ContextSyncRecordPageView, ContextSyncRecordView, OpenVikingSettingsView } from '../../../shared/types/context'
 import type { Clock } from '../../ports/Clock'
 import type { ContextIndexRepository, ListSyncRecordPageInput } from '../../ports/ContextIndexRepository'
 import type { ContextProjectionEntityType, ContextSourceProjection } from '../../ports/ContextIndexRepository'
@@ -6,10 +7,15 @@ import type { ContextSyncTaskQueue } from '../../ports/ContextSyncTaskQueue'
 import type { IdentifierGenerator } from '../../ports/IdentifierGenerator'
 import type { OpenVikingPort } from '../../ports/OpenVikingPort'
 import { OpenVikingError } from '../../ports/OpenVikingPort'
+import type { OpenVikingSettingsRepository } from '../../ports/OpenVikingSettingsRepository'
+import type { SecretCipher } from '../../ports/SecretCipher'
 import type { TaskJob } from '../../domain/tasks/TaskJob'
 import type { TaskHandler } from '../../ports/TaskPorts'
 import { TaskExecutionError } from '../../ports/TaskPorts'
 import { ApplicationError } from '../errors/ApplicationError'
+
+/** OpenViking ADMIN Key 与其他凭据隔离的加密上下文。 */
+export const OPEN_VIKING_SECRET_CONTEXT = 'openviking:administrator-api-key'
 
 /** 上下文索引同步应用服务依赖。 */
 export interface ContextSynchronizationApplicationServiceDependencies {
@@ -17,6 +23,10 @@ export interface ContextSynchronizationApplicationServiceDependencies {
   repository: ContextIndexRepository
   /** OpenViking 外部能力端口。 */
   openViking: OpenVikingPort
+  /** OpenViking 加密设置事实源。 */
+  settings?: OpenVikingSettingsRepository
+  /** ADMIN Key 加解密端口。 */
+  secretCipher?: SecretCipher
   /** UUID 生成端口。 */
   identifiers: IdentifierGenerator
   /** 可测试时钟。 */
@@ -36,6 +46,42 @@ export class ContextSynchronizationApplicationService implements TaskHandler {
   /** @returns OpenViking 非敏感能力状态。 */
   getCapability() {
     return this.dependencies.openViking.getCapability()
+  }
+
+  /** @returns 当前不含 ADMIN Key 密文的后台设置。 */
+  async getSettings(): Promise<OpenVikingSettingsView> {
+    const current = await this.dependencies.settings?.find() ?? null
+    if (!current) return { enabled: false, endpoint: '', hasApiKey: false, timeoutMs: 60_000, updatedAt: null }
+    const { apiKeyCiphertext: _apiKeyCiphertext, ...view } = current
+    return view
+  }
+
+  /**
+   * 加密保存 OpenViking 设置，并在启用时补排 SQLite 当前事实。
+   * @param input 管理员提交的完整非敏感字段与可选新 ADMIN Key。
+   * @returns 保存后的脱敏设置。
+   */
+  async updateSettings(input: UpdateOpenVikingSettingsInput): Promise<OpenVikingSettingsView> {
+    const normalized = updateOpenVikingSettingsSchema.parse(input)
+    const settings = this.dependencies.settings
+    const secretCipher = this.dependencies.secretCipher
+    if (!settings || !secretCipher) throw new ApplicationError('CAPABILITY_DISABLED', 'OpenViking 设置存储尚未配置', 503)
+    const current = await settings.find()
+    const apiKeyCiphertext = normalized.apiKey
+      ? secretCipher.encrypt(normalized.apiKey, OPEN_VIKING_SECRET_CONTEXT)
+      : current?.apiKeyCiphertext ?? ''
+    if (normalized.enabled && !apiKeyCiphertext) {
+      throw new ApplicationError('VALIDATION_FAILED', '启用 OpenViking 前必须填写 ADMIN Key', 422)
+    }
+    const saved = await settings.save({
+      enabled: normalized.enabled,
+      endpoint: normalized.endpoint,
+      apiKeyCiphertext,
+      timeoutMs: normalized.timeoutMs,
+      timestamp: this.dependencies.clock.now(),
+    })
+    if (saved.enabled) await this.recoverPendingTasks()
+    return saved
   }
 
   /** @returns 当前全部资料同步事实。 */
@@ -129,6 +175,7 @@ export class ContextSynchronizationApplicationService implements TaskHandler {
    * @returns SQLite 当前资料写入远端并保存同步事实后结束。
    */
   async execute(job: TaskJob): Promise<void> {
+    if (!this.dependencies.openViking.getCapability().enabled) return
     if (job.type === 'sync_openviking_users') {
       await this.reconcileUsers()
       return

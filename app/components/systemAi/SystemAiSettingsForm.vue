@@ -1,14 +1,18 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { FormSubmitEvent } from '@nuxt/ui'
 import { updateSystemAiSettingsSchema, type SystemAiSettingsValues } from '#shared/schemas/systemAi'
+import type { AiModelDeploymentView } from '#shared/types/aiConfiguration'
 import type { SystemAiOperation } from '#shared/types/systemAi'
 import OperationParameterFields from './OperationParameterFields.vue'
 
-defineProps<{
+const props = defineProps<{
   /** 保存请求是否正在执行。 */
   loading: boolean
   /** 当前业务选项卡需要编辑的参数组。 */
-  operation: SystemAiOperation
+  operation: SystemAiOperation | null
+  /** AI 模型管理中可供选择的全部部署。 */
+  deployments: AiModelDeploymentView[]
 }>()
 
 const emit = defineEmits<{
@@ -17,6 +21,12 @@ const emit = defineEmits<{
 }>()
 
 const values = defineModel<SystemAiSettingsValues>({ required: true })
+const textModelItems = computed(() => props.deployments
+  .filter(item => item.modality === 'text' && item.isEnabled)
+  .map(item => ({ label: `${item.name} · ${item.model}`, value: item.id })))
+const imageModelItems = computed(() => props.deployments
+  .filter(item => item.modality === 'image' && item.isEnabled)
+  .map(item => ({ label: `${item.name} · ${item.model}`, value: item.id })))
 
 /**
  * 转发已校验的完整设置，确保保存不会产生隐式的局部继承。
@@ -30,7 +40,26 @@ function handleSubmit(event: FormSubmitEvent<SystemAiSettingsValues>): void {
 
 <template>
   <UForm :schema="updateSystemAiSettingsSchema" :state="values" class="space-y-5" data-system-ai-settings-form @submit="handleSubmit">
-    <section v-if="operation === 'interestAnalysis'" class="archive-panel" aria-labelledby="interest-ai-heading">
+    <section v-if="operation === null" class="archive-panel" aria-labelledby="default-models-heading">
+      <div class="section-heading">
+        <div class="section-heading-copy">
+          <p class="eyebrow">运行模型</p>
+          <h2 id="default-models-heading">默认文本与图片模型</h2>
+          <p>供兴趣判断、人物记忆、草稿、反馈分类和图文生成使用；灵魂与成长算法仍使用各步骤自己的模型。</p>
+        </div>
+      </div>
+      <div class="grid gap-4 lg:grid-cols-2">
+        <UFormField name="textModelDeploymentId" label="默认文本模型" description="从 AI 模型管理中选择一个已启用的文本模型。">
+          <USelect v-model="values.textModelDeploymentId" class="w-full" :items="textModelItems" value-key="value" placeholder="未选择" />
+        </UFormField>
+        <UFormField name="imageModelDeploymentId" label="默认图片模型" description="头像和图文图片生成使用；不需要图片时可以留空。">
+          <USelect v-model="values.imageModelDeploymentId" class="w-full" :items="imageModelItems" value-key="value" placeholder="未选择" />
+        </UFormField>
+      </div>
+      <UAlert v-if="!textModelItems.length" class="mt-4" color="warning" title="没有可用文本模型" description="请先在 AI 模型管理中新增并启用文本模型部署。" />
+    </section>
+
+    <section v-else-if="operation === 'interestAnalysis'" class="archive-panel" aria-labelledby="interest-ai-heading">
       <div class="section-heading">
         <div class="section-heading-copy">
           <p class="eyebrow">人物判断</p>

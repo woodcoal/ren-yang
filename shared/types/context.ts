@@ -9,6 +9,20 @@ export interface OpenVikingCapabilityView {
   /** 不包含路径、查询和凭据的接口来源。 */
   endpointOrigin: string | null
 }
+
+/** 后台可读取且不包含明文或密文 ADMIN Key 的 OpenViking 设置。 */
+export interface OpenVikingSettingsView {
+  /** 是否选择 OpenViking 供新运行检索与异步同步。 */
+  enabled: boolean
+  /** 服务根地址；未配置时为空字符串。 */
+  endpoint: string
+  /** 数据库是否已有加密 ADMIN Key。 */
+  hasApiKey: boolean
+  /** 单次 HTTP 请求超时毫秒数。 */
+  timeoutMs: number
+  /** 最近保存时间；尚未保存时为空。 */
+  updatedAt: number | null
+}
 /** 一项 SQLite 资料对 OpenViking 的同步事实。 */
 export interface ContextSyncRecordView {
   /** 同步记录 UUID。 */

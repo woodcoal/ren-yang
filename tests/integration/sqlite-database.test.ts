@@ -52,7 +52,7 @@ describe('SqliteDatabase', () => {
     expect(tables).toEqual([{ name: 'administrators' }, { name: 'task_jobs' }])
     expect(current.getClient().prepare(`
       SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations
-    `).get()).toEqual({ count: 3, version: 1788768000000 })
+    `).get()).toEqual({ count: 4, version: 1788854400000 })
     expect(current.getClient().prepare(`
       SELECT COUNT(*) AS count FROM ai_prompts WHERE active_version_id IS NOT NULL
     `).get()).toEqual({ count: 18 })
@@ -60,6 +60,9 @@ describe('SqliteDatabase', () => {
     expect(current.getClient().prepare(`SELECT COUNT(*) AS count FROM ai_algorithms`).get()).toEqual({ count: 4 })
     expect(current.getClient().prepare(`PRAGMA table_info(ai_connections)`).all()).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'user_agent', notnull: 1, dflt_value: "''" }),
+    ]))
+    expect(current.getClient().prepare(`PRAGMA table_info(openviking_settings)`).all()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'api_key_ciphertext', notnull: 1, dflt_value: "''" }),
     ]))
     expect(current.getClient().prepare(`PRAGMA table_info(source_materials)`).all()).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'is_enabled', notnull: 1, dflt_value: '1' }),
@@ -110,6 +113,7 @@ describe('SqliteDatabase', () => {
     client.exec(`DROP TABLE ai_algorithms`)
     client.exec(`DROP TABLE ai_model_deployments`)
     client.exec(`DROP TABLE ai_connections`)
+    client.exec(`DROP TABLE openviking_settings`)
     client.exec(`ALTER TABLE analysis_batches DROP COLUMN algorithm_snapshot_json`)
     client.prepare(`DELETE FROM __drizzle_migrations`).run()
     const insertMigration = client.prepare(`
@@ -140,10 +144,13 @@ describe('SqliteDatabase', () => {
     `).get()).toEqual({ name: '旧资料', content_text: '压平前正文。', is_enabled: 1 })
     expect(database.getClient().prepare(`
       SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations
-    `).get()).toEqual({ count: 12, version: 1788768000000 })
+    `).get()).toEqual({ count: 13, version: 1788854400000 })
     expect(database.getClient().prepare(`SELECT COUNT(*) AS count FROM ai_algorithms`).get()).toEqual({ count: 4 })
     expect(database.getClient().prepare(`PRAGMA table_info(ai_connections)`).all()).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'user_agent', notnull: 1, dflt_value: "''" }),
+    ]))
+    expect(database.getClient().prepare(`PRAGMA table_info(openviking_settings)`).all()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'api_key_ciphertext', notnull: 1, dflt_value: "''" }),
     ]))
     expect(database.getClient().prepare('PRAGMA foreign_key_check').all()).toEqual([])
   })

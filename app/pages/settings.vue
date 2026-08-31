@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, shallowRef } from 'vue'
 import type { ApiResponse, AuthenticationSessionResult } from '#shared/types/api'
-import type { ContextReindexResult, OpenVikingCapabilityView } from '#shared/types/context'
+import type { UpdateOpenVikingSettingsInput } from '#shared/schemas/context'
+import type { ContextReindexResult, OpenVikingCapabilityView, OpenVikingSettingsView } from '#shared/types/context'
 import type { SystemCapabilitiesResult } from '#shared/types/system'
 import { getApiErrorMessage } from '../utils/apiError'
 
@@ -15,15 +16,18 @@ const [
   { data: capabilityData, error: capabilityError, refresh: refreshCapabilities },
   { data: statusData, error: statusError, refresh: refreshStatus },
   { data: sessionData, error: sessionError },
+  { data: openVikingSettingsData, error: openVikingSettingsError, refresh: refreshOpenVikingSettings },
 ] = await Promise.all([
   useFetch<ApiResponse<SystemCapabilitiesResult>>('/api/v1/system/capabilities'),
   useFetch<ApiResponse<ContextStatusResponse>>('/api/v1/system/context/summary'),
   useFetch<ApiResponse<AuthenticationSessionResult>>('/api/v1/auth/session'),
+  useFetch<ApiResponse<OpenVikingSettingsView>>('/api/v1/system/context/settings'),
 ])
 const capabilities = computed(() => capabilityData.value?.data ?? null)
 const capability = computed(() => capabilityData.value?.data.openViking ?? statusData.value?.data.capability ?? null)
 const contextProvider = computed(() => capabilityData.value?.data.contextProvider ?? 'sqlite_fts5')
 const administrator = computed(() => sessionData.value?.data.administrator ?? null)
+const openVikingSettings = computed(() => openVikingSettingsData.value?.data ?? null)
 const failedSyncCount = computed(() => statusData.value?.data.failedCount ?? 0)
 const actionLoading = shallowRef(false)
 const actionError = shallowRef<string | null>(null)
@@ -38,6 +42,45 @@ async function checkProvider(): Promise<void> {
     })
     actionMessage.value = `服务正常，版本 ${response.data.version ?? '未知'}，ADMIN Key 可管理隔离 User`
   })
+}
+
+/**
+ * 加密保存 OpenViking 设置；启用时立即验证健康状态和 ADMIN User 管理权限。
+ * @param input 已通过共享 Schema 校验的设置。
+ * @returns 保存、检测和状态刷新结束时完成。
+ */
+async function saveOpenVikingSettings(input: UpdateOpenVikingSettingsInput): Promise<void> {
+  if (actionLoading.value) return
+  actionLoading.value = true
+  actionError.value = null
+  actionMessage.value = null
+  try {
+    const response = await $fetch<ApiResponse<OpenVikingSettingsView>>('/api/v1/system/context/settings', {
+      method: 'PUT', body: input,
+    })
+    openVikingSettingsData.value = response
+    if (response.data.enabled) {
+      try {
+        const checked = await $fetch<ApiResponse<{ healthy: boolean, version: string | null, authMode: 'api_key' }>>('/api/v1/system/providers/check', {
+          method: 'POST', body: { provider: 'openviking' },
+        })
+        actionMessage.value = `设置已保存并立即生效；服务版本 ${checked.data.version ?? '未知'}，ADMIN Key 具有 User 管理权限`
+      }
+      catch (error: unknown) {
+        actionError.value = `设置已保存，但服务或 ADMIN 权限检测失败：${getApiErrorMessage(error, '检测失败')}`
+      }
+    }
+    else {
+      actionMessage.value = '设置已保存；新任务已切换为 SQLite 本地检索'
+    }
+    await Promise.all([refreshCapabilities(), refreshStatus(), refreshOpenVikingSettings()])
+  }
+  catch (error: unknown) {
+    actionError.value = getApiErrorMessage(error, 'OpenViking 设置保存失败')
+  }
+  finally {
+    actionLoading.value = false
+  }
 }
 
 /** @returns 明确确认后从 SQLite 全量重建外部索引。 */
@@ -86,7 +129,7 @@ async function executeAction(action: () => Promise<void>): Promise<void> {
     </div>
     <UAlert v-if="actionError" class="mb-5" color="error" title="操作失败" :description="actionError" />
     <UAlert v-if="actionMessage" class="mb-5" color="success" title="操作完成" :description="actionMessage" />
-    <UAlert v-if="capabilityError || statusError || sessionError" class="mb-5" color="error" title="系统数据加载失败" />
+    <UAlert v-if="capabilityError || statusError || sessionError || openVikingSettingsError" class="mb-5" color="error" title="系统数据加载失败" />
 
     <div class="mt-8 mb-6 grid gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(20rem,0.6fr)]">
       <SystemCapabilityStatusPanel v-if="capabilities" :capabilities="capabilities" show-limits />
@@ -111,6 +154,13 @@ async function executeAction(action: () => Promise<void>): Promise<void> {
           <div><dt class="text-xs text-muted">服务来源</dt><dd class="mt-1 break-all font-medium">{{ capability.endpointOrigin ?? '未配置' }}</dd></div>
         </dl>
         <UAlert class="mt-5" color="neutral" title="SQLite 始终保存原始数据" description="OpenViking 不可用时，新任务会改用本地全文搜索；远端同步任务会保留并在服务恢复后重试。已经创建的任务不会中途更换搜索方式。" />
+        <SystemOpenVikingSettingsForm
+          v-if="openVikingSettings"
+          :key="openVikingSettings.updatedAt ?? 'default'"
+          :settings="openVikingSettings"
+          :loading="actionLoading"
+          @submit="saveOpenVikingSettings"
+        />
         <div class="mt-5 flex flex-wrap gap-2">
           <UButton :loading="actionLoading" color="neutral" variant="soft" @click="checkProvider">检测服务</UButton>
         </div>
