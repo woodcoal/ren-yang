@@ -19,7 +19,7 @@ withDefaults(defineProps<Props>(), {
     </svg>
     <span v-if="showCopy" class="brand-copy">
       <strong class="brand-name">人样</strong>
-      <span class="brand-subtitle">让它有个人样</span>
+      <span class="brand-subtitle">Agents, with a human touch.</span>
     </span>
   </span>
 </template>

@@ -17,7 +17,7 @@ describe('后台品牌与主题组件', () => {
     const wrapper = await mountSuspended(BrandMark)
 
     expect(wrapper.text()).toContain('人样')
-    expect(wrapper.text()).toContain('让它有个人样')
+    expect(wrapper.text()).toContain('Agents, with a human touch.')
     expect(wrapper.find('svg[viewBox="0 0 24 24"]').exists()).toBe(true)
   })
 

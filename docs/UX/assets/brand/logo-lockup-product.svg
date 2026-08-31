@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- 人样产品组合：主符号、中文主名称与正式副标题“让它有个人样”。 -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 194 52" role="img" aria-labelledby="renyang-product-title renyang-product-desc">
-  <title id="renyang-product-title">人样，让它有个人样</title>
+<!-- 人样产品组合：主符号、中文主名称与正式英文副标题“Agents, with a human touch.”。 -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 218 52" role="img" aria-labelledby="renyang-product-title renyang-product-desc">
+  <title id="renyang-product-title">人样，Agents, with a human touch.</title>
   <desc id="renyang-product-desc">人样人物标志、中文品牌名称和正式副标题的横向组合。</desc>
   <!-- 产品组合中的符号略大于横向主标，用于侧栏、登录页与系统信息。 -->
   <g transform="translate(2 10) scale(1.33)">
@@ -10,5 +10,5 @@
     <path d="M13.7 10 20.3 20.4" fill="none" stroke="#a94f46" stroke-width="4.4" stroke-linecap="round"/>
   </g>
   <text x="45" y="27.5" fill="#20262c" font-family="'Noto Sans SC', 'Microsoft YaHei', 'PingFang SC', sans-serif" font-size="25" font-weight="750" letter-spacing="-1.2">人样</text>
-  <text x="46" y="45" fill="#59616a" font-family="'Noto Sans SC', 'Microsoft YaHei', 'PingFang SC', sans-serif" font-size="11.5" font-weight="500" letter-spacing="1">让它有个人样</text>
+  <text x="46" y="45" fill="#59616a" font-family="'Avenir Next', 'Segoe UI', sans-serif" font-size="11" font-weight="500" letter-spacing="0.15">Agents, with a human touch.</text>
 </svg>

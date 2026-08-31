@@ -264,7 +264,7 @@ function renderSidebar(pageId) {
 
   return '<div class="sidebar-brand">' +
     '<span class="brand-mark">' + brandSymbolSvg() + '</span>' +
-    '<span class="brand-copy"><span class="brand-name">人样</span><span class="brand-sub">让它有个人样</span></span>' +
+    '<span class="brand-copy"><span class="brand-name">人样</span><span class="brand-sub">Agents, with a human touch.</span></span>' +
     '</div>' +
     '<nav class="sidebar-nav" aria-label="主导航">' + groups + '</nav>' +
     '<div class="sidebar-footer">' +
