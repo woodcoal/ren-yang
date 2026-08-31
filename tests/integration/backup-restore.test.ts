@@ -111,7 +111,54 @@ describe('SQLite 与引用文件备份恢复', () => {
     await expect(service.validate(backupDirectory)).rejects.toThrow('备份目录包含未列入清单的额外文件')
   })
 
-  it('允许恢复压平迁移前生成的完整十步迁移备份', async () => {
+  it('允许压平前已到达当前最终结构的十六步数据库备份', async () => {
+    const backupDirectory = await service.create()
+    const databasePath = resolve(backupDirectory, 'app.sqlite')
+    const previousDatabase = new Database(databasePath, { fileMustExist: true })
+    try {
+      previousDatabase.prepare(`DELETE FROM __drizzle_migrations`).run()
+      const insertMigration = previousDatabase.prepare(`
+        INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)
+      `)
+      const versions = [
+        1788028900254,
+        1788036380272,
+        1788042164727,
+        1788075317577,
+        1788081200000,
+        1788084800000,
+        1788163200000,
+        1788249600000,
+        1788336000000,
+        1788422400000,
+        1788508800000,
+        1788768000000,
+        1788854400000,
+        1788940800000,
+        1789027200000,
+        1789113600000,
+      ]
+      versions.forEach((version, index) => insertMigration.run(`previous-current-${index}`, version))
+    }
+    finally {
+      previousDatabase.close()
+    }
+
+    const manifestPath = resolve(backupDirectory, 'manifest.json')
+    const manifest = readManifest(manifestPath)
+    const databaseFile = manifest.files.find(file => file.path === 'app.sqlite')
+    if (!databaseFile) throw new Error('备份清单缺少 app.sqlite')
+    const databaseBytes = readFileSync(databasePath)
+    databaseFile.sizeBytes = databaseBytes.byteLength
+    databaseFile.sha256 = hash(databaseBytes)
+    writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
+
+    await expect(service.validate(backupDirectory)).resolves.toMatchObject({
+      manifest: { version: 2, migrationVersion: 1789113600000 },
+    })
+  })
+
+  it('拒绝恢复未到达当前最终结构的十步迁移备份', async () => {
     const backupDirectory = await service.create()
     const databasePath = resolve(backupDirectory, 'app.sqlite')
     const legacyDatabase = new Database(databasePath, { fileMustExist: true })
@@ -154,12 +201,10 @@ describe('SQLite 与引用文件备份恢复', () => {
     databaseFile.sha256 = hash(databaseBytes)
     writeFileSync(manifestPath, `${JSON.stringify(legacyManifest, null, 2)}\n`)
 
-    await expect(service.validate(backupDirectory)).resolves.toMatchObject({
-      manifest: { version: 1, migrationCount: 10 },
-    })
+    await expect(service.validate(backupDirectory)).rejects.toThrow('备份迁移版本与当前程序不兼容')
   })
 
-  it('允许恢复 OpenViking 韧性迁移前生成的第二版备份', async () => {
+  it('拒绝恢复 OpenViking 韧性迁移前生成的中间版备份', async () => {
     const backupDirectory = await service.create()
     const databasePath = resolve(backupDirectory, 'app.sqlite')
     const previousDatabase = new Database(databasePath, { fileMustExist: true })
@@ -181,9 +226,7 @@ describe('SQLite 与引用文件备份恢复', () => {
     databaseFile.sha256 = hash(databaseBytes)
     writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`)
 
-    await expect(service.validate(backupDirectory)).resolves.toMatchObject({
-      manifest: { version: 2, migrationVersion: 1788854400000 },
-    })
+    await expect(service.validate(backupDirectory)).rejects.toThrow('备份迁移版本与当前程序不兼容')
   })
 
   it('引用文件缺失时创建失败并清理未完成备份目录', async () => {
@@ -236,6 +279,16 @@ describe('SQLite 与引用文件备份恢复', () => {
     finally {
       lock.release()
     }
+  })
+
+  it('开发热更新允许同一 PID 临时重入且最后一个实例释放前保持锁有效', () => {
+    const first = new ApplicationInstanceLock(dataDirectory, { allowSameProcessReentry: true })
+    const second = new ApplicationInstanceLock(dataDirectory, { allowSameProcessReentry: true })
+
+    first.release()
+    expect(ApplicationInstanceLock.isActive(dataDirectory)).toBe(true)
+    second.release()
+    expect(ApplicationInstanceLock.isActive(dataDirectory)).toBe(false)
   })
 
   it('恢复前验证失败时不覆盖当前数据目录', async () => {

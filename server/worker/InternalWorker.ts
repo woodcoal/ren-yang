@@ -28,7 +28,7 @@ export class InternalWorker implements WorkerStatusReader {
 
   /**
    * 恢复过期租约并启动单一轮询循环。
-   * @returns 无返回值。
+   * @returns 轮询器已启动时结束，不等待首个业务任务完成。
    */
   async start(): Promise<void> {
     if (this.running) {
@@ -37,10 +37,11 @@ export class InternalWorker implements WorkerStatusReader {
 
     await this.service.recoverExpiredJobs()
     this.running = true
-    await this.poll()
     this.timer = setInterval(() => {
       void this.poll()
     }, this.pollIntervalMs)
+    // OpenViking 等外部任务可能运行数分钟，首轮必须转入后台，避免阻塞 Nitro 请求钩子注册。
+    void this.poll()
   }
 
   /**

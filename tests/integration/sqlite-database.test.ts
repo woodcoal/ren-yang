@@ -56,7 +56,7 @@ describe('SqliteDatabase', () => {
     ])
     expect(current.getClient().prepare(`
       SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations
-    `).get()).toEqual({ count: 7, version: 1789113600000 })
+    `).get()).toEqual({ count: 1, version: 1789113600000 })
     expect(current.getClient().prepare(`
       SELECT COUNT(*) AS count FROM ai_prompts WHERE active_version_id IS NOT NULL
     `).get()).toEqual({ count: 20 })
@@ -100,7 +100,7 @@ describe('SqliteDatabase', () => {
     ])
   })
 
-  it('已完成压平前全部迁移的旧数据库不会重复执行单一基线', () => {
+  it('已完成压平前最终迁移的旧数据库不会重复执行新基线', () => {
     temporaryDirectory = mkdtempSync(resolve(tmpdir(), 'ren-yang-sqlite-legacy-test-'))
     const dataDirectory = resolve(temporaryDirectory, 'data')
     const migrationsDirectory = resolve(temporaryDirectory, 'migrations')
@@ -112,7 +112,7 @@ describe('SqliteDatabase', () => {
       entries: [{
         idx: 0,
         version: '6',
-        when: 1788422400000,
+        when: 1789113600000,
         tag: '0000_schema',
         breakpoints: true,
       }],
@@ -134,7 +134,7 @@ describe('SqliteDatabase', () => {
         ?, 'failed', 'upsert', '旧同步错误', 1000, 1000
       )
     `).run('b'.repeat(64))
-    // 以 0000 单基线的真实表结构配合十条历史记录，模拟压平前完整迁移链。
+    // 以当前真实表结构配合十六条历史记录，模拟从最早迁移链升级到 0006 的现有数据库。
     client.prepare(`DELETE FROM __drizzle_migrations`).run()
     const insertMigration = client.prepare(`
       INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)
@@ -150,6 +150,12 @@ describe('SqliteDatabase', () => {
       1788249600000,
       1788336000000,
       1788422400000,
+      1788508800000,
+      1788768000000,
+      1788854400000,
+      1788940800000,
+      1789027200000,
+      1789113600000,
     ]
     versions.forEach((version, index) => insertMigration.run(`legacy-${index}`, version))
     current.close()

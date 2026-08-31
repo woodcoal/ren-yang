@@ -70,6 +70,8 @@ export interface ApplicationRuntimeOptions {
   workerLeaseDurationMs?: number
   /** 每次创建新文件后必须保留的磁盘字节数。 */
   minimumFreeDiskBytes?: number
+  /** 开发热更新期间是否允许同一 PID 的新旧运行时短暂重叠。 */
+  allowSameProcessLockReentry?: boolean
 }
 
 /** 唯一组合根，负责连接基础设施适配器与应用服务。 */
@@ -120,7 +122,9 @@ export class ApplicationRuntime {
    * @param options 数据目录、迁移目录和 Worker 时序配置。
    */
   constructor(options: ApplicationRuntimeOptions) {
-    this.instanceLock = new ApplicationInstanceLock(options.dataDirectory)
+    this.instanceLock = new ApplicationInstanceLock(options.dataDirectory, {
+      allowSameProcessReentry: options.allowSameProcessLockReentry,
+    })
     try {
       this.sqlite = new SqliteDatabase({
         dataDirectory: options.dataDirectory,

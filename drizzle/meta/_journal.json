@@ -5,50 +5,8 @@
     {
       "idx": 0,
       "version": "6",
-      "when": 1788422400000,
-      "tag": "0000_schema",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "6",
-      "when": 1788508800000,
-      "tag": "0001_ai_configuration",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "6",
-      "when": 1788768000000,
-      "tag": "0002_ai_connection_user_agent",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "6",
-      "when": 1788854400000,
-      "tag": "0003_openviking_database_settings",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "6",
-      "when": 1788940800000,
-      "tag": "0004_openviking_resilience",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "6",
-      "when": 1789027200000,
-      "tag": "0005_persona_memory_algorithm",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "6",
       "when": 1789113600000,
-      "tag": "0006_global_sources",
+      "tag": "0000_schema",
       "breakpoints": true
     }
   ]

@@ -20,16 +20,10 @@ const MANIFEST_NAME = 'manifest.json'
 const DATABASE_NAME = 'app.sqlite'
 /** 允许进入备份的受控相对路径。 */
 const FILE_PATH_PATTERN = /^(sources\/[0-9a-f-]{36}\.(txt|md)|artifacts\/[0-9a-f-]{36}\/assets\/[0-9a-f-]{36}\.(png|jpg|webp))$/i
-/** 压平迁移前完整数据库和第一版备份清单使用的迁移条数。 */
-const LEGACY_MIGRATION_COUNT = 10
-/** 单一基线和压平前完整迁移链共用的数据库结构版本。 */
-const BASELINE_MIGRATION_VERSION = 1788422400000
-/** OpenViking 韧性迁移前最后一个已发布数据库结构版本。 */
-const PREVIOUS_MIGRATION_VERSION = 1788854400000
-/** 上一已发布版本从单一基线升级后的迁移条数。 */
-const PREVIOUS_MIGRATION_COUNT = 4
-/** 上一已发布版本从压平前完整迁移链升级后的迁移条数。 */
-const PREVIOUS_LEGACY_MIGRATION_COUNT = 13
+/** 本次压平前，从旧单基线继续升级到最终结构的迁移条数。 */
+const PREVIOUS_CURRENT_MIGRATION_COUNT = 7
+/** 本次压平前，从最早十步历史链继续升级到最终结构的迁移条数。 */
+const PREVIOUS_CURRENT_LEGACY_MIGRATION_COUNT = 16
 
 /** 当前迁移日志的稳定数据库身份。 */
 interface MigrationIdentity {
@@ -281,18 +275,16 @@ function inspectDatabase(databasePath: string, expectedMigration: MigrationIdent
 }
 
 /**
- * 接受当前完整迁移、上一已发布版本，或单基线与完整十步历史链。
+ * 接受当前单基线，以及压平前已经完成同一最终结构的两种迁移链。
  * @param actual 备份数据库实际迁移身份。
  * @param expected 当前程序迁移身份。
  * @returns 数据库能够由当前程序安全升级时为 true。
  */
 function isCompatibleDatabaseMigration(actual: MigrationIdentity, expected: MigrationIdentity): boolean {
-  if (actual.version === expected.version && actual.count === expected.count) return true
-  if (actual.version === PREVIOUS_MIGRATION_VERSION) {
-    return actual.count === PREVIOUS_MIGRATION_COUNT || actual.count === PREVIOUS_LEGACY_MIGRATION_COUNT
-  }
-  return actual.version === BASELINE_MIGRATION_VERSION
-    && (actual.count === 1 || actual.count === LEGACY_MIGRATION_COUNT)
+  if (actual.version !== expected.version) return false
+  return actual.count === expected.count
+    || actual.count === PREVIOUS_CURRENT_MIGRATION_COUNT
+    || actual.count === PREVIOUS_CURRENT_LEGACY_MIGRATION_COUNT
 }
 
 /** @param databasePath 待启用数据库。 @returns 重建 FTS、撤销会话并标记外部索引待重建。 */
@@ -371,7 +363,7 @@ function parseManifest(value: string): CompatibleBackupManifest {
 }
 
 /**
- * 确认备份清单指向当前版本、上一已发布版本、单一基线或压平前完整迁移链。
+ * 确认备份清单指向当前最终结构版本。
  * @param manifest 已通过结构校验的新旧清单。
  * @param expectedMigration 当前程序迁移身份。
  * @returns 兼容时结束；版本不匹配时抛出错误。
@@ -380,11 +372,7 @@ function assertManifestMigrationCompatibility(
   manifest: CompatibleBackupManifest,
   expectedMigration: MigrationIdentity,
 ): void {
-  const compatible = manifest.version === 2
-    ? manifest.migrationVersion === expectedMigration.version
-      || manifest.migrationVersion === PREVIOUS_MIGRATION_VERSION
-      || manifest.migrationVersion === BASELINE_MIGRATION_VERSION
-    : manifest.migrationCount === LEGACY_MIGRATION_COUNT
+  const compatible = manifest.version === 2 && manifest.migrationVersion === expectedMigration.version
   if (!compatible) throw new Error('备份迁移版本与当前程序不兼容')
 }
 

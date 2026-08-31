@@ -22,6 +22,8 @@ async function initializeApplicationRuntime(nitroApp: NitroApp): Promise<void> {
       // 本地会话密钥经过用途隔离的 HKDF 派生后用于数据库凭据加密，原始密钥不会写入数据库。
       credentialEncryptionSecret: config.session.password,
       minimumFreeDiskBytes: Number(config.limits.minimumFreeDiskBytes),
+      // Nitro 开发热更新会在同一 PID 内短暂重叠新旧运行时；生产仍严格禁止任何重入。
+      allowSameProcessLockReentry: import.meta.dev,
     })
     await runtime.start()
   }
