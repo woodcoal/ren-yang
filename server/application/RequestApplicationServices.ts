@@ -11,9 +11,12 @@ import type { AnalysisApplicationService } from './analysis/AnalysisApplicationS
 import type { AiPromptApplicationService } from './aiPrompts/AiPromptApplicationService'
 import type { HistoryApplicationService } from './history/HistoryApplicationService'
 import type { SystemAiSettingsApplicationService } from './systemAi/SystemAiSettingsApplicationService'
+import type { AiConfigurationApplicationService } from './aiConfiguration/AiConfigurationApplicationService'
 
 /** 每个 HTTP 请求能够访问的应用服务集合。 */
 export interface RequestApplicationServices {
+  /** 加密 AI 接口、模型部署和固定算法配置用例。 */
+  aiConfiguration: AiConfigurationApplicationService
   /** 全站 AI 提示词草稿、发布、历史和运行时目录。 */
   aiPrompts: AiPromptApplicationService
   /** 认证相关用例。 */

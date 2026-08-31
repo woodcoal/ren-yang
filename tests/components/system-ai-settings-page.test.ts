@@ -54,10 +54,10 @@ describe('系统 AI 设置页面', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('兴趣分析')
-    expect(wrapper.text()).toContain('内容分析')
+    expect(wrapper.text()).toContain('记忆提炼')
     expect(wrapper.text()).toContain('草稿生成')
     expect(wrapper.text()).toContain('反馈分类')
-    expect(wrapper.text()).toContain('不影响结构化图文创作')
+    expect(wrapper.text()).toContain('灵魂与成长参数由 AI 算法配置')
 
     await wrapper.get('form[data-system-ai-settings-form]').trigger('submit')
     await flushPromises()

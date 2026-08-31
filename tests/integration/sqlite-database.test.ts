@@ -52,11 +52,12 @@ describe('SqliteDatabase', () => {
     expect(tables).toEqual([{ name: 'administrators' }, { name: 'task_jobs' }])
     expect(current.getClient().prepare(`
       SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations
-    `).get()).toEqual({ count: 1, version: 1788422400000 })
+    `).get()).toEqual({ count: 2, version: 1788508800000 })
     expect(current.getClient().prepare(`
       SELECT COUNT(*) AS count FROM ai_prompts WHERE active_version_id IS NOT NULL
-    `).get()).toEqual({ count: 14 })
-    expect(current.getClient().prepare(`SELECT COUNT(*) AS count FROM ai_prompt_versions`).get()).toEqual({ count: 14 })
+    `).get()).toEqual({ count: 18 })
+    expect(current.getClient().prepare(`SELECT COUNT(*) AS count FROM ai_prompt_versions`).get()).toEqual({ count: 18 })
+    expect(current.getClient().prepare(`SELECT COUNT(*) AS count FROM ai_algorithms`).get()).toEqual({ count: 4 })
     expect(current.getClient().prepare(`PRAGMA table_info(source_materials)`).all()).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'is_enabled', notnull: 1, dflt_value: '1' }),
     ]))
@@ -96,6 +97,17 @@ describe('SqliteDatabase', () => {
         id, name, role, input_type, content_hash, content_text, original_file_path, created_at, updated_at
       ) VALUES ('source-1', '旧资料', 'reference', 'paste', ?, '压平前正文。', NULL, 1000, 1000)
     `).run('a'.repeat(64))
+    // 测试数据库已自动应用当前全部迁移；先移除 0001 产物，精确模拟只完成旧压平迁移的数据库。
+    client.prepare(`DELETE FROM ai_prompts WHERE code IN (
+      'analysis.persona_growth_extract', 'analysis.persona_growth_synthesize',
+      'analysis.world_growth_extract', 'analysis.world_growth_synthesize'
+    )`).run()
+    client.exec(`DROP TABLE ai_algorithm_step_configurations`)
+    client.exec(`DROP TABLE ai_algorithm_configuration_versions`)
+    client.exec(`DROP TABLE ai_algorithms`)
+    client.exec(`DROP TABLE ai_model_deployments`)
+    client.exec(`DROP TABLE ai_connections`)
+    client.exec(`ALTER TABLE analysis_batches DROP COLUMN algorithm_snapshot_json`)
     client.prepare(`DELETE FROM __drizzle_migrations`).run()
     const insertMigration = client.prepare(`
       INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)
@@ -125,7 +137,8 @@ describe('SqliteDatabase', () => {
     `).get()).toEqual({ name: '旧资料', content_text: '压平前正文。', is_enabled: 1 })
     expect(database.getClient().prepare(`
       SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations
-    `).get()).toEqual({ count: 10, version: 1788422400000 })
+    `).get()).toEqual({ count: 11, version: 1788508800000 })
+    expect(database.getClient().prepare(`SELECT COUNT(*) AS count FROM ai_algorithms`).get()).toEqual({ count: 4 })
     expect(database.getClient().prepare('PRAGMA foreign_key_check').all()).toEqual([])
   })
 

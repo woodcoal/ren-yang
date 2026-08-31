@@ -36,7 +36,7 @@ describe('全站 AI 提示词目录', () => {
   it('迁移初始化全部固定提示词并能按变量契约渲染', async () => {
     const prompts = await service.listWorkspaces()
 
-    expect(prompts).toHaveLength(14)
+    expect(prompts).toHaveLength(18)
     expect(prompts.every(prompt => prompt.activeVersion?.versionNo === 1 && prompt.versions.length === 1)).toBe(true)
     for (const prompt of prompts) {
       const variables = Object.fromEntries(prompt.variables.map(variable => [variable.name, `测试-${variable.name}`]))

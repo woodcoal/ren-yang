@@ -19,7 +19,7 @@ async function initializeApplicationRuntime(nitroApp: NitroApp): Promise<void> {
     runtime = new ApplicationRuntime({
       dataDirectory: config.dataDirectory,
       migrationsDirectory: './drizzle',
-      // 会话密钥经过用途隔离的 HKDF 派生后用于人物第三方密码加密，原始密钥不会写入数据库。
+      // 本地会话密钥经过用途隔离的 HKDF 派生后用于数据库凭据加密，原始密钥不会写入数据库。
       credentialEncryptionSecret: config.session.password,
       minimumFreeDiskBytes: Number(config.limits.minimumFreeDiskBytes),
       textModel: {

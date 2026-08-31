@@ -13,6 +13,7 @@ import type { TokenCounter } from '../../ports/TokenCounter'
 import { ApplicationError } from '../errors/ApplicationError'
 import type { AiPromptApplicationService } from '../aiPrompts/AiPromptApplicationService'
 import type { SystemAiSettingsApplicationService } from '../systemAi/SystemAiSettingsApplicationService'
+import type { AiAlgorithmApplicationService } from '../aiConfiguration/AiAlgorithmApplicationService'
 import { buildSoulPromptAnalysisVariables, soulAnalysisPromptCode } from './SoulPromptBuilder'
 
 /** 灵魂文本整理使用的固定、低随机性模型参数。 */
@@ -65,6 +66,8 @@ export interface SoulApplicationServiceDependencies {
   prompts: Pick<AiPromptApplicationService, 'render'>
   /** 世界与人物灵魂提示词预算。 */
   tokenBudgets: SoulTokenBudgets
+  /** 数据库配置的灵魂整理算法；未提供时兼容独立测试和旧组合方式。 */
+  algorithms?: Pick<AiAlgorithmApplicationService, 'prepare' | 'executeStep'>
   /** 系统内容分析参数；未提供时保持原固定参数，便于独立测试。 */
   systemAiSettings?: Pick<SystemAiSettingsApplicationService, 'resolveParameters'>
 }
@@ -313,9 +316,51 @@ export class SoulApplicationService {
    */
   async analyzePrompt(subjectType: SoulSubjectType, promptText: string): Promise<SoulSnapshot> {
     const model = this.dependencies.model
-    if (!model?.getConfiguredModel()) {
+    if (!this.dependencies.algorithms && !model?.getConfiguredModel()) {
       throw new ApplicationError('CAPABILITY_DISABLED', '文本模型尚未配置，不能自动分析灵魂提示词', 422)
     }
+    try {
+      const response = this.dependencies.algorithms
+        ? await this.executeConfiguredSoulAlgorithm(subjectType, promptText)
+        : await this.executeLegacySoulAnalysis(model!, subjectType, promptText)
+      return normalizeSoulSnapshot(analyzedSoulPromptSchema.parse(response.structuredOutput))
+    }
+    catch (error: unknown) {
+      if (error instanceof ApplicationError) throw error
+      if (error instanceof TextModelError) {
+        const statusCode = error.code === 'CAPABILITY_DISABLED' ? 422 : error.code === 'MODEL_OUTPUT_INVALID' ? 502 : 503
+        throw new ApplicationError(error.code, error.message, statusCode)
+      }
+      throw new ApplicationError('MODEL_OUTPUT_INVALID', '模型返回的灵魂提示词格式无效', 502)
+    }
+  }
+
+  /**
+   * 使用数据库当前配置准备快照并执行人物或世界灵魂整理步骤。
+   * @param subjectType 世界或人物。
+   * @param promptText 用户提供的灵魂原文。
+   * @returns 结构化模型响应。
+   */
+  private async executeConfiguredSoulAlgorithm(subjectType: SoulSubjectType, promptText: string) {
+    const algorithmCode = subjectType === 'world' ? 'world_soul' : 'persona_soul'
+    const snapshot = await this.dependencies.algorithms!.prepare(algorithmCode)
+    return await this.dependencies.algorithms!.executeStep(
+      snapshot,
+      'organize',
+      buildSoulPromptAnalysisVariables(promptText),
+      'soul_prompt_analysis',
+      'json_object',
+    )
+  }
+
+  /**
+   * 保持独立测试及旧组合根使用单一环境文本模型的兼容路径。
+   * @param model 已配置的旧文本模型端口。
+   * @param subjectType 世界或人物。
+   * @param promptText 用户提供的灵魂原文。
+   * @returns 结构化模型响应。
+   */
+  private async executeLegacySoulAnalysis(model: TextModelPort, subjectType: SoulSubjectType, promptText: string) {
     const prompt = await this.dependencies.prompts.render(
       soulAnalysisPromptCode(subjectType),
       buildSoulPromptAnalysisVariables(promptText),
@@ -323,21 +368,11 @@ export class SoulApplicationService {
     const parameters = this.dependencies.systemAiSettings
       ? await this.dependencies.systemAiSettings.resolveParameters('contentAnalysis', SOUL_ANALYSIS_PARAMETERS)
       : { ...SOUL_ANALYSIS_PARAMETERS }
-    try {
-      const response = await model.generateStructured({
-        ...prompt,
-        parameters,
-        responseSchemaName: 'soul_prompt_analysis',
-      })
-      return normalizeSoulSnapshot(analyzedSoulPromptSchema.parse(response.structuredOutput))
-    }
-    catch (error: unknown) {
-      if (error instanceof TextModelError) {
-        const statusCode = error.code === 'CAPABILITY_DISABLED' ? 422 : error.code === 'MODEL_OUTPUT_INVALID' ? 502 : 503
-        throw new ApplicationError(error.code, error.message, statusCode)
-      }
-      throw new ApplicationError('MODEL_OUTPUT_INVALID', '模型返回的灵魂提示词格式无效', 502)
-    }
+    return await model.generateStructured({
+      ...prompt,
+      parameters,
+      responseSchemaName: 'soul_prompt_analysis',
+    })
   }
 }
 

@@ -46,6 +46,8 @@ export const appNavigationGroups: AppNavigationGroup[] = [
       { label: '提示词', to: '/prompts', icon: 'i-lucide-braces' },
       { label: '内容模板', to: '/templates', icon: 'i-lucide-panels-top-left' },
       { label: '生成设置', to: '/parameter-profiles', icon: 'i-lucide-sliders-horizontal' },
+      { label: 'AI 模型', to: '/ai-models', icon: 'i-lucide-server-cog' },
+      { label: 'AI 算法', to: '/ai-algorithms', icon: 'i-lucide-workflow' },
       { label: '系统 AI', to: '/system-ai-settings', icon: 'i-lucide-cpu' },
       { label: '系统中心', to: '/settings', icon: 'i-lucide-settings-2' },
       { label: '日志与审计', to: '/system-records', icon: 'i-lucide-scroll-text' },

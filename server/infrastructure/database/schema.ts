@@ -56,6 +56,52 @@ export const systemAiSettings = sqliteTable(
   ],
 )
 
+/** 管理员维护的 AI 接口连接；访问凭据仅保存 AES-GCM 密文。 */
+export const aiConnections = sqliteTable(
+  'ai_connections',
+  {
+    id: text('id').primaryKey(),
+    name: text('name').notNull(),
+    protocol: text('protocol').notNull(),
+    endpoint: text('endpoint').notNull(),
+    apiKeyCiphertext: text('api_key_ciphertext').notNull(),
+    isEnabled: integer('is_enabled').notNull().default(1),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  table => [
+    uniqueIndex('ai_connections_name_unique').on(table.name),
+    check('ai_connections_name_check', sql`length(trim(${table.name})) > 0`),
+    check('ai_connections_protocol_check', sql`${table.protocol} IN ('openai_compatible')`),
+    check('ai_connections_endpoint_check', sql`length(trim(${table.endpoint})) > 0`),
+    check('ai_connections_ciphertext_check', sql`length(trim(${table.apiKeyCiphertext})) > 0`),
+    check('ai_connections_enabled_check', sql`${table.isEnabled} IN (0, 1)`),
+  ],
+)
+
+/** 一个 AI 接口连接上可独立选择的文本或图片模型部署。 */
+export const aiModelDeployments = sqliteTable(
+  'ai_model_deployments',
+  {
+    id: text('id').primaryKey(),
+    connectionId: text('connection_id').notNull().references(() => aiConnections.id, { onDelete: 'restrict' }),
+    name: text('name').notNull(),
+    model: text('model').notNull(),
+    modality: text('modality').notNull(),
+    isEnabled: integer('is_enabled').notNull().default(1),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  table => [
+    uniqueIndex('ai_model_deployments_name_unique').on(table.name),
+    index('ai_model_deployments_connection_index').on(table.connectionId, table.modality),
+    check('ai_model_deployments_name_check', sql`length(trim(${table.name})) > 0`),
+    check('ai_model_deployments_model_check', sql`length(trim(${table.model})) > 0`),
+    check('ai_model_deployments_modality_check', sql`${table.modality} IN ('text', 'image')`),
+    check('ai_model_deployments_enabled_check', sql`${table.isEnabled} IN (0, 1)`),
+  ],
+)
+
 /** 同进程 Worker 使用的持久化任务表。 */
 export const taskJobs = sqliteTable(
   'task_jobs',
@@ -518,6 +564,61 @@ export const aiPromptDrafts = sqliteTable(
   ],
 )
 
+/** 代码内固定流程的 AI 算法定义与当前配置版本指针。 */
+export const aiAlgorithms = sqliteTable(
+  'ai_algorithms',
+  {
+    code: text('code').primaryKey(),
+    name: text('name').notNull(),
+    description: text('description').notNull(),
+    implementationVersion: integer('implementation_version').notNull(),
+    activeConfigurationVersionId: text('active_configuration_version_id'),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  table => [
+    check('ai_algorithms_code_check', sql`${table.code} IN ('persona_soul', 'world_soul', 'persona_growth', 'world_growth')`),
+    check('ai_algorithms_name_check', sql`length(trim(${table.name})) > 0`),
+    check('ai_algorithms_implementation_version_check', sql`${table.implementationVersion} > 0`),
+  ],
+)
+
+/** 算法每次完整保存形成的不可变配置版本。 */
+export const aiAlgorithmConfigurationVersions = sqliteTable(
+  'ai_algorithm_configuration_versions',
+  {
+    id: text('id').primaryKey(),
+    algorithmCode: text('algorithm_code').notNull().references(() => aiAlgorithms.code, { onDelete: 'cascade' }),
+    versionNo: integer('version_no').notNull(),
+    createdAt: integer('created_at').notNull(),
+  },
+  table => [
+    uniqueIndex('ai_algorithm_configuration_versions_unique').on(table.algorithmCode, table.versionNo),
+    check('ai_algorithm_configuration_versions_number_check', sql`${table.versionNo} > 0`),
+  ],
+)
+
+/** 一个算法配置版本内按固定顺序绑定的模型、提示词和参数。 */
+export const aiAlgorithmStepConfigurations = sqliteTable(
+  'ai_algorithm_step_configurations',
+  {
+    id: text('id').primaryKey(),
+    configurationVersionId: text('configuration_version_id').notNull().references(() => aiAlgorithmConfigurationVersions.id, { onDelete: 'cascade' }),
+    stepKey: text('step_key').notNull(),
+    ordinal: integer('ordinal').notNull(),
+    modelDeploymentId: text('model_deployment_id').notNull().references(() => aiModelDeployments.id, { onDelete: 'restrict' }),
+    promptCode: text('prompt_code').notNull().references(() => aiPrompts.code, { onDelete: 'restrict' }),
+    parametersJson: text('parameters_json').notNull(),
+  },
+  table => [
+    uniqueIndex('ai_algorithm_step_configurations_key_unique').on(table.configurationVersionId, table.stepKey),
+    uniqueIndex('ai_algorithm_step_configurations_ordinal_unique').on(table.configurationVersionId, table.ordinal),
+    check('ai_algorithm_step_configurations_key_check', sql`length(trim(${table.stepKey})) > 0`),
+    check('ai_algorithm_step_configurations_ordinal_check', sql`${table.ordinal} >= 0`),
+    check('ai_algorithm_step_configurations_parameters_check', sql`json_valid(${table.parametersJson})`),
+  ],
+)
+
 /** 兴趣判断或文档生成的一次可追溯运行。 */
 export const generationRuns = sqliteTable(
   'generation_runs',
@@ -693,6 +794,7 @@ export const analysisBatches = sqliteTable(
     modelSnapshotJson: text('model_snapshot_json').notNull(),
     parameterSnapshotJson: text('parameter_snapshot_json').notNull(),
     promptVersion: text('prompt_version').notNull(),
+    algorithmSnapshotJson: text('algorithm_snapshot_json'),
     rawResultJson: text('raw_result_json'),
     status: text('status').notNull().default('queued'),
     errorCode: text('error_code'),
@@ -714,6 +816,7 @@ export const analysisBatches = sqliteTable(
     check('analysis_batches_baseline_json_check', sql`json_valid(${table.baselineJson})`),
     check('analysis_batches_model_json_check', sql`json_valid(${table.modelSnapshotJson})`),
     check('analysis_batches_parameter_json_check', sql`json_valid(${table.parameterSnapshotJson})`),
+    check('analysis_batches_algorithm_json_check', sql`${table.algorithmSnapshotJson} IS NULL OR json_valid(${table.algorithmSnapshotJson})`),
     check('analysis_batches_raw_json_check', sql`${table.rawResultJson} IS NULL OR json_valid(${table.rawResultJson})`),
   ],
 )
@@ -1122,6 +1225,8 @@ export const databaseSchema = {
   administrators,
   auditEvents,
   systemAiSettings,
+  aiConnections,
+  aiModelDeployments,
   taskJobs,
   worlds,
   personas,
@@ -1141,6 +1246,9 @@ export const databaseSchema = {
   aiPrompts,
   aiPromptVersions,
   aiPromptDrafts,
+  aiAlgorithms,
+  aiAlgorithmConfigurationVersions,
+  aiAlgorithmStepConfigurations,
   generationRuns,
   personaOperationRecords,
   personaExternalRecords,

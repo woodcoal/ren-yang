@@ -50,6 +50,10 @@ import { HistoryApplicationService } from '../../application/history/HistoryAppl
 import { SqliteHistoryRepository } from '../database/SqliteHistoryRepository'
 import { SystemAiSettingsApplicationService } from '../../application/systemAi/SystemAiSettingsApplicationService'
 import { SqliteSystemAiSettingsRepository } from '../database/SqliteSystemAiSettingsRepository'
+import { AiConfigurationApplicationService } from '../../application/aiConfiguration/AiConfigurationApplicationService'
+import { AiAlgorithmApplicationService } from '../../application/aiConfiguration/AiAlgorithmApplicationService'
+import { SqliteAiConfigurationRepository } from '../database/SqliteAiConfigurationRepository'
+import { OpenAiCompatibleModelFactory } from '../models/OpenAiCompatibleModelFactory'
 
 /** 应用运行时组合配置。 */
 export interface ApplicationRuntimeOptions {
@@ -57,7 +61,7 @@ export interface ApplicationRuntimeOptions {
   dataDirectory: string
   /** Drizzle 迁移目录。 */
   migrationsDirectory: string
-  /** 人物第三方账号密码使用的仓库外密钥材料。 */
+  /** 人物账号与 AI 接口凭据共同使用的仓库外密钥材料。 */
   credentialEncryptionSecret: string
   /** Worker 空闲轮询间隔。 */
   workerPollIntervalMs?: number
@@ -134,6 +138,8 @@ export class ApplicationRuntime {
   private readonly systemService: SystemApplicationService
   /** 请求与各 AI 业务服务共用的系统 AI 参数设置。 */
   private readonly systemAiSettingsService: SystemAiSettingsApplicationService
+  /** 请求间共享的 AI 接口、模型部署和算法配置管理服务。 */
+  private readonly aiConfigurationService: AiConfigurationApplicationService
 
   /**
    * 创建并连接阶段一所需的全部运行时对象。
@@ -170,6 +176,23 @@ export class ApplicationRuntime {
     const personaAvatars = new LocalPersonaAvatarStorage(options.dataDirectory, storageCapacity)
     const textModel = new OpenAiCompatibleTextModel(options.textModel ?? { endpoint: '', apiKey: '', model: '' })
     const imageModel = new OpenAiCompatibleImageModel(options.imageModel ?? { endpoint: '', apiKey: '', model: '' })
+    const secretCipher = new AesGcmSecretCipher(options.credentialEncryptionSecret)
+    const aiConfigurationRepository = new SqliteAiConfigurationRepository(this.sqlite.getClient())
+    const dynamicModelFactory = new OpenAiCompatibleModelFactory()
+    this.aiConfigurationService = new AiConfigurationApplicationService({
+      repository: aiConfigurationRepository,
+      secretCipher,
+      modelFactory: dynamicModelFactory,
+      prompts: this.aiPromptService,
+      identifiers,
+      clock: this.clock,
+    })
+    const aiAlgorithms = new AiAlgorithmApplicationService({
+      repository: aiConfigurationRepository,
+      prompts: this.aiPromptService,
+      secretCipher,
+      modelFactory: dynamicModelFactory,
+    })
     const tokenCounter = new ConservativeTokenCounter()
     const contextRepository = new SqliteContextIndexRepository(this.sqlite.getClient())
     const openVikingOptions = options.openViking ?? { enabled: false, endpoint: '', apiKey: '', timeoutMs: 60_000 }
@@ -196,7 +219,7 @@ export class ApplicationRuntime {
       imageModel,
       prompts: this.aiPromptService,
       contextSyncQueue,
-      secretCipher: new AesGcmSecretCipher(options.credentialEncryptionSecret),
+      secretCipher,
     })
     this.soulService = new SoulApplicationService({
       content: contentRepository,
@@ -208,6 +231,7 @@ export class ApplicationRuntime {
       model: textModel,
       prompts: this.aiPromptService,
       tokenBudgets: { world: 2_500, persona: 3_500 },
+      algorithms: aiAlgorithms,
     })
     this.learningService = new LearningApplicationService({
       content: contentRepository,
@@ -228,6 +252,7 @@ export class ApplicationRuntime {
       identifiers,
       clock: this.clock,
       systemAiSettings: this.systemAiSettingsService,
+      algorithms: aiAlgorithms,
     })
     this.generationService = new GenerationApplicationService({
       runs: new SqliteRunRepository(this.sqlite.getClient()),
@@ -306,6 +331,7 @@ export class ApplicationRuntime {
    */
   createRequestServices(event: H3Event): RequestApplicationServices {
     return {
+      aiConfiguration: this.aiConfigurationService,
       aiPrompts: this.aiPromptService,
       authentication: new AuthenticationApplicationService({
         administratorRepository: this.administratorRepository,

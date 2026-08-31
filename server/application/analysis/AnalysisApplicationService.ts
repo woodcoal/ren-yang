@@ -1,4 +1,4 @@
-import { modelLearningPromptResultSchema } from '../../../shared/schemas/analysis'
+import { modelGrowthExtractionResultSchema, modelLearningPromptResultSchema } from '../../../shared/schemas/analysis'
 import type { CreateAnalysisBatchInput, ListAnalysisBatchesInput, ReviewIterationProposalsInput } from '../../../shared/schemas/analysis'
 import type { TextModelParameters } from '../../../shared/schemas/generation'
 import type { AnalysisBatchView, AnalysisType } from '../../../shared/types/analysis'
@@ -16,6 +16,8 @@ import { TextModelError } from '../../ports/TextModelPort'
 import { ApplicationError } from '../errors/ApplicationError'
 import type { AiPromptApplicationService } from '../aiPrompts/AiPromptApplicationService'
 import type { SystemAiSettingsApplicationService } from '../systemAi/SystemAiSettingsApplicationService'
+import type { AiAlgorithmApplicationService } from '../aiConfiguration/AiAlgorithmApplicationService'
+import type { AiAlgorithmSnapshot } from '../../domain/ai/AiAlgorithmModels'
 
 /** 纯文本提炼不再要求模型额外生成摘要，任务页展示固定结果说明。 */
 const LEARNING_PROMPT_RESULT_SUMMARY = 'AI 已根据全部启用素材生成完整提示词草稿。'
@@ -53,6 +55,8 @@ export interface AnalysisApplicationServiceDependencies {
   clock: Clock
   /** 系统内容分析参数；未提供时保持原固定参数，便于独立测试。 */
   systemAiSettings?: Pick<SystemAiSettingsApplicationService, 'resolveParameters'>
+  /** 数据库配置的两阶段成长算法；未提供时保持旧单模型路径。 */
+  algorithms?: Pick<AiAlgorithmApplicationService, 'prepare' | 'executeStep'>
 }
 
 /** 创建、执行和审核世界成长、人物成长及人物记忆 AI 迭代。 */
@@ -65,14 +69,23 @@ export class AnalysisApplicationService implements TaskHandler {
 
   /** @param analysisType 分析类型。 @param subjectId 对象 UUID。 @param input 分析模式。 @returns 已排队批次。 */
   async createBatch(analysisType: AnalysisType, subjectId: string, input: CreateAnalysisBatchInput): Promise<AnalysisBatchView> {
-    const model = this.dependencies.model.getConfiguredModel()
+    const algorithmSnapshot = this.dependencies.algorithms && analysisType !== 'persona_memory'
+      ? await this.dependencies.algorithms.prepare(growthAlgorithmCode(analysisType))
+      : null
+    const model = algorithmSnapshot
+      ? algorithmTextModelSnapshot(algorithmSnapshot)
+      : this.dependencies.model.getConfiguredModel()
     if (!model) throw new ApplicationError('CAPABILITY_DISABLED', '文本模型尚未配置，不能分析成长或记忆', 422)
     const prepared = await this.prepareBatch(analysisType, subjectId, input.mode)
-    const promptCode = analysisPromptCode(analysisType)
-    const promptVersions = await this.dependencies.prompts.snapshotPublishedVersions([promptCode])
-    const parameters = this.dependencies.systemAiSettings
-      ? await this.dependencies.systemAiSettings.resolveParameters('contentAnalysis', ANALYSIS_PARAMETERS)
-      : { ...ANALYSIS_PARAMETERS }
+    const promptCode = algorithmSnapshot ? algorithmSnapshot.steps[0]!.promptCode : analysisPromptCode(analysisType)
+    const promptVersion = algorithmSnapshot
+      ? algorithmSnapshot.steps[0]!.promptVersionId
+      : (await this.dependencies.prompts.snapshotPublishedVersions([promptCode]))[promptCode]!
+    const parameters = algorithmSnapshot
+      ? { ...ANALYSIS_PARAMETERS, ...algorithmSnapshot.steps[0]!.parameters }
+      : this.dependencies.systemAiSettings
+        ? await this.dependencies.systemAiSettings.resolveParameters('contentAnalysis', ANALYSIS_PARAMETERS)
+        : { ...ANALYSIS_PARAMETERS }
     const batchId = this.dependencies.identifiers.create()
     const created = await this.dependencies.analysis.createBatch({
       id: batchId,
@@ -87,7 +100,8 @@ export class AnalysisApplicationService implements TaskHandler {
       ],
       model,
       parameters,
-      promptVersion: promptVersions[promptCode]!,
+      promptVersion,
+      algorithmSnapshot,
       inputs: prepared.inputs,
       timestamp: this.dependencies.clock.now(),
     })
@@ -133,6 +147,10 @@ export class AnalysisApplicationService implements TaskHandler {
       // 批次固定参数也属于任务执行的一部分；反序列化失败时必须落为失败，不能永久停留在运行中。
       const runtime = await this.dependencies.analysis.startBatch(batchId, timestamp)
       if (!runtime) throw new ApplicationError('VERSION_CONFLICT', '分析批次不存在或状态已变化', 409)
+      if (runtime.algorithmSnapshot) {
+        await this.executeConfiguredGrowthAlgorithm(batchId, runtime.algorithmSnapshot, runtime.baseline, runtime.batch.inputs)
+        return
+      }
       const configured = this.dependencies.model.getConfiguredModel()
       if (!configured || configured.model !== runtime.model.model || configured.endpointOrigin !== runtime.model.endpointOrigin) {
         throw new TextModelError('CAPABILITY_DISABLED', '分析批次固定模型与当前配置不一致', false)
@@ -166,6 +184,47 @@ export class AnalysisApplicationService implements TaskHandler {
       const normalized = normalizeAnalysisError(error)
       await this.dependencies.analysis.failBatch(batchId, normalized.code, normalized.message, this.dependencies.clock.now())
       throw new TaskExecutionError(normalized.message, normalized.retryable)
+    }
+  }
+
+  /**
+   * 执行成长资料的原子提取、程序证据校验去重和完整提示词综合。
+   * @param batchId 正在运行的分析批次 UUID。
+   * @param snapshot 创建批次时固定的算法配置。
+   * @param baseline 当前灵魂与当前成长提示词基线。
+   * @param inputs 创建批次时固定的成长资料输入。
+   * @returns 两步模型调用与草稿保存完成时结束。
+   */
+  private async executeConfiguredGrowthAlgorithm(
+    batchId: string,
+    snapshot: AiAlgorithmSnapshot,
+    baseline: unknown[],
+    inputs: AnalysisBatchView['inputs'],
+  ): Promise<void> {
+    const extractResponse = await this.dependencies.algorithms!.executeStep(
+      snapshot,
+      'extract',
+      buildAnalysisPromptVariables(baseline, inputs),
+      'growth_atomic_facts',
+      'json_object',
+    )
+    const extracted = modelGrowthExtractionResultSchema.parse(extractResponse.structuredOutput)
+    const facts = validateAndMergeGrowthFacts(extracted.facts, inputs)
+    const synthesizeResponse = await this.dependencies.algorithms!.executeStep(
+      snapshot,
+      'synthesize',
+      { baselineJson: JSON.stringify(baseline), factsJson: JSON.stringify(facts) },
+      'learning_prompt',
+      'text',
+    )
+    const result = modelLearningPromptResultSchema.parse({
+      promptText: synthesizeResponse.structuredOutput,
+      summary: `AI 已依据 ${facts.length} 条去重原子结论生成完整提示词草稿。`,
+    })
+    if (!await this.dependencies.analysis.saveLearningPromptResult(
+      batchId, result, this.dependencies.identifiers.create(), this.dependencies.identifiers.create(), this.dependencies.clock.now(),
+    )) {
+      throw new Error('分析批次保存时状态已变化')
     }
   }
 
@@ -252,6 +311,67 @@ export class AnalysisApplicationService implements TaskHandler {
  */
 function analysisPromptCode(analysisType: AnalysisType): string {
   return `analysis.${analysisType}`
+}
+
+/**
+ * 把成长分析类型映射到固定算法编码；人物记忆仍使用原独立流程。
+ * @param analysisType 世界成长或人物成长。
+ * @returns 对应的两阶段成长算法编码。
+ */
+function growthAlgorithmCode(analysisType: Exclude<AnalysisType, 'persona_memory'>): 'world_growth' | 'persona_growth' {
+  return analysisType === 'world_growth' ? 'world_growth' : 'persona_growth'
+}
+
+/**
+ * 从算法第一步骤生成兼容旧分析批次字段的非敏感模型快照。
+ * @param snapshot 已固定的完整算法配置。
+ * @returns 旧查询和历史页面仍可读取的文本模型快照。
+ */
+function algorithmTextModelSnapshot(snapshot: AiAlgorithmSnapshot) {
+  const step = snapshot.steps[0]!
+  return {
+    provider: 'openai_compatible' as const,
+    model: step.model,
+    endpointOrigin: new URL(step.endpoint).origin,
+  }
+}
+
+/**
+ * 校验证据引用、合并完全相同的结论并计算实际证据数量。
+ * @param facts 模型返回且已通过结构 Schema 的原子结论。
+ * @param inputs 当前批次允许引用的不可变输入。
+ * @returns 稳定排序、证据去重后的原子结论。
+ */
+function validateAndMergeGrowthFacts(
+  facts: Array<{ statement: string, evidenceInputIds: string[], confidence: number }>,
+  inputs: AnalysisBatchView['inputs'],
+): Array<{ statement: string, evidenceInputIds: string[], evidenceCount: number, confidence: number }> {
+  const validEvidenceIds = new Set(inputs.map(input => input.id))
+  const merged = new Map<string, { statement: string, evidenceInputIds: Set<string>, confidence: number }>()
+  for (const fact of facts) {
+    if (fact.evidenceInputIds.some(id => !validEvidenceIds.has(id))) {
+      throw new ApplicationError('MODEL_OUTPUT_INVALID', '模型返回的成长结论引用了不存在的资料', 502)
+    }
+    const key = fact.statement.replace(/\s+/g, ' ').trim().toLocaleLowerCase('zh-CN')
+    const current = merged.get(key)
+    if (current) {
+      fact.evidenceInputIds.forEach(id => current.evidenceInputIds.add(id))
+      current.confidence = Math.max(current.confidence, fact.confidence)
+    }
+    else {
+      merged.set(key, {
+        statement: fact.statement,
+        evidenceInputIds: new Set(fact.evidenceInputIds),
+        confidence: fact.confidence,
+      })
+    }
+  }
+  return [...merged.values()].map(fact => ({
+    statement: fact.statement,
+    evidenceInputIds: [...fact.evidenceInputIds].sort(),
+    evidenceCount: fact.evidenceInputIds.size,
+    confidence: fact.confidence,
+  }))
 }
 
 /**

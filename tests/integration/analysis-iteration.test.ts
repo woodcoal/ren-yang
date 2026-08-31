@@ -19,6 +19,8 @@ import type { Clock } from '../../server/ports/Clock'
 import type { IdentifierGenerator } from '../../server/ports/IdentifierGenerator'
 import type { TextModelPort, TextModelRequest, TextModelResponse } from '../../server/ports/TextModelPort'
 import { createTestAiPromptService } from '../support/createTestAiPromptService'
+import type { AiAlgorithmSnapshot } from '../../server/domain/ai/AiAlgorithmModels'
+import type { AiPromptApplicationService } from '../../server/application/aiPrompts/AiPromptApplicationService'
 
 /** 提供稳定 UUID 的分析测试标识器。 */
 class SequentialIdentifierGenerator implements IdentifierGenerator {
@@ -68,6 +70,67 @@ class AnalysisTextModel implements TextModelPort {
   }
 }
 
+/** 模拟已配置的两阶段成长算法并记录综合步骤收到的去重结论。 */
+class TwoStageGrowthAlgorithms {
+  /** 综合步骤收到的程序校验后结论。 */
+  public synthesizedFacts: unknown[] = []
+
+  /** @param code 世界或人物成长算法编码。 @returns 固定非敏感配置快照。 */
+  async prepare(code: 'world_growth' | 'persona_growth'): Promise<AiAlgorithmSnapshot> {
+    return {
+      algorithmCode: code,
+      implementationVersion: 1,
+      configurationVersionId: '70000000-0000-4000-8000-000000000001',
+      configurationVersion: 3,
+      steps: [
+        {
+          stepKey: 'extract', ordinal: 0, modelDeploymentId: '70000000-0000-4000-8000-000000000002',
+          connectionId: '70000000-0000-4000-8000-000000000003', protocol: 'openai_compatible',
+          endpoint: 'https://growth.test/v1', model: 'extract-model', promptCode: `analysis.${code}_extract`,
+          promptVersionId: '70000000-0000-4000-8000-000000000004',
+          parameters: { temperature: 0, maxOutputTokens: 2_048, timeoutMs: 30_000 },
+        },
+        {
+          stepKey: 'synthesize', ordinal: 1, modelDeploymentId: '70000000-0000-4000-8000-000000000005',
+          connectionId: '70000000-0000-4000-8000-000000000006', protocol: 'openai_compatible',
+          endpoint: 'https://synthesize.test/v1', model: 'synthesize-model', promptCode: `analysis.${code}_synthesize`,
+          promptVersionId: '70000000-0000-4000-8000-000000000007',
+          parameters: { temperature: 0.2, maxOutputTokens: 4_096, timeoutMs: 60_000 },
+        },
+      ],
+    }
+  }
+
+  /**
+   * 提取步骤返回重复结论，综合步骤记录程序去重结果并返回完整草稿。
+   * @param _snapshot 已固定算法快照。
+   * @param stepKey 当前固定步骤。
+   * @param variables 当前提示词变量。
+   * @returns 固定模型响应。
+   */
+  async executeStep(
+    _snapshot: AiAlgorithmSnapshot,
+    stepKey: string,
+    variables: Record<string, string>,
+  ): Promise<TextModelResponse> {
+    if (stepKey === 'extract') {
+      const input = (JSON.parse(variables.inputsJson!) as Array<{ id: string }>)[0]!
+      return {
+        structuredOutput: { facts: [
+          { statement: '优先保障稳定水运。', evidenceInputIds: [input.id], confidence: 0.8 },
+          { statement: '  优先保障稳定水运。 ', evidenceInputIds: [input.id], confidence: 0.9 },
+        ] },
+        usage: { inputTokens: 10, outputTokens: 10, totalTokens: 20 },
+      }
+    }
+    this.synthesizedFacts = JSON.parse(variables.factsJson!) as unknown[]
+    return {
+      structuredOutput: '进行城邦规划时，优先保障稳定水运。',
+      usage: { inputTokens: 10, outputTokens: 10, totalTokens: 20 },
+    }
+  }
+}
+
 let directory: string
 let database: SqliteDatabase
 let analysis: AnalysisApplicationService
@@ -76,17 +139,23 @@ let content: ContentApplicationService
 let worker: WorkerApplicationService
 let model: AnalysisTextModel
 let worldId: string
+let identifiers: SequentialIdentifierGenerator
+let clock: TestClock
+let contentRepository: SqliteContentRepository
+let learningRepository: SqliteLearningRepository
+let analysisRepository: SqliteAnalysisRepository
+let prompts: AiPromptApplicationService
 
 beforeEach(async () => {
   directory = mkdtempSync(resolve(tmpdir(), 'ren-yang-analysis-test-'))
   database = new SqliteDatabase({ dataDirectory: directory, migrationsDirectory: resolve(process.cwd(), 'drizzle') })
-  const identifiers = new SequentialIdentifierGenerator()
-  const clock = new TestClock()
+  identifiers = new SequentialIdentifierGenerator()
+  clock = new TestClock()
   const tokenCounter = new ConservativeTokenCounter()
-  const contentRepository = new SqliteContentRepository(database.getClient())
-  const learningRepository = new SqliteLearningRepository(database.getClient())
+  contentRepository = new SqliteContentRepository(database.getClient())
+  learningRepository = new SqliteLearningRepository(database.getClient())
   const processor = new NodeSourceContentProcessor(identifiers)
-  const prompts = createTestAiPromptService(database, identifiers, clock)
+  prompts = createTestAiPromptService(database, identifiers, clock)
   content = new ContentApplicationService({
     repository: contentRepository,
     souls: contentRepository,
@@ -115,7 +184,7 @@ beforeEach(async () => {
     tokenCounter,
     promptTokenBudgets: { world_growth: 2_500, persona_growth: 2_500, persona_memory: 3_000 },
   })
-  const analysisRepository = new SqliteAnalysisRepository(database.getClient())
+  analysisRepository = new SqliteAnalysisRepository(database.getClient())
   model = new AnalysisTextModel()
   analysis = new AnalysisApplicationService({
     content: contentRepository,
@@ -175,6 +244,44 @@ describe('AI 综合提炼学习提示词', () => {
         sourceAnalysisBatchId: queued.id,
         createdBy: 'analysis',
       },
+    })
+  })
+
+  it('配置成长算法后固定完整快照、校验证据并在综合前合并重复原子结论', async () => {
+    const algorithms = new TwoStageGrowthAlgorithms()
+    analysis = new AnalysisApplicationService({
+      content: contentRepository,
+      souls: contentRepository,
+      learning: learningRepository,
+      analysis: analysisRepository,
+      model,
+      prompts,
+      identifiers,
+      clock,
+      algorithms,
+    })
+    worker = new WorkerApplicationService({
+      taskJobRepository: new SqliteTaskJobRepository(database.getClient()),
+      taskHandler: analysis,
+      clock,
+      leaseDurationMs: 60_000,
+    })
+
+    const queued = await analysis.createBatch('world_growth', worldId, { mode: 'incremental' })
+    const snapshot = database.getClient().prepare(`
+      SELECT algorithm_snapshot_json FROM analysis_batches WHERE id = ?
+    `).get(queued.id) as { algorithm_snapshot_json: string }
+    expect(JSON.parse(snapshot.algorithm_snapshot_json)).toMatchObject({
+      implementationVersion: 1, configurationVersion: 3,
+    })
+
+    await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: true })
+    expect(algorithms.synthesizedFacts).toEqual([expect.objectContaining({
+      statement: '优先保障稳定水运。', evidenceCount: 1, confidence: 0.9,
+    })])
+    expect((await learning.getWorldGrowthWorkspace(worldId)).prompt.draft).toMatchObject({
+      promptText: '进行城邦规划时，优先保障稳定水运。',
+      sourceAnalysisBatchId: queued.id,
     })
   })
 

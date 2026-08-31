@@ -53,6 +53,18 @@ export const modelLearningPromptResultSchema = z.object({
   summary: z.string().trim().min(1, '提炼摘要不能为空').max(4_000, '提炼摘要不能超过 4000 字'),
 })
 
+/** 成长算法提取阶段返回的一项带证据原子结论。 */
+export const modelGrowthAtomicFactSchema = z.object({
+  statement: z.string().trim().min(1).max(20_000),
+  evidenceInputIds: z.array(z.string().uuid()).min(1).max(200),
+  confidence: z.number().min(0).max(1),
+})
+
+/** 成长算法提取阶段的完整结构化输出。 */
+export const modelGrowthExtractionResultSchema = z.object({
+  facts: z.array(modelGrowthAtomicFactSchema).min(1).max(200),
+})
+
 /** 用户对一项提案的审核决定。 */
 export const iterationProposalDecisionSchema = z.object({
   proposalId: z.string().uuid('提案标识无效'),
@@ -70,4 +82,5 @@ export type CreateAnalysisBatchInput = z.infer<typeof createAnalysisBatchSchema>
 export type ListAnalysisBatchesInput = z.infer<typeof listAnalysisBatchesQuerySchema>
 export type ModelIterationResult = z.infer<typeof modelIterationResultSchema>
 export type ModelLearningPromptResult = z.infer<typeof modelLearningPromptResultSchema>
+export type ModelGrowthExtractionResult = z.infer<typeof modelGrowthExtractionResultSchema>
 export type ReviewIterationProposalsInput = z.infer<typeof reviewIterationProposalsSchema>

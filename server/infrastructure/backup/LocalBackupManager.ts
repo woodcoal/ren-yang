@@ -22,8 +22,16 @@ const DATABASE_NAME = 'app.sqlite'
 const FILE_PATH_PATTERN = /^(sources\/[0-9a-f-]{36}\.(txt|md)|artifacts\/[0-9a-f-]{36}\/assets\/[0-9a-f-]{36}\.(png|jpg|webp))$/i
 /** 压平迁移前完整数据库和第一版备份清单使用的迁移条数。 */
 const LEGACY_MIGRATION_COUNT = 10
-/** 单一基线或压平前完整迁移链允许写入数据库的迁移记录条数。 */
-const COMPATIBLE_DATABASE_MIGRATION_COUNTS = new Set([1, LEGACY_MIGRATION_COUNT])
+/** AI 配置迁移前最后一个已发布数据库结构版本。 */
+const PREVIOUS_MIGRATION_VERSION = 1788422400000
+
+/** 当前迁移日志的稳定数据库身份。 */
+interface MigrationIdentity {
+  /** 已应用迁移条数。 */
+  count: number
+  /** 最后一项迁移版本时间。 */
+  version: number
+}
 
 /** 使用 SQLite 在线备份和逐文件哈希实现本地可恢复备份。 */
 export class LocalBackupManager implements BackupPort {
@@ -31,6 +39,8 @@ export class LocalBackupManager implements BackupPort {
   private readonly dataDirectory: string
   /** 迁移日志中当前数据库结构的稳定版本时间。 */
   private readonly migrationVersion: number
+  /** 当前迁移目录中应应用的迁移条数。 */
+  private readonly migrationCount: number
 
   /**
    * 创建本地备份管理器。
@@ -39,7 +49,9 @@ export class LocalBackupManager implements BackupPort {
    */
   constructor(dataDirectory: string, migrationsDirectory: string) {
     this.dataDirectory = absolute(dataDirectory)
-    this.migrationVersion = readMigrationVersion(absolute(migrationsDirectory))
+    const migration = readMigrationIdentity(absolute(migrationsDirectory))
+    this.migrationVersion = migration.version
+    this.migrationCount = migration.count
   }
 
   /** @returns 原子完成的新备份目录绝对路径。 */
@@ -59,7 +71,7 @@ export class LocalBackupManager implements BackupPort {
         source.close()
       }
       await normalizeBackupDatabase(resolve(pending, DATABASE_NAME))
-      const references = inspectDatabase(resolve(pending, DATABASE_NAME), this.migrationVersion)
+      const references = inspectDatabase(resolve(pending, DATABASE_NAME), this.currentMigrationIdentity())
       const files: BackupManifestFile[] = [await describeFile(resolve(pending, DATABASE_NAME), DATABASE_NAME, 'application/vnd.sqlite3')]
       for (const [relativePath, mediaType] of references) {
         const sourcePath = resolveControlled(this.dataDirectory, relativePath)
@@ -93,7 +105,7 @@ export class LocalBackupManager implements BackupPort {
     const manifestPath = resolve(root, MANIFEST_NAME)
     await assertRegularFile(manifestPath)
     const manifest = parseManifest(await readFile(manifestPath, 'utf8'))
-    assertManifestMigrationCompatibility(manifest, this.migrationVersion)
+    assertManifestMigrationCompatibility(manifest, this.currentMigrationIdentity())
     const paths = new Set<string>()
     let totalBytes = 0
     for (const file of manifest.files) {
@@ -112,7 +124,7 @@ export class LocalBackupManager implements BackupPort {
     if (actualPaths.size !== declaredPaths.size || [...actualPaths].some(path => !declaredPaths.has(path))) {
       throw new Error('备份目录包含未列入清单的额外文件')
     }
-    const references = inspectDatabase(resolve(root, DATABASE_NAME), this.migrationVersion)
+    const references = inspectDatabase(resolve(root, DATABASE_NAME), this.currentMigrationIdentity())
     const expectedMediaTypes = new Map([[DATABASE_NAME, 'application/vnd.sqlite3'], ...references.entries()])
     const expected = new Set(expectedMediaTypes.keys())
     if (expected.size !== paths.size || [...expected].some(path => !paths.has(path))) {
@@ -157,6 +169,11 @@ export class LocalBackupManager implements BackupPort {
       await rm(staging, { recursive: true, force: true })
       throw error
     }
+  }
+
+  /** @returns 当前程序迁移目录的条数与最终版本时间。 */
+  private currentMigrationIdentity(): MigrationIdentity {
+    return { count: this.migrationCount, version: this.migrationVersion }
   }
 }
 
@@ -222,10 +239,10 @@ function resolveBackupScanDirectory(root: string, relativeDirectory: string): st
 /**
  * 校验 SQLite 副本结构版本并读取全部受控文件引用。
  * @param databasePath SQLite 副本。
- * @param expectedMigrationVersion 当前单一基线的稳定版本时间。
+ * @param expectedMigration 当前程序要求的迁移身份。
  * @returns 数据库引用文件和媒体类型。
  */
-function inspectDatabase(databasePath: string, expectedMigrationVersion: number): Map<string, string> {
+function inspectDatabase(databasePath: string, expectedMigration: MigrationIdentity): Map<string, string> {
   const database = new Database(databasePath, { readonly: true, fileMustExist: true })
   try {
     if (String(firstValue(database.pragma('integrity_check'))) !== 'ok') throw new Error('备份 SQLite 完整性检查失败')
@@ -233,8 +250,7 @@ function inspectDatabase(databasePath: string, expectedMigrationVersion: number)
     const migration = database.prepare(`
       SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations
     `).get() as { count: number, version: number | null }
-    if (migration.version !== expectedMigrationVersion
-      || !COMPATIBLE_DATABASE_MIGRATION_COUNTS.has(migration.count)) {
+    if (!isCompatibleDatabaseMigration(migration, expectedMigration)) {
       throw new Error('备份 SQLite 迁移版本不兼容')
     }
     const references = new Map<string, string>()
@@ -256,6 +272,18 @@ function inspectDatabase(databasePath: string, expectedMigrationVersion: number)
   finally {
     database.close()
   }
+}
+
+/**
+ * 接受当前完整迁移，或 AI 配置迁移前的单基线与完整十步历史链。
+ * @param actual 备份数据库实际迁移身份。
+ * @param expected 当前程序迁移身份。
+ * @returns 数据库能够由当前程序安全升级时为 true。
+ */
+function isCompatibleDatabaseMigration(actual: MigrationIdentity, expected: MigrationIdentity): boolean {
+  if (actual.version === expected.version && actual.count === expected.count) return true
+  return actual.version === PREVIOUS_MIGRATION_VERSION
+    && (actual.count === 1 || actual.count === LEGACY_MIGRATION_COUNT)
 }
 
 /** @param databasePath 待启用数据库。 @returns 重建 FTS、撤销会话并标记外部索引待重建。 */
@@ -336,15 +364,16 @@ function parseManifest(value: string): CompatibleBackupManifest {
 /**
  * 确认备份清单指向当前单一基线或压平前的完整十步迁移链。
  * @param manifest 已通过结构校验的新旧清单。
- * @param expectedMigrationVersion 当前单一基线版本时间。
+ * @param expectedMigration 当前程序迁移身份。
  * @returns 兼容时结束；版本不匹配时抛出错误。
  */
 function assertManifestMigrationCompatibility(
   manifest: CompatibleBackupManifest,
-  expectedMigrationVersion: number,
+  expectedMigration: MigrationIdentity,
 ): void {
   const compatible = manifest.version === 2
-    ? manifest.migrationVersion === expectedMigrationVersion
+    ? manifest.migrationVersion === expectedMigration.version
+      || manifest.migrationVersion === PREVIOUS_MIGRATION_VERSION
     : manifest.migrationCount === LEGACY_MIGRATION_COUNT
   if (!compatible) throw new Error('备份迁移版本与当前程序不兼容')
 }
@@ -371,17 +400,18 @@ function absolute(value: string): string {
 }
 
 /**
- * 读取 Drizzle 日志中最后一项稳定迁移版本时间。
+ * 读取 Drizzle 日志中的迁移条数与最后一项稳定版本时间。
  * @param migrationsDirectory Drizzle 迁移目录。
- * @returns 当前数据库结构的迁移版本时间。
+ * @returns 当前数据库结构的完整迁移身份。
  */
-function readMigrationVersion(migrationsDirectory: string): number {
+function readMigrationIdentity(migrationsDirectory: string): MigrationIdentity {
   const value = JSON.parse(requireText(resolve(migrationsDirectory, 'meta', '_journal.json'))) as {
     entries?: Array<{ when?: unknown }>
   }
-  const version = value.entries?.at(-1)?.when
-  if (!Number.isInteger(version) || Number(version) <= 0) throw new Error('Drizzle 迁移日志无效')
-  return Number(version)
+  const entries = value.entries
+  const version = entries?.at(-1)?.when
+  if (!entries?.length || !Number.isInteger(version) || Number(version) <= 0) throw new Error('Drizzle 迁移日志无效')
+  return { count: entries.length, version: Number(version) }
 }
 
 /** @param path 文本文件路径。 @returns UTF-8 正文。 */

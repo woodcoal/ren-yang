@@ -2,6 +2,7 @@ import type { TextModelParameters } from '../../shared/schemas/generation'
 import type { ListAnalysisBatchesInput, ModelIterationResult, ModelLearningPromptResult, ReviewIterationProposalsInput } from '../../shared/schemas/analysis'
 import type { AnalysisBatchView, AnalysisType } from '../../shared/types/analysis'
 import type { TextModelSnapshot } from '../domain/generation/GenerationModels'
+import type { AiAlgorithmSnapshot } from '../domain/ai/AiAlgorithmModels'
 
 /** 创建分析批次的单项不可变输入。 */
 export interface CreateAnalysisBatchInputRecord {
@@ -45,6 +46,8 @@ export interface CreateAnalysisBatchRecord {
   parameters: TextModelParameters
   /** 分析提示版本。 */
   promptVersion: string
+  /** 两阶段成长算法的完整非敏感快照；人物记忆与迁移前记录为空。 */
+  algorithmSnapshot: AiAlgorithmSnapshot | null
   /** 实际输入。 */
   inputs: CreateAnalysisBatchInputRecord[]
   /** 创建时间。 */
@@ -63,6 +66,8 @@ export interface AnalysisBatchRuntimeRecord {
   parameters: TextModelParameters
   /** 分析提示版本。 */
   promptVersion: string
+  /** 两阶段成长算法的完整非敏感快照；旧批次为空。 */
+  algorithmSnapshot: AiAlgorithmSnapshot | null
 }
 
 /** AI 分析批次、提案和原子审核事实源。 */

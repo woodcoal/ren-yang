@@ -6,7 +6,7 @@ const FORMAT_VERSION = 'v1'
 /** AES-GCM 推荐的 96 位随机向量长度。 */
 const IV_BYTES = 12
 
-/** 使用 AES-256-GCM 加密可取回敏感文本，并通过 HKDF 与会话用途隔离密钥。 */
+/** 使用 AES-256-GCM 加密可取回敏感文本，并通过 HKDF 与其他用途隔离密钥。 */
 export class AesGcmSecretCipher implements SecretCipher {
   /** AES-256 使用的 32 字节派生密钥。 */
   private readonly key: Buffer
@@ -16,7 +16,8 @@ export class AesGcmSecretCipher implements SecretCipher {
    * @param keyMaterial 仓库外注入且长度不少于 32 字符的服务端密钥材料。
    */
   constructor(keyMaterial: string) {
-    if (keyMaterial.length < 32) throw new Error('人物凭据加密密钥材料不能少于 32 个字符')
+    if (keyMaterial.length < 32) throw new Error('凭据加密密钥材料不能少于 32 个字符')
+    // 保留既有 HKDF info，确保升级后仍能解密已经保存的人物凭据。
     this.key = Buffer.from(hkdfSync('sha256', keyMaterial, '人样', '人物第三方账号凭据-v1', 32))
   }
 
@@ -43,7 +44,7 @@ export class AesGcmSecretCipher implements SecretCipher {
   decrypt(ciphertext: string, context: string): string {
     const [version, ivValue, tagValue, encryptedValue, extra] = ciphertext.split('.')
     if (version !== FORMAT_VERSION || !ivValue || !tagValue || encryptedValue === undefined || extra !== undefined) {
-      throw new Error('人物凭据密文格式无效')
+      throw new Error('凭据密文格式无效')
     }
     const decipher = createDecipheriv('aes-256-gcm', this.key, Buffer.from(ivValue, 'base64url'))
     decipher.setAAD(Buffer.from(context, 'utf8'))

@@ -18,6 +18,7 @@ import type {
   CreateAnalysisBatchRecord,
 } from '../../ports/AnalysisRepository'
 import type { TextModelSnapshot } from '../../domain/generation/GenerationModels'
+import type { AiAlgorithmSnapshot } from '../../domain/ai/AiAlgorithmModels'
 import { insertAuditEvent } from './AuditSql'
 
 /** 使用 SQLite 短事务保存分析批次、AI 提案和人工审核应用结果。 */
@@ -44,12 +45,13 @@ export class SqliteAnalysisRepository implements AnalysisRepository {
         INSERT INTO analysis_batches (
           id, analysis_type, world_id, persona_id, mode, baseline_soul_version_id,
           baseline_json, model_snapshot_json, parameter_snapshot_json, prompt_version,
-          status, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?)
+          algorithm_snapshot_json, status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?)
       `).run(
         record.id, record.analysisType, worldId, personaId, record.mode, record.baselineSoulVersionId,
         JSON.stringify(record.baseline), JSON.stringify(record.model), JSON.stringify(record.parameters),
-        record.promptVersion, record.timestamp, record.timestamp,
+        record.promptVersion, record.algorithmSnapshot ? JSON.stringify(record.algorithmSnapshot) : null,
+        record.timestamp, record.timestamp,
       )
       const insertInput = this.client.prepare(`
         INSERT INTO analysis_batch_inputs (
@@ -145,6 +147,9 @@ export class SqliteAnalysisRepository implements AnalysisRepository {
         model: JSON.parse(String(row.model_snapshot_json)) as TextModelSnapshot,
         parameters: textModelParametersSchema.parse(JSON.parse(String(row.parameter_snapshot_json))),
         promptVersion: String(row.prompt_version),
+        algorithmSnapshot: row.algorithm_snapshot_json
+          ? JSON.parse(String(row.algorithm_snapshot_json)) as AiAlgorithmSnapshot
+          : null,
       }
     }).immediate()
   }

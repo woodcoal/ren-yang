@@ -55,7 +55,7 @@ function formatTime(timestamp: number): string {
 
 <template>
   <div>
-    <ContentPageHeader title="系统 AI 设置" description="分别控制兴趣分析、内容分析、草稿生成和反馈分类；不影响结构化图文创作。" />
+    <ContentPageHeader title="系统 AI 设置" description="控制尚未迁移到固定算法的内部 AI 操作；灵魂和成长参数在 AI 算法页面维护。" />
 
     <div class="status-strip page-status-strip" aria-label="系统 AI 设置状态摘要">
       <div class="status-cell"><span class="status-kicker">配置范围</span><strong class="status-value">4 类操作</strong></div>
@@ -69,7 +69,7 @@ function formatTime(timestamp: number): string {
         color="neutral"
         variant="subtle"
         title="参数作用边界"
-        description="这里仅控制系统内部 AI 调用；内容模板只规定图文结构，生成设置只控制结构化图文创作，提示词页只维护提示词内容。"
+        description="这里控制兴趣判断、人物记忆、草稿生成和反馈分类；灵魂与成长参数由 AI 算法配置，提示词正文仍在提示词页维护。"
       />
       <UAlert v-if="error" color="error" title="系统 AI 设置加载失败" :actions="[{ label: '重试', onClick: () => refresh() }]" />
       <UAlert v-if="actionError" color="error" title="保存失败" :description="actionError" />

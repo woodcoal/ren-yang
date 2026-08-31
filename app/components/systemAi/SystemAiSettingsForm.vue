@@ -51,8 +51,8 @@ function handleSubmit(event: FormSubmitEvent<SystemAiSettingsValues>): void {
       <div class="section-heading">
         <div class="section-heading-copy">
           <p class="eyebrow">内容提炼</p>
-          <h2 id="content-analysis-ai-heading">内容分析</h2>
-          <p>用于灵魂提示词 AI 整理，以及世界成长、人物成长和人物记忆提炼。</p>
+          <h2 id="content-analysis-ai-heading">记忆提炼</h2>
+          <p>当前用于人物记忆提炼；灵魂和成长步骤的参数已迁移到 AI 算法页面。</p>
         </div>
       </div>
       <OperationParameterFields :model-value="values.contentAnalysis" name-prefix="contentAnalysis" />
