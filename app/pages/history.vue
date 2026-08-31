@@ -10,12 +10,13 @@ const route = useRoute()
 /** 任务记录页允许的任务类型。 */
 const historyKinds: readonly HistoryKind[] = [
   'interest_assessment', 'artifact_generation', 'world_growth', 'persona_growth', 'persona_memory',
+  'openviking_source_sync', 'openviking_session_sync', 'openviking_user_sync',
 ]
 
 /** 任务记录页允许的统一状态。 */
 const historyStatuses: readonly HistoryStatus[] = [
   'planning', 'awaiting_confirmation', 'queued', 'running', 'succeeded', 'partial', 'failed', 'canceled',
-  'awaiting_review', 'completed',
+  'cancel_requested', 'awaiting_review', 'completed',
 ]
 
 /** @param value 查询参数原值。 @param fallback 无效时的默认值。 @returns 正整数。 */
@@ -84,13 +85,15 @@ const error = computed(() => historyError.value ?? personaError.value)
 const statusLabels: Record<HistoryStatus, string> = {
   planning: '规划中', awaiting_confirmation: '等待确认', queued: '排队中', running: '执行中',
   succeeded: '成功', partial: '部分成功', failed: '失败', canceled: '已取消',
-  awaiting_review: '等待审核', completed: '已完成',
+  cancel_requested: '取消中', awaiting_review: '等待审核', completed: '已完成',
 }
 
 /** 任务类型中文标签。 */
 const kindLabels: Record<HistoryKind, string> = {
   interest_assessment: '兴趣判断', artifact_generation: '图文创作',
   world_growth: '世界成长提炼', persona_growth: '人物成长提炼', persona_memory: '人物记忆提炼',
+  openviking_source_sync: 'OpenViking 资料同步', openviking_session_sync: 'OpenViking Session 同步',
+  openviking_user_sync: 'OpenViking 用户校准',
 }
 
 /** 可选择的每页任务数量。 */
@@ -129,6 +132,7 @@ function descriptionPreview(value: string): string {
 
 /** @param item 统一任务记录。 @returns 任务详情或所属对象详情地址。 */
 function detailsPath(item: HistoryItemView): string {
+  if (item.sourceType === 'task') return '/system-records'
   if (item.sourceType === 'run') return `/runs/${item.id}`
   return item.subjectType === 'world' ? `/worlds/${item.subjectId}` : `/personas/${item.subjectId}`
 }
@@ -136,6 +140,7 @@ function detailsPath(item: HistoryItemView): string {
 /** @param item 统一任务记录。 @returns 当前对象存在时的详情地址，否则返回 null。 */
 function subjectPath(item: HistoryItemView): string | null {
   if (!item.subjectExists) return null
+  if (item.subjectType === 'system') return '/system-records'
   return item.subjectType === 'world' ? `/worlds/${item.subjectId}` : `/personas/${item.subjectId}`
 }
 
@@ -201,6 +206,9 @@ function formatTime(timestamp: number): string {
               <option value="world_growth">世界成长提炼</option>
               <option value="persona_growth">人物成长提炼</option>
               <option value="persona_memory">人物记忆提炼</option>
+              <option value="openviking_source_sync">OpenViking 资料同步</option>
+              <option value="openviking_session_sync">OpenViking Session 同步</option>
+              <option value="openviking_user_sync">OpenViking 用户校准</option>
             </select>
             <select v-model="filters.status" class="native-control min-w-0 flex-1" aria-label="按状态筛选">
               <option value="">全部状态</option>
@@ -237,7 +245,8 @@ function formatTime(timestamp: number): string {
                   </td>
                   <td data-label="状态">
                     <UBadge :color="statusColor(item.status)" variant="subtle">{{ statusLabels[item.status] }}</UBadge>
-                    <span v-if="item.status === 'failed'" class="content-table-description text-error">{{
+                    <span v-if="item.errorCode || item.errorMessage || item.status === 'failed'"
+                      class="content-table-description text-error">{{
                       failureDescription(item) }}</span>
                   </td>
                   <td data-label="创建时间"><span>{{ formatTime(item.createdAt) }}</span><span

@@ -115,4 +115,36 @@ describe('统一任务记录分页', () => {
       expect.objectContaining({ sourceType: 'analysis', errorCode: 'OUTPUT_INVALID', errorMessage: '提炼结果结构无效' }),
     ]))
   })
+
+  it('把三类 OpenViking 后台任务合并到可筛选的任务记录', async () => {
+    const client = database.getClient()
+    const insert = client.prepare(`
+      INSERT INTO task_jobs (
+        id, type, payload_json, status, attempt_count, max_attempts, last_error, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, 3, ?, ?, ?)
+    `)
+    insert.run('50000000-0000-4000-8000-000000000001', 'sync_context_source',
+      JSON.stringify({ entityType: 'source_material', sourceId: 'missing-source' }),
+      'queued', 1, 'OpenViking 请求超时', 900, 900)
+    insert.run('50000000-0000-4000-8000-000000000002', 'sync_openviking_session',
+      JSON.stringify({ sourceType: 'run', sourceId: 'missing-run' }),
+      'running', 1, null, 1_000, 1_000)
+    insert.run('50000000-0000-4000-8000-000000000003', 'sync_openviking_users', '{}',
+      'succeeded', 1, null, 1_100, 1_100)
+
+    const allTasks = await repository.listPage({ page: 1, pageSize: 5 })
+    const failedRetry = await repository.listPage({
+      page: 1, pageSize: 5, kind: 'openviking_source_sync', status: 'queued',
+    })
+
+    expect(allTasks.items.slice(0, 3).map(item => item.kind)).toEqual([
+      'openviking_user_sync', 'openviking_session_sync', 'openviking_source_sync',
+    ])
+    expect(failedRetry.items).toEqual([
+      expect.objectContaining({
+        sourceType: 'task', subjectType: 'system', subjectName: 'OpenViking',
+        description: '已删除或未知资料', secondary: '已尝试 1 / 3 次', errorMessage: 'OpenViking 请求超时',
+      }),
+    ])
+  })
 })

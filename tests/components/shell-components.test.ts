@@ -50,7 +50,7 @@ describe('后台品牌与主题组件', () => {
     expect(wrapper.find('.topbar-account').exists()).toBe(false)
   })
 
-  it('顶部栏只显示尚未领取的有效待处理任务数量', async () => {
+  it('顶部栏显示包含 OpenViking 在内的全部排队任务数量', async () => {
     const wrapper = await mountSuspended(AppTopbar, {
       props: {
         sidebarCollapsed: false,
@@ -60,9 +60,8 @@ describe('后台品牌与主题组件', () => {
       },
     })
 
-    expect(wrapper.get('.topbar-status-link').text()).toBe('2 项待处理')
+    expect(wrapper.get('.topbar-status-link').text()).toBe('12 项待处理')
     expect(wrapper.get('.topbar-status-dot').classes()).toContain('topbar-status-dot--active')
-    expect(wrapper.text()).not.toContain('12 项待处理')
   })
 
   it('侧栏菜单分组默认只展开当前分组并允许独立切换', async () => {
@@ -84,6 +83,20 @@ describe('后台品牌与主题组件', () => {
 
     expect(toggles[1]!.attributes('aria-expanded')).toBe('true')
     expect(wrapper.findAll('.sidebar-navigation-items--expanded')).toHaveLength(2)
+  })
+
+  it('侧栏任务记录显示包含 OpenViking 在内的全部排队任务数量', async () => {
+    const wrapper = await mountSuspended(AppSidebar, {
+      props: {
+        collapsed: false,
+        mobileOpen: false,
+        username: 'admin',
+        taskQueue: { userQueued: 2, queued: 12, running: 3, cancelRequested: 1, total: 16 },
+        capabilities: null,
+      },
+    })
+
+    expect(wrapper.get('a[href="/history"] .sidebar-navigation-count').text()).toBe('12')
   })
 
   it('页面标题保留面包屑但不再显示路由代码', async () => {

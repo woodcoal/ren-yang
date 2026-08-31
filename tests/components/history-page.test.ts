@@ -40,6 +40,13 @@ registerEndpoint('/api/v1/history', (event) => {
         subjectName: '林默', subjectExists: true, status: 'failed', description: '1 项原始素材',
         secondary: '结合新增素材', errorCode: null, errorMessage: null, createdAt: 500,
       },
+      {
+        sourceType: 'task',
+        id: '70000000-0000-4000-8000-000000000004',
+        kind: 'openviking_source_sync', subjectType: 'system', subjectId: 'openviking',
+        subjectName: 'OpenViking', subjectExists: true, status: 'queued', description: '学院档案',
+        secondary: '已尝试 1 / 3 次', errorCode: null, errorMessage: 'OpenViking 请求超时', createdAt: 250,
+      },
     ],
     total: 6,
     page,
@@ -72,5 +79,15 @@ describe('统一任务记录页', () => {
 
     expect(wrapper.text()).toContain('PROVIDER_UNAVAILABLE：模型服务暂时不可用')
     expect(wrapper.text()).toContain('未记录失败原因')
+  })
+
+  it('OpenViking 排队任务显示类型、尝试次数和最近错误', async () => {
+    const wrapper = await mountSuspended(HistoryPage, { route: '/history' })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('OpenViking 资料同步')
+    expect(wrapper.text()).toContain('已尝试 1 / 3 次')
+    expect(wrapper.text()).toContain('OpenViking 请求超时')
+    expect(wrapper.get('a[href="/system-records"]').exists()).toBe(true)
   })
 })

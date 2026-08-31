@@ -1,15 +1,15 @@
 import type { HistoryKind, HistoryStatus } from '../schemas/history'
 
-/** 任务记录页统一展示的一项生成运行或分析批次。 */
+/** 任务记录页统一展示的一项生成运行、分析批次或 OpenViking 后台任务。 */
 export interface HistoryItemView {
-  /** 两类任务记录的来源。 */
-  sourceType: 'run' | 'analysis'
-  /** 生成运行或分析批次 UUID。 */
+  /** 三类任务记录的来源。 */
+  sourceType: 'run' | 'analysis' | 'task'
+  /** 生成运行、分析批次或后台任务 UUID。 */
   id: string
   /** 任务类型。 */
   kind: HistoryKind
-  /** 任务所属人物或世界。 */
-  subjectType: 'persona' | 'world'
+  /** 任务所属人物、世界或系统能力。 */
+  subjectType: 'persona' | 'world' | 'system'
   /** 任务所属对象 UUID。 */
   subjectId: string
   /** 当前对象名称；对象已删除时返回稳定占位名称。 */

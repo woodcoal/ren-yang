@@ -3,12 +3,13 @@ import { z } from 'zod'
 /** 任务记录页支持的任务类型。 */
 export const historyKindSchema = z.enum([
   'interest_assessment', 'artifact_generation', 'world_growth', 'persona_growth', 'persona_memory',
+  'openviking_source_sync', 'openviking_session_sync', 'openviking_user_sync',
 ])
 
 /** 任务记录页支持的统一状态。 */
 export const historyStatusSchema = z.enum([
   'planning', 'awaiting_confirmation', 'queued', 'running', 'succeeded', 'partial', 'failed', 'canceled',
-  'awaiting_review', 'completed',
+  'cancel_requested', 'awaiting_review', 'completed',
 ])
 
 /** 任务记录页服务端分页与筛选参数。 */

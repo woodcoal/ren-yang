@@ -63,7 +63,7 @@ test('侧栏分组可收缩、滚动条隐藏且页面具有浏览器标题', as
   await expect(page.locator('.sidebar-navigation')).toHaveCSS('scrollbar-width', 'none')
 })
 
-test('顶部队列只显示尚未领取的有效待处理数量', async ({ page }) => {
+test('顶部与侧栏显示包含 OpenViking 在内的全部排队任务数量', async ({ page }) => {
   await enterApplication(page)
 
   // 模拟健康摘要中同时存在排队、执行中和取消中的任务，验证顶部不会显示未终止任务总数。
@@ -83,8 +83,9 @@ test('顶部队列只显示尚未领取的有效待处理数量', async ({ page 
   })
 
   await page.waitForResponse(response => response.url().endsWith('/api/v1/system/health'))
-  await expect(page.locator('.topbar-status-link')).toHaveText('2 项待处理')
+  await expect(page.locator('.topbar-status-link')).toHaveText('12 项待处理')
   await expect(page.locator('.topbar-status-dot')).toHaveClass(/topbar-status-dot--active/)
+  await expect(page.locator('a[href="/history"] .sidebar-navigation-count')).toHaveText('12')
 })
 
 test('任务列表直接显示失败原因', async ({ page }) => {
@@ -96,13 +97,21 @@ test('任务列表直接显示失败原因', async ({ page }) => {
       contentType: 'application/json',
       body: JSON.stringify({
         data: {
-          items: [{
-            sourceType: 'run', id: '70000000-0000-4000-8000-000000000001', kind: 'artifact_generation',
-            subjectType: 'persona', subjectId: '10000000-0000-4000-8000-000000000001', subjectName: '林默',
-            subjectExists: true, status: 'failed', description: '生成一篇人物小传', secondary: '测试模型',
-            errorCode: 'PROVIDER_UNAVAILABLE', errorMessage: '模型服务暂时不可用', createdAt: 1_000,
-          }],
-          total: 1, page: 1, pageSize: 10, totalPages: 1,
+          items: [
+            {
+              sourceType: 'run', id: '70000000-0000-4000-8000-000000000001', kind: 'artifact_generation',
+              subjectType: 'persona', subjectId: '10000000-0000-4000-8000-000000000001', subjectName: '林默',
+              subjectExists: true, status: 'failed', description: '生成一篇人物小传', secondary: '测试模型',
+              errorCode: 'PROVIDER_UNAVAILABLE', errorMessage: '模型服务暂时不可用', createdAt: 1_000,
+            },
+            {
+              sourceType: 'task', id: '70000000-0000-4000-8000-000000000002', kind: 'openviking_source_sync',
+              subjectType: 'system', subjectId: 'openviking', subjectName: 'OpenViking', subjectExists: true,
+              status: 'queued', description: '学院档案', secondary: '已尝试 1 / 3 次', errorCode: null,
+              errorMessage: 'OpenViking 请求超时', createdAt: 900,
+            },
+          ],
+          total: 2, page: 1, pageSize: 10, totalPages: 1,
         },
       }),
     })
@@ -111,4 +120,7 @@ test('任务列表直接显示失败原因', async ({ page }) => {
   await page.getByRole('link', { name: '任务记录', exact: true }).click()
   await expect(page).toHaveURL(/\/history/)
   await expect(page.getByText('PROVIDER_UNAVAILABLE：模型服务暂时不可用', { exact: true })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'OpenViking 资料同步', exact: true })).toBeVisible()
+  await expect(page.getByText('已尝试 1 / 3 次', { exact: true })).toBeVisible()
+  await expect(page.getByText('OpenViking 请求超时', { exact: true })).toBeVisible()
 })

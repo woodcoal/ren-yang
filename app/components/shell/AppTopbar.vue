@@ -49,8 +49,8 @@ const emit = defineEmits<{
 
     <div class="topbar-end">
       <NuxtLink to="/history" class="topbar-status-link">
-        <span class="topbar-status-dot" :class="{ 'topbar-status-dot--active': taskQueue?.userQueued }" aria-hidden="true" />
-        <span>{{ taskQueue?.userQueued ? `${taskQueue.userQueued} 项待处理` : '暂无待处理任务' }}</span>
+        <span class="topbar-status-dot" :class="{ 'topbar-status-dot--active': taskQueue?.queued }" aria-hidden="true" />
+        <span>{{ taskQueue?.queued ? `${taskQueue.queued} 项待处理` : '暂无待处理任务' }}</span>
       </NuxtLink>
       <ShellThemeSelector />
       <UButton
