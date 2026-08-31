@@ -12,6 +12,8 @@ export interface ContextSyncTaskQueue {
    * @param sourceId 资料 UUID。
    * @param taskId 新任务 UUID。
    * @param timestamp 创建时间，UTC Unix 毫秒。
+   * @param entityType 普通资料或人物反馈资料。
+   * @param notBefore 最早领取时间；省略时立即可运行。
    * @returns 无返回值。
    */
   enqueueSourceSynchronization(
@@ -19,6 +21,7 @@ export interface ContextSyncTaskQueue {
     taskId: string,
     timestamp: number,
     entityType?: 'source_material' | 'persona_feedback_source',
+    notBefore?: number,
   ): Promise<void>
   /**
    * 为一项 SQLite 交流创建持久 Session 同步任务。

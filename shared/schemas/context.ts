@@ -10,6 +10,16 @@ export const reindexContextSchema = z.object({
   confirmed: z.literal(true, { error: '重建索引前必须明确确认' }),
 })
 
+/** 管理员可以重试全部失败投影，或指定一项资料实体。 */
+export const retryContextSyncSchema = z.discriminatedUnion('scope', [
+  z.object({ scope: z.literal('all') }),
+  z.object({
+    scope: z.literal('entity'),
+    entityType: z.enum(['source_material', 'persona_feedback_source']),
+    sourceId: z.string().trim().min(1).max(200),
+  }),
+])
+
 /** OpenViking 服务地址不允许夹带凭据、查询参数或片段。 */
 const openVikingEndpointSchema = z.union([
   z.literal(''),

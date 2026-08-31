@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import type { ApiResponse } from '#shared/types/api'
 import type { ContextSyncRecordPageView, ContextSyncRecordView } from '#shared/types/context'
 import type { AuditEventPageView, AuditEventView } from '#shared/types/system'
+import { getApiErrorMessage } from '../utils/apiError'
 
 const route = useRoute()
 
@@ -46,6 +47,8 @@ const recordPage = computed(() => data.value?.data ?? {
 })
 const auditEvents = computed(() => recordType.value === 'audit' ? recordPage.value.items as AuditEventView[] : [])
 const syncRecords = computed(() => recordType.value === 'sync' ? recordPage.value.items as ContextSyncRecordView[] : [])
+const retryingSourceId = shallowRef<string | null>(null)
+const { notifySuccess, notifyError } = useOperationNotifications()
 
 /** 可选择的每页记录数量。 */
 const pageSizeItems = [
@@ -113,7 +116,29 @@ function scopeLabel(record: ContextSyncRecordView): string {
 
 /** @param record 同步日志。 @returns 中文同步状态。 */
 function syncStatusLabel(record: ContextSyncRecordView): string {
-  return record.status === 'synchronized' ? '已同步' : record.status === 'failed' ? '失败' : '待同步'
+  if (record.status === 'synchronized') return '已同步'
+  if (record.status === 'pending') return '同步中'
+  return record.nextRetryAt === null ? '需要处理' : '等待自动重试'
+}
+
+/** @param record 失败投影。 @returns 重新安排同一资料全部投影后刷新列表。 */
+async function retrySyncRecord(record: ContextSyncRecordView): Promise<void> {
+  if (retryingSourceId.value) return
+  retryingSourceId.value = record.sourceId
+  try {
+    const response = await $fetch<ApiResponse<{ enqueued: number }>>('/api/v1/system/context/retry', {
+      method: 'POST',
+      body: { scope: 'entity', entityType: record.entityType, sourceId: record.sourceId },
+    })
+    notifySuccess(`已重新安排 ${response.data.enqueued} 项资料`, '同步重试已安排')
+    await refresh()
+  }
+  catch (error: unknown) {
+    notifyError(getApiErrorMessage(error, '重新安排同步失败'))
+  }
+  finally {
+    retryingSourceId.value = null
+  }
 }
 
 /** @param record 同步日志。 @returns 状态徽标颜色。 */
@@ -146,14 +171,15 @@ function syncStatusColor(record: ContextSyncRecordView): 'success' | 'error' | '
         <template v-if="recordType === 'sync' && syncRecords.length">
           <div class="content-table-wrap list-management-table">
             <table class="content-table">
-              <thead><tr><th>对象</th><th>范围</th><th>操作与状态</th><th>远端位置或错误</th><th>更新时间</th></tr></thead>
+              <thead><tr><th>对象</th><th>范围</th><th>操作与状态</th><th>远端位置或错误</th><th>更新时间</th><th>操作</th></tr></thead>
               <tbody>
                 <tr v-for="record in syncRecords" :key="record.id">
                   <td data-label="对象"><strong class="content-table-title">{{ entityTypeLabel(record) }}</strong><span class="content-table-description break-all">{{ record.sourceId }}</span></td>
                   <td data-label="范围"><span class="content-table-title">{{ scopeLabel(record) }}</span><span class="content-table-description break-all">{{ record.userId }}</span></td>
                   <td data-label="操作与状态"><span class="content-table-title">{{ record.operation === 'upsert' ? '写入或更新' : '删除' }}</span><UBadge class="mt-1" :color="syncStatusColor(record)" variant="subtle">{{ syncStatusLabel(record) }}</UBadge></td>
-                  <td data-label="远端位置或错误"><span :class="record.error ? 'text-error' : 'text-muted'" class="break-all">{{ record.error ?? record.remoteUri ?? '尚无远端 URI' }}</span></td>
-                  <td data-label="更新时间"><span class="whitespace-nowrap">{{ formatTime(record.updatedAt) }}</span></td>
+                  <td data-label="远端位置或错误"><span :class="record.error ? 'text-error' : 'text-muted'" class="break-all">{{ record.error ?? record.remoteUri ?? '尚无远端 URI' }}</span><span v-if="record.errorCode || record.errorStage" class="content-table-description">{{ [record.errorStage, record.errorCode].filter(Boolean).join(' · ') }}</span></td>
+                  <td data-label="更新时间"><span class="whitespace-nowrap">{{ formatTime(record.updatedAt) }}</span><span v-if="record.nextRetryAt" class="content-table-description whitespace-nowrap">下次重试 {{ formatTime(record.nextRetryAt) }}</span></td>
+                  <td data-label="操作"><UButton v-if="record.status === 'failed'" size="xs" color="neutral" variant="soft" icon="i-lucide-refresh-cw" :loading="retryingSourceId === record.sourceId" :disabled="Boolean(retryingSourceId)" @click="retrySyncRecord(record)">重新同步</UButton><span v-else class="text-muted">—</span></td>
                 </tr>
               </tbody>
             </table>

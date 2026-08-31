@@ -46,6 +46,10 @@ export class OpenVikingHttpContextProvider implements ContextProvider, OpenVikin
   private readonly userKeys = new Map<string, string>()
   /** 防止并发请求重复创建或刷新同一个世界 User。 */
   private readonly userKeyPromises = new Map<string, Promise<string>>()
+  /** 短期复用一次成功的远端处理队列预检。 */
+  private writeHealthPromise: Promise<void> | undefined
+  /** 处理队列预检缓存到期时间。 */
+  private writeHealthExpiresAt = 0
 
   /**
    * 创建 OpenViking 适配器；构造时不联网。
@@ -79,7 +83,40 @@ export class OpenVikingHttpContextProvider implements ContextProvider, OpenVikin
   /** @returns 远端公开健康状态。 */
   async checkHealth(): Promise<OpenVikingHealthResult> {
     const state = await this.ensureAdminState()
-    return { healthy: true, version: state.version, authMode: 'api_key' }
+    await this.checkWriteHealth(true)
+    return { healthy: true, version: state.version, authMode: 'api_key', queueHealthy: true }
+  }
+
+  /** @param force 是否绕过三十秒成功缓存。 @returns 队列无错误时结束。 */
+  async checkWriteHealth(force = false): Promise<void> {
+    const now = Date.now()
+    if (!force && this.writeHealthPromise && now < this.writeHealthExpiresAt) {
+      return await this.writeHealthPromise
+    }
+    const pending = this.loadWriteHealth()
+    this.writeHealthPromise = pending.catch((error: unknown) => {
+      this.writeHealthPromise = undefined
+      this.writeHealthExpiresAt = 0
+      throw error
+    })
+    await this.writeHealthPromise
+    this.writeHealthExpiresAt = now + 30_000
+  }
+
+  /** @returns 使用 ADMIN Key 核对 OpenViking 资源处理队列。 */
+  private async loadWriteHealth(): Promise<void> {
+    await this.ensureAdminState()
+    const result = readOkResult(
+      await this.request('/api/v1/observer/queue', { method: 'GET' }, this.requireAdminKey()),
+      'OpenViking 队列状态响应结构无效',
+    )
+    if (result.name !== 'queue' || result.is_healthy !== true || result.has_errors !== false) {
+      throw new OpenVikingError(
+        'PROVIDER_UNAVAILABLE',
+        'OpenViking 资源处理队列存在错误，已暂停远端同步和全量重建',
+        { retryable: true, providerCode: 'QUEUE_UNHEALTHY', operation: '处理队列预检' },
+      )
+    }
   }
 
   /** @param userIds SQLite 当前应存在的世界 User。 @returns 创建缺失 User、删除孤立 User 后结束。 */
@@ -297,10 +334,13 @@ export class OpenVikingHttpContextProvider implements ContextProvider, OpenVikin
   async search(request: EvidenceSearchRequest) {
     if (!this.getConfiguration().enabled) throw new ContextProviderError('OpenViking 当前未启用')
     if (request.limit === 0) return { provider: 'openviking' as const, candidates: [] }
-    const [scope, localLearning] = await Promise.all([
+    const [scope, localLearning, runtime] = await Promise.all([
       this.options.repository.findRemoteSearchScope(request.personaId, request.worldId),
       this.options.repository.listActiveLocalLearning(request.personaId),
+      this.options.repository.getSyncRuntime(),
     ])
+    if (runtime.state === 'degraded') throw new ContextProviderError('OpenViking 同步异常，当前任务改用 SQLite 本地检索')
+    if (scope && !scope.complete) throw new ContextProviderError('OpenViking 资料尚未同步完整，当前任务改用 SQLite 本地检索')
     const localCandidates: EvidenceCandidate[] = localLearning.map(item => ({
       entityType: item.entityType,
       entityId: item.id,
@@ -668,15 +708,31 @@ export class OpenVikingHttpContextProvider implements ContextProvider, OpenVikin
       catch {
         throw new OpenVikingError('PROVIDER_OUTPUT_INVALID', 'OpenViking 返回了非 JSON 响应')
       }
-      if (!response.ok) throw new OpenVikingHttpStatusError(response.status)
+      if (!response.ok) {
+        const providerError = readProviderError(payload)
+        this.writeHealthPromise = undefined
+        this.writeHealthExpiresAt = 0
+        throw new OpenVikingHttpStatusError(
+          response.status,
+          describeRequestOperation(path, init.method),
+          providerError.code,
+          providerError.message,
+          response.headers.get('x-request-id'),
+          providerError.retryable,
+        )
+      }
       return payload
     }
     catch (error: unknown) {
       if (error instanceof OpenVikingError || error instanceof OpenVikingHttpStatusError) throw error
       if (error instanceof Error && error.name === 'AbortError') {
-        throw new OpenVikingError('PROVIDER_UNAVAILABLE', 'OpenViking 请求超时')
+        throw new OpenVikingError('PROVIDER_UNAVAILABLE', 'OpenViking 请求超时', {
+          retryable: true, operation: describeRequestOperation(path, init.method),
+        })
       }
-      throw new OpenVikingError('PROVIDER_UNAVAILABLE', 'OpenViking 网络请求失败')
+      throw new OpenVikingError('PROVIDER_UNAVAILABLE', 'OpenViking 网络请求失败', {
+        retryable: true, operation: describeRequestOperation(path, init.method),
+      })
     }
     finally {
       clearTimeout(timeout)
@@ -699,6 +755,8 @@ export class OpenVikingHttpContextProvider implements ContextProvider, OpenVikin
       .digest('hex')
     if (this.configurationFingerprint && fingerprint !== this.configurationFingerprint) {
       this.adminStatePromise = undefined
+      this.writeHealthPromise = undefined
+      this.writeHealthExpiresAt = 0
       this.userKeys.clear()
       this.userKeyPromises.clear()
     }
@@ -714,11 +772,76 @@ export class OpenVikingHttpContextProvider implements ContextProvider, OpenVikin
 
 /** 仅供适配器内部识别可忽略 404 的 HTTP 状态。 */
 class OpenVikingHttpStatusError extends OpenVikingError {
-  /** @param statusCode HTTP 状态码。 */
-  constructor(public readonly statusCode: number) {
-    super('PROVIDER_UNAVAILABLE', `OpenViking 请求失败（HTTP ${statusCode}）`)
+  /**
+   * 创建包含脱敏服务端原因的 HTTP 异常。
+   * @param statusCode HTTP 状态码。
+   * @param operation 不含路径参数的请求阶段。
+   * @param providerCode OpenViking 稳定错误代码。
+   * @param reason OpenViking 脱敏错误原因。
+   * @param requestId OpenViking 请求追踪标识。
+   * @param retryable 服务端显式重试提示。
+   */
+  constructor(
+    public readonly statusCode: number,
+    operation: string,
+    providerCode: string | null,
+    reason: string | null,
+    requestId: string | null,
+    retryable: boolean | null,
+  ) {
+    const suffix = reason ? `：${reason}` : ''
+    super('PROVIDER_UNAVAILABLE', `OpenViking 请求失败（HTTP ${statusCode}，${operation}）${suffix}`, {
+      retryable: retryable ?? isRetryableHttpStatus(statusCode),
+      providerCode,
+      operation,
+      requestId,
+    })
     this.name = 'OpenVikingHttpStatusError'
   }
+}
+
+/** @param statusCode HTTP 状态码。 @returns 默认是否适合自动重试。 */
+function isRetryableHttpStatus(statusCode: number): boolean {
+  return statusCode === 408 || statusCode === 409 || statusCode === 412 || statusCode === 429 || statusCode >= 500
+}
+
+/** @param path 请求路径。 @param method HTTP 方法。 @returns 不包含 URI 和查询参数的中文请求阶段。 */
+function describeRequestOperation(path: string, method?: string): string {
+  const pathname = path.split('?')[0] ?? path
+  if (pathname === '/api/v1/resources/temp_upload') return '资料临时上传'
+  if (pathname === '/api/v1/resources') return '资料写入'
+  if (pathname === '/api/v1/observer/queue') return '处理队列预检'
+  if (pathname === '/api/v1/search/find') return '资料检索'
+  if (pathname === '/api/v1/content/read') return '资料原文核对'
+  if (pathname.startsWith('/api/v1/admin/')) return '用户空间管理'
+  if (pathname.startsWith('/api/v1/sessions')) return '人物记忆会话'
+  if (pathname.startsWith('/api/v1/tasks')) return '远端任务查询'
+  if (pathname === '/api/v1/fs/ls') return '远端目录读取'
+  if (pathname === '/api/v1/fs') return method?.toUpperCase() === 'DELETE' ? '远端资源删除' : '远端文件操作'
+  return 'OpenViking 接口调用'
+}
+
+/** @param payload OpenViking 错误信封。 @returns 仅保留允许持久化的错误代码、原因和重试提示。 */
+function readProviderError(payload: unknown): { code: string | null, message: string | null, retryable: boolean | null } {
+  if (!isRecord(payload) || !isRecord(payload.error)) return { code: null, message: null, retryable: null }
+  const details = isRecord(payload.error.details) ? payload.error.details : null
+  const message = typeof payload.error.message === 'string' ? sanitizeProviderMessage(payload.error.message) : null
+  return {
+    code: typeof payload.error.code === 'string' ? payload.error.code.slice(0, 100) : null,
+    message,
+    retryable: details && typeof details.retryable === 'boolean' ? details.retryable : null,
+  }
+}
+
+/** @param message OpenViking 原始错误文本。 @returns 隐藏资源路径和常见凭据后的短消息。 */
+function sanitizeProviderMessage(message: string): string | null {
+  const sanitized = message
+    .replace(/viking:\/\/[^\s,;]+/gi, '[资源路径已隐藏]')
+    .replace(/(authorization|x-api-key|api[_ -]?key|user[_ -]?key)\s*[:=]\s*[^\s,;]+/gi, '$1=[凭据已隐藏]')
+    .replace(/bearer\s+[a-z0-9._~+\/-]+/gi, 'Bearer [凭据已隐藏]')
+    .trim()
+    .slice(0, 300)
+  return sanitized || null
 }
 
 /** @param value 配置字符串。 @returns HTTP(S) 服务根 URL 或 null。 */

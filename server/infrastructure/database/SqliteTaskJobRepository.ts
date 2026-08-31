@@ -1,6 +1,7 @@
 import type { Database as BetterSqliteDatabase, RunResult } from 'better-sqlite3'
 import type { TaskJob } from '../../domain/tasks/TaskJob'
 import type { TaskJobRepository, TaskQueueStatusReader } from '../../ports/TaskPorts'
+import { calculateOpenVikingRetryDelay } from '../../domain/context/OpenVikingRetryPolicy'
 
 /** SQLite 查询返回的任务行。 */
 interface TaskJobRow {
@@ -114,10 +115,18 @@ export class SqliteTaskJobRepository implements TaskJobRepository, TaskQueueStat
       const row = this.client.prepare(`
         SELECT id, type, payload_json, status, attempt_count, max_attempts, lease_until
         FROM task_jobs
-        WHERE status = 'queued' AND attempt_count < max_attempts
-        ORDER BY created_at ASC, id ASC
+        WHERE status = 'queued' AND attempt_count < max_attempts AND available_at <= ?
+          AND (
+            type NOT IN ('sync_context_source', 'sync_openviking_users', 'sync_openviking_session')
+            OR NOT EXISTS (
+              SELECT 1 FROM openviking_sync_runtime
+              WHERE id = 'openviking_sync_runtime' AND state = 'degraded'
+                AND (retry_after IS NULL OR retry_after > ?)
+            )
+          )
+        ORDER BY available_at ASC, created_at ASC, id ASC
         LIMIT 1
-      `).get() as TaskJobRow | undefined
+      `).get(timestamp, timestamp) as TaskJobRow | undefined
 
       if (!row) {
         return null
@@ -177,16 +186,24 @@ export class SqliteTaskJobRepository implements TaskJobRepository, TaskQueueStat
   async markFailed(jobId: string, error: string, timestamp: number, retryable: boolean): Promise<boolean> {
     return this.client.transaction(() => {
       const job = this.client.prepare(`
-        SELECT attempt_count, max_attempts FROM task_jobs WHERE id = ? AND status = 'running'
-      `).get(jobId) as { attempt_count: number, max_attempts: number } | undefined
+        SELECT type, attempt_count, max_attempts FROM task_jobs WHERE id = ? AND status = 'running'
+      `).get(jobId) as { type: string, attempt_count: number, max_attempts: number } | undefined
       if (!job) return false
       const willRetry = retryable && job.attempt_count < job.max_attempts
+      const retryAt = willRetry && isOpenVikingTask(job.type)
+        ? timestamp + calculateOpenVikingRetryDelay(job.attempt_count)
+        : timestamp
       this.client.prepare(`
         UPDATE task_jobs
-        SET status = ?, lease_until = NULL, heartbeat_at = NULL, last_error = ?, updated_at = ?
+        SET status = ?, available_at = ?, lease_until = NULL, heartbeat_at = NULL, last_error = ?, updated_at = ?
         WHERE id = ? AND status = 'running'
-      `).run(willRetry ? 'queued' : 'failed', error.slice(0, 1000), timestamp, jobId)
+      `).run(willRetry ? 'queued' : 'failed', retryAt, error.slice(0, 1000), timestamp, jobId)
       return willRetry
     }).immediate()
   }
+}
+
+/** @param type 持久任务类型。 @returns 是否属于 OpenViking 外部同步任务。 */
+function isOpenVikingTask(type: string): boolean {
+  return type === 'sync_context_source' || type === 'sync_openviking_users' || type === 'sync_openviking_session'
 }

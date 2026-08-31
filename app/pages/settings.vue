@@ -2,14 +2,13 @@
 import { computed, shallowRef } from 'vue'
 import type { ApiResponse, AuthenticationSessionResult } from '#shared/types/api'
 import type { UpdateOpenVikingSettingsInput } from '#shared/schemas/context'
-import type { ContextReindexResult, OpenVikingCapabilityView, OpenVikingSettingsView } from '#shared/types/context'
+import type { ContextReindexResult, ContextSyncSummaryView, OpenVikingCapabilityView, OpenVikingSettingsView } from '#shared/types/context'
 import type { SystemCapabilitiesResult } from '#shared/types/system'
 import { getApiErrorMessage } from '../utils/apiError'
 
 /** 上下文同步状态接口。 */
-interface ContextStatusResponse {
+interface ContextStatusResponse extends ContextSyncSummaryView {
   capability: OpenVikingCapabilityView
-  failedCount: number
 }
 
 const [
@@ -29,6 +28,9 @@ const contextProvider = computed(() => capabilityData.value?.data.contextProvide
 const administrator = computed(() => sessionData.value?.data.administrator ?? null)
 const openVikingSettings = computed(() => openVikingSettingsData.value?.data ?? null)
 const failedSyncCount = computed(() => statusData.value?.data.failedCount ?? 0)
+const retryingSyncCount = computed(() => statusData.value?.data.retryingCount ?? 0)
+const attentionSyncCount = computed(() => statusData.value?.data.attentionCount ?? 0)
+const syncRuntime = computed(() => statusData.value?.data.runtime ?? null)
 const { notifySuccess, notifyError, notifyWarning } = useOperationNotifications()
 const actionLoading = shallowRef(false)
 const reindexConfirmed = shallowRef(false)
@@ -97,6 +99,16 @@ async function reindex(): Promise<void> {
   })
 }
 
+/** @returns 把全部需要处理的失败资料重新安排到持久队列。 */
+async function retryAllFailed(): Promise<void> {
+  await executeAction(async () => {
+    const response = await $fetch<ApiResponse<{ enqueued: number }>>('/api/v1/system/context/retry', {
+      method: 'POST', body: { scope: 'all' },
+    })
+    notifySuccess(`已重新安排 ${response.data.enqueued} 项资料；队列健康后会自动继续`, 'OpenViking 重试已安排')
+  })
+}
+
 /** @param action 单次系统动作。 @returns 统一处理锁、错误和状态刷新。 */
 async function executeAction(action: () => Promise<void>): Promise<void> {
   if (actionLoading.value) return
@@ -122,7 +134,8 @@ async function executeAction(action: () => Promise<void>): Promise<void> {
       <div class="status-cell"><span class="status-kicker">文本生成</span><strong class="status-value">{{ capabilities?.textModel.configured ? '已配置' : '未配置' }}</strong></div>
       <div class="status-cell"><span class="status-kicker">图片能力</span><strong class="status-value">{{ capabilities?.imageModel.configured ? '已配置' : '未配置' }}</strong></div>
       <div class="status-cell"><span class="status-kicker">资料检索</span><strong class="status-value">{{ contextProvider === 'openviking' ? 'OpenViking 增强' : 'SQLite 本地检索' }}</strong></div>
-      <div class="status-cell"><span class="status-kicker">同步失败</span><strong class="status-value">{{ failedSyncCount }}</strong></div>
+      <div class="status-cell"><span class="status-kicker">等待自动重试</span><strong class="status-value">{{ retryingSyncCount }}</strong></div>
+      <div class="status-cell"><span class="status-kicker">需要处理</span><strong class="status-value">{{ attentionSyncCount }}</strong></div>
     </div>
     <UAlert v-if="capabilityError || statusError || sessionError || openVikingSettingsError" class="mb-5" color="error" title="系统数据加载失败" />
 
@@ -149,6 +162,15 @@ async function executeAction(action: () => Promise<void>): Promise<void> {
           <div><dt class="text-xs text-muted">服务来源</dt><dd class="mt-1 break-all font-medium">{{ capability.endpointOrigin ?? '未配置' }}</dd></div>
         </dl>
         <UAlert class="mt-5" color="neutral" title="SQLite 始终保存原始数据" description="OpenViking 不可用时，新任务会改用本地全文搜索；远端同步任务会保留并在服务恢复后重试。已经创建的任务不会中途更换搜索方式。" />
+        <UAlert
+          v-if="syncRuntime?.state === 'degraded'"
+          class="mt-4"
+          color="warning"
+          title="OpenViking 已进入自动降级"
+          :description="syncRuntime.retryAfter === null
+            ? `自动重试已停止：${syncRuntime.lastError ?? '需要管理员检查 OpenViking'}`
+            : `新任务使用 SQLite；下次远端探测时间 ${new Date(syncRuntime.retryAfter).toLocaleString('zh-CN')}。${syncRuntime.lastError ?? ''}`"
+        />
         <SystemOpenVikingSettingsForm
           v-if="openVikingSettings"
           :key="openVikingSettings.updatedAt ?? 'default'"
@@ -158,8 +180,15 @@ async function executeAction(action: () => Promise<void>): Promise<void> {
         />
         <div class="mt-5 flex flex-wrap gap-2">
           <UButton :loading="actionLoading" color="neutral" variant="soft" @click="checkProvider">检测服务</UButton>
+          <UButton v-if="failedSyncCount > 0" :loading="actionLoading" color="neutral" variant="soft" icon="i-lucide-refresh-cw" @click="retryAllFailed">重新同步失败资料</UButton>
         </div>
         <div class="mt-6 border-t border-default pt-5">
+          <UAlert
+            class="mb-4"
+            color="warning"
+            title="全量重建会替换全部远端投影"
+            description="系统先检查 OpenViking 处理队列；通过后保留有效世界 User，清理人样管理的资料、Session 和人物 Peer，再按世界 User／人物 Peer 隔离关系从 SQLite 完整重放。预检失败时不会清理远端数据。"
+          />
           <UCheckbox v-model="reindexConfirmed" label="确认删除人样专属远端索引并从 SQLite 全量重建" />
           <UButton class="mt-3" :loading="actionLoading" color="warning" variant="soft" @click="reindex">全量重建索引</UButton>
         </div>

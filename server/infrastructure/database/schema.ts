@@ -132,6 +132,7 @@ export const taskJobs = sqliteTable(
     status: text('status').notNull().default('queued'),
     attemptCount: integer('attempt_count').notNull().default(0),
     maxAttempts: integer('max_attempts').notNull().default(2),
+    availableAt: integer('available_at').notNull().default(0),
     leaseUntil: integer('lease_until'),
     heartbeatAt: integer('heartbeat_at'),
     cancelRequestedAt: integer('cancel_requested_at'),
@@ -140,7 +141,7 @@ export const taskJobs = sqliteTable(
     updatedAt: integer('updated_at').notNull(),
   },
   table => [
-    index('task_jobs_status_created_at_index').on(table.status, table.createdAt),
+    index('task_jobs_status_available_at_created_at_index').on(table.status, table.availableAt, table.createdAt),
     index('task_jobs_lease_until_index').on(table.leaseUntil),
     check(
       'task_jobs_status_check',
@@ -148,6 +149,24 @@ export const taskJobs = sqliteTable(
     ),
     check('task_jobs_attempt_count_check', sql`${table.attemptCount} >= 0`),
     check('task_jobs_max_attempts_check', sql`${table.maxAttempts} > 0`),
+  ],
+)
+
+/** OpenViking 写入异常时跨进程共享的熔断和恢复时间。 */
+export const openVikingSyncRuntime = sqliteTable(
+  'openviking_sync_runtime',
+  {
+    id: text('id').primaryKey(),
+    state: text('state').notNull().default('healthy'),
+    consecutiveFailures: integer('consecutive_failures').notNull().default(0),
+    retryAfter: integer('retry_after'),
+    lastError: text('last_error'),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  table => [
+    check('openviking_sync_runtime_singleton_check', sql`${table.id} = 'openviking_sync_runtime'`),
+    check('openviking_sync_runtime_state_check', sql`${table.state} IN ('healthy', 'degraded')`),
+    check('openviking_sync_runtime_failures_check', sql`${table.consecutiveFailures} >= 0`),
   ],
 )
 
@@ -1224,6 +1243,10 @@ export const contextSyncRecords = sqliteTable(
     status: text('status').notNull(),
     operation: text('operation').notNull().default('upsert'),
     error: text('error'),
+    errorCode: text('error_code'),
+    errorStage: text('error_stage'),
+    failureCount: integer('failure_count').notNull().default(0),
+    nextRetryAt: integer('next_retry_at'),
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull(),
   },
@@ -1236,6 +1259,7 @@ export const contextSyncRecords = sqliteTable(
     check('context_sync_records_status_check', sql`${table.status} IN ('pending', 'synchronized', 'failed')`),
     check('context_sync_records_operation_check', sql`${table.operation} IN ('upsert', 'delete')`),
     check('context_sync_records_hash_check', sql`length(${table.contentHash}) = 64`),
+    check('context_sync_records_failure_count_check', sql`${table.failureCount} >= 0`),
   ],
 )
 
@@ -1245,6 +1269,7 @@ export const databaseSchema = {
   auditEvents,
   systemAiSettings,
   openVikingSettings,
+  openVikingSyncRuntime,
   aiConnections,
   aiModelDeployments,
   taskJobs,

@@ -7,10 +7,13 @@ import { executeController } from '../../../../presentation/http/controller'
  * @returns 外部上下文能力与失败记录数量。
  */
 async function handleContextSummary(event: H3Event) {
-  return await executeController(event, async () => ({
-    capability: event.context.applicationServices.contextSynchronization.getCapability(),
-    failedCount: await event.context.applicationServices.contextSynchronization.countFailedSyncRecords(),
-  }))
+  return await executeController(event, async () => {
+    const synchronization = await event.context.applicationServices.contextSynchronization.getSyncSummary()
+    return {
+      capability: event.context.applicationServices.contextSynchronization.getCapability(),
+      ...synchronization,
+    }
+  })
 }
 
 export default defineEventHandler(handleContextSummary)

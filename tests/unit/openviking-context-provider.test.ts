@@ -34,6 +34,7 @@ class FixedContextIndexRepository implements ContextIndexRepository {
     return {
       userId: 'world-world',
       peerId: 'persona-persona',
+      complete: true,
       targets: this.scopes.map(scope => ({
         ...scope,
         remoteUri: `viking://~/peers/persona-persona/resources/ren-yang/persona-source/${scope.sourceId}.md`,
@@ -82,6 +83,30 @@ class FixedContextIndexRepository implements ContextIndexRepository {
   /** @returns 当前测试同步失败记录数。 */
   async countFailedSyncRecords() { return this.records.filter(record => record.status === 'failed').length }
 
+  /** @returns 当前测试固定为无失败且同步健康。 */
+  async getSyncSummary() {
+    return {
+      failedCount: 0,
+      retryingCount: 0,
+      attentionCount: 0,
+      runtime: { state: 'healthy' as const, consecutiveFailures: 0, retryAfter: null, lastError: null, updatedAt: null },
+    }
+  }
+
+  /** @returns 当前测试固定的健康同步运行状态。 */
+  async getSyncRuntime() {
+    return { state: 'healthy' as const, consecutiveFailures: 0, retryAfter: null, lastError: null, updatedAt: null }
+  }
+
+  /** @returns 当前测试不持久化同步降级状态。 */
+  async markSyncDegraded() { return await this.getSyncRuntime() }
+
+  /** @returns 当前测试不持久化同步恢复状态。 */
+  async markSyncHealthy() { return await this.getSyncRuntime() }
+
+  /** @returns 当前测试不调整同步重试时间。 */
+  async allowImmediateSyncRetry() {}
+
   /** @param record 新同步记录。 @returns 无返回值。 */
   async saveSyncRecord(record: ContextSyncRecordView) { this.records = [record] }
 
@@ -110,7 +135,7 @@ class FixedContextProvider implements ContextProvider {
   async search() { return { provider: this.provider, candidates: this.evidence } }
 
   /** @returns 固定健康结果。 */
-  async checkHealth() { return { healthy: true, version: 'test', authMode: 'api_key' as const } }
+  async checkHealth() { return { healthy: true, version: 'test', authMode: 'api_key' as const, queueHealthy: true } }
 }
 
 /** 测试固定资料 UUID。 */
@@ -122,6 +147,7 @@ describe('OpenViking 原生 HTTP 上下文适配器', () => {
     const responses = [
       new Response(JSON.stringify({ status: 'ok', healthy: true, version: '0.4.16', auth_mode: 'api_key' })),
       new Response(JSON.stringify({ status: 'ok', result: [{ user_id: 'default', role: 'admin' }] })),
+      healthyQueueResponse(),
     ]
     const provider = new OpenVikingHttpContextProvider({
       enabled: true,
@@ -135,9 +161,9 @@ describe('OpenViking 原生 HTTP 上下文适配器', () => {
       }) as unknown as typeof fetch,
     })
 
-    await expect(provider.checkHealth()).resolves.toEqual({ healthy: true, version: '0.4.16', authMode: 'api_key' })
+    await expect(provider.checkHealth()).resolves.toEqual({ healthy: true, version: '0.4.16', authMode: 'api_key', queueHealthy: true })
     expect(requests.map(item => new URL(item.url).pathname)).toEqual([
-      '/health', '/api/v1/admin/accounts/ren-yang/users',
+      '/health', '/api/v1/admin/accounts/ren-yang/users', '/api/v1/observer/queue',
     ])
     expect(new Headers(requests[1]!.init.headers).get('x-api-key')).toBe('admin-key')
   })
@@ -147,8 +173,10 @@ describe('OpenViking 原生 HTTP 上下文适配器', () => {
     const responses = [
       new Response(JSON.stringify({ status: 'ok', healthy: true, version: '0.4.16', auth_mode: 'api_key' })),
       new Response(JSON.stringify({ status: 'ok', result: [] })),
+      healthyQueueResponse(),
       new Response(JSON.stringify({ status: 'ok', healthy: true, version: '0.4.17', auth_mode: 'api_key' })),
       new Response(JSON.stringify({ status: 'ok', result: [] })),
+      healthyQueueResponse(),
     ]
     let configuration = { enabled: false, endpoint: '', apiKey: '', timeoutMs: 5_000 }
     const provider = new OpenVikingHttpContextProvider({
@@ -163,13 +191,14 @@ describe('OpenViking 原生 HTTP 上下文适配器', () => {
 
     expect(provider.getCapability()).toMatchObject({ configured: false, enabled: false })
     configuration = { enabled: true, endpoint: 'https://first-ov.test', apiKey: 'first-admin-key', timeoutMs: 5_000 }
-    await expect(provider.checkHealth()).resolves.toEqual({ healthy: true, version: '0.4.16', authMode: 'api_key' })
+    await expect(provider.checkHealth()).resolves.toEqual({ healthy: true, version: '0.4.16', authMode: 'api_key', queueHealthy: true })
 
     configuration = { enabled: true, endpoint: 'https://second-ov.test', apiKey: 'second-admin-key', timeoutMs: 5_000 }
-    await expect(provider.checkHealth()).resolves.toEqual({ healthy: true, version: '0.4.17', authMode: 'api_key' })
+    await expect(provider.checkHealth()).resolves.toEqual({ healthy: true, version: '0.4.17', authMode: 'api_key', queueHealthy: true })
 
     expect(requests.map(request => new URL(request.url).origin)).toEqual([
-      'https://first-ov.test', 'https://first-ov.test', 'https://second-ov.test', 'https://second-ov.test',
+      'https://first-ov.test', 'https://first-ov.test', 'https://first-ov.test',
+      'https://second-ov.test', 'https://second-ov.test', 'https://second-ov.test',
     ])
     expect(requests.filter(request => new URL(request.url).pathname.includes('/admin/')).map(request => {
       return new Headers(request.init.headers).get('x-api-key')
@@ -270,6 +299,7 @@ describe('OpenViking 原生 HTTP 上下文适配器', () => {
     const responses = [
       new Response(JSON.stringify({ status: 'ok', healthy: true, version: '0.4.16', auth_mode: 'api_key' })),
       new Response(JSON.stringify({ status: 'ok', result: [] })),
+      healthyQueueResponse(),
       new Response(JSON.stringify({ status: 'ok', result: { account_id: 'ren-yang', user_id: 'world-world', user_key: 'world-key' } })),
       new Response(JSON.stringify({ status: 'ok', result: '旧正文' })),
       new Response(JSON.stringify({ status: 'error', error: { code: 'NOT_FOUND', message: 'not found' } }), { status: 404 }),
@@ -297,7 +327,7 @@ describe('OpenViking 原生 HTTP 上下文适配器', () => {
       enabled: true, endpoint: 'https://ov.test', apiKey: 'admin-key', timeoutMs: 5_000, repository, fetcher,
     })
 
-    await expect(provider.checkHealth()).resolves.toEqual({ healthy: true, version: '0.4.16', authMode: 'api_key' })
+    await expect(provider.checkHealth()).resolves.toEqual({ healthy: true, version: '0.4.16', authMode: 'api_key', queueHealthy: true })
     await expect(provider.synchronizeProjection({
       source: { entityType: 'source_material', id: SOURCE_ID, name: '原著资料', role: 'canon_fact', contentHash: 'a'.repeat(64), contentText: '原著资料正文。' },
       scopeType: 'persona', scopeId: 'persona', userId: 'world-world', peerId: 'persona-persona', priority: 10,
@@ -319,12 +349,12 @@ describe('OpenViking 原生 HTTP 上下文适配器', () => {
     })
 
     expect(requests.map(item => new URL(item.url).pathname)).toEqual([
-      '/health', '/api/v1/admin/accounts/ren-yang/users', '/api/v1/admin/accounts/ren-yang/users',
+      '/health', '/api/v1/admin/accounts/ren-yang/users', '/api/v1/observer/queue', '/api/v1/admin/accounts/ren-yang/users',
       '/api/v1/content/read', '/api/v1/fs', '/api/v1/resources/temp_upload', '/api/v1/resources', '/api/v1/search/find',
     ])
-    expect(new Headers(requests[5]!.init.headers).get('x-api-key')).toBe('world-key')
-    expect(requests[5]!.init.body).toBeInstanceOf(FormData)
-    expect(JSON.parse(String(requests[6]!.init.body))).toMatchObject({
+    expect(new Headers(requests[6]!.init.headers).get('x-api-key')).toBe('world-key')
+    expect(requests[6]!.init.body).toBeInstanceOf(FormData)
+    expect(JSON.parse(String(requests[7]!.init.body))).toMatchObject({
       temp_file_id: 'temp-1',
       to: `viking://~/peers/persona-persona/resources/ren-yang/persona-source/${SOURCE_ID}.md`,
       reason: '',
@@ -332,7 +362,7 @@ describe('OpenViking 原生 HTTP 上下文适配器', () => {
       strict: true,
       tags: [`source_id=${SOURCE_ID}`, 'entity_type=source_material', 'source_role=canon_fact', 'scope_type=persona', 'scope_id=persona'],
     })
-    expect(JSON.parse(String(requests[7]!.init.body))).toEqual({
+    expect(JSON.parse(String(requests[8]!.init.body))).toEqual({
       query: '证据',
       target_uri: [`viking://~/peers/persona-persona/resources/ren-yang/persona-source/${SOURCE_ID}.md`],
       context_type: 'resource',
@@ -648,3 +678,11 @@ describe('OpenViking 原生 HTTP 上下文适配器', () => {
       .resolves.toEqual({ provider: 'sqlite_fts5', candidates: evidence })
   })
 })
+
+/** @returns 模拟 OpenViking 资源处理队列健康的标准响应。 */
+function healthyQueueResponse(): Response {
+  return new Response(JSON.stringify({
+    status: 'ok',
+    result: { name: 'queue', is_healthy: true, has_errors: false },
+  }))
+}

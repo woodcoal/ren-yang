@@ -76,7 +76,10 @@ class InMemoryOpenViking implements OpenVikingPort {
   }
 
   /** @returns 固定健康状态。 */
-  async checkHealth() { return { healthy: true, version: 'test', authMode: 'api_key' as const } }
+  async checkHealth() { return { healthy: true, version: 'test', authMode: 'api_key' as const, queueHealthy: true } }
+
+  /** @returns 内存替身始终允许写入。 */
+  async checkWriteHealth() {}
 
   /** @param userIds SQLite 目标 User。 @returns 模拟创建缺失 User、删除孤立 User 后结束。 */
   async reconcileUsers(userIds: string[]) {
@@ -451,11 +454,13 @@ describe('OpenViking 可关闭索引与 SQLite 重建', () => {
     const identifiers = new SequentialIdentifierGenerator()
     const clock = new IncrementingClock()
     const openViking = new InMemoryOpenViking()
+    const contextSyncQueue = new SqliteContextSyncTaskQueue(database.getClient())
     const contextService = new ContextSynchronizationApplicationService({
       repository: new SqliteContextIndexRepository(database.getClient()),
       openViking,
       identifiers,
       clock,
+      taskQueue: contextSyncQueue,
     })
     const content = new ContentApplicationService({
       repository: new SqliteContentRepository(database.getClient()),
@@ -466,7 +471,7 @@ describe('OpenViking 可关闭索引与 SQLite 重建', () => {
       sourceProcessor: new NodeSourceContentProcessor(identifiers),
       sourceFiles: new LocalSourceFileStorage(temporaryDirectory),
       prompts: createTestAiPromptService(database, identifiers, clock),
-      contextSyncQueue: new SqliteContextSyncTaskQueue(database.getClient()),
+      contextSyncQueue,
     })
     const ignoredHandler = { /** @returns 本测试不应调用该处理器。 */ execute: async () => { throw new Error('路由错误') } }
     const worker = new WorkerApplicationService({
@@ -512,6 +517,10 @@ describe('OpenViking 可关闭索引与 SQLite 重建', () => {
     `).get()).toEqual({ status: 'queued', attempt_count: 1 })
     expect(openViking.resources.has(`viking://~/resources/ren-yang/world-source/${created.source.id}.md`)).toBe(true)
 
+    await expect(worker.executeNext()).resolves.toEqual({ handled: false, jobId: null, succeeded: null })
+    await expect(contextService.retryFailedSync({
+      entityType: 'source_material', sourceId: created.source.id,
+    })).resolves.toEqual({ enqueued: 1 })
     await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: true })
     expect(openViking.resources.has(`viking://~/resources/ren-yang/world-source/${created.source.id}.md`)).toBe(false)
     expect(database.getClient().prepare('SELECT COUNT(*) AS count FROM context_sync_records').get()).toEqual({ count: 0 })
@@ -548,8 +557,10 @@ describe('OpenViking 可关闭索引与 SQLite 重建', () => {
     const responses = [
       new Response(JSON.stringify({ status: 'ok', healthy: true, version: '0.4.16', auth_mode: 'api_key' })),
       new Response(JSON.stringify({ status: 'ok', result: [] })),
+      healthyQueueResponse(),
       new Response(JSON.stringify({ status: 'ok', healthy: true, version: '0.4.17', auth_mode: 'api_key' })),
       new Response(JSON.stringify({ status: 'ok', result: [] })),
+      healthyQueueResponse(),
     ]
     const repository = new SqliteContextIndexRepository(database.getClient())
     const provider = new OpenVikingHttpContextProvider({
@@ -590,7 +601,9 @@ describe('OpenViking 可关闭索引与 SQLite 重建', () => {
     expect(firstCiphertext).not.toContain('database-admin-key')
     expect(secretCipher.decrypt(firstCiphertext, OPEN_VIKING_SECRET_CONTEXT)).toBe('database-admin-key')
     expect(service.getCapability()).toMatchObject({ configured: true, enabled: true, endpointOrigin: 'https://first-ov.test' })
-    await expect(service.checkProvider()).resolves.toEqual({ healthy: true, version: '0.4.16', authMode: 'api_key' })
+    await expect(service.checkProvider()).resolves.toEqual({
+      healthy: true, version: '0.4.16', authMode: 'api_key', queueHealthy: true,
+    })
 
     await expect(service.updateSettings({
       enabled: true, endpoint: 'https://second-ov.test', timeoutMs: 6_000,
@@ -598,9 +611,19 @@ describe('OpenViking 可关闭索引与 SQLite 重建', () => {
     expect((database.getClient().prepare(`
       SELECT api_key_ciphertext FROM openviking_settings WHERE id = 'openviking_settings'
     `).get() as { api_key_ciphertext: string }).api_key_ciphertext).toBe(firstCiphertext)
-    await expect(service.checkProvider()).resolves.toEqual({ healthy: true, version: '0.4.17', authMode: 'api_key' })
+    await expect(service.checkProvider()).resolves.toEqual({
+      healthy: true, version: '0.4.17', authMode: 'api_key', queueHealthy: true,
+    })
     expect(requests.filter(request => new URL(request.url).pathname.includes('/admin/')).map(request => {
       return new Headers(request.init.headers).get('x-api-key')
     })).toEqual(['database-admin-key', 'database-admin-key'])
   })
 })
+
+/** @returns 模拟 OpenViking 资源处理队列健康的标准响应。 */
+function healthyQueueResponse(): Response {
+  return new Response(JSON.stringify({
+    status: 'ok',
+    result: { name: 'queue', is_healthy: true, has_errors: false },
+  }))
+}

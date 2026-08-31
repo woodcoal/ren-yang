@@ -12,6 +12,8 @@ export interface OpenVikingHealthResult {
   version: string | null
   /** 世界隔离由 ADMIN Key 管理 User、各 User Key 访问数据。 */
   authMode: 'api_key'
+  /** 资源处理队列当前是否允许安全写入和全量重建。 */
+  queueHealthy: boolean
 }
 
 /** OpenViking 索引维护端口，不向应用层暴露远端响应类型。 */
@@ -20,6 +22,8 @@ export interface OpenVikingPort {
   getCapability(): OpenVikingCapabilityView
   /** @returns 远端健康状态。 */
   checkHealth(): Promise<OpenVikingHealthResult>
+  /** @param force 是否绕过短期健康缓存。 @returns 处理队列可写时结束。 */
+  checkWriteHealth(force?: boolean): Promise<void>
   /** @param userIds SQLite 当前应存在的世界 User。 @returns 创建缺失 User、删除孤立 User 后结束。 */
   reconcileUsers(userIds: string[]): Promise<void>
   /** @param userIds SQLite 当前应存在的世界 User。 @returns 保留 User、清空受管内容并准备按 SQLite 重建后结束。 */
@@ -44,8 +48,23 @@ export class OpenVikingError extends Error {
   constructor(
     public readonly code: 'CAPABILITY_DISABLED' | 'PROVIDER_UNAVAILABLE' | 'PROVIDER_OUTPUT_INVALID',
     message: string,
+    public readonly details: {
+      /** 是否可通过等待、恢复服务或重新执行解决。 */
+      retryable?: boolean
+      /** OpenViking 响应中的稳定错误代码。 */
+      providerCode?: string | null
+      /** 不包含路径参数的请求阶段。 */
+      operation?: string | null
+      /** OpenViking 请求追踪标识。 */
+      requestId?: string | null
+    } = {},
   ) {
     super(message)
     this.name = 'OpenVikingError'
+  }
+
+  /** @returns 当前错误是否适合自动重试。 */
+  get retryable(): boolean {
+    return this.details.retryable ?? this.code === 'PROVIDER_UNAVAILABLE'
   }
 }

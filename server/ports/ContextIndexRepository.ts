@@ -1,5 +1,5 @@
 import type { SourceRole } from '../domain/content/ContentModels'
-import type { ContextSyncRecordPageView, ContextSyncRecordView } from '../../shared/types/context'
+import type { ContextSyncRecordPageView, ContextSyncRecordView, ContextSyncSummaryView, OpenVikingSyncRuntimeView } from '../../shared/types/context'
 
 /** OpenViking 同步使用的完整 SQLite 资料事实。 */
 export interface ContextSourceDocument {
@@ -48,6 +48,8 @@ export interface ContextRemoteSearchScope {
   userId: string
   /** 当前人物对应的 OpenViking Peer。 */
   peerId: string
+  /** SQLite 当前关联资料是否都至少有一份成功远端投影。 */
+  complete: boolean
   /** 仅包含 SQLite 当前有效范围且同步成功的 URI。 */
   targets: Array<{
     /** SQLite 资料 UUID；人物记忆不是资料，因此为空。 */
@@ -159,6 +161,16 @@ export interface ContextIndexRepository {
   listSyncRecordsPage(input: ListSyncRecordPageInput): Promise<ContextSyncRecordPageView>
   /** @returns 当前同步失败记录数。 */
   countFailedSyncRecords(): Promise<number>
+  /** @returns 当前失败分类和全局降级状态。 */
+  getSyncSummary(): Promise<ContextSyncSummaryView>
+  /** @returns 当前持久化写入熔断状态。 */
+  getSyncRuntime(): Promise<OpenVikingSyncRuntimeView>
+  /** @param error 脱敏错误。 @param retryAfter 下次探测时间。 @param timestamp 状态更新时间。 @returns 降级状态。 */
+  markSyncDegraded(error: string, retryAfter: number | null, timestamp: number): Promise<OpenVikingSyncRuntimeView>
+  /** @param timestamp 状态更新时间。 @returns 恢复后的健康状态。 */
+  markSyncHealthy(timestamp: number): Promise<OpenVikingSyncRuntimeView>
+  /** @param timestamp 立即允许管理员触发的恢复探测。 @returns 更新后的状态。 */
+  allowImmediateSyncRetry(timestamp: number): Promise<void>
   /** @param record 完整同步事实。 @returns 无返回值。 */
   saveSyncRecord(record: ContextSyncRecordView): Promise<void>
   /** @param id 已完成远端删除的投影记录 UUID。 @returns 无返回值。 */

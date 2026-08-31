@@ -185,7 +185,19 @@ export class SqliteContextIndexRepository implements ContextIndexRepository {
         remoteUri: String(data.remote_uri),
       }
     })
-    return { userId, peerId, targets: sourceTargets }
+    const expectedSourceCount = Number((this.client.prepare(`
+      SELECT COUNT(DISTINCT source_id) AS count FROM (
+        SELECT persona_sources.source_id FROM persona_sources
+        INNER JOIN source_materials ON source_materials.id = persona_sources.source_id
+        WHERE persona_sources.persona_id = ? AND source_materials.is_enabled = 1
+        UNION ALL
+        SELECT world_sources.source_id FROM world_sources
+        INNER JOIN source_materials ON source_materials.id = world_sources.source_id
+        WHERE world_sources.world_id = ? AND source_materials.is_enabled = 1
+      )
+    `).get(personaId, effectiveWorldId ?? '') as { count: number }).count)
+    const synchronizedSourceCount = new Set(sourceTargets.map(target => target.sourceId)).size
+    return { userId, peerId, complete: synchronizedSourceCount === expectedSourceCount, targets: sourceTargets }
   }
 
   /** @param personaId 人物 UUID。 @returns 没有远端 URI但必须参与提示的有效成长和记忆。 */
@@ -415,13 +427,81 @@ export class SqliteContextIndexRepository implements ContextIndexRepository {
     `).get() as { count: number }).count)
   }
 
+  /** @returns 当前失败分类和持久化写入熔断状态。 */
+  async getSyncSummary() {
+    const counts = this.client.prepare(`
+      SELECT COUNT(*) FILTER (WHERE status = 'failed') AS failed_count,
+        COUNT(*) FILTER (WHERE status = 'failed' AND next_retry_at IS NOT NULL) AS retrying_count,
+        COUNT(*) FILTER (WHERE status = 'failed' AND next_retry_at IS NULL) AS attention_count
+      FROM context_sync_records
+    `).get() as { failed_count: number, retrying_count: number, attention_count: number }
+    return {
+      failedCount: Number(counts.failed_count),
+      retryingCount: Number(counts.retrying_count),
+      attentionCount: Number(counts.attention_count),
+      runtime: await this.getSyncRuntime(),
+    }
+  }
+
+  /** @returns 当前持久化写入熔断状态；尚无记录时返回健康默认值。 */
+  async getSyncRuntime() {
+    const value = this.client.prepare(`
+      SELECT state, consecutive_failures, retry_after, last_error, updated_at
+      FROM openviking_sync_runtime WHERE id = 'openviking_sync_runtime'
+    `).get() as Record<string, unknown> | undefined
+    if (!value) {
+      return { state: 'healthy' as const, consecutiveFailures: 0, retryAfter: null, lastError: null, updatedAt: null }
+    }
+    return {
+      state: value.state as 'healthy' | 'degraded',
+      consecutiveFailures: Number(value.consecutive_failures),
+      retryAfter: value.retry_after === null ? null : Number(value.retry_after),
+      lastError: value.last_error === null ? null : String(value.last_error),
+      updatedAt: Number(value.updated_at),
+    }
+  }
+
+  /** @param error 脱敏错误。 @param retryAfter 下次探测时间；为空表示需要人工处理。 @param timestamp 更新时间。 @returns 降级状态。 */
+  async markSyncDegraded(error: string, retryAfter: number | null, timestamp: number) {
+    this.client.prepare(`
+      INSERT INTO openviking_sync_runtime (
+        id, state, consecutive_failures, retry_after, last_error, updated_at
+      ) VALUES ('openviking_sync_runtime', 'degraded', 1, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET state = 'degraded',
+        consecutive_failures = openviking_sync_runtime.consecutive_failures + 1,
+        retry_after = excluded.retry_after, last_error = excluded.last_error, updated_at = excluded.updated_at
+    `).run(retryAfter, error.slice(0, 500), timestamp)
+    return await this.getSyncRuntime()
+  }
+
+  /** @param timestamp 更新时间。 @returns 恢复后的健康状态。 */
+  async markSyncHealthy(timestamp: number) {
+    this.client.prepare(`
+      INSERT INTO openviking_sync_runtime (
+        id, state, consecutive_failures, retry_after, last_error, updated_at
+      ) VALUES ('openviking_sync_runtime', 'healthy', 0, NULL, NULL, ?)
+      ON CONFLICT(id) DO UPDATE SET state = 'healthy', consecutive_failures = 0,
+        retry_after = NULL, last_error = NULL, updated_at = excluded.updated_at
+    `).run(timestamp)
+    return await this.getSyncRuntime()
+  }
+
+  /** @param timestamp 立即允许一次管理员恢复探测。 @returns 无返回值。 */
+  async allowImmediateSyncRetry(timestamp: number): Promise<void> {
+    this.client.prepare(`
+      UPDATE openviking_sync_runtime SET retry_after = ?, updated_at = ?
+      WHERE id = 'openviking_sync_runtime' AND state = 'degraded'
+    `).run(timestamp, timestamp)
+  }
+
   /** @param record 完整同步事实。 @returns 无返回值。 */
   async saveSyncRecord(record: ContextSyncRecordView): Promise<void> {
     this.client.prepare(`
       INSERT INTO context_sync_records (
         id, entity_type, source_id, scope_type, scope_id, user_id, peer_id, provider,
-        remote_uri, content_hash, status, operation, error, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'openviking', ?, ?, ?, ?, ?, ?, ?)
+        remote_uri, content_hash, status, operation, error, error_code, error_stage,
+        failure_count, next_retry_at, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'openviking', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(entity_type, source_id, scope_type, scope_id, provider) DO UPDATE SET
         user_id = excluded.user_id,
         peer_id = excluded.peer_id,
@@ -430,6 +510,10 @@ export class SqliteContextIndexRepository implements ContextIndexRepository {
         status = excluded.status,
         operation = excluded.operation,
         error = excluded.error,
+        error_code = excluded.error_code,
+        error_stage = excluded.error_stage,
+        failure_count = excluded.failure_count,
+        next_retry_at = excluded.next_retry_at,
         updated_at = excluded.updated_at
     `).run(
       record.id,
@@ -444,6 +528,10 @@ export class SqliteContextIndexRepository implements ContextIndexRepository {
       record.status,
       record.operation,
       record.error,
+      record.errorCode,
+      record.errorStage,
+      record.failureCount,
+      record.nextRetryAt,
       record.createdAt,
       record.updatedAt,
     )
@@ -477,6 +565,10 @@ function toSyncRecord(value: unknown): ContextSyncRecordView {
     status: data.status as ContextSyncRecordView['status'],
     operation: data.operation as ContextSyncRecordView['operation'],
     error: data.error === null ? null : String(data.error),
+    errorCode: data.error_code === null ? null : String(data.error_code),
+    errorStage: data.error_stage === null ? null : String(data.error_stage),
+    failureCount: Number(data.failure_count),
+    nextRetryAt: data.next_retry_at === null ? null : Number(data.next_retry_at),
     createdAt: Number(data.created_at),
     updatedAt: Number(data.updated_at),
   }

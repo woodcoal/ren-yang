@@ -51,10 +51,44 @@ export interface ContextSyncRecordView {
   operation: 'upsert' | 'delete'
   /** 脱敏错误摘要。 */
   error: string | null
+  /** OpenViking 返回的稳定错误代码；本地或未知异常为空。 */
+  errorCode: string | null
+  /** 不含 URI、正文和凭据的请求阶段。 */
+  errorStage: string | null
+  /** 当前投影连续失败次数；同步成功后归零。 */
+  failureCount: number
+  /** 下一次自动重试时间；失败且为空表示需要管理员处理。 */
+  nextRetryAt: number | null
   /** 首次创建时间。 */
   createdAt: number
   /** 最近同步时间。 */
   updatedAt: number
+}
+
+/** OpenViking 写入同步熔断状态。 */
+export interface OpenVikingSyncRuntimeView {
+  /** 健康时允许远端检索和写入；降级时新任务使用 SQLite。 */
+  state: 'healthy' | 'degraded'
+  /** 连续外部故障次数；成功写入后归零。 */
+  consecutiveFailures: number
+  /** 下一次允许 Worker 探测远端写入的时间。 */
+  retryAfter: number | null
+  /** 最近一次脱敏错误摘要。 */
+  lastError: string | null
+  /** 最近状态变化时间；尚无状态记录时为空。 */
+  updatedAt: number | null
+}
+
+/** 管理界面使用的 OpenViking 当前同步摘要。 */
+export interface ContextSyncSummaryView {
+  /** 当前所有失败投影数量。 */
+  failedCount: number
+  /** 已安排自动重试的失败投影数量。 */
+  retryingCount: number
+  /** 已停止自动重试、需要管理员处理的投影数量。 */
+  attentionCount: number
+  /** 全局写入与检索降级状态。 */
+  runtime: OpenVikingSyncRuntimeView
 }
 
 /** 管理界面使用的 OpenViking 同步日志分页结果。 */

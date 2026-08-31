@@ -13,6 +13,7 @@ import type { TaskJob } from '../../domain/tasks/TaskJob'
 import type { TaskHandler } from '../../ports/TaskPorts'
 import { TaskExecutionError } from '../../ports/TaskPorts'
 import { ApplicationError } from '../errors/ApplicationError'
+import { calculateOpenVikingRetryDelay } from '../../domain/context/OpenVikingRetryPolicy'
 
 /** OpenViking ADMIN Key 与其他凭据隔离的加密上下文。 */
 export const OPEN_VIKING_SECRET_CONTEXT = 'openviking:administrator-api-key'
@@ -99,6 +100,11 @@ export class ContextSynchronizationApplicationService implements TaskHandler {
     return await this.dependencies.repository.countFailedSyncRecords()
   }
 
+  /** @returns 当前失败分类、自动重试数量和全局降级状态。 */
+  async getSyncSummary() {
+    return await this.dependencies.repository.getSyncSummary()
+  }
+
   /** @returns 主动联网检测结果；不修改索引或开关。 */
   async checkProvider() {
     this.requireConfigured(false)
@@ -118,36 +124,44 @@ export class ContextSynchronizationApplicationService implements TaskHandler {
     const queue = this.dependencies.taskQueue
     const capability = this.dependencies.openViking.getCapability()
     if (!queue || !capability.enabled) return
-    await queue.enqueueUserReconciliation(
-      this.dependencies.identifiers.create(),
-      this.dependencies.clock.now(),
-    )
-    const [projections, records, sessions] = await Promise.all([
+    const timestamp = this.dependencies.clock.now()
+    const [projections, records, sessions, runtime] = await Promise.all([
       this.dependencies.repository.listSourceProjections(),
       this.dependencies.repository.listSyncRecords(),
       this.dependencies.repository.listPendingSessionSources(),
+      this.dependencies.repository.getSyncRuntime(),
     ])
+    // 达到人工处理状态后禁止应用重启再次制造任务；管理员重试会把 retryAfter 改为当前时间。
+    if (runtime.state !== 'degraded' || runtime.retryAfter !== null) {
+      await queue.enqueueUserReconciliation(this.dependencies.identifiers.create(), timestamp)
+    }
     const desiredByKey = new Map(projections.map(projection => [projectionKey(projection), projection]))
     const recordsByKey = new Map(records.map(record => [recordKey(record), record]))
-    const entities = new Map<string, { entityType: ContextProjectionEntityType, sourceId: string }>()
+    const entities = new Map<string, { entityType: ContextProjectionEntityType, sourceId: string, notBefore: number }>()
     for (const [key, projection] of desiredByKey) {
       const record = recordsByKey.get(key)
-      if (!record
-        || record.status !== 'synchronized'
-        || record.contentHash !== projection.source.contentHash
-        || record.operation !== projection.operation
-        || projectionIdentityChanged(record, projection)) {
+      const definitionChanged = Boolean(record) && (
+        record!.contentHash !== projection.source.contentHash
+        || record!.operation !== projection.operation
+        || projectionIdentityChanged(record!, projection)
+      )
+      const requiresSync = !record || record.status !== 'synchronized' || definitionChanged
+      const needsAttention = record?.status === 'failed' && record.nextRetryAt === null && !definitionChanged
+      if (requiresSync && !needsAttention) {
         entities.set(`${projection.source.entityType}:${projection.source.id}`, {
           entityType: projection.source.entityType,
           sourceId: projection.source.id,
+          notBefore: definitionChanged ? timestamp : record?.nextRetryAt ?? timestamp,
         })
       }
     }
     for (const record of records) {
       if (!desiredByKey.has(recordKey(record)) && ['source_material', 'persona_feedback_source'].includes(record.entityType)) {
+        if (record.status === 'failed' && record.nextRetryAt === null) continue
         entities.set(`${record.entityType}:${record.sourceId}`, {
           entityType: record.entityType as ContextProjectionEntityType,
           sourceId: record.sourceId,
+          notBefore: record.nextRetryAt ?? timestamp,
         })
       }
     }
@@ -157,6 +171,7 @@ export class ContextSynchronizationApplicationService implements TaskHandler {
         this.dependencies.identifiers.create(),
         this.dependencies.clock.now(),
         entity.entityType,
+        entity.notBefore,
       )
     }
     for (const session of sessions) {
@@ -176,21 +191,35 @@ export class ContextSynchronizationApplicationService implements TaskHandler {
    */
   async execute(job: TaskJob): Promise<void> {
     if (!this.dependencies.openViking.getCapability().enabled) return
-    if (job.type === 'sync_openviking_users') {
-      await this.reconcileUsers()
-      return
+    try {
+      await this.dependencies.openViking.checkWriteHealth()
+      if (job.type === 'sync_openviking_users') {
+        await this.reconcileUsers()
+      }
+      else if (job.type === 'sync_context_source') {
+        const entity = readProjectionSource(job.payloadJson)
+        await this.synchronizeProjectionEntity(entity.entityType, entity.sourceId, job)
+      }
+      else if (job.type === 'sync_openviking_session') {
+        const payload = readSessionSource(job.payloadJson)
+        await this.synchronizeSession(payload.sourceType, payload.sourceId)
+      }
+      else {
+        throw new TaskExecutionError(`上下文同步服务未注册任务类型：${job.type}`, false)
+      }
+      await this.dependencies.repository.markSyncHealthy(this.dependencies.clock.now())
     }
-    if (job.type === 'sync_context_source') {
-      const entity = readProjectionSource(job.payloadJson)
-      await this.synchronizeProjectionEntity(entity.entityType, entity.sourceId)
-      return
+    catch (error: unknown) {
+      const normalized = normalizeTaskError(error)
+      if (normalized.retryable) {
+        const timestamp = this.dependencies.clock.now()
+        const retryAfter = job.attemptCount < job.maxAttempts
+          ? timestamp + calculateOpenVikingRetryDelay(job.attemptCount)
+          : null
+        await this.dependencies.repository.markSyncDegraded(normalized.message, retryAfter, timestamp)
+      }
+      throw normalized
     }
-    if (job.type === 'sync_openviking_session') {
-      const payload = readSessionSource(job.payloadJson)
-      await this.synchronizeSession(payload.sourceType, payload.sourceId)
-      return
-    }
-    throw new Error(`上下文同步服务未注册任务类型：${job.type}`)
   }
 
   /** @returns 按 SQLite 当前世界和独立人物对账 OpenViking User 后结束。 */
@@ -215,7 +244,7 @@ export class ContextSynchronizationApplicationService implements TaskHandler {
   }
 
   /** @param entityType 普通资料或人物反馈资料。 @param sourceId SQLite 实体 UUID。 @returns 当前投影意图执行完成时结束。 */
-  async synchronizeProjectionEntity(entityType: ContextProjectionEntityType, sourceId: string): Promise<void> {
+  async synchronizeProjectionEntity(entityType: ContextProjectionEntityType, sourceId: string, job?: TaskJob): Promise<void> {
     this.requireConfigured(true)
     const [projections, allRecords] = await Promise.all([
       this.dependencies.repository.listSourceProjections(entityType, sourceId),
@@ -224,18 +253,25 @@ export class ContextSynchronizationApplicationService implements TaskHandler {
     const records = allRecords.filter(record => record.entityType === entityType && record.sourceId === sourceId)
     const desiredKeys = new Set(projections.map(projectionKey))
     let failedMessage: string | null = null
+    let hasRetryableFailure = false
     for (const record of records.filter(item => !desiredKeys.has(recordKey(item)))) {
       try {
         await this.dependencies.openViking.deleteProjection(record)
         await this.dependencies.repository.deleteSyncRecord(record.id)
       }
       catch (error: unknown) {
-        failedMessage = error instanceof OpenVikingError ? error.message.slice(0, 500) : 'OpenViking 远端资料删除失败'
+        const failure = toProjectionFailure(error, record.failureCount, this.dependencies.clock.now(), job)
+        failedMessage = failure.error
+        hasRetryableFailure ||= failure.retryable
         await this.dependencies.repository.saveSyncRecord({
           ...record,
           status: 'failed',
-          error: failedMessage,
-          updatedAt: this.dependencies.clock.now(),
+          error: failure.error,
+          errorCode: failure.errorCode,
+          errorStage: failure.errorStage,
+          failureCount: failure.failureCount,
+          nextRetryAt: failure.nextRetryAt,
+          updatedAt: failure.timestamp,
         })
       }
     }
@@ -249,12 +285,18 @@ export class ContextSynchronizationApplicationService implements TaskHandler {
           previous = undefined
         }
         catch (error: unknown) {
-          failedMessage = safeProviderMessage(error)
+          const failure = toProjectionFailure(error, previous.failureCount, this.dependencies.clock.now(), job)
+          failedMessage = failure.error
+          hasRetryableFailure ||= failure.retryable
           await this.dependencies.repository.saveSyncRecord({
             ...previous,
             status: 'failed',
-            error: failedMessage,
-            updatedAt: this.dependencies.clock.now(),
+            error: failure.error,
+            errorCode: failure.errorCode,
+            errorStage: failure.errorStage,
+            failureCount: failure.failureCount,
+            nextRetryAt: failure.nextRetryAt,
+            updatedAt: failure.timestamp,
           })
           // 保留旧身份和 URI，供 Worker 重试删除；不能先覆盖成新世界身份，否则旧投影将无法定位。
           continue
@@ -277,20 +319,31 @@ export class ContextSynchronizationApplicationService implements TaskHandler {
           ...pending,
           remoteUri,
           status: 'synchronized',
+          error: null,
+          errorCode: null,
+          errorStage: null,
+          failureCount: 0,
+          nextRetryAt: null,
           updatedAt: this.dependencies.clock.now(),
         })
       }
       catch (error: unknown) {
-        failedMessage = safeProviderMessage(error)
+        const failure = toProjectionFailure(error, pending.failureCount, this.dependencies.clock.now(), job)
+        failedMessage = failure.error
+        hasRetryableFailure ||= failure.retryable
         await this.dependencies.repository.saveSyncRecord({
           ...pending,
           status: 'failed',
-          error: failedMessage,
-          updatedAt: this.dependencies.clock.now(),
+          error: failure.error,
+          errorCode: failure.errorCode,
+          errorStage: failure.errorStage,
+          failureCount: failure.failureCount,
+          nextRetryAt: failure.nextRetryAt,
+          updatedAt: failure.timestamp,
         })
       }
     }
-    if (failedMessage) throw new TaskExecutionError(failedMessage, true)
+    if (failedMessage) throw new TaskExecutionError(failedMessage, hasRetryableFailure)
   }
 
   /** @param sourceType 生成运行或反馈。 @param sourceId 本地事实 UUID。 @returns 远端 Session 与候选记忆同步完成时结束。 */
@@ -317,13 +370,21 @@ export class ContextSynchronizationApplicationService implements TaskHandler {
   async reindex(): Promise<ContextReindexResult> {
     this.requireConfigured(true)
     const targetUserIds = await this.dependencies.repository.listTargetUserIds()
+    const preflightTimestamp = this.dependencies.clock.now()
+    await this.dependencies.repository.allowImmediateSyncRetry(preflightTimestamp)
     try {
-      await this.dependencies.openViking.checkHealth()
+      await this.dependencies.openViking.checkWriteHealth(true)
       await this.dependencies.openViking.resetLegacyIndex()
       await this.dependencies.openViking.rebuildUsers(targetUserIds)
       await this.dependencies.repository.markSessionsForRebuild(this.dependencies.clock.now())
     }
     catch (error: unknown) {
+      const message = safeProviderMessage(error)
+      await this.dependencies.repository.markSyncDegraded(
+        message,
+        preflightTimestamp + calculateOpenVikingRetryDelay(1),
+        preflightTimestamp,
+      )
       throw toApplicationError(error)
     }
 
@@ -358,16 +419,26 @@ export class ContextSynchronizationApplicationService implements TaskHandler {
           ...pending,
           remoteUri,
           status: 'synchronized',
+          error: null,
+          errorCode: null,
+          errorStage: null,
+          failureCount: 0,
+          nextRetryAt: null,
           updatedAt: this.dependencies.clock.now(),
         })
         synchronized += 1
       }
       catch (error: unknown) {
+        const failure = toProjectionFailure(error, pending.failureCount, this.dependencies.clock.now())
         await this.dependencies.repository.saveSyncRecord({
           ...pending,
           status: 'failed',
-          error: safeProviderMessage(error),
-          updatedAt: this.dependencies.clock.now(),
+          error: failure.error,
+          errorCode: failure.errorCode,
+          errorStage: failure.errorStage,
+          failureCount: failure.failureCount,
+          nextRetryAt: failure.nextRetryAt,
+          updatedAt: failure.timestamp,
         })
       }
     }
@@ -384,6 +455,20 @@ export class ContextSynchronizationApplicationService implements TaskHandler {
         )
       }
     }
+    if (synchronized === projections.length) {
+      await this.dependencies.repository.markSyncHealthy(this.dependencies.clock.now())
+    }
+    else {
+      const nextRetryAt = records
+        .filter(record => record.status === 'failed' && record.nextRetryAt !== null)
+        .reduce<number | null>((earliest, record) => earliest === null ? record.nextRetryAt : Math.min(earliest, record.nextRetryAt!), null)
+      await this.dependencies.repository.markSyncDegraded(
+        records.find(record => record.status === 'failed')?.error ?? 'OpenViking 全量重建存在失败投影',
+        nextRetryAt,
+        this.dependencies.clock.now(),
+      )
+      await this.recoverPendingTasks()
+    }
     return {
       provider: 'openviking',
       total: projections.length,
@@ -391,6 +476,44 @@ export class ContextSynchronizationApplicationService implements TaskHandler {
       failed: projections.length - synchronized,
       records,
     }
+  }
+
+  /**
+   * 由管理员重新安排全部失败投影，或指定资料实体的失败投影。
+   * @param target 可选资料实体；省略时处理全部失败投影。
+   * @returns 实际重新排队的资料实体数量。
+   */
+  async retryFailedSync(target?: { entityType: ContextProjectionEntityType, sourceId: string }): Promise<{ enqueued: number }> {
+    this.requireConfigured(true)
+    const timestamp = this.dependencies.clock.now()
+    const queue = this.dependencies.taskQueue
+    if (!queue) throw new ApplicationError('CAPABILITY_DISABLED', 'OpenViking 同步任务队列尚未配置', 503)
+    const records = (await this.dependencies.repository.listSyncRecords()).filter(record => {
+      if (record.status !== 'failed') return false
+      return !target || (record.entityType === target.entityType && record.sourceId === target.sourceId)
+    })
+    const entities = new Map<string, { entityType: ContextProjectionEntityType, sourceId: string }>()
+    for (const record of records) {
+      const entityType = record.entityType as ContextProjectionEntityType
+      entities.set(`${entityType}:${record.sourceId}`, { entityType, sourceId: record.sourceId })
+      await this.dependencies.repository.saveSyncRecord({
+        ...record,
+        failureCount: 0,
+        nextRetryAt: timestamp,
+        updatedAt: timestamp,
+      })
+    }
+    await this.dependencies.repository.allowImmediateSyncRetry(timestamp)
+    for (const entity of entities.values()) {
+      await queue.enqueueSourceSynchronization(
+        entity.sourceId,
+        this.dependencies.identifiers.create(),
+        timestamp,
+        entity.entityType,
+        timestamp,
+      )
+    }
+    return { enqueued: entities.size }
   }
 
   /** @param requireEnabled 是否同时要求能力开关打开。 @returns 无返回值。 */
@@ -451,6 +574,10 @@ function toPendingRecord(
     status: 'pending',
     operation: projection.operation,
     error: null,
+    errorCode: null,
+    errorStage: null,
+    failureCount: previous?.failureCount ?? 0,
+    nextRetryAt: null,
     createdAt: previous?.createdAt ?? timestamp,
     updatedAt: timestamp,
   }
@@ -468,6 +595,62 @@ function toApplicationError(error: unknown): ApplicationError {
 function safeProviderMessage(error: unknown): string {
   if (error instanceof OpenVikingError) return error.message.slice(0, 500)
   return 'OpenViking 资料同步失败'
+}
+
+/** 单项投影失败后允许持久化的恢复信息。 */
+interface ProjectionFailure {
+  /** 脱敏错误摘要。 */
+  error: string
+  /** OpenViking 稳定错误代码。 */
+  errorCode: string | null
+  /** 不含路径参数的请求阶段。 */
+  errorStage: string | null
+  /** 是否适合自动重试。 */
+  retryable: boolean
+  /** 当前连续失败次数。 */
+  failureCount: number
+  /** 下次自动重试时间；为空表示需要人工处理。 */
+  nextRetryAt: number | null
+  /** 本次失败时间。 */
+  timestamp: number
+}
+
+/**
+ * 把外部异常转换为投影状态和持久退避时间。
+ * @param error 未知外部异常。
+ * @param previousFailureCount 该投影此前连续失败次数。
+ * @param timestamp 当前 UTC Unix 毫秒。
+ * @param job 可选当前任务尝试快照。
+ * @returns 不含正文、URI和凭据的失败信息。
+ */
+function toProjectionFailure(
+  error: unknown,
+  previousFailureCount: number,
+  timestamp: number,
+  job?: TaskJob,
+): ProjectionFailure {
+  const providerError = error instanceof OpenVikingError ? error : null
+  const retryable = providerError?.retryable ?? true
+  const failureCount = previousFailureCount + 1
+  const attemptsRemain = !job || job.attemptCount < job.maxAttempts
+  return {
+    error: safeProviderMessage(error),
+    errorCode: providerError?.details.providerCode ?? null,
+    errorStage: providerError?.details.operation ?? null,
+    retryable,
+    failureCount,
+    nextRetryAt: retryable && attemptsRemain
+      ? timestamp + calculateOpenVikingRetryDelay(job?.attemptCount ?? failureCount)
+      : null,
+    timestamp,
+  }
+}
+
+/** @param error 未知任务异常。 @returns 保留明确重试语义的安全任务错误。 */
+function normalizeTaskError(error: unknown): TaskExecutionError {
+  if (error instanceof TaskExecutionError) return error
+  if (error instanceof OpenVikingError) return new TaskExecutionError(error.message.slice(0, 500), error.retryable)
+  return new TaskExecutionError('OpenViking 同步任务执行失败', true)
 }
 
 /** @param payloadJson 持久任务 JSON。 @returns 已校验投影实体类型和 UUID。 */
