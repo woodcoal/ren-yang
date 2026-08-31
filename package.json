@@ -1,7 +1,25 @@
 {
   "name": "ren-yang",
+  "version": "1.26.901",
+  "description": "单人本地运行的 AI 人物模拟、兴趣判断与结构化图文创作工作台",
   "private": true,
   "type": "module",
+  "license": "AGPL-3.0-only",
+  "author": "woodcoal",
+  "homepage": "https://github.com/woodcoal/ren-yang#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/woodcoal/ren-yang.git"
+  },
+  "bugs": {
+    "url": "https://github.com/woodcoal/ren-yang/issues"
+  },
+  "keywords": [
+    "ai-persona",
+    "content-generation",
+    "nuxt",
+    "openviking"
+  ],
   "packageManager": "pnpm@11.24.0",
   "engines": {
     "node": ">=24 <25",
