@@ -150,17 +150,20 @@ describe('成长与记忆管理组件', () => {
     const wrapper = await mountSuspended(LearningPromptPanel, {
       props: {
         title: '人物成长', loading: false, batch: completedAnalysisBatch,
+        inputStatistics: { enabledCount: 5, pendingCount: 2 },
         workspace: { promptType: 'persona_growth', activeVersion, draft, versions: [activeVersion] },
       },
     })
     expect(wrapper.findAll('textarea')).toHaveLength(1)
     expect(wrapper.get('[data-learning-prompt-editor]').element.value).toBe('待校准提示词。')
-    expect(wrapper.get('[data-learning-analyze-button]').text()).toBe('')
+    expect(wrapper.text()).toContain('已启用 5 条成长素材')
+    expect(wrapper.text()).toContain('其中 2 条尚未处理')
     expect(wrapper.get('[data-learning-history-button]').text()).toBe('')
-    expect(wrapper.get('[data-learning-analyze-button]').attributes('aria-label')).toBe('重新 AI 生成提示词')
     expect(wrapper.get('[data-learning-history-button]').attributes('aria-label')).toBe('查看提示词历史')
-    await wrapper.get('[data-learning-analyze-button]').trigger('click')
-    expect(wrapper.emitted('analyze')).toEqual([['full_rebuild']])
+    await wrapper.get('[data-learning-incremental-button]').trigger('click')
+    await wrapper.get('[data-learning-full-rebuild-button]').trigger('click')
+    expect(wrapper.emitted('analyze')).toEqual([['incremental'], ['full_rebuild']])
+    expect(wrapper.find('[data-learning-analyze-button]').exists()).toBe(false)
     await wrapper.get('[data-learning-prompt-editor]').setValue('人工校准后的完整提示词。')
     await wrapper.get('[data-learning-save-publish-button]').trigger('click')
     expect(wrapper.emitted('saveAndPublish')).toEqual([[{
@@ -173,6 +176,9 @@ describe('成长与记忆管理组件', () => {
     expect(historyVersion).toBeDefined()
     await new DOMWrapper(historyVersion!).trigger('click')
     expect(wrapper.get('[data-learning-prompt-editor]').element.value).toBe('当前生效提示词。')
+    await wrapper.setProps({ inputStatistics: { enabledCount: 5, pendingCount: 0 } })
+    expect(wrapper.get('[data-learning-incremental-button]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-learning-full-rebuild-button]').attributes('disabled')).toBeUndefined()
     wrapper.unmount()
   })
 
@@ -181,12 +187,15 @@ describe('成长与记忆管理组件', () => {
       props: {
         title: '人物记忆',
         loading: false,
+        inputStatistics: { enabledCount: 3, pendingCount: 1 },
         batch: { ...completedAnalysisBatch, status: 'queued', analysisType: 'persona_memory' },
         workspace: { promptType: 'persona_memory', activeVersion: null, draft: null, versions: [] },
       },
     })
 
-    expect(wrapper.get('[data-learning-analyze-button]').attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).toContain('已启用 3 条记忆素材')
+    expect(wrapper.get('[data-learning-incremental-button]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-learning-full-rebuild-button]').attributes('disabled')).toBeDefined()
     await wrapper.get('[data-learning-refresh-button]').trigger('click')
     expect(wrapper.emitted('refresh')).toEqual([[]])
     expect(wrapper.text()).toContain('当前生成完成前不能重复提交')

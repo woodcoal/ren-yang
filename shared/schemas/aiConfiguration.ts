@@ -15,7 +15,7 @@ const aiEndpointSchema = z.url('接口地址无效').max(2_000).superRefine((val
 export const aiModelModalitySchema = z.enum(['text', 'image'], { error: '模型类型无效' })
 
 /** 首批代码固定流程的算法编码。 */
-export const aiAlgorithmCodeSchema = z.enum(['persona_soul', 'world_soul', 'persona_growth', 'world_growth'], { error: '算法编码无效' })
+export const aiAlgorithmCodeSchema = z.enum(['persona_soul', 'world_soul', 'persona_growth', 'world_growth', 'persona_memory'], { error: '算法编码无效' })
 
 /** 允许作为 HTTP User-Agent 请求头发送的可见 ASCII 文本。 */
 export const aiUserAgentSchema = z.string().trim().max(500, 'UserAgent 不能超过 500 个字符')

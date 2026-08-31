@@ -78,7 +78,7 @@ describe('SQLite 与引用文件备份恢复', () => {
     expect(validation.fileCount).toBe(3)
     expect(validation.manifest.version).toBe(2)
     if (validation.manifest.version !== 2) throw new Error('新建备份应使用第二版清单')
-    expect(validation.manifest.migrationVersion).toBe(1788940800000)
+    expect(validation.manifest.migrationVersion).toBe(1789027200000)
     expect(existsSync(resolve(backupDirectory, 'app.sqlite-wal'))).toBe(false)
     expect(existsSync(resolve(backupDirectory, 'app.sqlite-shm'))).toBe(false)
     for (const file of validation.manifest.files) {
@@ -164,7 +164,7 @@ describe('SQLite 与引用文件备份恢复', () => {
     const databasePath = resolve(backupDirectory, 'app.sqlite')
     const previousDatabase = new Database(databasePath, { fileMustExist: true })
     try {
-      previousDatabase.prepare(`DELETE FROM __drizzle_migrations WHERE created_at = ?`).run(1788940800000)
+      previousDatabase.prepare(`DELETE FROM __drizzle_migrations WHERE created_at > ?`).run(1788854400000)
     }
     finally {
       previousDatabase.close()

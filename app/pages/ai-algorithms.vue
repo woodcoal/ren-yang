@@ -7,7 +7,7 @@ import type { AiPromptWorkspaceView } from '#shared/types/aiPrompt'
 import { getApiErrorMessage } from '../utils/apiError'
 
 /** AI 算法页的顶层分类。 */
-type AiAlgorithmCategory = 'soul' | 'growth'
+type AiAlgorithmCategory = 'soul' | 'growth' | 'memory'
 
 /** 等待确认的算法与提示词选择。 */
 interface PendingAlgorithmSelection {
@@ -20,6 +20,7 @@ interface PendingAlgorithmSelection {
 const categories: Array<{ code: AiAlgorithmCategory, label: string, description: string }> = [
   { code: 'soul', label: '灵魂整理', description: '整理管理员手工设定的人物或世界初始灵魂。' },
   { code: 'growth', label: '成长提炼', description: '先提取带证据结论，再综合为待审核的成长提示词。' },
+  { code: 'memory', label: '记忆提炼', description: '按来源与独立证据门槛提炼人物长期记忆。' },
 ]
 
 const route = useRoute()
@@ -44,7 +45,7 @@ const switchConfirmationOpen = shallowRef(false)
 const promptDirty = shallowRef(false)
 const savingCode = shallowRef<AiAlgorithmCode | null>(null)
 const selectedAlgorithm = computed(() => algorithms.value.find(algorithm => algorithm.code === selectedAlgorithmCode.value) ?? algorithms.value[0] ?? null)
-const activeCategory = computed<AiAlgorithmCategory>(() => selectedAlgorithm.value?.code.endsWith('_growth') ? 'growth' : 'soul')
+const activeCategory = computed<AiAlgorithmCategory>(() => algorithmCategory(selectedAlgorithm.value?.code ?? 'persona_soul'))
 const categoryAlgorithms = computed(() => algorithms.value.filter(algorithm => algorithmCategory(algorithm.code) === activeCategory.value))
 const selectedPrompt = computed(() => prompts.value.find(prompt => prompt.code === selectedPromptCode.value) ?? null)
 const configuredCount = computed(() => algorithms.value.filter(item => item.activeConfigurationVersion !== null).length)
@@ -62,11 +63,12 @@ function findInitialAlgorithm(): AiAlgorithmView | null {
 }
 
 /**
- * 把固定算法编码归入灵魂整理或成长提炼。
+ * 把固定算法编码归入灵魂整理、成长提炼或记忆提炼。
  * @param code 固定算法编码。
  * @returns 算法所属顶层分类。
  */
 function algorithmCategory(code: AiAlgorithmCode): AiAlgorithmCategory {
+  if (code === 'persona_memory') return 'memory'
   return code.endsWith('_growth') ? 'growth' : 'soul'
 }
 
@@ -160,7 +162,7 @@ async function saveAlgorithm(code: AiAlgorithmCode, input: PublishAiAlgorithmCon
 
 <template>
   <div>
-    <ContentPageHeader title="AI 算法" description="按灵魂整理与成长提炼分类维护固定流程；模型、参数和步骤提示词在同一处调整。" />
+    <ContentPageHeader title="AI 算法" description="按灵魂整理、成长提炼与记忆提炼分类维护固定流程；模型、参数和步骤提示词在同一处调整。" />
     <div class="status-strip page-status-strip" aria-label="AI 算法状态摘要">
       <div class="status-cell"><span class="status-kicker">固定算法</span><strong class="status-value">{{ algorithms.length }}</strong></div>
       <div class="status-cell"><span class="status-kicker">已配置</span><strong class="status-value">{{ configuredCount }}</strong></div>
@@ -240,7 +242,7 @@ async function saveAlgorithm(code: AiAlgorithmCode, input: PublishAiAlgorithmCon
 <style scoped>
 .algorithm-category-tabs {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   margin-top: 2rem;
   overflow: hidden;
   border: 1px solid var(--app-border);

@@ -131,6 +131,70 @@ class TwoStageGrowthAlgorithms {
   }
 }
 
+/** 模拟人物记忆专用算法，并记录综合步骤收到的程序校验后记忆事实。 */
+class TwoStageMemoryAlgorithms {
+  /** 记忆编译步骤收到的事实。 */
+  public synthesizedFacts: unknown[] = []
+
+  /** @param code 人物记忆算法编码。 @returns 固定两阶段配置快照。 */
+  async prepare(code: 'persona_memory'): Promise<AiAlgorithmSnapshot> {
+    return {
+      algorithmCode: code,
+      implementationVersion: 1,
+      configurationVersionId: '71000000-0000-4000-8000-000000000001',
+      configurationVersion: 1,
+      steps: [
+        {
+          stepKey: 'extract', ordinal: 0, modelDeploymentId: '71000000-0000-4000-8000-000000000002',
+          connectionId: '71000000-0000-4000-8000-000000000003', protocol: 'openai_compatible',
+          endpoint: 'https://memory.test/v1', model: 'memory-extract-model', promptCode: 'analysis.persona_memory_extract',
+          promptVersionId: '71000000-0000-4000-8000-000000000004',
+          parameters: { temperature: 0, maxOutputTokens: 2_048, timeoutMs: 30_000 },
+        },
+        {
+          stepKey: 'synthesize', ordinal: 1, modelDeploymentId: '71000000-0000-4000-8000-000000000005',
+          connectionId: '71000000-0000-4000-8000-000000000006', protocol: 'openai_compatible',
+          endpoint: 'https://memory.test/v1', model: 'memory-synthesize-model', promptCode: 'analysis.persona_memory_synthesize',
+          promptVersionId: '71000000-0000-4000-8000-000000000007',
+          parameters: { temperature: 0.2, maxOutputTokens: 4_096, timeoutMs: 60_000 },
+        },
+      ],
+    }
+  }
+
+  /**
+   * 提取步骤返回单条外部经验，综合步骤记录已通过门槛的事实并返回纯文本草稿。
+   * @param _snapshot 已固定的人物记忆算法快照。
+   * @param stepKey 当前固定步骤。
+   * @param variables 当前提示词变量。
+   * @returns 固定模型响应。
+   */
+  async executeStep(
+    _snapshot: AiAlgorithmSnapshot,
+    stepKey: string,
+    variables: Record<string, string>,
+  ): Promise<TextModelResponse> {
+    if (stepKey === 'extract') {
+      const input = (JSON.parse(variables.inputsJson!) as Array<{ id: string }>)[0]!
+      return {
+        structuredOutput: { facts: [{
+          statement: '完成过一次小说人物关系校对。',
+          memoryType: 'experience',
+          evidence: [{ inputId: input.id, signalType: 'external_record' }],
+          confidence: 0.9,
+          conflicts: [],
+        }] },
+        usage: { inputTokens: 10, outputTokens: 10, totalTokens: 20 },
+      }
+    }
+    this.synthesizedFacts = JSON.parse(variables.factsJson!) as unknown[]
+    return {
+      structuredOutput: '处理小说相关任务时，可参考其已完成过人物关系校对的经历。',
+      usage: { inputTokens: 10, outputTokens: 10, totalTokens: 20 },
+    }
+  }
+}
+
 let directory: string
 let database: SqliteDatabase
 let analysis: AnalysisApplicationService
@@ -176,15 +240,16 @@ beforeEach(async () => {
     tokenBudgets: { world: 2_500, persona: 3_500 },
     prompts,
   })
+  analysisRepository = new SqliteAnalysisRepository(database.getClient())
   learning = new LearningApplicationService({
     content: contentRepository,
     learning: learningRepository,
+    analysis: analysisRepository,
     identifiers,
     clock,
     tokenCounter,
     promptTokenBudgets: { world_growth: 2_500, persona_growth: 2_500, persona_memory: 3_000 },
   })
-  analysisRepository = new SqliteAnalysisRepository(database.getClient())
   model = new AnalysisTextModel()
   analysis = new AnalysisApplicationService({
     content: contentRepository,
@@ -286,8 +351,14 @@ describe('AI 综合提炼学习提示词', () => {
   })
 
   it('增量提炼不会重复消费同正文同评分素材，完整重建仍可发起', async () => {
+    await expect(learning.getWorldGrowthWorkspace(worldId)).resolves.toMatchObject({
+      inputStatistics: { enabledCount: 1, pendingCount: 1 },
+    })
     const first = await analysis.createBatch('world_growth', worldId, { mode: 'incremental' })
     await worker.executeNext()
+    await expect(learning.getWorldGrowthWorkspace(worldId)).resolves.toMatchObject({
+      inputStatistics: { enabledCount: 1, pendingCount: 0 },
+    })
     await expect(analysis.createBatch('world_growth', worldId, { mode: 'incremental' }))
       .rejects.toMatchObject({ code: 'NO_NEW_ANALYSIS_INPUT', statusCode: 409 })
 
@@ -326,7 +397,7 @@ describe('AI 综合提炼学习提示词', () => {
     })
   })
 
-  it('人物记忆分析会把启用的第三方记录与参考地址固定为独立输入', async () => {
+  it('人物记忆专用算法会固定第三方记录，校验证据门槛后编译待发布草稿', async () => {
     const persona = await content.createPersona({
       name: '外部经历人物', worldId: null, sourceIds: [],
       snapshot: { promptText: '重视可追溯的工作经验。' }, changeSummary: '建立人物',
@@ -335,11 +406,41 @@ describe('AI 综合提炼学习提示词', () => {
       occurredOn: '2026-08-31', content: '完成了一次小说人物关系校对。',
       references: [{ name: '校对笔记', address: '笔记库/小说/第三章' }], importance: 5,
     })
+    await expect(learning.getPersonaMemoryWorkspace(persona.persona.id)).resolves.toMatchObject({
+      inputStatistics: { enabledCount: 1, pendingCount: 1 },
+    })
+
+    const algorithms = new TwoStageMemoryAlgorithms()
+    analysis = new AnalysisApplicationService({
+      content: contentRepository,
+      souls: contentRepository,
+      learning: learningRepository,
+      analysis: analysisRepository,
+      model,
+      prompts,
+      identifiers,
+      clock,
+      algorithms,
+    })
+    worker = new WorkerApplicationService({
+      taskJobRepository: new SqliteTaskJobRepository(database.getClient()),
+      taskHandler: analysis,
+      clock,
+      leaseDurationMs: 60_000,
+    })
 
     const queued = await analysis.createBatch('persona_memory', persona.persona.id, { mode: 'incremental' })
     expect(queued.inputs).toEqual([expect.objectContaining({
       inputType: 'persona_external_record', title: '2026-08-31 第三方经历', importance: 5,
       contentSnapshot: expect.stringContaining('校对笔记：笔记库/小说/第三章'),
     })])
+    await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: true })
+    expect(algorithms.synthesizedFacts).toEqual([expect.objectContaining({
+      statement: '完成过一次小说人物关系校对。', memoryType: 'experience', independentEvidenceCount: 1,
+    })])
+    await expect(learning.getPersonaMemoryWorkspace(persona.persona.id)).resolves.toMatchObject({
+      inputStatistics: { enabledCount: 1, pendingCount: 0 },
+      prompt: { draft: { promptText: '处理小说相关任务时，可参考其已完成过人物关系校对的经历。' } },
+    })
   })
 })

@@ -42,6 +42,14 @@ export const AI_ALGORITHM_DEFINITIONS: Record<AiAlgorithmCode, AiAlgorithmDefini
       { key: 'synthesize', name: '综合编译', description: '把已校验结论编译为完整世界成长提示词草稿。', promptCode: 'analysis.world_growth_synthesize', ordinal: 1 },
     ],
   },
+  persona_memory: {
+    code: 'persona_memory', name: '人物记忆提炼', implementationVersion: 1,
+    description: '提取可追溯的记忆证据，经独立来源门槛校验后编译为待审核的人物记忆提示词草稿。',
+    steps: [
+      { key: 'extract', name: '证据提取', description: '从历史任务与第三方经历提取带信号类型的原子记忆候选。', promptCode: 'analysis.persona_memory_extract', ordinal: 0 },
+      { key: 'synthesize', name: '记忆编译', description: '把通过独立证据门槛的事实编译为完整人物记忆提示词草稿。', promptCode: 'analysis.persona_memory_synthesize', ordinal: 1 },
+    ],
+  },
 }
 
 /**

@@ -58,6 +58,20 @@ const algorithm: AiAlgorithmView = {
   ],
 }
 
+/** 页面测试使用的已配置人物记忆专用算法。 */
+const memoryAlgorithm: AiAlgorithmView = {
+  code: 'persona_memory', name: '人物记忆提炼', description: '两阶段证据门槛算法。', implementationVersion: 1,
+  activeConfigurationVersion: 1, configurationVersionCount: 1, updatedAt: 1_000,
+  stepDefinitions: [
+    { key: 'extract', name: '证据提取', description: '提取带来源信号的候选。', promptCode: 'analysis.persona_memory_extract', ordinal: 0 },
+    { key: 'synthesize', name: '记忆编译', description: '编译完整记忆草稿。', promptCode: 'analysis.persona_memory_synthesize', ordinal: 1 },
+  ],
+  steps: [
+    { key: 'extract', name: '证据提取', description: '提取带来源信号的候选。', promptCode: 'analysis.persona_memory_extract', ordinal: 0, modelDeploymentId: deployment.id, parameters: { temperature: 0, maxOutputTokens: 2_048, timeoutMs: 30_000 } },
+    { key: 'synthesize', name: '记忆编译', description: '编译完整记忆草稿。', promptCode: 'analysis.persona_memory_synthesize', ordinal: 1, modelDeploymentId: deployment.id, parameters: { temperature: 0.2, maxOutputTokens: 4_096, timeoutMs: 60_000 } },
+  ],
+}
+
 /** 页面测试使用的两个成长算法步骤提示词。 */
 const algorithmPrompts: AiPromptWorkspaceView[] = algorithm.stepDefinitions.map((step, index) => ({
   code: step.promptCode,
@@ -68,6 +82,28 @@ const algorithmPrompts: AiPromptWorkspaceView[] = algorithm.stepDefinitions.map(
   variables: [],
   activeVersion: {
     id: `10000000-0000-4000-8000-00000000001${index}`,
+    promptCode: step.promptCode,
+    versionNo: 1,
+    systemPromptTemplate: `${step.name}系统规则`,
+    userPromptTemplate: `${step.name}用户模板`,
+    changeSummary: '初始版本',
+    publishedAt: 1_000,
+  },
+  draft: null,
+  versions: [],
+  updatedAt: 1_000,
+}))
+
+/** 页面测试使用的人物记忆算法步骤提示词。 */
+const memoryAlgorithmPrompts: AiPromptWorkspaceView[] = memoryAlgorithm.stepDefinitions.map((step, index) => ({
+  code: step.promptCode,
+  name: step.name,
+  category: '算法步骤',
+  description: step.description,
+  kind: 'text',
+  variables: [],
+  activeVersion: {
+    id: `20000000-0000-4000-8000-00000000001${index}`,
     promptCode: step.promptCode,
     versionNo: 1,
     systemPromptTemplate: `${step.name}系统规则`,
@@ -143,8 +179,8 @@ registerEndpoint('/api/v1/system/ai-settings', {
     return { data: { values: savedSystemAiSettings, updatedAt: 2_000 } }
   },
 })
-registerEndpoint('/api/v1/ai/algorithms', () => ({ data: [algorithm] }))
-registerEndpoint('/api/v1/ai-prompts', () => ({ data: algorithmPrompts }))
+registerEndpoint('/api/v1/ai/algorithms', () => ({ data: [algorithm, memoryAlgorithm] }))
+registerEndpoint('/api/v1/ai-prompts', () => ({ data: [...algorithmPrompts, ...memoryAlgorithmPrompts] }))
 registerEndpoint(`/api/v1/ai/algorithms/${algorithm.code}`, {
   method: 'PUT',
   /** @param event 测试请求事件。 @returns 模拟发布后的算法。 */
@@ -283,5 +319,23 @@ describe('AI 模型与算法配置页面', () => {
     expect(panel.text()).toContain('已保存草稿')
     expect(panel.text()).toContain('模型原始响应')
     expect(panel.text()).toContain('传给下一步的数据')
+  })
+
+  it('把人物记忆作为独立分类，并展示专用基线、素材和分步测试入口', async () => {
+    const wrapper = await mountSuspended(AiAlgorithmsPage, { route: '/ai-algorithms' })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('记忆提炼')
+    const categoryButton = wrapper.findAll('button').find(button => button.text().includes('按来源与独立证据门槛'))!
+    await categoryButton.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('analysis.persona_memory_extract')
+    expect(wrapper.text()).toContain('证据提取')
+    expect(wrapper.text()).toContain('记忆编译')
+    const panel = wrapper.get('[data-ai-algorithm-test-panel]')
+    expect(panel.text()).toContain('当前记忆提示词基线')
+    expect(panel.text()).toContain('本次记忆素材')
+    expect(panel.findAll('textarea')[1]!.attributes('placeholder')).toContain('---')
   })
 })

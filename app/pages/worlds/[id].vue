@@ -46,6 +46,7 @@ const allSources = computed(() => sourceData.value?.data ?? [])
 const growthWorkspace = computed<WorldGrowthWorkspaceView>(() => growthData.value?.data ?? {
   sources: [], materials: [],
   prompt: { promptType: 'world_growth', activeVersion: null, draft: null, versions: [] },
+  inputStatistics: { enabledCount: 0, pendingCount: 0 },
 })
 const growthAnalysis = computed(() => analysisData.value?.data ?? null)
 const allPersonas = computed(() => personaData.value?.data ?? [])
@@ -489,6 +490,7 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
           v-else-if="selectedPromptModule === 'growth'"
           title="世界成长"
           :workspace="growthWorkspace.prompt"
+          :input-statistics="growthWorkspace.inputStatistics"
           :batch="growthAnalysis"
           :loading="actionLoading"
           @analyze="analyzeWorldGrowth"

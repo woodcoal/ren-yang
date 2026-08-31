@@ -1,7 +1,7 @@
 import type { AiAlgorithmStepParameters } from '../schemas/aiConfiguration'
 
 /** 首批由代码固定流程的算法编码。 */
-export type AiAlgorithmCode = 'persona_soul' | 'world_soul' | 'persona_growth' | 'world_growth'
+export type AiAlgorithmCode = 'persona_soul' | 'world_soul' | 'persona_growth' | 'world_growth' | 'persona_memory'
 
 /** 不暴露密文和明文密钥的 AI 接口连接视图。 */
 export interface AiConnectionView {

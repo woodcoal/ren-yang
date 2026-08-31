@@ -53,10 +53,12 @@ const allSources = computed(() => sourceData.value?.data ?? [])
 const growthWorkspace = computed<PersonaGrowthWorkspaceView>(() => growthData.value?.data ?? {
   sources: [], materials: [],
   prompt: { promptType: 'persona_growth', activeVersion: null, draft: null, versions: [] },
+  inputStatistics: { enabledCount: 0, pendingCount: 0 },
 })
 const memoryWorkspace = computed<PersonaMemoryWorkspaceView>(() => memoryData.value?.data ?? {
   operationRecords: [], externalRecords: [],
   prompt: { promptType: 'persona_memory', activeVersion: null, draft: null, versions: [] },
+  inputStatistics: { enabledCount: 0, pendingCount: 0 },
 })
 const growthAnalysis = computed(() => growthAnalysisData.value?.data ?? null)
 const memoryAnalysis = computed(() => memoryAnalysisData.value?.data ?? null)
@@ -587,6 +589,7 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
           v-else-if="selectedPromptModule === 'growth'"
           title="人物成长"
           :workspace="growthWorkspace.prompt"
+          :input-statistics="growthWorkspace.inputStatistics"
           :batch="growthAnalysis"
           :loading="actionLoading"
           @analyze="analyzeLearning('growth', $event)"
@@ -597,6 +600,7 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
           v-else
           title="人物记忆"
           :workspace="memoryWorkspace.prompt"
+          :input-statistics="memoryWorkspace.inputStatistics"
           :batch="memoryAnalysis"
           :loading="actionLoading"
           @analyze="analyzeLearning('memory', $event)"

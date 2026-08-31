@@ -10,9 +10,9 @@ const props = defineProps<{
   algorithm: AiAlgorithmView
 }>()
 
-/** 成长第一步成功后由服务端返回的第二步精确输入。 */
-interface GrowthTestContinuation {
-  /** 与第一步完全一致的成长基线 JSON。 */
+/** 成长或记忆第一步成功后由服务端返回的第二步精确输入。 */
+interface LearningTestContinuation {
+  /** 与第一步完全一致的长期提示词基线 JSON。 */
   baselineJson: string
   /** 第一步完成证据校验后的原子结论 JSON。 */
   factsJson: string
@@ -25,25 +25,27 @@ const { notifySuccess, notifyError } = useOperationNotifications()
 const running = shallowRef(false)
 const steps = shallowRef<AiAlgorithmTestStepResult[]>([])
 const configurationVersion = shallowRef<number | null>(null)
-const continuation = shallowRef<GrowthTestContinuation | null>(null)
+const continuation = shallowRef<LearningTestContinuation | null>(null)
 const isGrowth = computed(() => props.algorithm.code.endsWith('_growth'))
-const growthCompleted = computed(() => steps.value.some(step => step.stepKey === 'synthesize' && step.status === 'succeeded'))
+const isMemory = computed(() => props.algorithm.code === 'persona_memory')
+const isMultiStep = computed(() => isGrowth.value || isMemory.value)
+const multiStepCompleted = computed(() => steps.value.some(step => step.stepKey === 'synthesize' && step.status === 'succeeded'))
 const canRun = computed(() => props.algorithm.activeConfigurationVersion !== null
-  && (isGrowth.value
+  && (isMultiStep.value
     ? continuation.value !== null || materialText.value.trim().length > 0
     : soulText.value.trim().length > 0))
-const actionLabel = computed(() => isGrowth.value
+const actionLabel = computed(() => isMultiStep.value
   ? continuation.value ? '测试第 2 步：综合编译' : '测试第 1 步：原子提取'
   : '运行真实测试')
-const runningLabel = computed(() => isGrowth.value
+const runningLabel = computed(() => isMultiStep.value
   ? continuation.value ? '正在测试第 2 步：综合编译' : '正在测试第 1 步：原子提取'
   : '正在运行真实测试')
 const resultTitle = computed(() => {
   const last = steps.value.at(-1)
   if (!last) return ''
   if (last.status === 'failed') return '当前步骤测试失败'
-  if (growthCompleted.value) return '全部步骤通过'
-  if (isGrowth.value) return '第一步通过，请继续第二步'
+  if (multiStepCompleted.value) return '全部步骤通过'
+  if (isMultiStep.value) return '第一步通过，请继续第二步'
   return '测试通过'
 })
 
@@ -55,7 +57,7 @@ async function runTest(): Promise<void> {
   if (!canRun.value || running.value) return
   running.value = true
   try {
-    const body = isGrowth.value
+    const body = isMultiStep.value
       ? continuation.value
         ? {
             stepKey: 'synthesize',
@@ -75,14 +77,14 @@ async function runTest(): Promise<void> {
       ? [step]
       : [...steps.value.filter(item => item.stepKey !== step.stepKey), step]
     if (step.stepKey === 'extract' && step.status === 'succeeded') {
-      continuation.value = readGrowthContinuation(step.nextStepInput)
+      continuation.value = readLearningContinuation(step.nextStepInput)
       if (!continuation.value) {
         notifyError('第一步未返回有效的第二步输入，请重新开始测试', '算法测试失败')
         return
       }
     }
     if (step.status === 'failed') notifyError(step.error ?? '当前步骤没有完成', `${step.stepName}测试失败`)
-    else notifySuccess(step.stepKey === 'extract' && isGrowth.value ? '第一步已通过，可继续测试第二步。' : '当前步骤已通过真实调用测试。', '算法测试通过')
+    else notifySuccess(step.stepKey === 'extract' && isMultiStep.value ? '第一步已通过，可继续测试第二步。' : '当前步骤已通过真实调用测试。', '算法测试通过')
   }
   catch (error: unknown) {
     notifyError(getApiErrorMessage(error, '算法测试失败'), '测试请求失败')
@@ -103,11 +105,11 @@ function resetTest(): void {
 }
 
 /**
- * 从未知步骤结果中读取服务端生成的成长第二步输入。
+ * 从未知步骤结果中读取服务端生成的学习算法第二步输入。
  * @param value 第一步诊断中的下一步数据。
  * @returns 两个 JSON 字段完整时返回延续数据，否则返回 null。
  */
-function readGrowthContinuation(value: unknown): GrowthTestContinuation | null {
+function readLearningContinuation(value: unknown): LearningTestContinuation | null {
   if (typeof value !== 'object' || value === null) return null
   const record = value as Record<string, unknown>
   if (typeof record.baselineJson !== 'string' || typeof record.factsJson !== 'string') return null
@@ -162,12 +164,12 @@ function formatUsage(step: AiAlgorithmTestStepResult): string {
 
         <template v-else>
           <form class="test-input-form w-full" @submit.prevent="runTest">
-            <template v-if="isGrowth">
-              <UFormField class="w-full" label="当前成长提示词基线（首次生成可留空）">
-                <UTextarea v-model="baselineText" class="w-full" :disabled="continuation !== null" :rows="7" autoresize placeholder="粘贴当前已生效或准备迭代的成长提示词" />
+            <template v-if="isMultiStep">
+              <UFormField class="w-full" :label="isMemory ? '当前记忆提示词基线（首次生成可留空）' : '当前成长提示词基线（首次生成可留空）'">
+                <UTextarea v-model="baselineText" class="w-full" :disabled="continuation !== null" :rows="7" autoresize :placeholder="isMemory ? '粘贴当前已生效或准备迭代的记忆提示词' : '粘贴当前已生效或准备迭代的成长提示词'" />
               </UFormField>
-              <UFormField class="w-full" label="本次成长资料" required>
-                <UTextarea v-model="materialText" class="w-full" :disabled="continuation !== null" :rows="9" autoresize placeholder="粘贴准备提取和综合的资料正文" />
+              <UFormField class="w-full" :label="isMemory ? '本次记忆素材' : '本次成长资料'" required>
+                <UTextarea v-model="materialText" class="w-full" :disabled="continuation !== null" :rows="9" autoresize :placeholder="isMemory ? '粘贴第三方记忆素材；多条独立证据请用单独一行 --- 分隔' : '粘贴准备提取和综合的资料正文'" />
               </UFormField>
             </template>
             <UFormField v-else class="w-full" label="灵魂原文" required>
@@ -176,7 +178,7 @@ function formatUsage(step: AiAlgorithmTestStepResult): string {
 
             <div class="test-actions">
               <div class="flex flex-wrap gap-2">
-                <UButton v-if="!growthCompleted" type="submit" icon="i-lucide-play" :loading="running" :disabled="!canRun">{{ actionLabel }}</UButton>
+                <UButton v-if="!multiStepCompleted" type="submit" icon="i-lucide-play" :loading="running" :disabled="!canRun">{{ actionLabel }}</UButton>
                 <UButton v-if="steps.length" type="button" color="neutral" variant="soft" :disabled="running" @click="resetTest">重新开始</UButton>
               </div>
               <span v-if="algorithm.activeConfigurationVersion === null">请先发布算法配置</span>

@@ -4,6 +4,14 @@ export type LearningStatus = 'candidate' | 'active' | 'superseded' | 'archived' 
 /** 成长与记忆完整提示词的业务类型。 */
 export type LearningPromptType = 'world_growth' | 'persona_growth' | 'persona_memory'
 
+/** 当前学习提示词可处理的启用素材统计。 */
+export interface LearningInputStatisticsView {
+  /** 当前已启用、会参加下一次提炼的素材数量。 */
+  enabledCount: number
+  /** 尚未进入成功分析批次，或正文、评分已经变化的素材数量。 */
+  pendingCount: number
+}
+
 /** 当前对象资料库中可选为成长素材的资料。 */
 export interface GrowthLibrarySourceView {
   /** 资料 UUID。 */
@@ -294,6 +302,8 @@ export interface WorldGrowthWorkspaceView {
   materials: GrowthMaterialView[]
   /** 世界唯一成长提示词工作区。 */
   prompt: LearningPromptWorkspaceView
+  /** 世界成长素材的处理进度。 */
+  inputStatistics: LearningInputStatisticsView
 }
 
 /** 人物成长标签页完整视图。 */
@@ -304,6 +314,8 @@ export interface PersonaGrowthWorkspaceView {
   materials: GrowthMaterialView[]
   /** 人物唯一成长提示词工作区。 */
   prompt: LearningPromptWorkspaceView
+  /** 人物成长素材的处理进度。 */
+  inputStatistics: LearningInputStatisticsView
 }
 
 /** 人物记忆标签页完整视图。 */
@@ -314,4 +326,6 @@ export interface PersonaMemoryWorkspaceView {
   externalRecords: PersonaExternalRecordView[]
   /** 人物唯一记忆提示词工作区。 */
   prompt: LearningPromptWorkspaceView
+  /** 历史任务与第三方记录的处理进度。 */
+  inputStatistics: LearningInputStatisticsView
 }

@@ -2,7 +2,7 @@
 import { computed, reactive, shallowRef, watch } from 'vue'
 import type { SaveLearningPromptDraftInput } from '#shared/schemas/learning'
 import type { AnalysisBatchView } from '#shared/types/analysis'
-import type { LearningPromptVersionView, LearningPromptWorkspaceView } from '#shared/types/learning'
+import type { LearningInputStatisticsView, LearningPromptVersionView, LearningPromptWorkspaceView } from '#shared/types/learning'
 
 /** 成长或记忆提示词编辑器属性。 */
 interface Props {
@@ -14,12 +14,14 @@ interface Props {
   loading: boolean
   /** 展示标题，例如“人物成长”或“人物记忆”。 */
   title: string
+  /** 当前启用素材总数及其中尚未成功处理的数量。 */
+  inputStatistics: LearningInputStatisticsView
 }
 
 const props = defineProps<Props>()
 const emit = defineEmits<{
-  /** 从全部启用素材重新生成一份完整提示词草稿。 */
-  analyze: [mode: 'full_rebuild']
+  /** 结合未处理素材增量更新，或从全部启用素材完整重建。 */
+  analyze: [mode: 'incremental' | 'full_rebuild']
   /** 重新读取 AI 批次状态和最新草稿。 */
   refresh: []
   /** 保存编辑框正文并立即发布为后续任务使用的新版本。 */
@@ -35,6 +37,8 @@ const editor = reactive<SaveLearningPromptDraftInput>({
 const historyOpen = shallowRef(false)
 /** 当前 AI 批次是否仍在排队或执行。 */
 const analysisPending = computed(() => props.batch?.status === 'queued' || props.batch?.status === 'running')
+/** 当前提示词使用的原始资料在界面中的统一名称。 */
+const materialLabel = computed(() => props.workspace.promptType === 'persona_memory' ? '记忆素材' : '成长素材')
 /** 编辑框内容的保守 Token 估算，仅用于即时提示。 */
 const estimatedTokens = computed(() => Math.ceil(new TextEncoder().encode(editor.promptText).length / 3))
 /** 编辑内容相对当前生效版本是否发生变化。 */
@@ -68,12 +72,15 @@ function selectHistoryVersion(version: LearningPromptVersionView): void {
 }
 
 /**
- * 请求从全部启用素材重新生成完整提示词草稿。
- * @returns 当前没有重复批次时发出生成事件，否则直接结束。
+ * 请求结合新增素材更新，或从全部启用素材重新生成完整提示词草稿。
+ * @param mode 增量更新或完整重建。
+ * @returns 当前存在可处理素材且没有重复批次时发出生成事件，否则直接结束。
  */
-function requestAnalysis(): void {
+function requestAnalysis(mode: 'incremental' | 'full_rebuild'): void {
   if (props.loading || analysisPending.value) return
-  emit('analyze', 'full_rebuild')
+  if (mode === 'incremental' && props.inputStatistics.pendingCount === 0) return
+  if (props.inputStatistics.enabledCount === 0) return
+  emit('analyze', mode)
 }
 
 /**
@@ -133,6 +140,35 @@ watch(
     </template>
 
     <form class="space-y-4" @submit.prevent="saveAndPublish">
+      <div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-default bg-elevated/40 p-4">
+        <div>
+          <p class="font-medium text-highlighted">已启用 {{ inputStatistics.enabledCount }} 条{{ materialLabel }}</p>
+          <p class="mt-1 text-sm text-muted">
+            其中 {{ inputStatistics.pendingCount }} 条尚未处理或内容、评分已经变化。
+          </p>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <UButton
+            type="button"
+            data-learning-incremental-button
+            icon="i-lucide-sparkles"
+            color="neutral"
+            variant="soft"
+            :disabled="loading || analysisPending || inputStatistics.pendingCount === 0"
+            @click="requestAnalysis('incremental')"
+          >增量生成</UButton>
+          <UButton
+            type="button"
+            data-learning-full-rebuild-button
+            icon="i-lucide-refresh-ccw"
+            color="neutral"
+            variant="soft"
+            :disabled="loading || analysisPending || inputStatistics.enabledCount === 0"
+            @click="requestAnalysis('full_rebuild')"
+          >全量生成</UButton>
+        </div>
+      </div>
+
       <UFormField :label="`${title}提示词`" description="可直接手工校准完整提示词；发布时会自动保留上一版历史。" required>
         <UTextarea
           v-model="editor.promptText"
@@ -168,17 +204,6 @@ watch(
 
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div class="flex flex-wrap items-center gap-1">
-          <UButton
-            type="button"
-            data-learning-analyze-button
-            icon="i-lucide-wand-sparkles"
-            color="neutral"
-            variant="ghost"
-            aria-label="重新 AI 生成提示词"
-            title="重新 AI 生成提示词"
-            :disabled="loading || analysisPending"
-            @click="requestAnalysis"
-          />
           <UButton
             type="button"
             data-learning-history-button

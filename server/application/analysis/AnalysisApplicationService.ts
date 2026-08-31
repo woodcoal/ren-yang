@@ -1,4 +1,4 @@
-import { modelGrowthExtractionResultSchema, modelLearningPromptResultSchema } from '../../../shared/schemas/analysis'
+import { modelGrowthExtractionResultSchema, modelLearningPromptResultSchema, modelMemoryExtractionResultSchema } from '../../../shared/schemas/analysis'
 import type { CreateAnalysisBatchInput, ListAnalysisBatchesInput, ReviewIterationProposalsInput } from '../../../shared/schemas/analysis'
 import type { TextModelParameters } from '../../../shared/schemas/generation'
 import type { AnalysisBatchView, AnalysisType } from '../../../shared/types/analysis'
@@ -19,6 +19,8 @@ import type { SystemAiSettingsApplicationService } from '../systemAi/SystemAiSet
 import type { AiAlgorithmApplicationService } from '../aiConfiguration/AiAlgorithmApplicationService'
 import { validateAndMergeGrowthFacts } from './GrowthFactValidator'
 import type { AiAlgorithmSnapshot } from '../../domain/ai/AiAlgorithmModels'
+import { analysisInputKey } from '../../domain/analysis/AnalysisInputKey'
+import { validateAndMergeMemoryFacts } from './MemoryFactValidator'
 
 /** 纯文本提炼不再要求模型额外生成摘要，任务页展示固定结果说明。 */
 const LEARNING_PROMPT_RESULT_SUMMARY = 'AI 已根据全部启用素材生成完整提示词草稿。'
@@ -56,7 +58,7 @@ export interface AnalysisApplicationServiceDependencies {
   clock: Clock
   /** 系统内容分析参数；未提供时保持原固定参数，便于独立测试。 */
   systemAiSettings?: Pick<SystemAiSettingsApplicationService, 'resolveParameters'>
-  /** 数据库配置的两阶段成长算法；未提供时保持旧单模型路径。 */
+  /** 数据库配置的两阶段成长或记忆算法；未提供时保持旧单模型路径。 */
   algorithms?: Pick<AiAlgorithmApplicationService, 'prepare' | 'executeStep'>
 }
 
@@ -70,8 +72,8 @@ export class AnalysisApplicationService implements TaskHandler {
 
   /** @param analysisType 分析类型。 @param subjectId 对象 UUID。 @param input 分析模式。 @returns 已排队批次。 */
   async createBatch(analysisType: AnalysisType, subjectId: string, input: CreateAnalysisBatchInput): Promise<AnalysisBatchView> {
-    const algorithmSnapshot = this.dependencies.algorithms && analysisType !== 'persona_memory'
-      ? await this.dependencies.algorithms.prepare(growthAlgorithmCode(analysisType))
+    const algorithmSnapshot = this.dependencies.algorithms
+      ? await this.dependencies.algorithms.prepare(learningAlgorithmCode(analysisType))
       : null
     const model = algorithmSnapshot
       ? algorithmTextModelSnapshot(algorithmSnapshot)
@@ -149,7 +151,12 @@ export class AnalysisApplicationService implements TaskHandler {
       const runtime = await this.dependencies.analysis.startBatch(batchId, timestamp)
       if (!runtime) throw new ApplicationError('VERSION_CONFLICT', '分析批次不存在或状态已变化', 409)
       if (runtime.algorithmSnapshot) {
-        await this.executeConfiguredGrowthAlgorithm(batchId, runtime.algorithmSnapshot, runtime.baseline, runtime.batch.inputs)
+        if (runtime.algorithmSnapshot.algorithmCode === 'persona_memory') {
+          await this.executeConfiguredMemoryAlgorithm(batchId, runtime.algorithmSnapshot, runtime.baseline, runtime.batch.inputs)
+        }
+        else {
+          await this.executeConfiguredGrowthAlgorithm(batchId, runtime.algorithmSnapshot, runtime.baseline, runtime.batch.inputs)
+        }
         return
       }
       const configured = this.dependencies.model.getConfiguredModel()
@@ -221,6 +228,47 @@ export class AnalysisApplicationService implements TaskHandler {
     const result = modelLearningPromptResultSchema.parse({
       promptText: synthesizeResponse.structuredOutput,
       summary: `AI 已依据 ${facts.length} 条去重原子结论生成完整提示词草稿。`,
+    })
+    if (!await this.dependencies.analysis.saveLearningPromptResult(
+      batchId, result, this.dependencies.identifiers.create(), this.dependencies.identifiers.create(), this.dependencies.clock.now(),
+    )) {
+      throw new Error('分析批次保存时状态已变化')
+    }
+  }
+
+  /**
+   * 执行人物记忆的证据提取、来源校验、独立证据门槛和完整提示词编译。
+   * @param batchId 正在运行的分析批次 UUID。
+   * @param snapshot 创建批次时固定的人物记忆算法配置。
+   * @param baseline 当前人物灵魂与当前记忆提示词基线。
+   * @param inputs 创建批次时固定的任务记录和第三方经历。
+   * @returns 两步模型调用与待人工发布草稿保存完成时结束。
+   */
+  private async executeConfiguredMemoryAlgorithm(
+    batchId: string,
+    snapshot: AiAlgorithmSnapshot,
+    baseline: unknown[],
+    inputs: AnalysisBatchView['inputs'],
+  ): Promise<void> {
+    const extractResponse = await this.dependencies.algorithms!.executeStep(
+      snapshot,
+      'extract',
+      buildAnalysisPromptVariables(baseline, inputs),
+      'memory_evidence_facts',
+      'json_object',
+    )
+    const extracted = modelMemoryExtractionResultSchema.parse(extractResponse.structuredOutput)
+    const facts = validateAndMergeMemoryFacts(extracted.facts, inputs)
+    const synthesizeResponse = await this.dependencies.algorithms!.executeStep(
+      snapshot,
+      'synthesize',
+      { baselineJson: JSON.stringify(baseline), factsJson: JSON.stringify(facts) },
+      'learning_prompt',
+      'text',
+    )
+    const result = modelLearningPromptResultSchema.parse({
+      promptText: synthesizeResponse.structuredOutput,
+      summary: `AI 已依据 ${facts.length} 条达到独立证据门槛的记忆事实生成完整提示词草稿。`,
     })
     if (!await this.dependencies.analysis.saveLearningPromptResult(
       batchId, result, this.dependencies.identifiers.create(), this.dependencies.identifiers.create(), this.dependencies.clock.now(),
@@ -315,12 +363,12 @@ function analysisPromptCode(analysisType: AnalysisType): string {
 }
 
 /**
- * 把成长分析类型映射到固定算法编码；人物记忆仍使用原独立流程。
- * @param analysisType 世界成长或人物成长。
- * @returns 对应的两阶段成长算法编码。
+ * 把学习分析类型映射到对应的固定算法编码。
+ * @param analysisType 世界成长、人物成长或人物记忆。
+ * @returns 对应的两阶段固定算法编码。
  */
-function growthAlgorithmCode(analysisType: Exclude<AnalysisType, 'persona_memory'>): 'world_growth' | 'persona_growth' {
-  return analysisType === 'world_growth' ? 'world_growth' : 'persona_growth'
+function learningAlgorithmCode(analysisType: AnalysisType): 'world_growth' | 'persona_growth' | 'persona_memory' {
+  return analysisType
 }
 
 /**
@@ -373,9 +421,4 @@ function normalizeAnalysisError(error: unknown): { code: string, message: string
   if (error instanceof TextModelError) return { code: error.code, message: error.message, retryable: error.retryable }
   if (error instanceof ApplicationError) return { code: error.code, message: error.message, retryable: false }
   return { code: 'MODEL_OUTPUT_INVALID', message: '模型返回的完整提示词不符合业务约束', retryable: false }
-}
-
-/** @param input 分析原始输入。 @returns 类型、标识、正文哈希和评分组成的稳定增量键。 */
-function analysisInputKey(input: { inputType: string, inputId: string, contentHash: string, importance: number }): string {
-  return `${input.inputType}:${input.inputId}:${input.contentHash}:${input.importance}`
 }

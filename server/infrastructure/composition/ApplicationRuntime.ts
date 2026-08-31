@@ -229,9 +229,11 @@ export class ApplicationRuntime {
       tokenBudgets: { world: 2_500, persona: 3_500 },
       algorithms: aiAlgorithms,
     })
+    const analysisRepository = new SqliteAnalysisRepository(this.sqlite.getClient())
     this.learningService = new LearningApplicationService({
       content: contentRepository,
       learning: learningRepository,
+      analysis: analysisRepository,
       identifiers,
       clock: this.clock,
       tokenCounter,
@@ -242,7 +244,7 @@ export class ApplicationRuntime {
       content: contentRepository,
       souls: contentRepository,
       learning: learningRepository,
-      analysis: new SqliteAnalysisRepository(this.sqlite.getClient()),
+      analysis: analysisRepository,
       model: textModel,
       prompts: this.aiPromptService,
       identifiers,

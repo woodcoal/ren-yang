@@ -16,6 +16,7 @@ import { SqliteContentRepository } from '../../server/infrastructure/database/Sq
 import { SqliteDatabase } from '../../server/infrastructure/database/SqliteDatabase'
 import { SqliteRunRepository } from '../../server/infrastructure/database/SqliteRunRepository'
 import { SqliteLearningRepository } from '../../server/infrastructure/database/SqliteLearningRepository'
+import { SqliteAnalysisRepository } from '../../server/infrastructure/database/SqliteAnalysisRepository'
 import { SqliteTaskJobRepository } from '../../server/infrastructure/database/SqliteTaskJobRepository'
 import { SystemIdentifierGenerator } from '../../server/infrastructure/system/SystemIdentifierGenerator'
 import { ConservativeTokenCounter } from '../../server/infrastructure/model/ConservativeTokenCounter'
@@ -237,6 +238,7 @@ beforeEach(async () => {
   learningService = new LearningApplicationService({
     content: contentRepository,
     learning: learningRepository,
+    analysis: new SqliteAnalysisRepository(database.getClient()),
     identifiers,
     clock: testClock,
     tokenCounter,

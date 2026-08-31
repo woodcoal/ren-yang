@@ -23,6 +23,7 @@ import type {
   PersonaMemoryWorkspaceView,
   GrowthLibrarySourceView,
   LearningPromptType,
+  LearningInputStatisticsView,
   LearningPromptVersionView,
   LearningPromptWorkspaceView,
   WorldGrowthWorkspaceView,
@@ -34,6 +35,8 @@ import type { LearningRepository } from '../../ports/LearningRepository'
 import type { ContextSyncTaskQueue } from '../../ports/ContextSyncTaskQueue'
 import type { TokenCounter } from '../../ports/TokenCounter'
 import type { SourceMaterialRecord } from '../../domain/content/ContentModels'
+import type { AnalysisRepository } from '../../ports/AnalysisRepository'
+import { analysisInputKey } from '../../domain/analysis/AnalysisInputKey'
 import { ApplicationError } from '../errors/ApplicationError'
 
 /** 统一学习应用服务依赖。 */
@@ -42,6 +45,8 @@ export interface LearningApplicationServiceDependencies {
   content: Pick<ContentRepository, 'findPersona' | 'findWorld' | 'listPersonaSources' | 'listWorldSources'>
   /** 成长、处理记录和记忆事实源。 */
   learning: LearningRepository
+  /** 已成功分析的素材版本查询。 */
+  analysis: Pick<AnalysisRepository, 'listAnalyzedInputKeys'>
   /** UUID 生成端口。 */
   identifiers: IdentifierGenerator
   /** 可测试时钟。 */
@@ -65,12 +70,21 @@ export class LearningApplicationService {
   /** @param worldId 世界 UUID。 @returns 世界资料和成长完整工作区。 */
   async getWorldGrowthWorkspace(worldId: string): Promise<WorldGrowthWorkspaceView> {
     await this.requireWorld(worldId)
-    const [sources, materials, prompt] = await Promise.all([
+    const [sources, materials, prompt, analyzedKeys] = await Promise.all([
       this.dependencies.content.listWorldSources(worldId),
       this.dependencies.learning.listGrowthMaterials('world', worldId),
       this.getLearningPromptWorkspace('world_growth', worldId),
+      this.dependencies.analysis.listAnalyzedInputKeys('world_growth', worldId),
     ])
-    return { sources: toGrowthLibrarySources(sources, materials), materials, prompt }
+    return {
+      sources: toGrowthLibrarySources(sources, materials), materials, prompt,
+      inputStatistics: buildLearningInputStatistics(
+        materials.filter(item => item.isEnabled).map(item => ({
+          inputType: 'growth_material', inputId: item.id, contentHash: item.contentHash, importance: item.importance,
+        })),
+        analyzedKeys,
+      ),
+    }
   }
 
   /** @param worldId 世界 UUID。 @param input 批量启用状态。 @returns 更新后的完整工作区。 */
@@ -87,12 +101,21 @@ export class LearningApplicationService {
   /** @param personaId 人物 UUID。 @returns 反馈资料和成长完整工作区。 */
   async getPersonaGrowthWorkspace(personaId: string): Promise<PersonaGrowthWorkspaceView> {
     await this.requirePersona(personaId)
-    const [sources, materials, prompt] = await Promise.all([
+    const [sources, materials, prompt, analyzedKeys] = await Promise.all([
       this.dependencies.content.listPersonaSources(personaId),
       this.dependencies.learning.listGrowthMaterials('persona', personaId),
       this.getLearningPromptWorkspace('persona_growth', personaId),
+      this.dependencies.analysis.listAnalyzedInputKeys('persona_growth', personaId),
     ])
-    return { sources: toGrowthLibrarySources(sources, materials), materials, prompt }
+    return {
+      sources: toGrowthLibrarySources(sources, materials), materials, prompt,
+      inputStatistics: buildLearningInputStatistics(
+        materials.filter(item => item.isEnabled).map(item => ({
+          inputType: 'growth_material', inputId: item.id, contentHash: item.contentHash, importance: item.importance,
+        })),
+        analyzedKeys,
+      ),
+    }
   }
 
   /** @param personaId 人物 UUID。 @param input 人工反馈资料。 @returns 新建资料。 */
@@ -335,12 +358,25 @@ export class LearningApplicationService {
   /** @param personaId 人物 UUID。 @returns 处理记录和记忆完整工作区。 */
   async getPersonaMemoryWorkspace(personaId: string): Promise<PersonaMemoryWorkspaceView> {
     await this.requirePersona(personaId)
-    const [operationRecords, externalRecords, prompt] = await Promise.all([
+    const [operationRecords, externalRecords, prompt, analyzedKeys] = await Promise.all([
       this.dependencies.learning.listPersonaOperationRecords(personaId),
       this.dependencies.learning.listPersonaExternalRecords(personaId),
       this.getLearningPromptWorkspace('persona_memory', personaId),
+      this.dependencies.analysis.listAnalyzedInputKeys('persona_memory', personaId),
     ])
-    return { operationRecords, externalRecords, prompt }
+    return {
+      operationRecords, externalRecords, prompt,
+      inputStatistics: buildLearningInputStatistics([
+        ...operationRecords.filter(item => item.isEnabled).map(item => ({
+          inputType: 'persona_operation_record', inputId: item.id,
+          contentHash: item.contentHash, importance: item.importance,
+        })),
+        ...externalRecords.filter(item => item.isEnabled).map(item => ({
+          inputType: 'persona_external_record', inputId: item.id,
+          contentHash: item.contentHash, importance: item.importance,
+        })),
+      ], analyzedKeys),
+    }
   }
 
   /** @param personaId 人物 UUID。 @param input 处理记录批量启用状态。 @returns 更新后的记忆工作区。 */
@@ -639,6 +675,23 @@ export class LearningApplicationService {
     if (sourceIds.some(id => !availableIds.has(id))) {
       throw new ApplicationError('RESOURCE_SCOPE_MISMATCH', '成长来源不存在或不属于当前对象', 409)
     }
+  }
+}
+
+/**
+ * 统计当前启用素材中尚未成功处理的当前版本。
+ * @param inputs 当前会参加下一次成长或记忆提炼的输入。
+ * @param analyzedKeys 所有成功批次已经处理的稳定输入键。
+ * @returns 已启用总数和未处理数量。
+ */
+function buildLearningInputStatistics(
+  inputs: Array<{ inputType: string, inputId: string, contentHash: string, importance: number }>,
+  analyzedKeys: string[],
+): LearningInputStatisticsView {
+  const analyzed = new Set(analyzedKeys)
+  return {
+    enabledCount: inputs.length,
+    pendingCount: inputs.filter(input => !analyzed.has(analysisInputKey(input))).length,
   }
 }
 

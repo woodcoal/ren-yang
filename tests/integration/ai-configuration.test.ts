@@ -63,7 +63,15 @@ class FixedTextModel implements TextModelPort {
       ? 'OK'
       : request.responseSchemaName === 'soul_prompt_analysis'
         ? { promptText: '整理后的灵魂提示词' }
-        : { facts: [{ statement: '重视证据。', evidenceInputIds: ['00000000-0000-4000-8000-000000000001'], confidence: 0.9 }] }
+        : request.responseSchemaName === 'memory_evidence_facts'
+          ? { facts: [{
+              statement: '完成过一次人物关系校对。',
+              memoryType: 'experience',
+              evidence: [{ inputId: '00000000-0000-4000-8000-000000000001', signalType: 'external_record' }],
+              confidence: 0.9,
+              conflicts: [],
+            }] }
+          : { facts: [{ statement: '重视证据。', evidenceInputIds: ['00000000-0000-4000-8000-000000000001'], confidence: 0.9 }] }
     return {
       rawOutput: typeof structuredOutput === 'string' ? structuredOutput : JSON.stringify(structuredOutput),
       structuredOutput,
@@ -205,6 +213,33 @@ describe('AI 接口、模型部署与算法配置', () => {
     expect(modelFactory.requests).toHaveLength(1)
   })
 
+  it('人物记忆测试使用专用证据结构、程序门槛和两阶段延续数据', async () => {
+    const { service, testing, modelFactory } = createServices()
+    await configureAlgorithm(service, 'persona_memory')
+
+    const extractResult = await testing.run('persona_memory', {
+      stepKey: 'extract', baselineText: '当前记忆基线', materialText: '完成过一次人物关系校对。',
+    })
+
+    expect(extractResult).toMatchObject({ algorithmCode: 'persona_memory', succeeded: true })
+    expect(extractResult.steps[0]).toMatchObject({
+      stepKey: 'extract', status: 'succeeded',
+      parsedOutput: { facts: [expect.objectContaining({
+        memoryType: 'experience', independentEvidenceCount: 1,
+        evidence: [{ inputId: '00000000-0000-4000-8000-000000000001', signalType: 'external_record' }],
+      })] },
+    })
+    const continuation = extractResult.steps[0]!.nextStepInput as { baselineJson: string, factsJson: string }
+    expect(continuation.factsJson).toContain('independentEvidenceCount')
+
+    const synthesizeResult = await testing.run('persona_memory', {
+      stepKey: 'synthesize', configurationVersion: extractResult.configurationVersion, ...continuation,
+    })
+    expect(synthesizeResult).toMatchObject({ succeeded: true, steps: [{ stepKey: 'synthesize', status: 'succeeded' }] })
+    expect(modelFactory.requests).toHaveLength(2)
+    expect(modelFactory.requests[1]!.userPrompt).toContain('完成过一次人物关系校对')
+  })
+
   it('灵魂测试无草稿时使用发布版并返回实际单步提示词和用量', async () => {
     const { service, testing, modelFactory } = createServices()
     await configureSoulAlgorithm(service)
@@ -303,14 +338,14 @@ async function configureSoulAlgorithm(service: AiConfigurationApplicationService
 }
 
 /**
- * 创建连接和文本部署，并发布指定成长算法的完整配置。
+ * 创建连接和文本部署，并发布指定成长或记忆算法的完整配置。
  * @param service 真实 AI 配置应用服务。
- * @param code 人物或世界成长算法编码。
+ * @param code 人物成长、世界成长或人物记忆算法编码。
  * @returns 新建文本模型部署 UUID。
  */
 async function configureAlgorithm(
   service: AiConfigurationApplicationService,
-  code: 'persona_growth' | 'world_growth',
+  code: 'persona_growth' | 'world_growth' | 'persona_memory',
 ): Promise<string> {
   const connection = await service.createConnection({
     name: '算法测试接口', protocol: 'openai_compatible', endpoint: 'https://test.example/v1',

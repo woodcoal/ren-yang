@@ -14,6 +14,7 @@ import { SqliteContextIndexRepository } from '../../server/infrastructure/databa
 import { SqliteContextSyncTaskQueue } from '../../server/infrastructure/database/SqliteContextSyncTaskQueue'
 import { SqliteDatabase } from '../../server/infrastructure/database/SqliteDatabase'
 import { SqliteLearningRepository } from '../../server/infrastructure/database/SqliteLearningRepository'
+import { SqliteAnalysisRepository } from '../../server/infrastructure/database/SqliteAnalysisRepository'
 import { SqliteOpenVikingSettingsRepository } from '../../server/infrastructure/database/SqliteOpenVikingSettingsRepository'
 import { ConservativeTokenCounter } from '../../server/infrastructure/model/ConservativeTokenCounter'
 import { OpenVikingHttpContextProvider } from '../../server/infrastructure/context/OpenVikingHttpContextProvider'
@@ -311,6 +312,7 @@ describe('OpenViking 可关闭索引与 SQLite 重建', () => {
     const learning = new LearningApplicationService({
       content: new SqliteContentRepository(database.getClient()),
       learning: new SqliteLearningRepository(database.getClient()),
+      analysis: new SqliteAnalysisRepository(database.getClient()),
       identifiers,
       clock,
       tokenCounter: new ConservativeTokenCounter(),

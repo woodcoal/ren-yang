@@ -10,6 +10,7 @@ import { NodeSourceContentProcessor } from '../../server/infrastructure/content/
 import { SqliteContentRepository } from '../../server/infrastructure/database/SqliteContentRepository'
 import { SqliteDatabase } from '../../server/infrastructure/database/SqliteDatabase'
 import { SqliteLearningRepository } from '../../server/infrastructure/database/SqliteLearningRepository'
+import { SqliteAnalysisRepository } from '../../server/infrastructure/database/SqliteAnalysisRepository'
 import { ConservativeTokenCounter } from '../../server/infrastructure/model/ConservativeTokenCounter'
 import type { Clock } from '../../server/ports/Clock'
 import type { IdentifierGenerator } from '../../server/ports/IdentifierGenerator'
@@ -76,6 +77,7 @@ beforeEach(() => {
   learning = new LearningApplicationService({
     content: repository,
     learning: new SqliteLearningRepository(database.getClient()),
+    analysis: new SqliteAnalysisRepository(database.getClient()),
     identifiers,
     clock,
     tokenCounter,

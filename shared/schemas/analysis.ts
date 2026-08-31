@@ -65,6 +65,31 @@ export const modelGrowthExtractionResultSchema = z.object({
   facts: z.array(modelGrowthAtomicFactSchema).min(1).max(200),
 })
 
+/** 人物记忆候选证据的业务信号类型。 */
+export const memoryEvidenceSignalSchema = z.enum([
+  'external_record', 'user_feedback', 'user_decision', 'task_result', 'self_output',
+])
+
+/** 人物记忆算法提取阶段返回的一项证据引用。 */
+export const modelMemoryEvidenceSchema = z.object({
+  inputId: z.string().uuid(),
+  signalType: memoryEvidenceSignalSchema,
+})
+
+/** 人物记忆算法提取阶段返回的一项原子候选。 */
+export const modelMemoryAtomicFactSchema = z.object({
+  statement: z.string().trim().min(1).max(20_000),
+  memoryType: z.enum(['interest', 'judgment', 'experience', 'preference']),
+  evidence: z.array(modelMemoryEvidenceSchema).min(1).max(200),
+  confidence: z.number().min(0).max(1),
+  conflicts: z.array(z.string().trim().min(1).max(1_000)).max(20).default([]),
+})
+
+/** 人物记忆算法提取阶段的完整结构化输出。 */
+export const modelMemoryExtractionResultSchema = z.object({
+  facts: z.array(modelMemoryAtomicFactSchema).min(1).max(200),
+})
+
 /** 用户对一项提案的审核决定。 */
 export const iterationProposalDecisionSchema = z.object({
   proposalId: z.string().uuid('提案标识无效'),
@@ -83,4 +108,5 @@ export type ListAnalysisBatchesInput = z.infer<typeof listAnalysisBatchesQuerySc
 export type ModelIterationResult = z.infer<typeof modelIterationResultSchema>
 export type ModelLearningPromptResult = z.infer<typeof modelLearningPromptResultSchema>
 export type ModelGrowthExtractionResult = z.infer<typeof modelGrowthExtractionResultSchema>
+export type ModelMemoryExtractionResult = z.infer<typeof modelMemoryExtractionResultSchema>
 export type ReviewIterationProposalsInput = z.infer<typeof reviewIterationProposalsSchema>
