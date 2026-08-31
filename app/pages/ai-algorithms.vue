@@ -219,6 +219,8 @@ async function saveAlgorithm(code: AiAlgorithmCode, input: PublishAiAlgorithmCon
           @edit-prompt="requestPrompt"
         />
 
+        <AiConfigurationAiAlgorithmTestPanel :key="selectedAlgorithm.code" :algorithm="selectedAlgorithm" />
+
         <section class="content-section" aria-labelledby="algorithm-prompt-heading">
           <div class="section-heading">
             <div class="section-heading-copy"><p class="eyebrow">步骤提示词</p><h2 id="algorithm-prompt-heading">同页校准提示词</h2><p>点击上方任一步骤的“编辑该步骤提示词”，即可在不离开算法上下文的情况下维护版本。</p></div>

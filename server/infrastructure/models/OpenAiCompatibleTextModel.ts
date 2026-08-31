@@ -125,6 +125,7 @@ function parseResponse(value: unknown, responseFormat: 'json_object' | 'text'): 
   const structuredOutput = responseFormat === 'text' ? message.content : parseStructuredContent(message.content)
   const usage = response.usage as Record<string, unknown> | undefined
   return {
+    rawOutput: message.content,
     structuredOutput,
     usage: {
       inputTokens: toOptionalNumber(usage?.prompt_tokens),
@@ -152,7 +153,7 @@ function parseStructuredContent(content: string): unknown {
       // 先尝试供应商承诺的纯 JSON，再兼容常见代码围栏；两者都失败后统一抛出安全错误。
     }
   }
-  throw new TextModelError('MODEL_OUTPUT_INVALID', '文本模型返回的内容不是有效 JSON', true)
+  throw new TextModelError('MODEL_OUTPUT_INVALID', '文本模型返回的内容不是有效 JSON', true, content)
 }
 
 /** @param value 未知用量字段。 @returns 非负有限数或 null。 */

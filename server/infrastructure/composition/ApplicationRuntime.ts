@@ -52,6 +52,7 @@ import { SystemAiSettingsApplicationService } from '../../application/systemAi/S
 import { SqliteSystemAiSettingsRepository } from '../database/SqliteSystemAiSettingsRepository'
 import { AiConfigurationApplicationService } from '../../application/aiConfiguration/AiConfigurationApplicationService'
 import { AiAlgorithmApplicationService } from '../../application/aiConfiguration/AiAlgorithmApplicationService'
+import { AiAlgorithmTestApplicationService } from '../../application/aiConfiguration/AiAlgorithmTestApplicationService'
 import { SqliteAiConfigurationRepository } from '../database/SqliteAiConfigurationRepository'
 import { OpenAiCompatibleModelFactory } from '../models/OpenAiCompatibleModelFactory'
 
@@ -140,6 +141,8 @@ export class ApplicationRuntime {
   private readonly systemAiSettingsService: SystemAiSettingsApplicationService
   /** 请求间共享的 AI 接口、模型部署和算法配置管理服务。 */
   private readonly aiConfigurationService: AiConfigurationApplicationService
+  /** 请求间共享且不保存结果的固定算法测试服务。 */
+  private readonly aiAlgorithmTestService: AiAlgorithmTestApplicationService
 
   /**
    * 创建并连接阶段一所需的全部运行时对象。
@@ -193,6 +196,7 @@ export class ApplicationRuntime {
       secretCipher,
       modelFactory: dynamicModelFactory,
     })
+    this.aiAlgorithmTestService = new AiAlgorithmTestApplicationService({ algorithms: aiAlgorithms })
     const tokenCounter = new ConservativeTokenCounter()
     const contextRepository = new SqliteContextIndexRepository(this.sqlite.getClient())
     const openVikingOptions = options.openViking ?? { enabled: false, endpoint: '', apiKey: '', timeoutMs: 60_000 }
@@ -332,6 +336,7 @@ export class ApplicationRuntime {
   createRequestServices(event: H3Event): RequestApplicationServices {
     return {
       aiConfiguration: this.aiConfigurationService,
+      aiAlgorithmTesting: this.aiAlgorithmTestService,
       aiPrompts: this.aiPromptService,
       authentication: new AuthenticationApplicationService({
         administratorRepository: this.administratorRepository,

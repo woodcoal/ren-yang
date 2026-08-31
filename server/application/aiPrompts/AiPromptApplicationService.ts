@@ -1,5 +1,5 @@
 import type { PublishAiPromptDraftInput, SaveAiPromptDraftInput } from '../../../shared/schemas/aiPrompt'
-import type { AiPromptVersionView, AiPromptWorkspaceView, RenderedAiPrompt } from '../../../shared/types/aiPrompt'
+import type { AiPromptVersionView, AiPromptWorkspaceView, RenderedAiPrompt, RenderedAiPromptForTest } from '../../../shared/types/aiPrompt'
 import type { AiPromptDefinitionRecord, AiPromptRepository } from '../../ports/AiPromptRepository'
 import type { Clock } from '../../ports/Clock'
 import type { IdentifierGenerator } from '../../ports/IdentifierGenerator'
@@ -131,6 +131,36 @@ export class AiPromptApplicationService {
       versionNo: version.versionNo,
       systemPrompt: version.systemPromptTemplate === null ? '' : renderTemplate(version.systemPromptTemplate, variables),
       userPrompt: renderTemplate(version.userPromptTemplate, variables),
+    }
+  }
+
+  /**
+   * 为管理员算法测试优先渲染当前草稿，无草稿时退回当前发布版本。
+   * @param code 提示词稳定编码。
+   * @param variables 业务测试提供的完整变量值。
+   * @returns 实际来源、版本号及完成变量替换后的提示词。
+   * @remarks 该方法只读取模板，不保存、发布或修改任何提示词。
+   */
+  async renderDraftPreferred(code: string, variables: Record<string, string>): Promise<RenderedAiPromptForTest> {
+    const definition = await this.requireDefinition(code)
+    validateRenderVariables(definition, variables)
+    const draft = await this.dependencies.repository.findDraft(code)
+    if (draft) {
+      return {
+        code,
+        source: 'draft',
+        versionNo: null,
+        systemPrompt: draft.systemPromptTemplate === null ? '' : renderTemplate(draft.systemPromptTemplate, variables),
+        userPrompt: renderTemplate(draft.userPromptTemplate, variables),
+      }
+    }
+    const rendered = await this.render(code, variables)
+    return {
+      code,
+      source: 'published',
+      versionNo: rendered.versionNo,
+      systemPrompt: rendered.systemPrompt,
+      userPrompt: rendered.userPrompt,
     }
   }
 

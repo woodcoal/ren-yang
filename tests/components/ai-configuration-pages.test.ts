@@ -1,8 +1,10 @@
 import { readBody } from 'h3'
 import { flushPromises } from '@vue/test-utils'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
 import type { PublishAiAlgorithmConfigurationInput, UpdateAiConnectionInput } from '../../shared/schemas/aiConfiguration'
+import type { GrowthAlgorithmTestInput } from '../../shared/schemas/aiAlgorithmTest'
+import type { AiAlgorithmTestResult } from '../../shared/types/aiAlgorithmTest'
 import type { AiAlgorithmView, AiConnectionView, AiModelDeploymentView } from '../../shared/types/aiConfiguration'
 import type { AiPromptWorkspaceView } from '../../shared/types/aiPrompt'
 import AiAlgorithmsPage from '../../app/pages/ai-algorithms.vue'
@@ -62,6 +64,36 @@ const algorithmPrompts: AiPromptWorkspaceView[] = algorithm.stepDefinitions.map(
 let savedConnection: UpdateAiConnectionInput | null = null
 /** 发布算法配置最后提交的正文。 */
 let savedAlgorithm: PublishAiAlgorithmConfigurationInput | null = null
+/** 算法测试最后提交的业务化输入。 */
+let algorithmTestInput: GrowthAlgorithmTestInput | null = null
+
+/** 页面测试使用的两步骤成功诊断。 */
+const algorithmTestResult: AiAlgorithmTestResult = {
+  algorithmCode: 'persona_growth', configurationVersion: 1, succeeded: true,
+  steps: algorithm.steps.map((step, index) => ({
+    stepKey: step.key,
+    stepName: step.name,
+    promptCode: step.promptCode,
+    promptSource: index === 0 ? 'draft' : 'published',
+    promptVersion: index === 0 ? null : 1,
+    modelDeploymentId: deployment.id,
+    model: deployment.model,
+    endpointOrigin: 'https://model.example',
+    parameters: step.parameters,
+    variables: index === 0 ? { baselineJson: '[]', inputsJson: '[]' } : { baselineJson: '[]', factsJson: '[]' },
+    systemPrompt: `${step.name}实际系统提示词`,
+    userPrompt: `${step.name}实际用户提示词`,
+    rawOutput: index === 0 ? '{"facts":[]}' : '完整成长提示词',
+    parsedOutput: index === 0 ? { facts: [] } : { promptText: '完整成长提示词' },
+    nextStepInput: index === 0 ? { baselineJson: '[]', factsJson: '[]' } : null,
+    inputTokens: 10,
+    outputTokens: 5,
+    totalTokens: 15,
+    durationMs: 20,
+    status: 'succeeded',
+    error: null,
+  })),
+}
 
 registerEndpoint('/api/v1/auth/session', () => ({
   data: { authenticated: true, administrator: { id: 'administrator', username: 'admin' } },
@@ -86,10 +118,19 @@ registerEndpoint(`/api/v1/ai/algorithms/${algorithm.code}`, {
     return { data: algorithm }
   },
 })
+registerEndpoint(`/api/v1/ai/algorithms/${algorithm.code}/test`, {
+  method: 'POST',
+  /** @param event 测试请求事件。 @returns 模拟真实执行的两步骤诊断。 */
+  handler: async (event) => {
+    algorithmTestInput = await readBody<GrowthAlgorithmTestInput>(event)
+    return { data: algorithmTestResult }
+  },
+})
 
 beforeEach(() => {
   savedConnection = null
   savedAlgorithm = null
+  algorithmTestInput = null
 })
 
 describe('AI 模型与算法配置页面', () => {
@@ -139,5 +180,29 @@ describe('AI 模型与算法配置页面', () => {
         parameters: step.parameters,
       })),
     })
+  })
+
+  it('明确真实调用边界，并用业务化成长输入展示逐步诊断', async () => {
+    const wrapper = await mountSuspended(AiAlgorithmsPage, { route: '/ai-algorithms' })
+    await flushPromises()
+
+    const panel = wrapper.get('[data-ai-algorithm-test-panel]')
+    expect(panel.text()).toContain('真实调用模型')
+    expect(panel.text()).toContain('不写入业务数据')
+    expect(panel.text()).toContain('当前成长提示词基线')
+    expect(panel.text()).toContain('本次成长资料')
+    const inputs = panel.findAll('textarea')
+    await inputs[0]!.setValue('当前基线')
+    await inputs[1]!.setValue('新增资料')
+    await panel.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(algorithmTestInput).toEqual({ baselineText: '当前基线', materialText: '新增资料' })
+    await vi.waitFor(() => expect(panel.text()).toContain('全部步骤通过'))
+    expect(panel.text()).toContain('原子提取')
+    expect(panel.text()).toContain('综合编译')
+    expect(panel.text()).toContain('已保存草稿')
+    expect(panel.text()).toContain('模型原始响应')
+    expect(panel.text()).toContain('传给下一步的数据')
   })
 })

@@ -53,6 +53,7 @@ describe('OpenAiCompatibleTextModel', () => {
     vi.stubGlobal('fetch', fetchMock)
 
     await expect(createModel().generateStructured(REQUEST)).resolves.toEqual({
+      rawOutput: '{"answer":"ok"}',
       structuredOutput: { answer: 'ok' },
       usage: { inputTokens: 9, outputTokens: 3, totalTokens: 12 },
     })

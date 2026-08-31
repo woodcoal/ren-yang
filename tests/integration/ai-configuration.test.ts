@@ -4,12 +4,15 @@ import { resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { AiAlgorithmApplicationService } from '../../server/application/aiConfiguration/AiAlgorithmApplicationService'
+import { AiAlgorithmTestApplicationService } from '../../server/application/aiConfiguration/AiAlgorithmTestApplicationService'
 import { AiConfigurationApplicationService } from '../../server/application/aiConfiguration/AiConfigurationApplicationService'
 import { SqliteAiConfigurationRepository } from '../../server/infrastructure/database/SqliteAiConfigurationRepository'
 import { SqliteDatabase } from '../../server/infrastructure/database/SqliteDatabase'
 import { AesGcmSecretCipher } from '../../server/infrastructure/security/AesGcmSecretCipher'
 import type { AiModelFactory, AiTextModelOptions } from '../../server/ports/AiModelFactory'
 import type { TextModelPort, TextModelRequest, TextModelResponse } from '../../server/ports/TextModelPort'
+import { TextModelError } from '../../server/ports/TextModelPort'
+import type { AiPromptApplicationService } from '../../server/application/aiPrompts/AiPromptApplicationService'
 import { createTestAiPromptService } from '../support/createTestAiPromptService'
 
 /** 当前测试独占的临时数据目录。 */
@@ -21,18 +24,25 @@ let database: SqliteDatabase
 class RecordingModelFactory implements AiModelFactory {
   /** 所有模型创建调用；用于确认密钥只在执行阶段解密。 */
   public readonly options: AiTextModelOptions[] = []
+  /** 所有真实模型请求；用于验证步骤顺序和数据传递。 */
+  public readonly requests: TextModelRequest[] = []
+  /** 指定从零开始的请求序号抛出安全模型错误；为空时全部成功。 */
+  public failAtRequestIndex: number | null = null
 
   /** @param options 动态模型参数。 @returns 返回固定成功结果的模型端口。 */
   createTextModel(options: AiTextModelOptions): TextModelPort {
     this.options.push(options)
-    return new FixedTextModel(options)
+    return new FixedTextModel(options, this)
   }
 }
 
 /** 不联网的固定文本模型。 */
 class FixedTextModel implements TextModelPort {
-  /** @param options 当前动态模型参数。 */
-  constructor(private readonly options: AiTextModelOptions) {}
+  /**
+   * @param options 当前动态模型参数。
+   * @param recorder 统一记录请求并控制测试失败位置的工厂。
+   */
+  constructor(private readonly options: AiTextModelOptions, private readonly recorder: RecordingModelFactory) {}
 
   /** @returns 当前模型的非敏感快照。 */
   getConfiguredModel() {
@@ -41,10 +51,19 @@ class FixedTextModel implements TextModelPort {
 
   /** @param request 当前模型请求。 @returns JSON 请求返回原子结论，文本请求返回 OK。 */
   async generateStructured(request: TextModelRequest): Promise<TextModelResponse> {
+    const requestIndex = this.recorder.requests.length
+    this.recorder.requests.push(request)
+    if (this.recorder.failAtRequestIndex === requestIndex) {
+      throw new TextModelError('PROVIDER_UNAVAILABLE', '测试模型暂时不可用', true)
+    }
+    const structuredOutput = request.responseFormat === 'text'
+      ? 'OK'
+      : request.responseSchemaName === 'soul_prompt_analysis'
+        ? { promptText: '整理后的灵魂提示词' }
+        : { facts: [{ statement: '重视证据。', evidenceInputIds: ['00000000-0000-4000-8000-000000000001'], confidence: 0.9 }] }
     return {
-      structuredOutput: request.responseFormat === 'text'
-        ? 'OK'
-        : { facts: [{ statement: '重视证据。', evidenceInputIds: ['10000000-0000-4000-8000-000000000001'], confidence: 0.9 }] },
+      rawOutput: typeof structuredOutput === 'string' ? structuredOutput : JSON.stringify(structuredOutput),
+      structuredOutput,
       usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
     }
   }
@@ -123,7 +142,111 @@ describe('AI 接口、模型部署与算法配置', () => {
       SELECT action FROM audit_events WHERE target_id = 'persona_growth' ORDER BY created_at DESC LIMIT 1
     `).get()).toEqual({ action: 'ai_algorithm_configuration_published' })
   })
+
+  it('成长测试优先使用提示词草稿并把已校验事实传给第二步', async () => {
+    const { service, testing, prompts, modelFactory } = createServices()
+    const deploymentId = await configureAlgorithm(service, 'persona_growth')
+    const workspace = (await prompts.listWorkspaces()).find(item => item.code === 'analysis.persona_growth_extract')!
+    await prompts.saveDraft(workspace.code, {
+      baseVersionId: workspace.activeVersion!.id,
+      systemPromptTemplate: `测试草稿系统规则\n${workspace.activeVersion!.systemPromptTemplate ?? ''}`,
+      userPromptTemplate: workspace.activeVersion!.userPromptTemplate,
+      changeSummary: '验证草稿优先测试',
+    })
+
+    const result = await testing.run('persona_growth', { baselineText: '当前成长基线', materialText: '新的资料事实' })
+
+    expect(result).toMatchObject({ algorithmCode: 'persona_growth', configurationVersion: 1, succeeded: true })
+    expect(result.steps).toHaveLength(2)
+    expect(result.steps[0]).toMatchObject({
+      stepKey: 'extract', promptSource: 'draft', promptVersion: null, modelDeploymentId: deploymentId,
+      status: 'succeeded', rawOutput: expect.stringContaining('重视证据'),
+      parsedOutput: { facts: [expect.objectContaining({ statement: '重视证据。', evidenceCount: 1 })] },
+    })
+    expect(result.steps[0]!.systemPrompt).toContain('测试草稿系统规则')
+    expect(result.steps[1]).toMatchObject({ stepKey: 'synthesize', promptSource: 'published', status: 'succeeded' })
+    expect(modelFactory.requests).toHaveLength(2)
+    expect(modelFactory.requests[1]!.userPrompt).toContain('重视证据。')
+    expect(result.steps[0]!.nextStepInput).toEqual(expect.objectContaining({ factsJson: expect.stringContaining('重视证据。') }))
+  })
+
+  it('成长测试第一步调用失败后不执行第二步', async () => {
+    const { service, testing, modelFactory } = createServices()
+    await configureAlgorithm(service, 'world_growth')
+    modelFactory.failAtRequestIndex = 0
+
+    const result = await testing.run('world_growth', { baselineText: '世界当前基线', materialText: '世界新增资料' })
+
+    expect(result.succeeded).toBe(false)
+    expect(result.steps).toHaveLength(1)
+    expect(result.steps[0]).toMatchObject({ stepKey: 'extract', status: 'failed', error: '测试模型暂时不可用' })
+    expect(modelFactory.requests).toHaveLength(1)
+  })
+
+  it('灵魂测试无草稿时使用发布版并返回实际单步提示词和用量', async () => {
+    const { service, testing, modelFactory } = createServices()
+    await configureSoulAlgorithm(service)
+
+    const result = await testing.run('persona_soul', { soulText: '坚持独立判断，不虚构事实。' })
+
+    expect(result).toMatchObject({ algorithmCode: 'persona_soul', succeeded: true })
+    expect(result.steps).toHaveLength(1)
+    expect(result.steps[0]).toMatchObject({
+      stepKey: 'organize', promptSource: 'published', promptVersion: expect.any(Number),
+      parsedOutput: { promptText: '整理后的灵魂提示词' },
+      inputTokens: 1, outputTokens: 1, totalTokens: 2, status: 'succeeded',
+    })
+    expect(result.steps[0]!.userPrompt).toContain('坚持独立判断')
+    expect(modelFactory.requests).toHaveLength(1)
+  })
 })
+
+/**
+ * 创建连接和文本部署，并发布人物灵魂算法的单步骤配置。
+ * @param service 真实 AI 配置应用服务。
+ * @returns 配置发布完成时结束。
+ */
+async function configureSoulAlgorithm(service: AiConfigurationApplicationService): Promise<void> {
+  const connection = await service.createConnection({
+    name: '灵魂测试接口', protocol: 'openai_compatible', endpoint: 'https://soul.example/v1',
+    apiKey: 'soul-secret', isEnabled: true,
+  })
+  const deployment = await service.createModelDeployment({
+    connectionId: connection.id, name: '灵魂测试模型', model: 'soul-model', modality: 'text', isEnabled: true,
+  })
+  await service.publishAlgorithmConfiguration('persona_soul', {
+    steps: [{
+      stepKey: 'organize', modelDeploymentId: deployment.id,
+      parameters: { temperature: 0.2, maxOutputTokens: 4_096, timeoutMs: 60_000 },
+    }],
+  })
+}
+
+/**
+ * 创建连接和文本部署，并发布指定成长算法的完整配置。
+ * @param service 真实 AI 配置应用服务。
+ * @param code 人物或世界成长算法编码。
+ * @returns 新建文本模型部署 UUID。
+ */
+async function configureAlgorithm(
+  service: AiConfigurationApplicationService,
+  code: 'persona_growth' | 'world_growth',
+): Promise<string> {
+  const connection = await service.createConnection({
+    name: '算法测试接口', protocol: 'openai_compatible', endpoint: 'https://test.example/v1',
+    apiKey: 'test-secret', isEnabled: true,
+  })
+  const deployment = await service.createModelDeployment({
+    connectionId: connection.id, name: '算法测试模型', model: 'test-model', modality: 'text', isEnabled: true,
+  })
+  await service.publishAlgorithmConfiguration(code, {
+    steps: [
+      { stepKey: 'extract', modelDeploymentId: deployment.id, parameters: { temperature: 0, maxOutputTokens: 2_048, timeoutMs: 30_000 } },
+      { stepKey: 'synthesize', modelDeploymentId: deployment.id, parameters: { temperature: 0.2, maxOutputTokens: 4_096, timeoutMs: 60_000 } },
+    ],
+  })
+  return deployment.id
+}
 
 /**
  * 使用真实数据库、提示词与加密器创建配置管理和算法执行服务。
@@ -132,6 +255,8 @@ describe('AI 接口、模型部署与算法配置', () => {
 function createServices(): {
   service: AiConfigurationApplicationService
   algorithms: AiAlgorithmApplicationService
+  testing: AiAlgorithmTestApplicationService
+  prompts: AiPromptApplicationService
   modelFactory: RecordingModelFactory
 } {
   const repository = new SqliteAiConfigurationRepository(database.getClient())
@@ -140,9 +265,12 @@ function createServices(): {
   const identifiers = { create: () => randomUUID() }
   const clock = { now: () => 9_000 }
   const prompts = createTestAiPromptService(database, identifiers, clock)
+  const algorithms = new AiAlgorithmApplicationService({ repository, secretCipher, modelFactory, prompts })
   return {
     service: new AiConfigurationApplicationService({ repository, secretCipher, modelFactory, prompts, identifiers, clock }),
-    algorithms: new AiAlgorithmApplicationService({ repository, secretCipher, modelFactory, prompts }),
+    algorithms,
+    testing: new AiAlgorithmTestApplicationService({ algorithms }),
+    prompts,
     modelFactory,
   }
 }

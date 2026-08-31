@@ -84,3 +84,17 @@ export interface RenderedAiPrompt {
   /** 文本模型用户提示，或图片模型完整提示。 */
   userPrompt: string
 }
+
+/** 算法测试草稿优先策略渲染出的提示词。 */
+export interface RenderedAiPromptForTest {
+  /** 提示词稳定编码。 */
+  code: string
+  /** 实际使用草稿或已发布版本。 */
+  source: 'draft' | 'published'
+  /** 已发布版本号；草稿没有正式版本号。 */
+  versionNo: number | null
+  /** 完成变量替换后的系统提示词。 */
+  systemPrompt: string
+  /** 完成变量替换后的用户提示词。 */
+  userPrompt: string
+}

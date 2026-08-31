@@ -17,6 +17,7 @@ import { ApplicationError } from '../errors/ApplicationError'
 import type { AiPromptApplicationService } from '../aiPrompts/AiPromptApplicationService'
 import type { SystemAiSettingsApplicationService } from '../systemAi/SystemAiSettingsApplicationService'
 import type { AiAlgorithmApplicationService } from '../aiConfiguration/AiAlgorithmApplicationService'
+import { validateAndMergeGrowthFacts } from './GrowthFactValidator'
 import type { AiAlgorithmSnapshot } from '../../domain/ai/AiAlgorithmModels'
 
 /** 纯文本提炼不再要求模型额外生成摘要，任务页展示固定结果说明。 */
@@ -334,44 +335,6 @@ function algorithmTextModelSnapshot(snapshot: AiAlgorithmSnapshot) {
     model: step.model,
     endpointOrigin: new URL(step.endpoint).origin,
   }
-}
-
-/**
- * 校验证据引用、合并完全相同的结论并计算实际证据数量。
- * @param facts 模型返回且已通过结构 Schema 的原子结论。
- * @param inputs 当前批次允许引用的不可变输入。
- * @returns 稳定排序、证据去重后的原子结论。
- */
-function validateAndMergeGrowthFacts(
-  facts: Array<{ statement: string, evidenceInputIds: string[], confidence: number }>,
-  inputs: AnalysisBatchView['inputs'],
-): Array<{ statement: string, evidenceInputIds: string[], evidenceCount: number, confidence: number }> {
-  const validEvidenceIds = new Set(inputs.map(input => input.id))
-  const merged = new Map<string, { statement: string, evidenceInputIds: Set<string>, confidence: number }>()
-  for (const fact of facts) {
-    if (fact.evidenceInputIds.some(id => !validEvidenceIds.has(id))) {
-      throw new ApplicationError('MODEL_OUTPUT_INVALID', '模型返回的成长结论引用了不存在的资料', 502)
-    }
-    const key = fact.statement.replace(/\s+/g, ' ').trim().toLocaleLowerCase('zh-CN')
-    const current = merged.get(key)
-    if (current) {
-      fact.evidenceInputIds.forEach(id => current.evidenceInputIds.add(id))
-      current.confidence = Math.max(current.confidence, fact.confidence)
-    }
-    else {
-      merged.set(key, {
-        statement: fact.statement,
-        evidenceInputIds: new Set(fact.evidenceInputIds),
-        confidence: fact.confidence,
-      })
-    }
-  }
-  return [...merged.values()].map(fact => ({
-    statement: fact.statement,
-    evidenceInputIds: [...fact.evidenceInputIds].sort(),
-    evidenceCount: fact.evidenceInputIds.size,
-    confidence: fact.confidence,
-  }))
 }
 
 /**

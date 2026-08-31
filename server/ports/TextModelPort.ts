@@ -17,6 +17,8 @@ export interface TextModelRequest {
 
 /** 文本模型结构化调用结果。 */
 export interface TextModelResponse {
+  /** 供应商返回且尚未进行 JSON 解析的原始消息正文。 */
+  rawOutput?: string
   /** 从供应商响应提取的纯文本，或解析后的 JSON 未知值。 */
   structuredOutput: unknown
   /** 供应商返回的可选用量。 */
@@ -51,6 +53,8 @@ export class TextModelError extends Error {
     public readonly code: 'CAPABILITY_DISABLED' | 'PROVIDER_TIMEOUT' | 'PROVIDER_RATE_LIMITED' | 'PROVIDER_UNAVAILABLE' | 'MODEL_OUTPUT_INVALID',
     message: string,
     public readonly retryable: boolean,
+    /** 供应商已经返回但无法解析时保留的原始消息正文。 */
+    public readonly rawOutput?: string,
   ) {
     super(message)
     this.name = 'TextModelError'

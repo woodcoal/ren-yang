@@ -1,14 +1,31 @@
 import type { AiAlgorithmStepParameters } from '../../../shared/schemas/aiConfiguration'
 import type { AiAlgorithmCode } from '../../../shared/types/aiConfiguration'
-import type { AiAlgorithmSnapshot } from '../../domain/ai/AiAlgorithmModels'
+import type { AiAlgorithmSnapshot, AiAlgorithmStepSnapshot } from '../../domain/ai/AiAlgorithmModels'
 import { getAiAlgorithmDefinition } from '../../domain/ai/AiAlgorithmDefinitions'
-import type { AiConfigurationRepository } from '../../ports/AiConfigurationRepository'
+import type { AiConfigurationRepository, AiConnectionSecretRecord } from '../../ports/AiConfigurationRepository'
 import type { AiModelFactory } from '../../ports/AiModelFactory'
 import type { SecretCipher } from '../../ports/SecretCipher'
 import type { TextModelResponse } from '../../ports/TextModelPort'
+import { TextModelError } from '../../ports/TextModelPort'
 import type { AiPromptApplicationService } from '../aiPrompts/AiPromptApplicationService'
 import { ApplicationError } from '../errors/ApplicationError'
 import { connectionSecretContext } from './AiConfigurationApplicationService'
+
+/** 管理员测试单个步骤时返回的只读执行事实。 */
+export interface AiAlgorithmTestStepExecution {
+  /** 实际执行的步骤快照。 */
+  step: AiAlgorithmStepSnapshot
+  /** 实际使用草稿或已发布提示词。 */
+  prompt: Awaited<ReturnType<AiPromptApplicationService['renderDraftPreferred']>>
+  /** 成功时的模型结果；失败时为空。 */
+  response: TextModelResponse | null
+  /** 供应商返回的原始消息正文；调用前失败时为空。 */
+  rawOutput: string | null
+  /** 模型调用耗时。 */
+  durationMs: number
+  /** 已脱敏模型错误；成功时为空。 */
+  error: string | null
+}
 
 /** 算法步骤参数之外由代码固定的安全预算。 */
 const ALGORITHM_PARAMETER_DEFAULTS = {
@@ -36,7 +53,7 @@ export interface AiAlgorithmApplicationServiceDependencies {
   /** AI 连接、模型部署和算法配置事实源。 */
   repository: AiConfigurationRepository
   /** 版本化提示词渲染服务。 */
-  prompts: Pick<AiPromptApplicationService, 'render' | 'snapshotPublishedVersions'>
+  prompts: Pick<AiPromptApplicationService, 'render' | 'renderDraftPreferred' | 'snapshotPublishedVersions'>
   /** 只在执行期间解密凭据的端口。 */
   secretCipher: SecretCipher
   /** 动态模型适配器工厂。 */
@@ -109,6 +126,63 @@ export class AiAlgorithmApplicationService {
     responseSchemaName: string,
     responseFormat: 'json_object' | 'text',
   ): Promise<TextModelResponse> {
+    const { step, connection } = await this.resolveStep(snapshot, stepKey)
+    const prompt = await this.dependencies.prompts.render(step.promptCode, variables, step.promptVersionId)
+    this.validatePromptLength(prompt.systemPrompt, prompt.userPrompt)
+    return await this.generate(step, connection, prompt, responseSchemaName, responseFormat)
+  }
+
+  /**
+   * 使用当前草稿优先策略真实测试一个步骤，并返回诊断所需的完整只读事实。
+   * @param snapshot 本次测试固定的已发布算法配置快照。
+   * @param stepKey 待测试的固定步骤标识。
+   * @param variables 提示词模板的完整变量。
+   * @param responseSchemaName 供应商诊断使用的结构名称。
+   * @param responseFormat JSON 对象或纯文本输出。
+   * @returns 实际提示词、模型响应、耗时或已脱敏模型错误。
+   * @remarks 该方法不会创建任务、分析批次或任何业务数据。
+   */
+  async executeTestStep(
+    snapshot: AiAlgorithmSnapshot,
+    stepKey: string,
+    variables: Record<string, string>,
+    responseSchemaName: string,
+    responseFormat: 'json_object' | 'text',
+  ): Promise<AiAlgorithmTestStepExecution> {
+    const { step, connection } = await this.resolveStep(snapshot, stepKey)
+    const prompt = await this.dependencies.prompts.renderDraftPreferred(step.promptCode, variables)
+    this.validatePromptLength(prompt.systemPrompt, prompt.userPrompt)
+    const startedAt = performance.now()
+    try {
+      const response = await this.generate(step, connection, prompt, responseSchemaName, responseFormat)
+      return {
+        step,
+        prompt,
+        response,
+        rawOutput: response.rawOutput ?? null,
+        durationMs: Math.round(performance.now() - startedAt),
+        error: null,
+      }
+    }
+    catch (error: unknown) {
+      return {
+        step,
+        prompt,
+        response: null,
+        rawOutput: error instanceof TextModelError ? error.rawOutput ?? null : null,
+        durationMs: Math.round(performance.now() - startedAt),
+        error: normalizeTestExecutionError(error),
+      }
+    }
+  }
+
+  /**
+   * 校验算法实现与步骤快照，并拒绝接口或模型配置漂移。
+   * @param snapshot 创建任务或测试时固定的算法快照。
+   * @param stepKey 待解析的固定步骤标识。
+   * @returns 已校验步骤和当前启用连接。
+   */
+  private async resolveStep(snapshot: AiAlgorithmSnapshot, stepKey: string) {
     const definition = getAiAlgorithmDefinition(snapshot.algorithmCode)
     if (snapshot.implementationVersion !== definition.implementationVersion) {
       throw new ApplicationError('AI_ALGORITHM_VERSION_MISMATCH', '算法实现版本已变化，不能继续执行旧任务', 409)
@@ -125,21 +199,49 @@ export class AiAlgorithmApplicationService {
       || connection.endpoint !== step.endpoint || connection.protocol !== step.protocol) {
       throw new ApplicationError('AI_ALGORITHM_CONFIGURATION_CHANGED', '算法使用的接口或模型已被编辑，请重新创建任务', 409)
     }
-    const prompt = await this.dependencies.prompts.render(step.promptCode, variables, step.promptVersionId)
-    if (prompt.systemPrompt.length + prompt.userPrompt.length > ALGORITHM_PARAMETER_DEFAULTS.maxPromptCharacters) {
-      throw new ApplicationError('TASK_LIMIT_EXCEEDED', '算法输入超过固定提示长度限制，请减少资料或分批处理', 422)
-    }
+    return { step, connection }
+  }
+
+  /**
+   * 使用已校验连接临时解密密钥并执行模型调用。
+   * @param step 已校验的算法步骤快照。
+   * @param connection 已校验且启用的连接记录。
+   * @param prompt 已完成变量替换的系统与用户提示词。
+   * @param responseSchemaName 供应商诊断使用的结构名称。
+   * @param responseFormat JSON 对象或纯文本输出。
+   * @returns 模型输出和用量。
+   */
+  private async generate(
+    step: AiAlgorithmStepSnapshot,
+    connection: AiConnectionSecretRecord,
+    prompt: { systemPrompt: string, userPrompt: string },
+    responseSchemaName: string,
+    responseFormat: 'json_object' | 'text',
+  ): Promise<TextModelResponse> {
     const model = this.dependencies.modelFactory.createTextModel({
       endpoint: connection.endpoint,
       apiKey: this.dependencies.secretCipher.decrypt(connection.apiKeyCiphertext, connectionSecretContext(connection.id)),
-      model: deployment.model,
+      model: step.model,
     })
     return await model.generateStructured({
-      ...prompt,
+      systemPrompt: prompt.systemPrompt,
+      userPrompt: prompt.userPrompt,
       parameters: buildTextModelParameters(step.parameters),
       responseSchemaName,
       responseFormat,
     })
+  }
+
+  /**
+   * 拒绝超过固定字符预算的实际提示词。
+   * @param systemPrompt 实际系统提示词。
+   * @param userPrompt 实际用户提示词。
+   * @returns 长度有效时无返回值。
+   */
+  private validatePromptLength(systemPrompt: string, userPrompt: string): void {
+    if (systemPrompt.length + userPrompt.length > ALGORITHM_PARAMETER_DEFAULTS.maxPromptCharacters) {
+      throw new ApplicationError('TASK_LIMIT_EXCEEDED', '算法输入超过固定提示长度限制，请减少资料或分批处理', 422)
+    }
   }
 
   /** @param id 模型部署 UUID。 @returns 已启用的文本模型部署。 */
@@ -168,4 +270,14 @@ export class AiAlgorithmApplicationService {
  */
 function buildTextModelParameters(parameters: AiAlgorithmStepParameters) {
   return { ...ALGORITHM_PARAMETER_DEFAULTS, ...parameters }
+}
+
+/**
+ * 把测试模型异常限制为应用层或模型端口已经脱敏的消息。
+ * @param error 模型创建、密钥解密或供应商调用抛出的未知异常。
+ * @returns 可安全返回管理员界面的中文错误。
+ */
+function normalizeTestExecutionError(error: unknown): string {
+  if (error instanceof ApplicationError || error instanceof TextModelError) return error.message
+  return '模型调用失败，请检查接口凭据和服务状态'
 }
