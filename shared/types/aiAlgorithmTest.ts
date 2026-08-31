@@ -53,8 +53,8 @@ export interface AiAlgorithmTestResult {
   algorithmCode: AiAlgorithmCode
   /** 测试使用的已发布算法配置版本。 */
   configurationVersion: number
-  /** 按实际执行顺序返回的步骤；失败后不包含未执行步骤。 */
+  /** 本次请求实际执行的单个步骤。 */
   steps: AiAlgorithmTestStepResult[]
-  /** 全部步骤成功时为 true。 */
+  /** 本次请求执行的步骤成功时为 true。 */
   succeeded: boolean
 }

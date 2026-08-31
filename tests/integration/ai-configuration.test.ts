@@ -84,19 +84,20 @@ describe('AI 接口、模型部署与算法配置', () => {
     const { service, modelFactory } = createServices()
     const connection = await service.createConnection({
       name: '主接口', protocol: 'openai_compatible', endpoint: 'https://model.example/v1',
-      apiKey: 'secret-api-key', isEnabled: true,
+      userAgent: 'RenYang-Integration/1.0', apiKey: 'secret-api-key', isEnabled: true,
     })
 
     const raw = database.getClient().prepare(`
       SELECT api_key_ciphertext FROM ai_connections WHERE id = ?
     `).get(connection.id) as { api_key_ciphertext: string }
     expect(raw.api_key_ciphertext).not.toContain('secret-api-key')
-    expect(await service.listConnections()).toEqual([expect.objectContaining({ hasApiKey: true })])
+    expect(await service.listConnections()).toEqual([expect.objectContaining({ hasApiKey: true, userAgent: 'RenYang-Integration/1.0' })])
     expect(JSON.stringify(await service.listConnections())).not.toContain('apiKeyCiphertext')
 
     await service.updateConnection(connection.id, {
       name: '主接口（编辑）', protocol: 'openai_compatible', endpoint: 'https://model.example/v1', isEnabled: true,
     })
+    expect((await service.listConnections())[0]!.userAgent).toBe('RenYang-Integration/1.0')
     expect((database.getClient().prepare(`SELECT api_key_ciphertext FROM ai_connections WHERE id = ?`).get(connection.id) as { api_key_ciphertext: string }).api_key_ciphertext)
       .toBe(raw.api_key_ciphertext)
 
@@ -106,7 +107,9 @@ describe('AI 接口、模型部署与算法配置', () => {
     await expect(service.checkModelDeployment(deployment.id)).resolves.toEqual({
       healthy: true, message: '接口、凭据和文本模型均可用',
     })
-    expect(modelFactory.options).toEqual([expect.objectContaining({ apiKey: 'secret-api-key', model: 'text-model' })])
+    expect(modelFactory.options).toEqual([expect.objectContaining({
+      apiKey: 'secret-api-key', model: 'text-model', userAgent: 'RenYang-Integration/1.0',
+    })])
   })
 
   it('固定步骤发布不可变配置版本并按快照选择不同端点模型执行', async () => {
@@ -137,13 +140,14 @@ describe('AI 接口、模型部署与算法配置', () => {
     }, 'growth_atomic_facts', 'json_object')
     expect(modelFactory.options.at(-1)).toEqual({
       endpoint: 'https://growth.example/v1', apiKey: 'growth-secret', model: 'growth-model',
+      userAgent: '',
     })
     expect(database.getClient().prepare(`
       SELECT action FROM audit_events WHERE target_id = 'persona_growth' ORDER BY created_at DESC LIMIT 1
     `).get()).toEqual({ action: 'ai_algorithm_configuration_published' })
   })
 
-  it('成长测试优先使用提示词草稿并把已校验事实传给第二步', async () => {
+  it('成长测试分步执行并把第一步已校验事实显式传给第二步', async () => {
     const { service, testing, prompts, modelFactory } = createServices()
     const deploymentId = await configureAlgorithm(service, 'persona_growth')
     const workspace = (await prompts.listWorkspaces()).find(item => item.code === 'analysis.persona_growth_extract')!
@@ -154,20 +158,32 @@ describe('AI 接口、模型部署与算法配置', () => {
       changeSummary: '验证草稿优先测试',
     })
 
-    const result = await testing.run('persona_growth', { baselineText: '当前成长基线', materialText: '新的资料事实' })
+    const extractResult = await testing.run('persona_growth', {
+      stepKey: 'extract', baselineText: '当前成长基线', materialText: '新的资料事实',
+    })
 
-    expect(result).toMatchObject({ algorithmCode: 'persona_growth', configurationVersion: 1, succeeded: true })
-    expect(result.steps).toHaveLength(2)
-    expect(result.steps[0]).toMatchObject({
+    expect(extractResult).toMatchObject({ algorithmCode: 'persona_growth', configurationVersion: 1, succeeded: true })
+    expect(extractResult.steps).toHaveLength(1)
+    expect(extractResult.steps[0]).toMatchObject({
       stepKey: 'extract', promptSource: 'draft', promptVersion: null, modelDeploymentId: deploymentId,
       status: 'succeeded', rawOutput: expect.stringContaining('重视证据'),
       parsedOutput: { facts: [expect.objectContaining({ statement: '重视证据。', evidenceCount: 1 })] },
     })
-    expect(result.steps[0]!.systemPrompt).toContain('测试草稿系统规则')
-    expect(result.steps[1]).toMatchObject({ stepKey: 'synthesize', promptSource: 'published', status: 'succeeded' })
+    expect(extractResult.steps[0]!.systemPrompt).toContain('测试草稿系统规则')
+    expect(modelFactory.requests).toHaveLength(1)
+    const continuation = extractResult.steps[0]!.nextStepInput as { baselineJson: string, factsJson: string }
+    expect(continuation).toEqual(expect.objectContaining({ factsJson: expect.stringContaining('重视证据。') }))
+
+    const synthesizeResult = await testing.run('persona_growth', {
+      stepKey: 'synthesize', configurationVersion: extractResult.configurationVersion, ...continuation,
+    })
+
+    expect(synthesizeResult).toMatchObject({ succeeded: true, configurationVersion: 1 })
+    expect(synthesizeResult.steps).toEqual([expect.objectContaining({
+      stepKey: 'synthesize', promptSource: 'published', status: 'succeeded',
+    })])
     expect(modelFactory.requests).toHaveLength(2)
     expect(modelFactory.requests[1]!.userPrompt).toContain('重视证据。')
-    expect(result.steps[0]!.nextStepInput).toEqual(expect.objectContaining({ factsJson: expect.stringContaining('重视证据。') }))
   })
 
   it('成长测试第一步调用失败后不执行第二步', async () => {
@@ -175,7 +191,9 @@ describe('AI 接口、模型部署与算法配置', () => {
     await configureAlgorithm(service, 'world_growth')
     modelFactory.failAtRequestIndex = 0
 
-    const result = await testing.run('world_growth', { baselineText: '世界当前基线', materialText: '世界新增资料' })
+    const result = await testing.run('world_growth', {
+      stepKey: 'extract', baselineText: '世界当前基线', materialText: '世界新增资料',
+    })
 
     expect(result.succeeded).toBe(false)
     expect(result.steps).toHaveLength(1)

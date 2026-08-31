@@ -95,6 +95,7 @@ export class AiAlgorithmApplicationService {
         connectionId: connection.id,
         protocol: connection.protocol,
         endpoint: connection.endpoint,
+        userAgent: connection.userAgent,
         model: deployment.model,
         promptCode: definitionStep.promptCode,
         promptVersionId: promptVersions[definitionStep.promptCode]!,
@@ -196,7 +197,8 @@ export class AiAlgorithmApplicationService {
     const deployment = await this.requireTextDeployment(step.modelDeploymentId)
     const connection = await this.requireEnabledConnection(step.connectionId)
     if (deployment.connectionId !== step.connectionId || deployment.model !== step.model
-      || connection.endpoint !== step.endpoint || connection.protocol !== step.protocol) {
+      || connection.endpoint !== step.endpoint || connection.protocol !== step.protocol
+      || connection.userAgent !== (step.userAgent ?? '')) {
       throw new ApplicationError('AI_ALGORITHM_CONFIGURATION_CHANGED', '算法使用的接口或模型已被编辑，请重新创建任务', 409)
     }
     return { step, connection }
@@ -222,6 +224,7 @@ export class AiAlgorithmApplicationService {
       endpoint: connection.endpoint,
       apiKey: this.dependencies.secretCipher.decrypt(connection.apiKeyCiphertext, connectionSecretContext(connection.id)),
       model: step.model,
+      userAgent: step.userAgent ?? '',
     })
     return await model.generateStructured({
       systemPrompt: prompt.systemPrompt,

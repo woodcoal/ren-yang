@@ -64,6 +64,7 @@ export const aiConnections = sqliteTable(
     name: text('name').notNull(),
     protocol: text('protocol').notNull(),
     endpoint: text('endpoint').notNull(),
+    userAgent: text('user_agent').notNull().default(''),
     apiKeyCiphertext: text('api_key_ciphertext').notNull(),
     isEnabled: integer('is_enabled').notNull().default(1),
     createdAt: integer('created_at').notNull(),

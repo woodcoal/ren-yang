@@ -15,6 +15,8 @@ export interface AiAlgorithmStepSnapshot {
   protocol: 'openai_compatible'
   /** 完整接口配置的非敏感来源地址。 */
   endpoint: string
+  /** 快照创建时连接使用的自定义 User-Agent；旧快照可能缺失并视为空值。 */
+  userAgent?: string
   /** 供应商模型标识。 */
   model: string
   /** 固定提示词编码。 */

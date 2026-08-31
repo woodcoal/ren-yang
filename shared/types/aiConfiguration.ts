@@ -13,6 +13,8 @@ export interface AiConnectionView {
   protocol: 'openai_compatible'
   /** API 根地址或供应商兼容接口地址。 */
   endpoint: string
+  /** 请求该接口时使用的自定义 User-Agent；空字符串表示不覆盖运行环境默认值。 */
+  userAgent: string
   /** 数据库中是否已经保存加密凭据。 */
   hasApiKey: boolean
   /** 是否允许新算法配置使用。 */

@@ -8,6 +8,8 @@ export interface OpenAiCompatibleTextModelOptions {
   endpoint: string
   apiKey: string
   model: string
+  /** 请求供应商时使用的自定义 User-Agent；省略或空值时不覆盖默认请求头。 */
+  userAgent?: string
 }
 
 /** 通过原生 fetch 调用 OpenAI-compatible Chat Completions，不引入供应商 SDK。 */
@@ -69,6 +71,7 @@ export class OpenAiCompatibleTextModel implements TextModelPort {
         headers: {
           'content-type': 'application/json',
           authorization: `Bearer ${this.options.apiKey}`,
+          ...(this.options.userAgent?.trim() ? { 'user-agent': this.options.userAgent.trim() } : {}),
         },
         body: JSON.stringify(requestBody),
         signal: controller.signal,

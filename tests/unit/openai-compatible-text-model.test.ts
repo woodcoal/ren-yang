@@ -26,6 +26,7 @@ function createModel(): OpenAiCompatibleTextModel {
     endpoint: 'https://model.example/v1/chat/completions',
     apiKey: 'secret-key',
     model: 'test-model',
+    userAgent: 'RenYang-Unit/1.0',
   })
 }
 
@@ -60,7 +61,7 @@ describe('OpenAiCompatibleTextModel', () => {
     const [, init] = fetchMock.mock.calls[0]!
     const body = JSON.parse(String(init?.body)) as Record<string, unknown>
     expect(body).toMatchObject({ model: 'test-model', temperature: 0.3, max_tokens: 256, response_format: { type: 'json_object' } })
-    expect(init?.headers).toMatchObject({ authorization: 'Bearer secret-key' })
+    expect(init?.headers).toMatchObject({ authorization: 'Bearer secret-key', 'user-agent': 'RenYang-Unit/1.0' })
   })
 
   it('纯文本模式直接返回提示词正文且不要求供应商输出 JSON', async () => {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, shallowRef } from 'vue'
 import type { ApiResponse } from '#shared/types/api'
 import type { AiAlgorithmTestResult, AiAlgorithmTestStepResult } from '#shared/types/aiAlgorithmTest'
 import type { AiAlgorithmView } from '#shared/types/aiConfiguration'
@@ -10,17 +10,42 @@ const props = defineProps<{
   algorithm: AiAlgorithmView
 }>()
 
-const soulText = ref('')
-const baselineText = ref('')
-const materialText = ref('')
-const running = ref(false)
-const errorMessage = ref<string | null>(null)
-const result = ref<AiAlgorithmTestResult | null>(null)
+/** 成长第一步成功后由服务端返回的第二步精确输入。 */
+interface GrowthTestContinuation {
+  /** 与第一步完全一致的成长基线 JSON。 */
+  baselineJson: string
+  /** 第一步完成证据校验后的原子结论 JSON。 */
+  factsJson: string
+}
+
+const soulText = shallowRef('')
+const baselineText = shallowRef('')
+const materialText = shallowRef('')
+const running = shallowRef(false)
+const errorMessage = shallowRef<string | null>(null)
+const steps = shallowRef<AiAlgorithmTestStepResult[]>([])
+const configurationVersion = shallowRef<number | null>(null)
+const continuation = shallowRef<GrowthTestContinuation | null>(null)
 const isGrowth = computed(() => props.algorithm.code.endsWith('_growth'))
+const growthCompleted = computed(() => steps.value.some(step => step.stepKey === 'synthesize' && step.status === 'succeeded'))
 const canRun = computed(() => props.algorithm.activeConfigurationVersion !== null
   && (isGrowth.value
-    ? materialText.value.trim().length > 0
+    ? continuation.value !== null || materialText.value.trim().length > 0
     : soulText.value.trim().length > 0))
+const actionLabel = computed(() => isGrowth.value
+  ? continuation.value ? '测试第 2 步：综合编译' : '测试第 1 步：原子提取'
+  : '运行真实测试')
+const runningLabel = computed(() => isGrowth.value
+  ? continuation.value ? '正在测试第 2 步：综合编译' : '正在测试第 1 步：原子提取'
+  : '正在运行真实测试')
+const resultTitle = computed(() => {
+  const last = steps.value.at(-1)
+  if (!last) return ''
+  if (last.status === 'failed') return '当前步骤测试失败'
+  if (growthCompleted.value) return '全部步骤通过'
+  if (isGrowth.value) return '第一步通过，请继续第二步'
+  return '测试通过'
+})
 
 /**
  * 使用已保存草稿优先策略真实调用当前算法，并保留服务端逐步诊断。
@@ -30,15 +55,30 @@ async function runTest(): Promise<void> {
   if (!canRun.value || running.value) return
   running.value = true
   errorMessage.value = null
-  result.value = null
   try {
     const body = isGrowth.value
-      ? { baselineText: baselineText.value, materialText: materialText.value }
+      ? continuation.value
+        ? {
+            stepKey: 'synthesize',
+            configurationVersion: configurationVersion.value,
+            baselineJson: continuation.value.baselineJson,
+            factsJson: continuation.value.factsJson,
+          }
+        : { stepKey: 'extract', baselineText: baselineText.value, materialText: materialText.value }
       : { soulText: soulText.value }
     const response = await $fetch<ApiResponse<AiAlgorithmTestResult>>(`/api/v1/ai/algorithms/${props.algorithm.code}/test`, {
       method: 'POST', body,
     })
-    result.value = response.data
+    const step = response.data.steps[0]
+    if (!step) throw new Error('测试接口没有返回步骤结果')
+    configurationVersion.value = response.data.configurationVersion
+    steps.value = step.stepKey === 'extract'
+      ? [step]
+      : [...steps.value.filter(item => item.stepKey !== step.stepKey), step]
+    if (step.stepKey === 'extract' && step.status === 'succeeded') {
+      continuation.value = readGrowthContinuation(step.nextStepInput)
+      if (!continuation.value) errorMessage.value = '第一步未返回有效的第二步输入，请重新开始测试'
+    }
   }
   catch (error: unknown) {
     errorMessage.value = getApiErrorMessage(error, '算法测试失败')
@@ -46,6 +86,29 @@ async function runTest(): Promise<void> {
   finally {
     running.value = false
   }
+}
+
+/**
+ * 清除当前步骤结果与延续数据，允许重新编辑原始输入并从第一步开始。
+ * @returns 无返回值。
+ */
+function resetTest(): void {
+  steps.value = []
+  configurationVersion.value = null
+  continuation.value = null
+  errorMessage.value = null
+}
+
+/**
+ * 从未知步骤结果中读取服务端生成的成长第二步输入。
+ * @param value 第一步诊断中的下一步数据。
+ * @returns 两个 JSON 字段完整时返回延续数据，否则返回 null。
+ */
+function readGrowthContinuation(value: unknown): GrowthTestContinuation | null {
+  if (typeof value !== 'object' || value === null) return null
+  const record = value as Record<string, unknown>
+  if (typeof record.baselineJson !== 'string' || typeof record.factsJson !== 'string') return null
+  return { baselineJson: record.baselineJson, factsJson: record.factsJson }
 }
 
 /**
@@ -88,61 +151,72 @@ function formatUsage(step: AiAlgorithmTestStepResult): string {
           description="优先使用已保存但未发布的提示词草稿；没有草稿时使用当前发布版本。测试输入和结果不会保存，也不会创建人物、世界、成长、记忆或分析批次。"
         />
 
-        <form class="test-input-form" @submit.prevent="runTest">
-          <template v-if="isGrowth">
-            <UFormField label="当前成长提示词基线（首次生成可留空）">
-              <UTextarea v-model="baselineText" :rows="7" autoresize placeholder="粘贴当前已生效或准备迭代的成长提示词" />
-            </UFormField>
-            <UFormField label="本次成长资料" required>
-              <UTextarea v-model="materialText" :rows="9" autoresize placeholder="粘贴准备提取和综合的资料正文" />
-            </UFormField>
-          </template>
-          <UFormField v-else label="灵魂原文" required>
-            <UTextarea v-model="soulText" :rows="10" autoresize placeholder="粘贴准备整理的人物或世界灵魂原文" />
-          </UFormField>
-
-          <div class="test-actions">
-            <UButton type="submit" icon="i-lucide-play" :loading="running" :disabled="!canRun">运行真实测试</UButton>
-            <span v-if="algorithm.activeConfigurationVersion === null">请先发布算法配置</span>
-          </div>
-        </form>
-
-        <UAlert v-if="errorMessage" color="error" title="测试请求失败" :description="errorMessage" />
-
-        <div v-if="result" class="test-results" aria-live="polite">
-          <div class="test-result-heading">
-            <div><span class="eyebrow">逐步结果</span><h3>{{ result.succeeded ? '全部步骤通过' : '测试在失败步骤停止' }}</h3></div>
-            <UBadge :color="result.succeeded ? 'success' : 'error'" variant="subtle">配置 v{{ result.configurationVersion }}</UBadge>
-          </div>
-
-          <article v-for="(step, index) in result.steps" :key="step.stepKey" class="test-step" :class="`test-step--${step.status}`">
-            <header>
-              <span class="test-step-index">{{ index + 1 }}</span>
-              <div><strong>{{ step.stepName }}</strong><code>{{ step.stepKey }}</code></div>
-              <UBadge :color="step.status === 'succeeded' ? 'success' : 'error'" variant="subtle">{{ step.status === 'succeeded' ? '成功' : '失败' }}</UBadge>
-            </header>
-
-            <UAlert v-if="step.error" color="error" title="本步未完成" :description="step.error" />
-
-            <dl class="test-step-metadata">
-              <div><dt>模型</dt><dd>{{ step.model }}</dd></div>
-              <div><dt>接口</dt><dd>{{ step.endpointOrigin }}</dd></div>
-              <div><dt>参数</dt><dd>temperature {{ step.parameters.temperature }} · max tokens {{ step.parameters.maxOutputTokens }} · timeout {{ step.parameters.timeoutMs }} ms</dd></div>
-              <div><dt>提示词</dt><dd>{{ step.promptSource === 'draft' ? '已保存草稿' : `发布版 v${step.promptVersion}` }} · {{ step.promptCode }}</dd></div>
-              <div><dt>耗时</dt><dd>{{ step.durationMs.toLocaleString('zh-CN') }} ms</dd></div>
-              <div><dt>用量</dt><dd>{{ formatUsage(step) }}</dd></div>
-            </dl>
-
-            <div class="test-step-details">
-              <details><summary>本步输入变量</summary><pre>{{ formatValue(step.variables) }}</pre></details>
-              <details><summary>实际系统提示词</summary><pre>{{ step.systemPrompt || '无' }}</pre></details>
-              <details><summary>实际用户提示词</summary><pre>{{ step.userPrompt }}</pre></details>
-              <details><summary>模型原始响应</summary><pre>{{ step.rawOutput ?? '供应商适配器未返回原始正文' }}</pre></details>
-              <details><summary>业务解析结果</summary><pre>{{ formatValue(step.parsedOutput) }}</pre></details>
-              <details><summary>传给下一步的数据</summary><pre>{{ formatValue(step.nextStepInput) }}</pre></details>
-            </div>
-          </article>
+        <div v-if="running" class="test-running-state" role="status" aria-live="assertive">
+          <UIcon name="i-lucide-loader-circle" class="test-running-icon" aria-hidden="true" />
+          <strong>{{ runningLabel }}</strong>
+          <p>正在等待模型返回，请勿重复提交或切换算法。</p>
         </div>
+
+        <template v-else>
+          <form class="test-input-form w-full" @submit.prevent="runTest">
+            <template v-if="isGrowth">
+              <UFormField class="w-full" label="当前成长提示词基线（首次生成可留空）">
+                <UTextarea v-model="baselineText" class="w-full" :disabled="continuation !== null" :rows="7" autoresize placeholder="粘贴当前已生效或准备迭代的成长提示词" />
+              </UFormField>
+              <UFormField class="w-full" label="本次成长资料" required>
+                <UTextarea v-model="materialText" class="w-full" :disabled="continuation !== null" :rows="9" autoresize placeholder="粘贴准备提取和综合的资料正文" />
+              </UFormField>
+            </template>
+            <UFormField v-else class="w-full" label="灵魂原文" required>
+              <UTextarea v-model="soulText" class="w-full" :rows="10" autoresize placeholder="粘贴准备整理的人物或世界灵魂原文" />
+            </UFormField>
+
+            <div class="test-actions">
+              <div class="flex flex-wrap gap-2">
+                <UButton v-if="!growthCompleted" type="submit" icon="i-lucide-play" :loading="running" :disabled="!canRun">{{ actionLabel }}</UButton>
+                <UButton v-if="steps.length" type="button" color="neutral" variant="soft" :disabled="running" @click="resetTest">重新开始</UButton>
+              </div>
+              <span v-if="algorithm.activeConfigurationVersion === null">请先发布算法配置</span>
+            </div>
+          </form>
+
+          <UAlert v-if="errorMessage" color="error" title="测试请求失败" :description="errorMessage" />
+
+          <div v-if="steps.length" class="test-results" aria-live="polite">
+            <div class="test-result-heading">
+              <div><span class="eyebrow">逐步结果</span><h3>{{ resultTitle }}</h3></div>
+              <UBadge :color="steps.at(-1)?.status === 'succeeded' ? 'success' : 'error'" variant="subtle">配置 v{{ configurationVersion }}</UBadge>
+            </div>
+
+            <article v-for="(step, index) in steps" :key="step.stepKey" class="test-step" :class="`test-step--${step.status}`">
+              <header>
+                <span class="test-step-index">{{ index + 1 }}</span>
+                <div><strong>{{ step.stepName }}</strong><code>{{ step.stepKey }}</code></div>
+                <UBadge :color="step.status === 'succeeded' ? 'success' : 'error'" variant="subtle">{{ step.status === 'succeeded' ? '成功' : '失败' }}</UBadge>
+              </header>
+
+              <UAlert v-if="step.error" color="error" title="本步未完成" :description="step.error" />
+
+              <dl class="test-step-metadata">
+                <div><dt>模型</dt><dd>{{ step.model }}</dd></div>
+                <div><dt>接口</dt><dd>{{ step.endpointOrigin }}</dd></div>
+                <div><dt>参数</dt><dd>temperature {{ step.parameters.temperature }} · max tokens {{ step.parameters.maxOutputTokens }} · timeout {{ step.parameters.timeoutMs }} ms</dd></div>
+                <div><dt>提示词</dt><dd>{{ step.promptSource === 'draft' ? '已保存草稿' : `发布版 v${step.promptVersion}` }} · {{ step.promptCode }}</dd></div>
+                <div><dt>耗时</dt><dd>{{ step.durationMs.toLocaleString('zh-CN') }} ms</dd></div>
+                <div><dt>用量</dt><dd>{{ formatUsage(step) }}</dd></div>
+              </dl>
+
+              <div class="test-step-details">
+                <details><summary>本步输入变量</summary><pre>{{ formatValue(step.variables) }}</pre></details>
+                <details><summary>实际系统提示词</summary><pre>{{ step.systemPrompt || '无' }}</pre></details>
+                <details><summary>实际用户提示词</summary><pre>{{ step.userPrompt }}</pre></details>
+                <details><summary>模型原始响应</summary><pre>{{ step.rawOutput ?? '供应商适配器未返回原始正文' }}</pre></details>
+                <details><summary>业务解析结果</summary><pre>{{ formatValue(step.parsedOutput) }}</pre></details>
+                <details><summary>传给下一步的数据</summary><pre>{{ formatValue(step.nextStepInput) }}</pre></details>
+              </div>
+            </article>
+          </div>
+        </template>
       </div>
     </details>
   </section>
@@ -167,6 +241,33 @@ function formatUsage(step: AiAlgorithmTestStepResult): string {
 .test-panel-body,
 .test-input-form,
 .test-results { display: grid; gap: 1rem; }
+
+.test-input-form { width: 100%; }
+
+.test-running-state {
+  display: grid;
+  min-height: 14rem;
+  place-items: center;
+  align-content: center;
+  gap: 0.75rem;
+  border: 1px solid var(--app-border);
+  border-radius: var(--radius-control);
+  background: var(--app-surface-soft);
+  text-align: center;
+}
+
+.test-running-state p { margin: 0; color: var(--app-muted); }
+
+.test-running-icon {
+  width: 2rem;
+  height: 2rem;
+  color: var(--app-accent);
+  animation: test-running-spin 1s linear infinite;
+}
+
+@keyframes test-running-spin {
+  to { transform: rotate(360deg); }
+}
 
 .test-panel-body {
   margin-top: 1.5rem;

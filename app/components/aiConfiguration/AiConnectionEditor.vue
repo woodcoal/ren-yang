@@ -27,6 +27,7 @@ const form = reactive({
   name: props.connection?.name ?? '',
   protocol: 'openai_compatible' as const,
   endpoint: props.connection?.endpoint ?? '',
+  userAgent: props.connection?.userAgent ?? '',
   apiKey: '',
   isEnabled: props.connection?.isEnabled ?? true,
 })
@@ -38,7 +39,7 @@ const form = reactive({
 function submit(): void {
   validationError.value = null
   const candidate = props.connection && form.apiKey.trim().length === 0
-    ? { name: form.name, protocol: form.protocol, endpoint: form.endpoint, isEnabled: form.isEnabled }
+    ? { name: form.name, protocol: form.protocol, endpoint: form.endpoint, userAgent: form.userAgent, isEnabled: form.isEnabled }
     : { ...form }
   const parsed = props.connection
     ? updateAiConnectionSchema.safeParse(candidate)
@@ -65,6 +66,9 @@ function submit(): void {
       <UFormField label="接口名称" required><UInput v-model="form.name" class="w-full" /></UFormField>
       <UFormField label="协议" required><USelect v-model="form.protocol" class="w-full" :items="[{ label: 'OpenAI-compatible', value: 'openai_compatible' }]" /></UFormField>
       <UFormField label="接口地址" description="填写 API 根地址或兼容接口地址。" required><UInput v-model="form.endpoint" class="w-full" placeholder="https://example.com/v1" /></UFormField>
+      <UFormField label="UserAgent" description="调用该接口时发送的 User-Agent 请求头；留空使用运行环境默认值。">
+        <UInput v-model="form.userAgent" class="w-full" placeholder="RenYang/1.0" autocomplete="off" />
+      </UFormField>
       <UFormField :label="connection ? '更新 API Key' : 'API Key'" :description="connection ? '留空保留当前密钥。' : '密钥不会返回到浏览器。'" :required="!connection">
         <UInput v-model="form.apiKey" class="w-full" type="password" autocomplete="new-password" />
       </UFormField>

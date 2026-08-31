@@ -8,6 +8,8 @@ export interface AiTextModelOptions {
   apiKey: string
   /** 供应商模型标识。 */
   model: string
+  /** 请求供应商时使用的自定义 User-Agent；空字符串表示不覆盖默认值。 */
+  userAgent: string
 }
 
 /** 由应用层按数据库配置动态解析文本模型的工厂端口。 */

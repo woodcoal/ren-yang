@@ -17,6 +17,8 @@ export interface SaveAiConnectionRecord {
   protocol: 'openai_compatible'
   /** 服务地址。 */
   endpoint: string
+  /** 请求该连接时使用的自定义 User-Agent。 */
+  userAgent: string
   /** 已使用连接 UUID 作为上下文加密的凭据。 */
   apiKeyCiphertext: string
   /** 是否启用。 */

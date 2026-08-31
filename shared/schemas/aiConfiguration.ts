@@ -17,17 +17,23 @@ export const aiModelModalitySchema = z.enum(['text', 'image'], { error: '模型�
 /** 首批代码固定流程的算法编码。 */
 export const aiAlgorithmCodeSchema = z.enum(['persona_soul', 'world_soul', 'persona_growth', 'world_growth'], { error: '算法编码无效' })
 
+/** 允许作为 HTTP User-Agent 请求头发送的可见 ASCII 文本。 */
+export const aiUserAgentSchema = z.string().trim().max(500, 'UserAgent 不能超过 500 个字符')
+  .regex(/^[\x20-\x7E]*$/, 'UserAgent 只能包含可见 ASCII 字符')
+
 /** 新建 AI 接口连接时提交的完整参数。 */
 export const createAiConnectionSchema = z.object({
   name: z.string().trim().min(1, '接口名称不能为空').max(100),
   protocol: aiConnectionProtocolSchema.default('openai_compatible'),
   endpoint: aiEndpointSchema,
+  userAgent: aiUserAgentSchema.default(''),
   apiKey: z.string().trim().min(1, 'API Key 不能为空').max(8_000),
   isEnabled: z.boolean().default(true),
 })
 
 /** 编辑 AI 接口连接时提交的完整非敏感参数；省略密钥表示保留原值。 */
-export const updateAiConnectionSchema = createAiConnectionSchema.omit({ apiKey: true }).extend({
+export const updateAiConnectionSchema = createAiConnectionSchema.omit({ apiKey: true, userAgent: true }).extend({
+  userAgent: aiUserAgentSchema.optional(),
   apiKey: z.string().trim().min(1, 'API Key 不能为空').max(8_000).optional(),
 })
 

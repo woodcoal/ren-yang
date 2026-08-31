@@ -52,12 +52,15 @@ describe('SqliteDatabase', () => {
     expect(tables).toEqual([{ name: 'administrators' }, { name: 'task_jobs' }])
     expect(current.getClient().prepare(`
       SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations
-    `).get()).toEqual({ count: 2, version: 1788508800000 })
+    `).get()).toEqual({ count: 3, version: 1788768000000 })
     expect(current.getClient().prepare(`
       SELECT COUNT(*) AS count FROM ai_prompts WHERE active_version_id IS NOT NULL
     `).get()).toEqual({ count: 18 })
     expect(current.getClient().prepare(`SELECT COUNT(*) AS count FROM ai_prompt_versions`).get()).toEqual({ count: 18 })
     expect(current.getClient().prepare(`SELECT COUNT(*) AS count FROM ai_algorithms`).get()).toEqual({ count: 4 })
+    expect(current.getClient().prepare(`PRAGMA table_info(ai_connections)`).all()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'user_agent', notnull: 1, dflt_value: "''" }),
+    ]))
     expect(current.getClient().prepare(`PRAGMA table_info(source_materials)`).all()).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'is_enabled', notnull: 1, dflt_value: '1' }),
     ]))
@@ -137,8 +140,11 @@ describe('SqliteDatabase', () => {
     `).get()).toEqual({ name: '旧资料', content_text: '压平前正文。', is_enabled: 1 })
     expect(database.getClient().prepare(`
       SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations
-    `).get()).toEqual({ count: 11, version: 1788508800000 })
+    `).get()).toEqual({ count: 12, version: 1788768000000 })
     expect(database.getClient().prepare(`SELECT COUNT(*) AS count FROM ai_algorithms`).get()).toEqual({ count: 4 })
+    expect(database.getClient().prepare(`PRAGMA table_info(ai_connections)`).all()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'user_agent', notnull: 1, dflt_value: "''" }),
+    ]))
     expect(database.getClient().prepare('PRAGMA foreign_key_check').all()).toEqual([])
   })
 

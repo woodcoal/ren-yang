@@ -35,10 +35,10 @@ export class SqliteAiConfigurationRepository implements AiConfigurationRepositor
     this.client.transaction(() => {
       this.client.prepare(`
         INSERT INTO ai_connections (
-          id, name, protocol, endpoint, api_key_ciphertext, is_enabled, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          id, name, protocol, endpoint, user_agent, api_key_ciphertext, is_enabled, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
-        record.id, record.name, record.protocol, record.endpoint, record.apiKeyCiphertext,
+        record.id, record.name, record.protocol, record.endpoint, record.userAgent, record.apiKeyCiphertext,
         record.isEnabled ? 1 : 0, record.timestamp, record.timestamp,
       )
       insertAuditEvent(this.client, {
@@ -53,10 +53,10 @@ export class SqliteAiConfigurationRepository implements AiConfigurationRepositor
   async updateConnection(record: SaveAiConnectionRecord): Promise<AiConnectionView | null> {
     const changed = this.client.transaction(() => {
       const result = this.client.prepare(`
-        UPDATE ai_connections SET name = ?, protocol = ?, endpoint = ?, api_key_ciphertext = ?,
+        UPDATE ai_connections SET name = ?, protocol = ?, endpoint = ?, user_agent = ?, api_key_ciphertext = ?,
           is_enabled = ?, updated_at = ? WHERE id = ?
       `).run(
-        record.name, record.protocol, record.endpoint, record.apiKeyCiphertext,
+        record.name, record.protocol, record.endpoint, record.userAgent, record.apiKeyCiphertext,
         record.isEnabled ? 1 : 0, record.timestamp, record.id,
       )
       if (result.changes !== 1) return false
@@ -206,6 +206,7 @@ function mapConnectionView(value: unknown): AiConnectionView {
   const row = value as Record<string, unknown>
   return {
     id: String(row.id), name: String(row.name), protocol: 'openai_compatible', endpoint: String(row.endpoint),
+    userAgent: String(row.user_agent ?? ''),
     hasApiKey: String(row.api_key_ciphertext).length > 0, isEnabled: Number(row.is_enabled) === 1,
     createdAt: Number(row.created_at), updatedAt: Number(row.updated_at),
   }

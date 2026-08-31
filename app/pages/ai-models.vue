@@ -226,7 +226,7 @@ async function checkDeployment(deployment: AiModelDeploymentView): Promise<void>
           <div v-if="connections.length" class="log-list">
             <article v-for="connection in connections" :key="connection.id" class="log-row">
               <span class="log-row-meta">{{ connection.protocol === 'openai_compatible' ? 'OpenAI 兼容' : connection.protocol }}</span>
-              <div class="log-row-main"><strong class="log-row-title">{{ connection.name }}</strong><p class="break-all text-sm text-muted">{{ connection.endpoint }}</p></div>
+              <div class="log-row-main"><strong class="log-row-title">{{ connection.name }}</strong><p class="break-all text-sm text-muted">{{ connection.endpoint }}</p><p class="break-all text-xs text-muted">UserAgent：{{ connection.userAgent || '运行环境默认值' }}</p></div>
               <div class="log-row-end flex flex-wrap items-center justify-end gap-2"><UBadge color="neutral" variant="subtle">{{ connection.hasApiKey ? '密钥已配置' : '无密钥' }}</UBadge><UBadge :color="connection.isEnabled ? 'success' : 'neutral'" variant="subtle">{{ connection.isEnabled ? '已启用' : '未启用' }}</UBadge><UButton size="xs" color="neutral" variant="soft" @click="editConnection(connection)">编辑</UButton></div>
             </article>
           </div>

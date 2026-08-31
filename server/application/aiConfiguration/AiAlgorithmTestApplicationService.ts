@@ -1,4 +1,5 @@
-import { modelGrowthExtractionResultSchema, modelLearningPromptResultSchema } from '../../../shared/schemas/analysis'
+import { z, type ZodType } from 'zod'
+import { modelGrowthAtomicFactSchema, modelGrowthExtractionResultSchema, modelLearningPromptResultSchema } from '../../../shared/schemas/analysis'
 import type { AiAlgorithmTestInput } from '../../../shared/schemas/aiAlgorithmTest'
 import { analyzedSoulPromptSchema } from '../../../shared/schemas/content'
 import type { AiAlgorithmTestResult, AiAlgorithmTestStepResult } from '../../../shared/types/aiAlgorithmTest'
@@ -12,6 +13,15 @@ import type { AiAlgorithmApplicationService, AiAlgorithmTestStepExecution } from
 
 /** 测试成长资料使用的稳定证据 UUID，确保模型引用校验与生产链路一致。 */
 const TEST_GROWTH_INPUT_ID = '00000000-0000-4000-8000-000000000001'
+/** 成长第二步允许接收的第一步基线结构。 */
+const growthTestBaselineSchema = z.array(z.object({
+  type: z.literal('learning_prompt'),
+  promptText: z.string().trim().min(1).max(20_000),
+})).max(1)
+/** 成长第二步允许接收的已校验原子结论结构。 */
+const growthTestFactsSchema = z.array(modelGrowthAtomicFactSchema.extend({
+  evidenceCount: z.number().int().positive(),
+})).min(1).max(200)
 
 /** AI 固定算法只读测试服务依赖。 */
 export interface AiAlgorithmTestApplicationServiceDependencies {
@@ -28,13 +38,16 @@ export class AiAlgorithmTestApplicationService {
    * 真实调用当前发布配置测试一个固定算法。
    * @param code 人物或世界的灵魂、成长算法编码。
    * @param input 与算法类别匹配的业务化测试输入。
-   * @returns 按实际执行顺序生成的完整逐步诊断。
-   * @remarks 提示词草稿优先；失败后立即停止；不写入任何业务数据。
+   * @returns 当前请求指定步骤的完整诊断。
+   * @remarks 成长算法由前端显式推进步骤；提示词草稿优先且不写入任何业务数据。
    */
   async run(code: AiAlgorithmCode, input: AiAlgorithmTestInput): Promise<AiAlgorithmTestResult> {
     const snapshot = await this.dependencies.algorithms.prepare(code)
     if (code.endsWith('_soul')) return await this.runSoul(snapshot, input)
-    return await this.runGrowth(snapshot, input)
+    if (!('stepKey' in input)) throw new ApplicationError('VALIDATION_FAILED', '成长算法测试输入无效', 400)
+    return input.stepKey === 'extract'
+      ? await this.runGrowthExtract(snapshot, input)
+      : await this.runGrowthSynthesize(snapshot, input)
   }
 
   /**
@@ -54,13 +67,12 @@ export class AiAlgorithmTestApplicationService {
   }
 
   /**
-   * 依次执行成长资料原子提取与提示词综合测试。
+   * 单独执行成长资料原子提取测试，并返回第二步所需数据。
    * @param snapshot 当前发布算法配置快照。
    * @param input 待校验的测试输入。
-   * @returns 一步失败即停止的逐步测试诊断。
+   * @returns 原子提取步骤诊断。
    */
-  private async runGrowth(snapshot: AiAlgorithmSnapshot, input: AiAlgorithmTestInput): Promise<AiAlgorithmTestResult> {
-    if (!('baselineText' in input)) throw new ApplicationError('VALIDATION_FAILED', '成长算法测试输入无效', 400)
+  private async runGrowthExtract(snapshot: AiAlgorithmSnapshot, input: Extract<AiAlgorithmTestInput, { stepKey: 'extract' }>): Promise<AiAlgorithmTestResult> {
     const baseline = input.baselineText.length > 0 ? [{ type: 'learning_prompt', promptText: input.baselineText }] : []
     const inputs = [{
       id: TEST_GROWTH_INPUT_ID,
@@ -81,18 +93,36 @@ export class AiAlgorithmTestApplicationService {
       facts = validateAndMergeGrowthFacts(extracted.facts, inputs)
       return { facts }
     }, null)
-    if (extractStep.status === 'failed' || facts === null) return this.result(snapshot, [extractStep])
+    if (extractStep.status === 'succeeded' && facts !== null) {
+      extractStep.nextStepInput = { baselineJson: JSON.stringify(baseline), factsJson: JSON.stringify(facts) }
+    }
+    return this.result(snapshot, [extractStep])
+  }
 
-    const synthesizeVariables = { baselineJson: JSON.stringify(baseline), factsJson: JSON.stringify(facts) }
-    extractStep.nextStepInput = synthesizeVariables
-    const synthesizeExecution = await this.dependencies.algorithms.executeTestStep(
-      snapshot, 'synthesize', synthesizeVariables, 'learning_prompt', 'text',
+  /**
+   * 使用第一步返回且重新校验的延续数据单独执行成长综合测试。
+   * @param snapshot 当前发布算法配置快照。
+   * @param input 第一步配置版本与延续 JSON。
+   * @returns 成长综合步骤诊断。
+   */
+  private async runGrowthSynthesize(
+    snapshot: AiAlgorithmSnapshot,
+    input: Extract<AiAlgorithmTestInput, { stepKey: 'synthesize' }>,
+  ): Promise<AiAlgorithmTestResult> {
+    if (snapshot.configurationVersion !== input.configurationVersion) {
+      throw new ApplicationError('AI_ALGORITHM_CONFIGURATION_CHANGED', '算法配置已变化，请重新执行第一步', 409)
+    }
+    const baseline = parseContinuationJson(input.baselineJson, growthTestBaselineSchema, '成长基线')
+    const facts = parseContinuationJson(input.factsJson, growthTestFactsSchema, '原子结论')
+    const variables = { baselineJson: JSON.stringify(baseline), factsJson: JSON.stringify(facts) }
+    const execution = await this.dependencies.algorithms.executeTestStep(
+      snapshot, 'synthesize', variables, 'learning_prompt', 'text',
     )
-    const synthesizeStep = this.parseStep(snapshot, synthesizeExecution, synthesizeVariables, output => modelLearningPromptResultSchema.parse({
+    const step = this.parseStep(snapshot, execution, variables, output => modelLearningPromptResultSchema.parse({
       promptText: output,
-      summary: `AI 已依据 ${facts!.length} 条去重原子结论生成完整提示词草稿。`,
+      summary: `AI 已依据 ${facts.length} 条去重原子结论生成完整提示词草稿。`,
     }), null)
-    return this.result(snapshot, [extractStep, synthesizeStep])
+    return this.result(snapshot, [step])
   }
 
   /**
@@ -160,8 +190,23 @@ export class AiAlgorithmTestApplicationService {
       algorithmCode: snapshot.algorithmCode,
       configurationVersion: snapshot.configurationVersion,
       steps,
-      succeeded: steps.length === getAiAlgorithmDefinition(snapshot.algorithmCode).steps.length
-        && steps.every(step => step.status === 'succeeded'),
+      succeeded: steps.length === 1 && steps[0]!.status === 'succeeded',
     }
+  }
+}
+
+/**
+ * 解析并校验前一步由服务端返回、后续由浏览器回传的延续 JSON。
+ * @param value 待解析 JSON 文本。
+ * @param schema 该延续数据的固定结构契约。
+ * @param label 错误消息中的业务名称。
+ * @returns 已完成结构校验的数据。
+ */
+function parseContinuationJson<T>(value: string, schema: ZodType<T>, label: string): T {
+  try {
+    return schema.parse(JSON.parse(value))
+  }
+  catch {
+    throw new ApplicationError('VALIDATION_FAILED', `${label}延续数据无效，请重新执行第一步`, 400)
   }
 }

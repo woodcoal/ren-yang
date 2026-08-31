@@ -86,6 +86,7 @@ export class AiConfigurationApplicationService {
       name: normalized.name,
       protocol: normalized.protocol,
       endpoint: normalized.endpoint,
+      userAgent: normalized.userAgent,
       apiKeyCiphertext: this.dependencies.secretCipher.encrypt(normalized.apiKey, connectionSecretContext(id)),
       isEnabled: normalized.isEnabled,
       timestamp: this.dependencies.clock.now(),
@@ -107,6 +108,7 @@ export class AiConfigurationApplicationService {
       name: normalized.name,
       protocol: normalized.protocol,
       endpoint: normalized.endpoint,
+      userAgent: normalized.userAgent ?? current.userAgent,
       apiKeyCiphertext: normalized.apiKey
         ? this.dependencies.secretCipher.encrypt(normalized.apiKey, connectionSecretContext(id))
         : current.apiKeyCiphertext,
@@ -160,6 +162,7 @@ export class AiConfigurationApplicationService {
       endpoint: connection.endpoint,
       apiKey: this.dependencies.secretCipher.decrypt(connection.apiKeyCiphertext, connectionSecretContext(connection.id)),
       model: deployment.model,
+      userAgent: connection.userAgent,
     })
     await model.generateStructured({
       systemPrompt: '你是接口连通性检测器，只返回 OK。',
