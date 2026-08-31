@@ -239,6 +239,11 @@ export const updateSourcesStatusSchema = updateSourceStatusSchema.extend({
     .max(100, '一次最多修改 100 项资料'),
 })
 
+/** 替换当前 Account 全局资料集合的输入。 */
+export const replaceGlobalSourcesSchema = z.object({
+  sourceIds: z.array(z.string().uuid('资料标识无效')).max(500, '全局资料最多选择 500 项'),
+})
+
 /** 资料列表服务端分页参数。 */
 export const listSourcesPageSchema = z.object({
   page: z.coerce.number().int('页码必须是整数').min(1, '页码不能小于 1').default(1),
@@ -309,6 +314,7 @@ export type CreateSourceWithTargetsInput = z.infer<typeof createSourceWithTarget
 export type UpdateSourceInput = z.infer<typeof updateSourceSchema>
 export type UpdateSourceStatusInput = z.infer<typeof updateSourceStatusSchema>
 export type UpdateSourcesStatusInput = z.infer<typeof updateSourcesStatusSchema>
+export type ReplaceGlobalSourcesInput = z.infer<typeof replaceGlobalSourcesSchema>
 export type ListSourcesPageInput = z.infer<typeof listSourcesPageSchema>
 export type ListSubjectsPageInput = z.infer<typeof listSubjectsPageSchema>
 export type CreateSourceLinkInput = z.infer<typeof createSourceLinkSchema>

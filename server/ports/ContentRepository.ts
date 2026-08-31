@@ -274,6 +274,12 @@ export interface ContentRepository {
   listSourceChunks(sourceId: string): Promise<SourceChunkRecord[]>
   /** @param sourceId 资料标识。 @returns 人物和世界关联。 */
   listSourceLinks(sourceId: string): Promise<SourceLinkRecord[]>
+  /** @returns 当前 Account 全局资料 UUID，按优先级和 UUID 稳定排序。 */
+  listGlobalSourceIds(): Promise<string[]>
+  /** @param sourceId 资料标识。 @returns 是否属于当前 Account 全局资料。 */
+  isGlobalSource(sourceId: string): Promise<boolean>
+  /** @param sourceIds 最终全局资料 UUID 集合。 @param timestamp 更新时间。 @returns 新增和移除的差异集合。 */
+  replaceGlobalSources(sourceIds: string[], timestamp: number): Promise<{ addedSourceIds: string[], removedSourceIds: string[] }>
   /** @param sourceId 资料标识。 @param targetType 目标类型。 @param targetId 目标标识。 @param priority 优先级。 @returns 无返回值。 */
   linkSource(sourceId: string, targetType: 'persona' | 'world', targetId: string, priority: number): Promise<void>
   /** @param sourceId 资料标识。 @param linkId 复合关联标识。 @returns 删除的关联数。 */

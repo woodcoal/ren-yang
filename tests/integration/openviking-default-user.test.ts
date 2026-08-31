@@ -67,6 +67,44 @@ describe('OpenViking default User 映射', () => {
     })
   })
 
+  it('全局资料只生成 Account 投影且任意世界人物均可检索', async () => {
+    database.getClient().prepare(`
+      INSERT INTO worlds (id, name, summary, active_soul_version_id, created_at, updated_at)
+      VALUES ('world-id', '测试世界', '', NULL, 1000, 1000)
+    `).run()
+    database.getClient().prepare(`
+      INSERT INTO personas (id, world_id, name, origin, active_soul_version_id, created_at, updated_at)
+      VALUES ('persona-id', 'world-id', '测试人物', 'original', NULL, 1000, 1000)
+    `).run()
+    database.getClient().prepare(`
+      INSERT INTO source_materials (
+        id, name, role, input_type, content_hash, content_text, original_file_path, created_at, updated_at
+      ) VALUES ('source-id', '全局规则', 'canon_fact', 'paste', ?, '所有人物共同遵守。', NULL, 1000, 1000)
+    `).run('a'.repeat(64))
+    database.getClient().prepare(`
+      INSERT INTO global_sources (source_id, priority, created_at, updated_at)
+      VALUES ('source-id', 10, 1000, 1000)
+    `).run()
+    const repository = new SqliteContextIndexRepository(database.getClient())
+    const [projection] = await repository.listSourceProjections('source_material', 'source-id')
+
+    expect(projection).toMatchObject({
+      scopeType: 'global', scopeId: 'account', userId: 'default', peerId: null,
+      remoteUri: 'viking://resources/global-source/source-id.md',
+    })
+    await repository.saveSyncRecord({
+      id: 'sync-id', entityType: 'source_material', sourceId: 'source-id', scopeType: 'global', scopeId: 'account',
+      userId: 'default', peerId: null, provider: 'openviking', remoteUri: projection!.remoteUri,
+      contentHash: 'a'.repeat(64), status: 'synchronized', operation: 'upsert', error: null,
+      errorCode: null, errorStage: null, failureCount: 0, nextRetryAt: null, createdAt: 1000, updatedAt: 1000,
+    })
+
+    await expect(repository.findRemoteSearchScope('persona-id', 'world-id')).resolves.toMatchObject({
+      userId: 'world-world-id', complete: true,
+      targets: [expect.objectContaining({ sourceId: 'source-id', remoteUri: projection!.remoteUri })],
+    })
+  })
+
   it('主动检测成功后解除历史全局降级状态', async () => {
     const repository = new SqliteContextIndexRepository(database.getClient())
     await repository.markSyncDegraded('历史单项资料错误', null, 1_000)
@@ -89,13 +127,8 @@ describe('OpenViking default User 映射', () => {
     })
   })
 
-  it('启动补偿自动修复旧版本误判的嵌入长度降级', async () => {
+  it('启动补偿自动修复旧版本误判的单项错误降级', async () => {
     const repository = new SqliteContextIndexRepository(database.getClient())
-    await repository.markSyncDegraded(
-      "OpenViking 请求失败：{'type': 'exceed_context_size_error'}",
-      null,
-      1_000,
-    )
     const queuedTasks: string[] = []
     const taskQueue = {
       /** @returns 记录一次 User 对账任务。 */
@@ -117,9 +150,14 @@ describe('OpenViking default User 映射', () => {
       taskQueue,
     })
 
-    await service.recoverPendingTasks()
-
-    await expect(repository.getSyncRuntime()).resolves.toMatchObject({ state: 'healthy', lastError: null })
-    expect(queuedTasks).toEqual(['users'])
+    for (const error of [
+      "OpenViking 请求失败：{'type': 'exceed_context_size_error'}",
+      'OpenViking 请求失败（HTTP 412，远端资源删除）：Cannot remove directory without --recursive: [资源路径已隐藏]',
+    ]) {
+      await repository.markSyncDegraded(error, null, 1_000)
+      await service.recoverPendingTasks()
+      await expect(repository.getSyncRuntime()).resolves.toMatchObject({ state: 'healthy', lastError: null })
+    }
+    expect(queuedTasks).toEqual(['users', 'users'])
   })
 })

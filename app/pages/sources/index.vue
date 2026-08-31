@@ -2,7 +2,7 @@
 import { computed, ref, shallowRef, watch } from 'vue'
 import type { CreateSourceWithTargetsInput } from '#shared/schemas/content'
 import type { ApiResponse } from '#shared/types/api'
-import type { PersonaSummary, SourceDetails, SourcePageView, SourceStatusUpdateResult, SourceSummary, WorldSummary } from '#shared/types/content'
+import type { GlobalSourcesView, PersonaSummary, SourceDetails, SourcePageView, SourceStatusUpdateResult, SourceSummary, WorldSummary } from '#shared/types/content'
 import type { SourceFileSubmission } from '../../components/content/SourceImportForm.vue'
 import { getApiErrorMessage } from '../../utils/apiError'
 
@@ -80,6 +80,14 @@ const selectedSourceIds = ref<string[]>([])
 const batchEnableConfirmationOpen = shallowRef(false)
 const batchDisableConfirmationOpen = shallowRef(false)
 const batchStatusUpdating = shallowRef<boolean | null>(null)
+/** 是否显示 Account 全局资料管理弹窗。 */
+const globalSourceModalOpen = shallowRef(false)
+/** 弹窗使用的全部资料。 */
+const allSources = ref<SourceSummary[]>([])
+/** 当前已经生效的 Account 全局资料 UUID。 */
+const globalSourceIds = ref<string[]>([])
+/** 是否正在加载或保存全局资料。 */
+const globalSourcesLoading = shallowRef(false)
 const pageSourceIds = computed(() => sources.value.map(source => source.id))
 const selectedEnabledSourceIds = computed(() => sources.value
   .filter(source => source.isEnabled && selectedSourceIds.value.includes(source.id))
@@ -340,12 +348,62 @@ async function updateSelectedSourcesStatus(sourceIds: string[], isEnabled: boole
     batchStatusUpdating.value = null
   }
 }
+
+/**
+ * 加载全部资料和当前全局集合后打开管理弹窗。
+ * @returns 两项读取完成时结束；失败时使用通知框显示原因。
+ */
+async function openGlobalSourceManager(): Promise<void> {
+  globalSourcesLoading.value = true
+  try {
+    const [sourcesResponse, globalResponse] = await Promise.all([
+      $fetch<ApiResponse<SourceSummary[]>>('/api/v1/sources'),
+      $fetch<ApiResponse<GlobalSourcesView>>('/api/v1/sources/global'),
+    ])
+    allSources.value = sourcesResponse.data
+    globalSourceIds.value = globalResponse.data.sourceIds
+    globalSourceModalOpen.value = true
+  }
+  catch (requestError: unknown) {
+    notifyError(getApiErrorMessage(requestError, '全局资料加载失败'), '全局资料加载失败')
+  }
+  finally {
+    globalSourcesLoading.value = false
+  }
+}
+
+/**
+ * 保存最终全局资料集合并刷新当前资料列表的全局标识。
+ * @param sourceIds 弹窗提交的最终资料 UUID 集合。
+ * @returns 保存和刷新完成时结束。
+ */
+async function saveGlobalSources(sourceIds: string[]): Promise<void> {
+  globalSourcesLoading.value = true
+  try {
+    const response = await $fetch<ApiResponse<GlobalSourcesView>>('/api/v1/sources/global', {
+      method: 'PUT',
+      body: { sourceIds },
+    })
+    globalSourceIds.value = response.data.sourceIds
+    globalSourceModalOpen.value = false
+    await refresh()
+    notifySuccess(`全局资料已保存：新增 ${response.data.addedSourceIds.length} 项，移除 ${response.data.removedSourceIds.length} 项。`, '全局资料已更新')
+  }
+  catch (requestError: unknown) {
+    notifyError(getApiErrorMessage(requestError, '全局资料保存失败'), '全局资料保存失败')
+  }
+  finally {
+    globalSourcesLoading.value = false
+  }
+}
 </script>
 
 <template>
   <div>
     <ContentPageHeader title="资料库" description="统一导入、检索和维护人物或世界会参考的事实、背景与风格资料。">
       <UButton icon="i-lucide-plus" @click="showImport = !showImport">{{ showImport ? '收起导入' : '导入资料' }}</UButton>
+      <UButton icon="i-lucide-globe-2" color="neutral" variant="soft" :loading="globalSourcesLoading"
+        @click="openGlobalSourceManager">管理全局资料</UButton>
       <UButton to="/sources/search" icon="i-lucide-search" color="info">全文检索</UButton>
     </ContentPageHeader>
 
@@ -421,6 +479,7 @@ async function updateSelectedSourcesStatus(sourceIds: string[], isEnabled: boole
                       '已启用'
                       :
                       '已禁用' }}</UBadge>
+                    <UBadge v-if="source.isGlobal" class="ml-1" color="info" variant="subtle">全局</UBadge>
                   </td>
                   <td data-label="检索内容">{{ source.chunkCount }} 个段落</td>
                   <td data-label="使用关系">{{ source.linkCount }} 个对象</td>
@@ -479,5 +538,8 @@ async function updateSelectedSourcesStatus(sourceIds: string[], isEnabled: boole
         </div>
       </template>
     </UModal>
+
+    <ContentGlobalSourceManagerModal v-model:open="globalSourceModalOpen" :sources="allSources"
+      :selected-source-ids="globalSourceIds" :loading="globalSourcesLoading" @save="saveGlobalSources" />
   </div>
 </template>

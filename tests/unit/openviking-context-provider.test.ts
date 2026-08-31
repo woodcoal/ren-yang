@@ -37,7 +37,7 @@ class FixedContextIndexRepository implements ContextIndexRepository {
       complete: true,
       targets: this.scopes.map(scope => ({
         ...scope,
-        remoteUri: `viking://~/peers/persona-persona/resources/ren-yang/persona-source/${scope.sourceId}.md`,
+        remoteUri: `viking://~/peers/persona-persona/resources/persona-source/${scope.sourceId}.md`,
       })),
     }
   }
@@ -202,7 +202,7 @@ describe('OpenViking 原生 HTTP 上下文适配器', () => {
       new Response(JSON.stringify({ status: 'ok', result: { temp_file_id: 'temp-1' } })),
       new Response(JSON.stringify({
         status: 'ok',
-        result: { status: 'success', root_uri: `viking://~/peers/persona-persona/resources/ren-yang/persona-source/${SOURCE_ID}.md` },
+        result: { status: 'success', root_uri: `viking://~/peers/persona-persona/resources/persona-source/${SOURCE_ID}.md` },
       })),
     ]
     const provider = new OpenVikingHttpContextProvider({
@@ -217,8 +217,8 @@ describe('OpenViking 原生 HTTP 上下文适配器', () => {
     await expect(provider.synchronizeProjection({
       source: { entityType: 'source_material', id: SOURCE_ID, name: '人物资料', role: 'canon_fact', contentHash: 'a'.repeat(64), contentText: '人物资料正文' },
       scopeType: 'persona', scopeId: 'persona', userId: 'default', peerId: 'persona-persona', priority: 10,
-      operation: 'upsert', remoteUri: `viking://~/peers/persona-persona/resources/ren-yang/persona-source/${SOURCE_ID}.md`,
-    })).resolves.toBe(`viking://~/peers/persona-persona/resources/ren-yang/persona-source/${SOURCE_ID}.md`)
+      operation: 'upsert', remoteUri: `viking://~/peers/persona-persona/resources/persona-source/${SOURCE_ID}.md`,
+    })).resolves.toBe(`viking://~/peers/persona-persona/resources/persona-source/${SOURCE_ID}.md`)
 
     expect(requests.map(item => new URL(item.url).pathname)).toEqual([
       '/health', '/api/v1/admin/accounts/ren-yang/users', '/api/v1/content/read',
@@ -226,6 +226,49 @@ describe('OpenViking 原生 HTTP 上下文适配器', () => {
     ])
     expect(requests.slice(2).every(item => new Headers(item.init.headers).get('x-api-key') === 'admin-key')).toBe(true)
     expect(requests.slice(2).every(item => new Headers(item.init.headers).get('x-openviking-actor-peer') === 'persona-persona')).toBe(true)
+  })
+
+  it('Account 全局资料使用 ADMIN Key 写入并允许世界 User 精确检索', async () => {
+    const globalUri = `viking://resources/global-source/${SOURCE_ID}.md`
+    const requests: Array<{ url: string, init: RequestInit }> = []
+    const responses = [
+      new Response(JSON.stringify({ status: 'ok', healthy: true, version: '0.4.16', auth_mode: 'api_key' })),
+      new Response(JSON.stringify({ status: 'ok', result: [{ user_id: 'default', role: 'admin' }, { user_id: 'world-world', role: 'user' }] })),
+      new Response(JSON.stringify({ status: 'error', error: { code: 'NOT_FOUND' } }), { status: 404 }),
+      new Response(JSON.stringify({ status: 'ok', result: { temp_file_id: 'temp-global' } })),
+      new Response(JSON.stringify({ status: 'ok', result: { root_uri: globalUri } })),
+      new Response(JSON.stringify({ status: 'ok', result: { user_key: 'world-key' } })),
+      new Response(JSON.stringify({
+        status: 'ok', result: {
+          resources: [{ uri: `${globalUri}/chunk-1`, content: '全局规则正文', score: 1 }],
+          memories: [], skills: [], total: 1,
+        },
+      })),
+    ]
+    const repository = new FixedContextIndexRepository([])
+    repository.findRemoteSearchScope = async () => ({
+      userId: 'world-world', peerId: 'persona-persona', complete: true,
+      targets: [{ sourceId: SOURCE_ID, role: 'canon_fact', priority: 10, remoteUri: globalUri }],
+    })
+    const provider = new OpenVikingHttpContextProvider({
+      enabled: true, endpoint: 'https://ov.test', apiKey: 'admin-key', timeoutMs: 5_000, repository,
+      fetcher: vi.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
+        requests.push({ url: String(input), init: init ?? {} })
+        return responses.shift()!
+      }) as unknown as typeof fetch,
+    })
+
+    await provider.synchronizeProjection({
+      source: { entityType: 'source_material', id: SOURCE_ID, name: '全局规则', role: 'canon_fact', contentHash: 'a'.repeat(64), contentText: '全局规则正文' },
+      scopeType: 'global', scopeId: 'account', userId: 'default', peerId: null, priority: 10,
+      operation: 'upsert', remoteUri: globalUri,
+    })
+    await provider.search({ personaId: 'persona', worldId: 'world', query: '全局规则', limit: 5 })
+
+    expect(new Headers(requests[2]!.init.headers).get('x-api-key')).toBe('admin-key')
+    expect(new Headers(requests[2]!.init.headers).get('x-openviking-actor-peer')).toBeNull()
+    expect(new Headers(requests.at(-1)!.init.headers).get('x-api-key')).toBe('world-key')
+    expect(JSON.parse(String(requests.at(-1)!.init.body)).target_uri).toEqual([globalUri])
   })
 
   it('数据库配置从关闭切换到启用后立即生效且更换 ADMIN Key 会重新检测权限', async () => {
@@ -338,7 +381,7 @@ describe('OpenViking 原生 HTTP 上下文适配器', () => {
     const record: ContextSyncRecordView = {
       id: 'record', entityType: 'source_material', sourceId: SOURCE_ID, scopeType: 'persona', scopeId: 'persona',
       userId: 'world-world', peerId: 'persona-persona', provider: 'openviking',
-      remoteUri: `viking://~/peers/persona-persona/resources/ren-yang/persona-source/${SOURCE_ID}.md`,
+      remoteUri: `viking://~/peers/persona-persona/resources/persona-source/${SOURCE_ID}.md`,
       contentHash: 'a'.repeat(64), status: 'synchronized', operation: 'upsert', error: null, createdAt: 1, updatedAt: 1,
     }
     await expect(provider.deleteProjection(record)).resolves.toBeUndefined()
@@ -348,10 +391,72 @@ describe('OpenViking 原生 HTTP 上下文适配器', () => {
       const url = new URL(value.url)
       return { path: url.pathname, uri: url.searchParams.get('uri'), recursive: url.searchParams.get('recursive'), wait: url.searchParams.get('wait') }
     })).toEqual([
-      { path: '/api/v1/fs', uri: `viking://~/peers/persona-persona/resources/ren-yang/persona-source/${SOURCE_ID}.md`, recursive: 'false', wait: 'true' },
-      { path: '/api/v1/fs', uri: `viking://~/peers/persona-persona/resources/ren-yang/persona-source/${SOURCE_ID}.md`, recursive: 'false', wait: 'true' },
+      { path: '/api/v1/fs', uri: `viking://~/peers/persona-persona/resources/persona-source/${SOURCE_ID}.md`, recursive: 'true', wait: 'true' },
+      { path: '/api/v1/fs', uri: `viking://~/peers/persona-persona/resources/persona-source/${SOURCE_ID}.md`, recursive: 'true', wait: 'true' },
     ])
     expect(new Headers(requests[3]!.init.headers).get('x-api-key')).toBe('world-key')
+  })
+
+  it('删除 OpenViking 资料目录时使用递归参数，避免 HTTP 412', async () => {
+    const requests: Array<{ url: string, init: RequestInit }> = []
+    const responses = [
+      new Response(JSON.stringify({ status: 'ok', healthy: true, version: '0.4.16', auth_mode: 'api_key' })),
+      new Response(JSON.stringify({ status: 'ok', result: [{ user_id: 'world-world', role: 'user' }] })),
+      new Response(JSON.stringify({ status: 'ok', result: { user_key: 'world-key' } })),
+    ]
+    const provider = new OpenVikingHttpContextProvider({
+      enabled: true, endpoint: 'https://ov.test', apiKey: 'admin-key', timeoutMs: 5_000,
+      repository: new FixedContextIndexRepository([]),
+      fetcher: vi.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
+        const url = String(input)
+        requests.push({ url, init: init ?? {} })
+        const response = responses.shift()
+        if (response) return response
+        return new URL(url).searchParams.get('recursive') === 'true'
+          ? new Response(JSON.stringify({ status: 'ok', result: { status: 'success' } }))
+          : new Response(JSON.stringify({
+              status: 'error',
+              error: { code: 'PRECONDITION_FAILED', message: 'Cannot remove directory without --recursive: viking://user/world-world/resources/private.md' },
+            }), { status: 412 })
+      }) as unknown as typeof fetch,
+    })
+    const record: ContextSyncRecordView = {
+      id: 'record', entityType: 'source_material', sourceId: SOURCE_ID, scopeType: 'world', scopeId: 'world',
+      userId: 'world-world', peerId: null, provider: 'openviking',
+      remoteUri: `viking://~/resources/world-source/${SOURCE_ID}.md`,
+      contentHash: 'a'.repeat(64), status: 'synchronized', operation: 'delete', error: null, createdAt: 1, updatedAt: 1,
+    }
+
+    await expect(provider.deleteProjection(record)).resolves.toBeUndefined()
+    expect(new URL(requests.at(-1)!.url).searchParams.get('recursive')).toBe('true')
+  })
+
+  it('远端仍返回目录删除参数 412 时只标记单项失败且不全局重试', async () => {
+    const responses = [
+      new Response(JSON.stringify({ status: 'ok', healthy: true, version: '0.4.16', auth_mode: 'api_key' })),
+      new Response(JSON.stringify({ status: 'ok', result: [{ user_id: 'world-world', role: 'user' }] })),
+      new Response(JSON.stringify({ status: 'ok', result: { user_key: 'world-key' } })),
+      new Response(JSON.stringify({
+        status: 'error',
+        error: { code: 'PRECONDITION_FAILED', message: 'Cannot remove directory without --recursive: viking://user/world-world/resources/private.md' },
+      }), { status: 412 }),
+    ]
+    const provider = new OpenVikingHttpContextProvider({
+      enabled: true, endpoint: 'https://ov.test', apiKey: 'admin-key', timeoutMs: 5_000,
+      repository: new FixedContextIndexRepository([]),
+      fetcher: vi.fn(async () => responses.shift()!) as unknown as typeof fetch,
+    })
+    const record: ContextSyncRecordView = {
+      id: 'record', entityType: 'source_material', sourceId: SOURCE_ID, scopeType: 'world', scopeId: 'world',
+      userId: 'world-world', peerId: null, provider: 'openviking',
+      remoteUri: `viking://~/resources/world-source/${SOURCE_ID}.md`,
+      contentHash: 'a'.repeat(64), status: 'synchronized', operation: 'delete', error: null, createdAt: 1, updatedAt: 1,
+    }
+
+    await expect(provider.deleteProjection(record)).rejects.toMatchObject({
+      message: 'OpenViking 请求失败（HTTP 412，远端资源删除）：Cannot remove directory without --recursive: [资源路径已隐藏]',
+      details: { retryable: false, providerCode: 'PRECONDITION_FAILED', operation: '远端资源删除' },
+    })
   })
 
   it('按 temp_upload、wait=true 资源写入和限定 URI 检索契约转换统一证据', async () => {
@@ -364,12 +469,12 @@ describe('OpenViking 原生 HTTP 上下文适配器', () => {
       new Response(JSON.stringify({ status: 'ok', result: '旧正文' })),
       new Response(JSON.stringify({ status: 'error', error: { code: 'NOT_FOUND', message: 'not found' } }), { status: 404 }),
       new Response(JSON.stringify({ status: 'ok', result: { temp_file_id: 'temp-1' } })),
-      new Response(JSON.stringify({ status: 'ok', result: { status: 'success', root_uri: `viking://~/peers/persona-persona/resources/ren-yang/persona-source/${SOURCE_ID}.md` } })),
+      new Response(JSON.stringify({ status: 'ok', result: { status: 'success', root_uri: `viking://~/peers/persona-persona/resources/persona-source/${SOURCE_ID}.md` } })),
       new Response(JSON.stringify({
         status: 'ok',
         result: {
           resources: [{
-            uri: `viking://~/peers/persona-persona/resources/ren-yang/persona-source/${SOURCE_ID}.md/chunk-1`,
+            uri: `viking://~/peers/persona-persona/resources/persona-source/${SOURCE_ID}.md/chunk-1`,
             score: 0.91,
             abstract: '摘要',
             content: '这是 OpenViking 返回的证据正文。',
@@ -391,8 +496,8 @@ describe('OpenViking 原生 HTTP 上下文适配器', () => {
     await expect(provider.synchronizeProjection({
       source: { entityType: 'source_material', id: SOURCE_ID, name: '原著资料', role: 'canon_fact', contentHash: 'a'.repeat(64), contentText: '原著资料正文。' },
       scopeType: 'persona', scopeId: 'persona', userId: 'world-world', peerId: 'persona-persona', priority: 10,
-      operation: 'upsert', remoteUri: `viking://~/peers/persona-persona/resources/ren-yang/persona-source/${SOURCE_ID}.md`,
-    })).resolves.toBe(`viking://~/peers/persona-persona/resources/ren-yang/persona-source/${SOURCE_ID}.md`)
+      operation: 'upsert', remoteUri: `viking://~/peers/persona-persona/resources/persona-source/${SOURCE_ID}.md`,
+    })).resolves.toBe(`viking://~/peers/persona-persona/resources/persona-source/${SOURCE_ID}.md`)
     await expect(provider.search({ personaId: 'persona', worldId: null, query: '证据', limit: 5 })).resolves.toEqual({
       provider: 'openviking',
       candidates: [{
@@ -412,11 +517,12 @@ describe('OpenViking 原生 HTTP 上下文适配器', () => {
       '/health', '/api/v1/admin/accounts/ren-yang/users', '/api/v1/observer/queue', '/api/v1/admin/accounts/ren-yang/users',
       '/api/v1/content/read', '/api/v1/fs', '/api/v1/resources/temp_upload', '/api/v1/resources', '/api/v1/search/find',
     ])
+    expect(new URL(requests[5]!.url).searchParams.get('recursive')).toBe('true')
     expect(new Headers(requests[6]!.init.headers).get('x-api-key')).toBe('world-key')
     expect(requests[6]!.init.body).toBeInstanceOf(FormData)
     expect(JSON.parse(String(requests[7]!.init.body))).toMatchObject({
       temp_file_id: 'temp-1',
-      to: `viking://~/peers/persona-persona/resources/ren-yang/persona-source/${SOURCE_ID}.md`,
+      to: `viking://~/peers/persona-persona/resources/persona-source/${SOURCE_ID}.md`,
       reason: '',
       wait: true,
       strict: true,
@@ -424,7 +530,7 @@ describe('OpenViking 原生 HTTP 上下文适配器', () => {
     })
     expect(JSON.parse(String(requests[8]!.init.body))).toEqual({
       query: '证据',
-      target_uri: [`viking://~/peers/persona-persona/resources/ren-yang/persona-source/${SOURCE_ID}.md`],
+      target_uri: [`viking://~/peers/persona-persona/resources/persona-source/${SOURCE_ID}.md`],
       context_type: 'resource',
       limit: 5,
       read_content: true,
@@ -455,7 +561,7 @@ describe('OpenViking 原生 HTTP 上下文适配器', () => {
     await expect(provider.synchronizeProjection({
       source: { entityType: 'source_material', id: SOURCE_ID, name: '超长资料', role: 'canon_fact', contentHash: 'a'.repeat(64), contentText: '超长正文' },
       scopeType: 'world', scopeId: 'world', userId: 'world-world', peerId: null, priority: 10,
-      operation: 'upsert', remoteUri: `viking://~/resources/ren-yang/world-source/${SOURCE_ID}.md`,
+      operation: 'upsert', remoteUri: `viking://~/resources/world-source/${SOURCE_ID}.md`,
     })).rejects.toMatchObject({
       code: 'PROVIDER_UNAVAILABLE',
       message: 'OpenViking 请求失败（HTTP 500，资料写入）：资料内容超出 OpenViking 嵌入模型上下文上限，请缩短资料或调整嵌入模型上下文后重新同步',
@@ -479,7 +585,7 @@ describe('OpenViking 原生 HTTP 上下文适配器', () => {
         return responses.shift()!
       }) as unknown as typeof fetch,
     })
-    const remoteUri = `viking://~/resources/ren-yang/world-source/${SOURCE_ID}.md`
+    const remoteUri = `viking://~/resources/world-source/${SOURCE_ID}.md`
 
     await expect(provider.synchronizeProjection({
       source: {
@@ -504,11 +610,11 @@ describe('OpenViking 原生 HTTP 上下文适配器', () => {
       new Response(JSON.stringify({ status: 'ok', result: { account_id: 'ren-yang', user_id: 'world-a', user_key: 'key-a' } })),
       new Response(JSON.stringify({ status: 'error' }), { status: 404 }),
       new Response(JSON.stringify({ status: 'ok', result: { temp_file_id: 'temp-a' } })),
-      new Response(JSON.stringify({ status: 'ok', result: { root_uri: `viking://~/resources/ren-yang/world-source/${SOURCE_ID}.md` } })),
+      new Response(JSON.stringify({ status: 'ok', result: { root_uri: `viking://~/resources/world-source/${SOURCE_ID}.md` } })),
       new Response(JSON.stringify({ status: 'ok', result: { account_id: 'ren-yang', user_id: 'world-b', user_key: 'key-b' } })),
       new Response(JSON.stringify({ status: 'error' }), { status: 404 }),
       new Response(JSON.stringify({ status: 'ok', result: { temp_file_id: 'temp-b' } })),
-      new Response(JSON.stringify({ status: 'ok', result: { root_uri: `viking://~/resources/ren-yang/world-source/${SOURCE_ID}.md` } })),
+      new Response(JSON.stringify({ status: 'ok', result: { root_uri: `viking://~/resources/world-source/${SOURCE_ID}.md` } })),
     ]
     const provider = new OpenVikingHttpContextProvider({
       enabled: true, endpoint: 'https://ov.test', apiKey: 'admin-key', timeoutMs: 5_000,
@@ -521,7 +627,7 @@ describe('OpenViking 原生 HTTP 上下文适配器', () => {
     const projection = (userId: string) => ({
       source: { entityType: 'source_material' as const, id: SOURCE_ID, name: '资料', role: 'reference' as const, contentHash: 'a'.repeat(64), contentText: '正文' },
       scopeType: 'world' as const, scopeId: userId, userId, peerId: null, priority: 10, operation: 'upsert' as const,
-      remoteUri: `viking://~/resources/ren-yang/world-source/${SOURCE_ID}.md`,
+      remoteUri: `viking://~/resources/world-source/${SOURCE_ID}.md`,
     })
 
     await provider.synchronizeProjection(projection('world-a'))
@@ -579,9 +685,11 @@ describe('OpenViking 原生 HTTP 上下文适配器', () => {
       new Response(JSON.stringify({ status: 'ok', result: [{ user_id: 'default', role: 'admin' }] })),
       new Response(JSON.stringify({ status: 'ok', result: [{ name: 'world-source', uri: 'viking://user/default/resources/ren-yang/world-source', isDir: true }] })),
       new Response(JSON.stringify({ status: 'ok', result: { deleted: true } })),
+      new Response(JSON.stringify({ status: 'ok', result: [] })),
       new Response(JSON.stringify({ status: 'ok', result: [{ session_id: 'ren-yang-run-old' }] })),
       new Response(JSON.stringify({ status: 'ok', result: { deleted: true } })),
       new Response(JSON.stringify({ status: 'ok', result: [{ name: 'persona-old', uri: peerUri, isDir: true }] })),
+      new Response(JSON.stringify({ status: 'ok', result: { deleted: true } })),
       new Response(JSON.stringify({ status: 'ok', result: { deleted: true } })),
     ]
     const provider = new OpenVikingHttpContextProvider({
@@ -600,9 +708,11 @@ describe('OpenViking 原生 HTTP 上下文适配器', () => {
       'GET /api/v1/admin/accounts/ren-yang/users',
       'GET /api/v1/fs/ls',
       'DELETE /api/v1/fs',
+      'GET /api/v1/fs/ls',
       'GET /api/v1/sessions',
       'DELETE /api/v1/sessions/ren-yang-run-old',
       'GET /api/v1/fs/ls',
+      'DELETE /api/v1/fs',
       'DELETE /api/v1/fs',
     ])
   })
@@ -614,6 +724,7 @@ describe('OpenViking 原生 HTTP 上下文适配器', () => {
       new Response(JSON.stringify({ status: 'ok', result: [{ user_id: 'world-a', role: 'user' }] })),
       new Response(JSON.stringify({ status: 'ok', result: { user_key: 'key-a' } })),
       new Response(JSON.stringify({ status: 'error', error: { code: 'NOT_FOUND' } }), { status: 404 }),
+      new Response(JSON.stringify({ status: 'ok', result: [] })),
       new Response(JSON.stringify({ status: 'ok', result: [] })),
       new Response(JSON.stringify({ status: 'error', error: { code: 'NOT_FOUND' } }), { status: 404 }),
     ]
@@ -642,6 +753,7 @@ describe('OpenViking 原生 HTTP 上下文适配器', () => {
       new Response(JSON.stringify({ status: 'ok', result: { user_key: 'key-a' } })),
       new Response(JSON.stringify({ status: 'ok', result: [{ name: 'world-source', uri: 'viking://~/resources/ren-yang/world-source', isDir: true }] })),
       new Response(JSON.stringify({ status: 'ok', result: { uri: 'viking://~/resources/ren-yang', semantic_status: 'queued' } })),
+      new Response(JSON.stringify({ status: 'ok', result: [] })),
       new Response(JSON.stringify({ status: 'ok', result: [] })),
       new Response(JSON.stringify({ status: 'ok', result: [{ name: 'persona-a', uri: 'viking://~/peers/persona-a', isDir: true }] })),
       new Response(JSON.stringify({ status: 'ok', result: { uri: 'viking://~/peers/persona-a', semantic_status: 'queued' } })),
@@ -681,7 +793,7 @@ describe('OpenViking 原生 HTTP 上下文适配器', () => {
     await provider.deleteProjection({
       id: 'sync-a', entityType: 'source_material', sourceId: SOURCE_ID,
       scopeType: 'world', scopeId: 'a', userId: 'world-a', peerId: null,
-      provider: 'openviking', remoteUri: `viking://~/resources/ren-yang/world-source/${SOURCE_ID}.md`,
+      provider: 'openviking', remoteUri: `viking://~/resources/world-source/${SOURCE_ID}.md`,
       contentHash: 'a'.repeat(64), status: 'synchronized', operation: 'upsert', error: null,
       createdAt: 1, updatedAt: 1,
     })

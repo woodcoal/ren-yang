@@ -11,12 +11,12 @@ const disabledSourceId = '00000000-0000-4000-8000-000000000002'
 let sourceItems: SourceSummary[] = [
   {
     id: enabledSourceId, name: '已启用资料', role: 'reference', inputType: 'paste', contentHash: 'a'.repeat(64),
-    contentText: '当前可以进入检索。', originalFilePath: null, isEnabled: true, chunkCount: 1, linkCount: 0,
+    contentText: '当前可以进入检索。', originalFilePath: null, isEnabled: true, chunkCount: 1, linkCount: 0, isGlobal: true,
     createdAt: 1_000, updatedAt: 1_000,
   },
   {
     id: disabledSourceId, name: '已禁用资料', role: 'reference', inputType: 'paste', contentHash: 'b'.repeat(64),
-    contentText: '当前不会进入检索。', originalFilePath: null, isEnabled: false, chunkCount: 1, linkCount: 0,
+    contentText: '当前不会进入检索。', originalFilePath: null, isEnabled: false, chunkCount: 1, linkCount: 0, isGlobal: false,
     createdAt: 2_000, updatedAt: 2_000,
   },
 ]
@@ -103,6 +103,8 @@ describe('资料列表批量状态操作', () => {
     await flushPromises()
 
     expect(wrapper.get('a[href="/sources/search"]').text()).toBe('全文检索')
+    expect(wrapper.findAllComponents({ name: 'UButton' }).some(button => button.text() === '管理全局资料')).toBe(true)
+    expect(wrapper.text()).toContain('全局')
 
     const requestCount = sourcePageQueries.length
     await wrapper.get('input[aria-label="资料列表搜索词"]').setValue('禁用')

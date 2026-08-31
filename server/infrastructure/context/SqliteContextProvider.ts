@@ -35,6 +35,8 @@ export class SqliteContextProvider implements ContextProvider {
           SELECT source_id, priority FROM persona_sources WHERE persona_id = ?
           UNION ALL
           SELECT source_id, priority FROM world_sources WHERE world_id = ?
+          UNION ALL
+          SELECT source_id, priority FROM global_sources
         ) GROUP BY source_id
       )
       SELECT source_chunks.id AS chunk_id, source_chunks.source_id, source_materials.role,

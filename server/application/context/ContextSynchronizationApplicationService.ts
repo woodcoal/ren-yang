@@ -13,7 +13,11 @@ import type { TaskJob } from '../../domain/tasks/TaskJob'
 import type { TaskHandler } from '../../ports/TaskPorts'
 import { TaskExecutionError } from '../../ports/TaskPorts'
 import { ApplicationError } from '../errors/ApplicationError'
-import { calculateOpenVikingRetryDelay, isOpenVikingInputLimitError } from '../../domain/context/OpenVikingRetryPolicy'
+import {
+  calculateOpenVikingRetryDelay,
+  isOpenVikingDirectoryDeleteModeError,
+  isOpenVikingInputLimitError,
+} from '../../domain/context/OpenVikingRetryPolicy'
 
 /** OpenViking ADMIN Key 与其他凭据隔离的加密上下文。 */
 export const OPEN_VIKING_SECRET_CONTEXT = 'openviking:administrator-api-key'
@@ -133,11 +137,14 @@ export class ContextSynchronizationApplicationService implements TaskHandler {
       this.dependencies.repository.listPendingSessionSources(),
       this.dependencies.repository.getSyncRuntime(),
     ])
-    // 旧版本曾把单项嵌入长度错误持久化为全局人工降级；升级后启动时直接修复该错误状态。
+    // 旧版本曾把单项输入限制或资料目录删除参数错误持久化为全局人工降级；升级后启动时直接修复该错误状态。
     const runtime = storedRuntime.state === 'degraded'
       && storedRuntime.retryAfter === null
       && storedRuntime.lastError !== null
-      && isOpenVikingInputLimitError(storedRuntime.lastError)
+      && (
+        isOpenVikingInputLimitError(storedRuntime.lastError)
+        || isOpenVikingDirectoryDeleteModeError(storedRuntime.lastError)
+      )
       ? await this.dependencies.repository.markSyncHealthy(timestamp)
       : storedRuntime
     // 达到人工处理状态后禁止应用重启再次制造任务；管理员重试会把 retryAfter 改为当前时间。
@@ -547,10 +554,10 @@ function recordKey(record: ContextSyncRecordView): string {
 }
 
 /**
- * 判断同一业务投影是否已经迁移到另一个 OpenViking 身份空间。
+ * 判断同一业务投影是否已经迁移到另一个 OpenViking 身份空间或远端路径。
  * @param record SQLite 保存的旧投影身份。
  * @param projection SQLite 当前应有投影身份。
- * @returns User 或 Peer 任一变化时返回 true。
+ * @returns User、Peer 或 URI 任一变化时返回 true。
  */
 function projectionIdentityChanged(record: ContextSyncRecordView, projection: ContextSourceProjection): boolean {
   return record.userId !== projection.userId || record.peerId !== projection.peerId || record.remoteUri !== projection.remoteUri

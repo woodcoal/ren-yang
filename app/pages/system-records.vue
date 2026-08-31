@@ -111,7 +111,8 @@ function entityTypeLabel(record: ContextSyncRecordView): string {
 
 /** @param record 同步日志。 @returns 中文范围说明。 */
 function scopeLabel(record: ContextSyncRecordView): string {
-  return `${record.scopeType === 'world' ? '世界' : '人物'} · ${record.scopeId}`
+  const scopeName = record.scopeType === 'world' ? '世界' : record.scopeType === 'persona' ? '人物' : '全局'
+  return `${scopeName} · ${record.scopeId}`
 }
 
 /** @param record 同步日志。 @returns 中文同步状态。 */

@@ -770,6 +770,45 @@ export class SqliteContentRepository implements ContentRepository, SoulRepositor
     })
   }
 
+  /** @returns 当前 Account 全局资料 UUID，按优先级和 UUID 稳定排序。 */
+  async listGlobalSourceIds(): Promise<string[]> {
+    return this.client.prepare(`
+      SELECT source_id FROM global_sources ORDER BY priority, source_id
+    `).all().map(value => String(asRow(value).source_id))
+  }
+
+  /** @param sourceId 资料 UUID。 @returns 资料是否属于当前 Account 全局资料。 */
+  async isGlobalSource(sourceId: string): Promise<boolean> {
+    return Boolean(this.client.prepare('SELECT 1 FROM global_sources WHERE source_id = ?').get(sourceId))
+  }
+
+  /**
+   * 原子替换当前 Account 全局资料集合，保留未变化资料的原创建时间。
+   * @param sourceIds 已去重并确认存在的最终资料 UUID 集合。
+   * @param timestamp 当前 UTC Unix 毫秒。
+   * @returns 新增和移除的资料 UUID。
+   */
+  async replaceGlobalSources(sourceIds: string[], timestamp: number): Promise<{ addedSourceIds: string[], removedSourceIds: string[] }> {
+    return this.client.transaction(() => {
+      const existing = this.client.prepare('SELECT source_id FROM global_sources ORDER BY source_id')
+        .all().map(value => String(asRow(value).source_id))
+      const desired = new Set(sourceIds)
+      const existingSet = new Set(existing)
+      const addedSourceIds = sourceIds.filter(sourceId => !existingSet.has(sourceId))
+      const removedSourceIds = existing.filter(sourceId => !desired.has(sourceId))
+      for (const sourceId of removedSourceIds) {
+        this.client.prepare('DELETE FROM global_sources WHERE source_id = ?').run(sourceId)
+      }
+      for (const sourceId of addedSourceIds) {
+        this.client.prepare(`
+          INSERT INTO global_sources (source_id, priority, created_at, updated_at)
+          VALUES (?, 100, ?, ?)
+        `).run(sourceId, timestamp, timestamp)
+      }
+      return { addedSourceIds, removedSourceIds }
+    }).immediate()
+  }
+
   /**
    * 新建关联；重复关联只更新优先级。
    * @param sourceId 资料 UUID。

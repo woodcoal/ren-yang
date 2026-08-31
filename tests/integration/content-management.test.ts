@@ -780,6 +780,28 @@ describe('人物、世界与资料管理闭环', () => {
     await expect(service.deleteSource(source.source.id)).resolves.toBeUndefined()
   })
 
+  it('批量替换全局资料集合并阻止直接删除仍在使用的全局资料', async () => {
+    const first = await service.createPastedSource({ name: '全局规则', role: 'canon_fact', content: '所有人物必须标注未知信息。' })
+    const second = await service.createPastedSource({ name: '共享风格', role: 'style_sample', content: '回答保持简洁。' })
+
+    await expect(service.replaceGlobalSources({ sourceIds: [first.source.id, second.source.id, first.source.id] }))
+      .resolves.toMatchObject({
+        sourceIds: [first.source.id, second.source.id],
+        addedSourceIds: [first.source.id, second.source.id],
+        removedSourceIds: [],
+      })
+    await expect(service.getSource(first.source.id)).resolves.toMatchObject({ source: { isGlobal: true } })
+    await expect(service.getSourceDeletionImpact(first.source.id)).resolves.toMatchObject({
+      canDelete: false,
+      blockers: ['资料当前是全局资料，必须先从全局资源中移除'],
+    })
+
+    await expect(service.replaceGlobalSources({ sourceIds: [second.source.id] })).resolves.toMatchObject({
+      sourceIds: [second.source.id], addedSourceIds: [], removedSourceIds: [first.source.id],
+    })
+    await expect(service.deleteSource(first.source.id)).resolves.toBeUndefined()
+  })
+
   it('创建粘贴或文件资料时原子建立多个人物和世界关联', async () => {
     const world = await service.createWorld({
       name: '浮岛纪元', summary: '', snapshot: createWorldSnapshot('群岛依靠风帆船往来。'), changeSummary: '建立世界',

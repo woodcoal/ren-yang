@@ -32,7 +32,7 @@ export interface ContextSyncRecordView {
   /** SQLite 投影实体 UUID。 */
   sourceId: string
   /** 远端投影所属范围；世界资料进入 User，人物资料进入 Peer。 */
-  scopeType: 'world' | 'persona'
+  scopeType: 'world' | 'persona' | 'global'
   /** 世界或人物 UUID。 */
   scopeId: string
   /** OpenViking 中承载当前投影的世界 User。 */

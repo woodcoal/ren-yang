@@ -56,7 +56,7 @@ describe('SqliteDatabase', () => {
     ])
     expect(current.getClient().prepare(`
       SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations
-    `).get()).toEqual({ count: 6, version: 1789027200000 })
+    `).get()).toEqual({ count: 7, version: 1789113600000 })
     expect(current.getClient().prepare(`
       SELECT COUNT(*) AS count FROM ai_prompts WHERE active_version_id IS NOT NULL
     `).get()).toEqual({ count: 20 })
@@ -164,7 +164,7 @@ describe('SqliteDatabase', () => {
     `).get()).toEqual({ name: '旧资料', content_text: '压平前正文。', is_enabled: 1 })
     expect(database.getClient().prepare(`
       SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations
-    `).get()).toEqual({ count: 15, version: 1789027200000 })
+    `).get()).toEqual({ count: 16, version: 1789113600000 })
     expect(database.getClient().prepare(`SELECT COUNT(*) AS count FROM ai_algorithms`).get()).toEqual({ count: 5 })
     expect(database.getClient().prepare(`SELECT name FROM sqlite_master
       WHERE type = 'table' AND name = 'openviking_sync_runtime'`).get()).toEqual({ name: 'openviking_sync_runtime' })

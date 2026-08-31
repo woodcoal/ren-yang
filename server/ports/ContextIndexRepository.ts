@@ -24,7 +24,7 @@ export interface ContextSourceProjection {
   /** SQLite 资料事实。 */
   source: ContextSourceDocument
   /** 世界资料写入 User，人物资料写入 Peer。 */
-  scopeType: 'world' | 'persona'
+  scopeType: 'world' | 'persona' | 'global'
   /** 世界或人物 UUID。 */
   scopeId: string
   /** OpenViking 世界 User。 */

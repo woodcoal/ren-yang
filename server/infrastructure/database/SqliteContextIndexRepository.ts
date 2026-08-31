@@ -78,7 +78,7 @@ export class SqliteContextIndexRepository implements ContextIndexRepository {
         'world' AS scope_type, worlds.id AS scope_id,
         'world-' || worlds.id AS user_id, NULL AS peer_id, world_sources.priority,
         'source_material' AS entity_type, 'upsert' AS operation,
-        'viking://~/resources/ren-yang/world-source/' || source_materials.id || '.md' AS remote_uri
+        'viking://~/resources/world-source/' || source_materials.id || '.md' AS remote_uri
       FROM world_sources
       INNER JOIN worlds ON worlds.id = world_sources.world_id
       INNER JOIN source_materials ON source_materials.id = world_sources.source_id
@@ -90,13 +90,25 @@ export class SqliteContextIndexRepository implements ContextIndexRepository {
         CASE WHEN personas.world_id IS NULL THEN 'default' ELSE 'world-' || personas.world_id END AS user_id,
         'persona-' || personas.id AS peer_id, persona_sources.priority,
         'source_material' AS entity_type, 'upsert' AS operation,
-        'viking://~/peers/persona-' || personas.id || '/resources/ren-yang/persona-source/' || source_materials.id || '.md' AS remote_uri
+        'viking://~/peers/persona-' || personas.id || '/resources/persona-source/' || source_materials.id || '.md' AS remote_uri
       FROM persona_sources
       INNER JOIN personas ON personas.id = persona_sources.persona_id
       INNER JOIN source_materials ON source_materials.id = persona_sources.source_id
       ${filter}
       ORDER BY 6, 7, 1
     `).all(...parameters, ...parameters).map(toProjection))
+    if (!entityType || entityType === 'source_material') projections.push(...this.client.prepare(`
+      SELECT source_materials.id, source_materials.name, source_materials.role,
+        source_materials.content_hash, source_materials.content_text,
+        'global' AS scope_type, 'account' AS scope_id,
+        'default' AS user_id, NULL AS peer_id, global_sources.priority,
+        'source_material' AS entity_type, 'upsert' AS operation,
+        'viking://resources/global-source/' || source_materials.id || '.md' AS remote_uri
+      FROM global_sources
+      INNER JOIN source_materials ON source_materials.id = global_sources.source_id
+      ${filter}
+      ORDER BY global_sources.priority, source_materials.id
+    `).all(...parameters).map(toProjection))
     if (!entityType || entityType === 'persona_feedback_source') {
       const feedbackFilter = sourceId ? 'AND persona_feedback_sources.id = ?' : ''
       projections.push(...this.client.prepare(`
@@ -108,7 +120,7 @@ export class SqliteContextIndexRepository implements ContextIndexRepository {
           'persona-' || personas.id AS peer_id, 0 AS priority,
           'persona_feedback_source' AS entity_type,
           CASE persona_feedback_sources.deletion_state WHEN 'active' THEN 'upsert' ELSE 'delete' END AS operation,
-          'viking://~/peers/persona-' || personas.id || '/resources/ren-yang/feedback-source/' || persona_feedback_sources.id || '.md' AS remote_uri
+          'viking://~/peers/persona-' || personas.id || '/resources/feedback-source/' || persona_feedback_sources.id || '.md' AS remote_uri
         FROM persona_feedback_sources
         INNER JOIN personas ON personas.id = persona_feedback_sources.persona_id
         WHERE persona_feedback_sources.deletion_state IN ('active', 'pending_remote_delete') ${feedbackFilter}
@@ -126,6 +138,8 @@ export class SqliteContextIndexRepository implements ContextIndexRepository {
           SELECT source_id, priority FROM persona_sources WHERE persona_id = ?
           UNION ALL
           SELECT source_id, priority FROM world_sources WHERE world_id = ?
+          UNION ALL
+          SELECT source_id, priority FROM global_sources
         ) GROUP BY source_id
       )
       SELECT linked_sources.source_id, source_materials.role, linked_sources.priority
@@ -153,7 +167,11 @@ export class SqliteContextIndexRepository implements ContextIndexRepository {
     const peerId = `persona-${personaId}`
     const sourceTargets = this.client.prepare(`
       SELECT context_sync_records.source_id, source_materials.role,
-        CASE context_sync_records.scope_type WHEN 'persona' THEN persona_sources.priority ELSE world_sources.priority END AS priority,
+        CASE context_sync_records.scope_type
+          WHEN 'persona' THEN persona_sources.priority
+          WHEN 'world' THEN world_sources.priority
+          ELSE global_sources.priority
+        END AS priority,
         context_sync_records.remote_uri
       FROM context_sync_records
       INNER JOIN source_materials ON source_materials.id = context_sync_records.source_id
@@ -161,15 +179,18 @@ export class SqliteContextIndexRepository implements ContextIndexRepository {
         AND persona_sources.persona_id = ? AND persona_sources.source_id = context_sync_records.source_id
       LEFT JOIN world_sources ON context_sync_records.scope_type = 'world'
         AND world_sources.world_id = ? AND world_sources.source_id = context_sync_records.source_id
+      LEFT JOIN global_sources ON context_sync_records.scope_type = 'global'
+        AND global_sources.source_id = context_sync_records.source_id
       WHERE context_sync_records.provider = 'openviking'
         AND context_sync_records.entity_type = 'source_material'
         AND context_sync_records.operation = 'upsert'
         AND context_sync_records.status = 'synchronized'
         AND source_materials.is_enabled = 1
-        AND context_sync_records.user_id = ?
+        AND (context_sync_records.user_id = ? OR (context_sync_records.scope_type = 'global' AND context_sync_records.user_id = 'default'))
         AND context_sync_records.remote_uri IS NOT NULL
         AND ((context_sync_records.scope_type = 'persona' AND context_sync_records.scope_id = ? AND persona_sources.source_id IS NOT NULL)
-          OR (context_sync_records.scope_type = 'world' AND context_sync_records.scope_id = ? AND world_sources.source_id IS NOT NULL))
+          OR (context_sync_records.scope_type = 'world' AND context_sync_records.scope_id = ? AND world_sources.source_id IS NOT NULL)
+          OR (context_sync_records.scope_type = 'global' AND context_sync_records.scope_id = 'account' AND global_sources.source_id IS NOT NULL))
       ORDER BY CASE source_materials.role WHEN 'canon_fact' THEN 0 WHEN 'style_sample' THEN 1 ELSE 2 END,
         priority, context_sync_records.source_id
     `).all(personaId, effectiveWorldId ?? '', userId, personaId, effectiveWorldId ?? '').map((value) => {
@@ -190,6 +211,10 @@ export class SqliteContextIndexRepository implements ContextIndexRepository {
         SELECT world_sources.source_id FROM world_sources
         INNER JOIN source_materials ON source_materials.id = world_sources.source_id
         WHERE world_sources.world_id = ? AND source_materials.is_enabled = 1
+        UNION ALL
+        SELECT global_sources.source_id FROM global_sources
+        INNER JOIN source_materials ON source_materials.id = global_sources.source_id
+        WHERE source_materials.is_enabled = 1
       )
     `).get(personaId, effectiveWorldId ?? '') as { count: number }).count)
     const synchronizedSourceCount = new Set(sourceTargets.map(target => target.sourceId)).size

@@ -171,8 +171,8 @@ describe('OpenViking 可关闭索引与 SQLite 重建', () => {
 
     await expect(service.reindex()).resolves.toMatchObject({ total: 2, synchronized: 2, failed: 0 })
     expect([...openViking.resources.keys()].sort()).toEqual([
-      'viking://~/peers/persona-00000000-0000-4000-8000-000000000200/resources/ren-yang/persona-source/00000000-0000-4000-8000-000000000001.md',
-      'viking://~/resources/ren-yang/world-source/00000000-0000-4000-8000-000000000001.md',
+      'viking://~/peers/persona-00000000-0000-4000-8000-000000000200/resources/persona-source/00000000-0000-4000-8000-000000000001.md',
+      'viking://~/resources/world-source/00000000-0000-4000-8000-000000000001.md',
     ])
   })
 
@@ -235,7 +235,7 @@ describe('OpenViking 可关闭索引与 SQLite 重建', () => {
     expect(openViking.deletedProjections).toContainEqual({
       userId: 'world-00000000-0000-4000-8000-000000000100',
       peerId: 'persona-00000000-0000-4000-8000-000000000200',
-      remoteUri: 'viking://~/peers/persona-00000000-0000-4000-8000-000000000200/resources/ren-yang/persona-source/00000000-0000-4000-8000-000000000001.md',
+      remoteUri: 'viking://~/peers/persona-00000000-0000-4000-8000-000000000200/resources/persona-source/00000000-0000-4000-8000-000000000001.md',
     })
     expect((await repository.listSyncRecords()).find(record => record.scopeType === 'persona')).toMatchObject({
       userId: 'world-00000000-0000-4000-8000-000000000101',
@@ -272,6 +272,30 @@ describe('OpenViking 可关闭索引与 SQLite 重建', () => {
     await expect(provider.search({
       personaId: '00000000-0000-4000-8000-000000000200', worldId: null, query: '候选偏好使用夸张表达', limit: 5,
     })).resolves.toEqual({ provider: 'sqlite_fts5', candidates: [] })
+  })
+
+  it('FTS5 自动检索全局资料并排除已禁用资料', async () => {
+    const globalSourceId = '00000000-0000-4000-8000-000000000002'
+    database.getClient().prepare(`
+      INSERT INTO source_materials (
+        id, name, role, input_type, content_hash, content_text, original_file_path, created_at, updated_at
+      ) VALUES (?, '全局规则', 'canon_fact', 'paste', ?, '所有回答必须说明证据来源。', NULL, 1000, 1000)
+    `).run(globalSourceId, 'b'.repeat(64))
+    database.getClient().prepare(`
+      INSERT INTO source_chunks (id, source_id, ordinal, heading, content, content_hash)
+      VALUES ('00000000-0000-4000-8000-000000000003', ?, 0, NULL, '所有回答必须说明证据来源。', ?)
+    `).run(globalSourceId, 'b'.repeat(64))
+    database.getClient().prepare(`
+      INSERT INTO global_sources (source_id, priority, created_at, updated_at) VALUES (?, 10, 1000, 1000)
+    `).run(globalSourceId)
+    const provider = new SqliteContextProvider(database.getClient())
+    const request = { personaId: '任意人物', worldId: null, query: '说明证据来源', limit: 5 }
+
+    await expect(provider.search(request)).resolves.toMatchObject({
+      provider: 'sqlite_fts5', candidates: [expect.objectContaining({ sourceId: globalSourceId })],
+    })
+    database.getClient().prepare('UPDATE source_materials SET is_enabled = 0 WHERE id = ?').run(globalSourceId)
+    await expect(provider.search(request)).resolves.toEqual({ provider: 'sqlite_fts5', candidates: [] })
   })
 
   it('远端数据被清空后可从 SQLite 完整正文和哈希重建，并持久保存逐项状态', async () => {
@@ -330,7 +354,7 @@ describe('OpenViking 可关闭索引与 SQLite 重建', () => {
       title: '表达反馈', content: '回答时先给结论。', sourceType: 'manual', sourceId: null,
     })
     await context.synchronizeProjectionEntity('persona_feedback_source', feedback.id)
-    const remoteUri = `viking://~/peers/persona-00000000-0000-4000-8000-000000000200/resources/ren-yang/feedback-source/${feedback.id}.md`
+    const remoteUri = `viking://~/peers/persona-00000000-0000-4000-8000-000000000200/resources/feedback-source/${feedback.id}.md`
     expect(openViking.resources.get(remoteUri)).toBe('回答时先给结论。')
 
     await learning.deletePersonaFeedbackSources('00000000-0000-4000-8000-000000000200', { ids: [feedback.id] })
@@ -494,7 +518,7 @@ describe('OpenViking 可关闭索引与 SQLite 重建', () => {
     expect([...openViking.resources.values()]).toContain('第一版增量正文。')
     await content.updateSource(created.source.id, { name: '增量资料', role: 'reference', content: '第二版增量正文。' })
     await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: true })
-    expect(openViking.resources.get(`viking://~/resources/ren-yang/world-source/${created.source.id}.md`)).toBe('第二版增量正文。')
+    expect(openViking.resources.get(`viking://~/resources/world-source/${created.source.id}.md`)).toBe('第二版增量正文。')
 
     await content.updateSourcesStatus({ sourceIds: [created.source.id], isEnabled: false })
     const disabled = await content.getSource(created.source.id)
@@ -503,12 +527,12 @@ describe('OpenViking 可关闭索引与 SQLite 重建', () => {
       personaId: '无人物', worldId: '00000000-0000-4000-8000-000000000100', query: '第二版增量正文', limit: 5,
     })).resolves.toEqual({ provider: 'sqlite_fts5', candidates: [] })
     await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: true })
-    expect(openViking.resources.has(`viking://~/resources/ren-yang/world-source/${created.source.id}.md`)).toBe(false)
+    expect(openViking.resources.has(`viking://~/resources/world-source/${created.source.id}.md`)).toBe(false)
     expect(database.getClient().prepare('SELECT COUNT(*) AS count FROM context_sync_records').get()).toEqual({ count: 0 })
 
     await content.updateSourceStatus(created.source.id, { isEnabled: true })
     await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: true })
-    expect(openViking.resources.get(`viking://~/resources/ren-yang/world-source/${created.source.id}.md`)).toBe('第二版增量正文。')
+    expect(openViking.resources.get(`viking://~/resources/world-source/${created.source.id}.md`)).toBe('第二版增量正文。')
 
     await content.unlinkSource(created.source.id, 'world:00000000-0000-4000-8000-000000000100')
     openViking.deleteFailuresRemaining = 1
@@ -516,14 +540,14 @@ describe('OpenViking 可关闭索引与 SQLite 重建', () => {
     expect(database.getClient().prepare(`
       SELECT status, attempt_count FROM task_jobs WHERE type = 'sync_context_source' AND status = 'queued'
     `).get()).toEqual({ status: 'queued', attempt_count: 1 })
-    expect(openViking.resources.has(`viking://~/resources/ren-yang/world-source/${created.source.id}.md`)).toBe(true)
+    expect(openViking.resources.has(`viking://~/resources/world-source/${created.source.id}.md`)).toBe(true)
 
     await expect(worker.executeNext()).resolves.toEqual({ handled: false, jobId: null, succeeded: null })
     await expect(contextService.retryFailedSync({
       entityType: 'source_material', sourceId: created.source.id,
     })).resolves.toEqual({ enqueued: 1 })
     await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: true })
-    expect(openViking.resources.has(`viking://~/resources/ren-yang/world-source/${created.source.id}.md`)).toBe(false)
+    expect(openViking.resources.has(`viking://~/resources/world-source/${created.source.id}.md`)).toBe(false)
     expect(database.getClient().prepare('SELECT COUNT(*) AS count FROM context_sync_records').get()).toEqual({ count: 0 })
 
     await content.deleteSource(created.source.id)

@@ -1,5 +1,8 @@
 import { createHash } from 'node:crypto'
-import { isOpenVikingInputLimitError } from '../../domain/context/OpenVikingRetryPolicy'
+import {
+  isOpenVikingDirectoryDeleteModeError,
+  isOpenVikingInputLimitError,
+} from '../../domain/context/OpenVikingRetryPolicy'
 import type { OpenVikingCapabilityView } from '../../../shared/types/context'
 import type {
   ContextIndexRepository,
@@ -143,6 +146,8 @@ export class OpenVikingHttpContextProvider implements ContextProvider, OpenVikin
   async resetLegacyIndex(): Promise<void> {
     await this.ensureAdminState()
     await this.resetUserData(this.requireAdminKey())
+    // Account 共享资源不属于任何 User 的 `~/resources`，必须使用 ADMIN Key 单独清理。
+    await this.deleteUriWithCredential('viking://resources/global-source', true, this.requireAdminKey(), null, false)
   }
 
   /** @returns 验证 API Key 模式，并确认配置密钥具有当前 Account 的 User 管理权限。 */
@@ -192,9 +197,11 @@ export class OpenVikingHttpContextProvider implements ContextProvider, OpenVikin
     if (!record.remoteUri) return
     const state = await this.ensureAdminState()
     // User 对账可能已经删除旧世界；删除路径不得为清理不存在的旧投影而重新创建孤立 User。
-    if (!state.userIds.has(record.userId)) return
+    // default 使用当前 ADMIN Key，不依赖 User 列表返回；只有业务世界 User 不存在时才直接视为已删除。
+    if (record.userId !== 'default' && !state.userIds.has(record.userId)) return
     try {
-      await this.deleteUri(record.remoteUri, false, { userId: record.userId, peerId: record.peerId })
+      // OpenViking 资料导入后的稳定 URI 是目录；即使 URI 以 .md 结尾也必须递归删除。
+      await this.deleteUri(record.remoteUri, true, { userId: record.userId, peerId: record.peerId })
     }
     catch (error: unknown) {
       // 其他进程可能在 ADMIN 状态加载后删除 User，此时刷新旧 User Key 的 404 同样表示投影已不存在。
@@ -218,7 +225,7 @@ export class OpenVikingHttpContextProvider implements ContextProvider, OpenVikin
     // OpenViking 可能在客户端等待超时后继续完成写入；正文已一致时直接收敛本地状态，禁止重复删除重传。
     if (existingHash === projection.source.contentHash) return remoteUri
     // 首次写入没有旧资源，跳过会触发语义刷新的无效删除；仅在正文变化时删除旧目录。
-    if (existingHash !== null) await this.deleteUri(remoteUri, false, identity)
+    if (existingHash !== null) await this.deleteUri(remoteUri, true, identity)
 
     const form = new FormData()
     form.append('file', new Blob([projection.source.contentText], { type: 'text/markdown;charset=utf-8' }), `${projection.source.id}.md`)
@@ -631,11 +638,12 @@ export class OpenVikingHttpContextProvider implements ContextProvider, OpenVikin
 
   /** @param apiKey ADMIN 或世界 User Key。 @returns 清空该 User 下的人样资料、Session 和人物 Peer 后结束。 */
   private async resetUserData(apiKey: string): Promise<void> {
-    const resources = await this.listDataEntries('viking://~/resources/ren-yang', apiKey)
-    if (resources.length > 0) {
+    for (const rootUri of ['viking://~/resources/ren-yang', 'viking://~/resources/world-source']) {
+      const resources = await this.listDataEntries(rootUri, apiKey)
+      if (resources.length === 0) continue
       // OpenViking 的 wait=true 会等待递归目录的语义刷新，在已有积压时可能长期阻塞。
       // 删除本身和向量清理会在响应前完成，后续重放资料的 wait=true 会按队列顺序确认最终索引。
-      await this.deleteUriWithCredential('viking://~/resources/ren-yang', true, apiKey, null, false)
+      await this.deleteUriWithCredential(rootUri, true, apiKey, null, false)
     }
     const sessions = readOkArrayResult(
       await this.request('/api/v1/sessions', { method: 'GET' }, apiKey),
@@ -855,13 +863,14 @@ function readProviderError(payload: unknown): { code: string | null, message: st
   const details = isRecord(payload.error.details) ? payload.error.details : null
   const rawMessage = typeof payload.error.message === 'string' ? payload.error.message : null
   const inputLimitExceeded = rawMessage !== null && isOpenVikingInputLimitError(rawMessage)
+  const directoryDeleteModeInvalid = rawMessage !== null && isOpenVikingDirectoryDeleteModeError(rawMessage)
   const message = inputLimitExceeded
     ? '资料内容超出 OpenViking 嵌入模型上下文上限，请缩短资料或调整嵌入模型上下文后重新同步'
     : rawMessage ? sanitizeProviderMessage(rawMessage) : null
   return {
     code: typeof payload.error.code === 'string' ? payload.error.code.slice(0, 100) : null,
     message,
-    retryable: inputLimitExceeded
+    retryable: inputLimitExceeded || directoryDeleteModeInvalid
       ? false
       : details && typeof details.retryable === 'boolean' ? details.retryable : null,
   }

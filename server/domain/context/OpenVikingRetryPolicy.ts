@@ -23,3 +23,12 @@ export function isOpenVikingInputLimitError(message: string): boolean {
   const normalized = message.toLowerCase()
   return normalized.includes('exceed_context_size_error') || normalized.includes('exceeds the available context size')
 }
+
+/**
+ * 判断错误是否来自旧版本把 OpenViking 资料目录当作普通文件删除。
+ * @param message OpenViking 返回或 SQLite 持久化的脱敏错误文本。
+ * @returns 属于缺少递归目录删除参数的客户端契约错误时返回 true。
+ */
+export function isOpenVikingDirectoryDeleteModeError(message: string): boolean {
+  return message.toLowerCase().includes('cannot remove directory without --recursive')
+}

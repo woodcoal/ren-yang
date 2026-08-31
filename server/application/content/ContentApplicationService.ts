@@ -14,6 +14,7 @@ import type {
   UpdateSourceInput,
   UpdateSourceStatusInput,
   UpdateSourcesStatusInput,
+  ReplaceGlobalSourcesInput,
   UpdateWorldInput,
   UpdateWorldStatusInput,
   UpdateWorldsStatusInput,
@@ -32,6 +33,7 @@ import type {
   SourceSearchResultView,
   SourceStatusUpdateResult,
   SourceSummary,
+  GlobalSourcesView,
   VersionFieldDiff,
   WorldDetails,
   WorldPageView,
@@ -817,6 +819,28 @@ export class ContentApplicationService {
     return { sourceIds, isEnabled: input.isEnabled }
   }
 
+  /** @returns 当前 Account 全局资料 UUID 集合。 */
+  async listGlobalSourceIds(): Promise<GlobalSourcesView> {
+    return {
+      sourceIds: await this.dependencies.repository.listGlobalSourceIds(),
+      addedSourceIds: [],
+      removedSourceIds: [],
+    }
+  }
+
+  /**
+   * 替换当前 Account 全局资料集合，并只为差异资料创建可重试同步任务。
+   * @param input 已校验的最终资料 UUID 集合。
+   * @returns 最终集合及本次新增、移除差异。
+   */
+  async replaceGlobalSources(input: ReplaceGlobalSourcesInput): Promise<GlobalSourcesView> {
+    const sourceIds = [...new Set(input.sourceIds)]
+    await this.requireSources(sourceIds)
+    const changes = await this.dependencies.repository.replaceGlobalSources(sourceIds, this.dependencies.clock.now())
+    await this.enqueueSourceSynchronizations([...changes.addedSourceIds, ...changes.removedSourceIds])
+    return { sourceIds: await this.dependencies.repository.listGlobalSourceIds(), ...changes }
+  }
+
   /**
    * 仅在组合根启用 OpenViking 时创建持久同步任务，不在资料请求中联网。
    * @param sourceId 已成功保存、更新或删除的资料 UUID。
@@ -901,12 +925,19 @@ export class ContentApplicationService {
    */
   async getSourceDeletionImpact(sourceId: string): Promise<DeletionImpact> {
     const source = await this.requireSource(sourceId)
-    const links = await this.dependencies.repository.listSourceLinks(sourceId)
+    const [links, isGlobal] = await Promise.all([
+      this.dependencies.repository.listSourceLinks(sourceId),
+      this.dependencies.repository.isGlobalSource(sourceId),
+    ])
+    const blockers = [
+      ...(isGlobal ? ['资料当前是全局资料，必须先从全局资源中移除'] : []),
+      ...(links.length > 0 ? [`仍有 ${links.length} 项人物或世界关联，必须先解除关联`] : []),
+    ]
     return {
       resourceType: 'source',
       resourceId: sourceId,
-      canDelete: links.length === 0,
-      blockers: links.length > 0 ? [`仍有 ${links.length} 项人物或世界关联，必须先解除关联`] : [],
+      canDelete: blockers.length === 0,
+      blockers,
       relatedPersonas: links
         .filter(link => link.targetType === 'persona')
         .map(link => ({ id: link.targetId, name: link.targetName })),
@@ -1106,7 +1137,8 @@ export class ContentApplicationService {
   ): Promise<SourceSummary> {
     const chunks = knownChunkCount ?? (await this.dependencies.repository.listSourceChunks(source.id)).length
     const links = knownLinkCount ?? (await this.dependencies.repository.listSourceLinks(source.id)).length
-    return { ...source, chunkCount: chunks, linkCount: links }
+    const isGlobal = await this.dependencies.repository.isGlobalSource(source.id)
+    return { ...source, chunkCount: chunks, linkCount: links, isGlobal }
   }
 
   /** @param content 原始资料正文。 @returns 规范化正文。 @throws ApplicationError 输入不安全时抛出。 */

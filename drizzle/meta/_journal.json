@@ -43,6 +43,13 @@
       "when": 1789027200000,
       "tag": "0005_persona_memory_algorithm",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1789113600000,
+      "tag": "0006_global_sources",
+      "breakpoints": true
     }
   ]
 }

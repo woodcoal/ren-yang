@@ -351,6 +351,20 @@ export const worldSources = sqliteTable(
   ],
 )
 
+/** 当前 Account 下所有人物和世界共同使用的资料关系。 */
+export const globalSources = sqliteTable(
+  'global_sources',
+  {
+    sourceId: text('source_id').primaryKey().references(() => sourceMaterials.id, { onDelete: 'restrict' }),
+    priority: integer('priority').notNull().default(100),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  table => [
+    check('global_sources_priority_check', sql`${table.priority} >= 0`),
+  ],
+)
+
 /** 人物明确用于成长分析的反馈原始资料。 */
 export const personaFeedbackSources = sqliteTable(
   'persona_feedback_sources',
@@ -1255,7 +1269,7 @@ export const contextSyncRecords = sqliteTable(
     index('context_sync_records_provider_status_index').on(table.provider, table.status),
     check('context_sync_records_provider_check', sql`${table.provider} IN ('openviking')`),
     check('context_sync_records_entity_type_check', sql`${table.entityType} IN ('source_material', 'persona_feedback_source', 'growth', 'memory')`),
-    check('context_sync_records_scope_type_check', sql`${table.scopeType} IN ('world', 'persona')`),
+    check('context_sync_records_scope_type_check', sql`${table.scopeType} IN ('world', 'persona', 'global')`),
     check('context_sync_records_status_check', sql`${table.status} IN ('pending', 'synchronized', 'failed')`),
     check('context_sync_records_operation_check', sql`${table.operation} IN ('upsert', 'delete')`),
     check('context_sync_records_hash_check', sql`length(${table.contentHash}) = 64`),
@@ -1281,6 +1295,7 @@ export const databaseSchema = {
   sourceChunks,
   personaSources,
   worldSources,
+  globalSources,
   personaFeedbackSources,
   growthMaterials,
   growthRecords,

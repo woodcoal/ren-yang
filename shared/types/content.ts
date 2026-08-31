@@ -272,6 +272,8 @@ export interface SourceSummary {
   chunkCount: number
   /** 当前人物与世界关联数。 */
   linkCount: number
+  /** 是否作为当前 Account 的全局资料供所有人物和世界使用。 */
+  isGlobal: boolean
   /** 创建时间，UTC Unix 毫秒。 */
   createdAt: number
   /** 更新时间，UTC Unix 毫秒。 */
@@ -298,6 +300,16 @@ export interface SourceStatusUpdateResult {
   sourceIds: string[]
   /** 本次写入的统一状态。 */
   isEnabled: boolean
+}
+
+/** 当前 Account 全局资料集合及本次替换差异。 */
+export interface GlobalSourcesView {
+  /** 最终生效的资料 UUID。 */
+  sourceIds: string[]
+  /** 本次新增的资料 UUID。 */
+  addedSourceIds: string[]
+  /** 本次移除的资料 UUID。 */
+  removedSourceIds: string[]
 }
 
 /** 资料关联公开视图。 */

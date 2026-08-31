@@ -57,9 +57,12 @@ OpenViking v0.4.16 的 `DELETE /api/v1/fs` 在文件和向量删除完成后，`
 - 远端受管目录清理成功后，只删除旧 SQLite 同步状态，不再对每条旧 URI 重复发起语义删除；
 - 每次写入前读取稳定资源目录内的原文并核对 SHA-256，已一致时直接收敛 SQLite 同步状态，避免客户端超时后重复删除重传；
 - 首次写入的远端原文不存在时跳过无效删除，只有远端原文存在且哈希变化时才删除替换；
-- 日常增量资料删除仍使用 `wait=true`，不改变已有一致性语义。
+- OpenViking 导入后的资料 URI 实际表示资源目录，即使以 `.md` 结尾，增量替换和删除也必须使用 `recursive=true`；
+- 日常增量资料目录删除仍使用 `wait=true`，不改变已有一致性语义。
 
 OpenViking v0.4.16 队列观察接口的 `is_healthy/has_errors` 来自进程启动后的累计错误次数，一次资料错误会一直保留到服务重启。因此应用只用该接口判断队列组件当前是否可达，不再把累计错误解释为全局不可写。单条资料嵌入上下文超限属于输入限制，只失败该条投影并使用 SQLite 回退。
+
+资料投影路径保持短且按用途分类：世界资料位于 `viking://~/resources/world-source/{sourceId}.md`，人物资料和反馈分别位于人物 Peer 的 `resources/persona-source`、`resources/feedback-source`。全局资料只生成一份 Account 共享投影，位于 `viking://resources/global-source/{sourceId}.md`，由 `default` ADMIN Key 写入；人物运行仍使用所在世界 User Key，通过精确 `target_uri` 检索该共享资源。全量重建会同时清理旧 `resources/ren-yang` 和新受管目录，防止路径缩短后留下重复资源。
 
 ## 主要修改文件
 
