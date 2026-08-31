@@ -94,18 +94,20 @@ viking://user/{user_id}/peers/{peer_id}/resources/...
 
 ```text
 Account：人样租户或独立部署
+├── default：ADMIN，同时承载无世界人物
+│   └── Peer：无世界人物（persona-{personaId}）
 └── User：世界上下文空间（world-{worldId}）
     ├── User Resources：世界背景、规则和世界公共资料
-    └── Peer：人物（persona-{personaId}）
+    └── Peer：该世界人物（persona-{personaId}）
         ├── Peer Resources：人物专属资料
         └── Peer Memories：人物专属长期记忆与 Profile
 ```
 
-- 没有关联世界的人物使用独立 User 空间 `standalone-{personaId}`，仍以 `persona-{personaId}` 作为 Peer。
+- 没有关联世界的人物复用 `default` ADMIN User，仍以 `persona-{personaId}` 作为 Peer；不再创建 `standalone-{personaId}`。
 - 世界公共资料写入该世界的 User Resources；人物专属资料和长期记忆写入对应 Peer。
 - 一份业务资料若跨世界或跨人物共享，需要生成多份远端投影，不能再假设“一份本地资料只对应一个远端 URI”。同步映射应采用 `sourceId + scopeType + scopeId -> remoteUri`。
 - 人物换世界时，旧 User 下的 Peer Memory 不会自动迁移；实施时必须让用户选择迁移、复制或清空。
-- 当前实施使用 Account ADMIN User Key 管理世界 User；业务数据请求改用各世界自己的 User Key，人物请求继续携带 Peer。User Key 仅在进程内缓存，重启时按需刷新。
+- 当前实施使用 Account ADMIN User Key 管理世界 User，并承载无世界人物；世界业务数据请求使用各世界自己的 User Key，人物请求继续携带 Peer。User Key 仅在进程内缓存，重启时按需刷新。
 - 继续由 SQLite 计算精确 `target_uri[]`；不得以空范围检索代替业务授权。
 
 这里是利用 OpenViking 的原生隔离层承载“世界上下文 + 人物记忆”，不是把 OpenViking User 的官方自然人语义原样照搬。世界本身不应生成 User Profile；对人物记忆提交建议关闭 `memory_policy.self`、开启 `memory_policy.peer`，并给相关消息设置明确的 `peer_id`，避免把人物信息误写到世界 User 根记忆。[S18][S19]
@@ -317,7 +319,7 @@ Dev 模式不认证请求，服务端使用 `default/default` ROOT 上下文，�
 
 不推荐“所有业务用户共用一个 OpenViking User，仅用 Peer 区分”。Peer 不改变用户身份，当前用户根和共享资源仍可见，无法形成完整租户边界。[S1][S6]
 
-当前项目采用上表“同 Account、每业务范围一个 OpenViking User”的 API Key 方案：`default/admin` Key 只承担控制面管理，世界和独立人物 User Key 承担数据面访问。该决策取代此前建议的 Trusted 网关方案，以匹配已部署的 OpenViking v0.4.16 `api_key` 模式。
+当前项目采用上表“同 Account、每个世界一个 OpenViking User”的 API Key 方案：`default/admin` Key 承担控制面管理和无世界人物数据面访问，世界 User Key 承担对应世界的数据面访问。该决策取代此前建议的 Trusted 网关方案，以匹配已部署的 OpenViking v0.4.16 `api_key` 模式。
 
 ## 原始阶段迁移建议（实施时需按新映射重写）
 

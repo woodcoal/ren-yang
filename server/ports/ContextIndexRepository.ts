@@ -129,7 +129,7 @@ export interface ListSyncRecordPageInput {
 
 /** SQLite 上下文同步记录和资料目录端口。 */
 export interface ContextIndexRepository {
-  /** @returns SQLite 当前全部世界 User，以及无世界人物的隐藏 User；用于重建 OpenViking User 投影。 */
+  /** @returns SQLite 当前全部世界 User；无世界人物统一使用 default，不创建额外 User。 */
   listTargetUserIds(): Promise<string[]>
   /** @returns 全部 SQLite 资料正文；SQLite 始终是唯一事实源。 */
   listSourceDocuments(): Promise<ContextSourceDocument[]>

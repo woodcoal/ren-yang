@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { isOpenVikingInputLimitError } from '../../domain/context/OpenVikingRetryPolicy'
 import type { OpenVikingCapabilityView } from '../../../shared/types/context'
 import type {
   ContextIndexRepository,
@@ -87,7 +88,7 @@ export class OpenVikingHttpContextProvider implements ContextProvider, OpenVikin
     return { healthy: true, version: state.version, authMode: 'api_key', queueHealthy: true }
   }
 
-  /** @param force 是否绕过三十秒成功缓存。 @returns 队列无错误时结束。 */
+  /** @param force 是否绕过三十秒成功缓存。 @returns 队列接口当前可达时结束。 */
   async checkWriteHealth(force = false): Promise<void> {
     const now = Date.now()
     if (!force && this.writeHealthPromise && now < this.writeHealthExpiresAt) {
@@ -103,20 +104,16 @@ export class OpenVikingHttpContextProvider implements ContextProvider, OpenVikin
     this.writeHealthExpiresAt = now + 30_000
   }
 
-  /** @returns 使用 ADMIN Key 核对 OpenViking 资源处理队列。 */
+  /** @returns 使用 ADMIN Key 确认 OpenViking 资源处理队列接口当前可达。 */
   private async loadWriteHealth(): Promise<void> {
     await this.ensureAdminState()
     const result = readOkResult(
       await this.request('/api/v1/observer/queue', { method: 'GET' }, this.requireAdminKey()),
       'OpenViking 队列状态响应结构无效',
     )
-    if (result.name !== 'queue' || result.is_healthy !== true || result.has_errors !== false) {
-      throw new OpenVikingError(
-        'PROVIDER_UNAVAILABLE',
-        'OpenViking 资源处理队列存在错误，已暂停远端同步和全量重建',
-        { retryable: true, providerCode: 'QUEUE_UNHEALTHY', operation: '处理队列预检' },
-      )
-    }
+    // v0.4.16 的 is_healthy/has_errors 来自进程启动后的累计错误计数，一次资料错误会永久保留到服务重启。
+    // 该字段不能表示当前写入能力；接口可达且信封有效即可证明队列组件仍在运行。
+    if (result.name !== 'queue') throw new OpenVikingError('PROVIDER_OUTPUT_INVALID', 'OpenViking 队列状态响应结构无效')
   }
 
   /** @param userIds SQLite 当前应存在的世界 User。 @returns 创建缺失 User、删除孤立 User 后结束。 */
@@ -142,7 +139,7 @@ export class OpenVikingHttpContextProvider implements ContextProvider, OpenVikin
     }
   }
 
-  /** @returns 删除旧 default ADMIN User 下的人样资料、人物 Peer 和 Session；不存在时视为成功。 */
+  /** @returns 重建前删除 default ADMIN User 下的人样资料、人物 Peer 和 Session；不存在时视为成功。 */
   async resetLegacyIndex(): Promise<void> {
     await this.ensureAdminState()
     await this.resetUserData(this.requireAdminKey())
@@ -496,8 +493,12 @@ export class OpenVikingHttpContextProvider implements ContextProvider, OpenVikin
     }
   }
 
-  /** @param userId 世界或隐藏 User 标识。 @returns 当前进程可使用的 User Key。 */
+  /** @param userId 世界 User 或 default ADMIN User 标识。 @returns 当前进程可使用的 User Key。 */
   private async ensureUserKey(userId: string): Promise<string> {
+    if (userId === 'default') {
+      await this.ensureAdminState()
+      return this.requireAdminKey()
+    }
     if (!isManagedUserId(userId)) throw new OpenVikingError('PROVIDER_OUTPUT_INVALID', 'OpenViking User 标识不受当前应用管理')
     const cached = this.userKeys.get(userId)
     if (cached) return cached
@@ -508,7 +509,7 @@ export class OpenVikingHttpContextProvider implements ContextProvider, OpenVikin
     return await pending
   }
 
-  /** @param userId 世界或隐藏 User 标识。 @returns 新建或刷新的 User Key。 */
+  /** @param userId 世界 User 标识。 @returns 新建或刷新的 User Key。 */
   private async provisionUserKey(userId: string): Promise<string> {
     const state = await this.ensureAdminState()
     let payload: unknown
@@ -539,7 +540,7 @@ export class OpenVikingHttpContextProvider implements ContextProvider, OpenVikin
 
   /**
    * 创建目标 User；刚删除的同名 User 尚未释放时有限重试，已被其他请求创建时转为刷新 Key。
-   * @param userId 世界或隐藏 User 标识。
+   * @param userId 世界 User 标识。
    * @returns User 注册或 Key 刷新响应。
    */
   private async createOrRefreshUser(userId: string): Promise<unknown> {
@@ -578,11 +579,13 @@ export class OpenVikingHttpContextProvider implements ContextProvider, OpenVikin
     let deleted = false
     while (Date.now() < deadline) {
       try {
-        await this.request(
+        const payload = await this.request(
           `/api/v1/admin/accounts/${OPEN_VIKING_ACCOUNT_ID}/users/${encodeURIComponent(userId)}`,
           { method: 'DELETE' },
           this.requireAdminKey(),
         )
+        const result = readOkResult(payload, 'OpenViking User 删除响应结构无效')
+        if (typeof result.task_id === 'string' && result.task_id) await this.waitForAdminTask(result.task_id)
         deleted = true
         break
       }
@@ -599,6 +602,31 @@ export class OpenVikingHttpContextProvider implements ContextProvider, OpenVikin
     if (!deleted) throw new OpenVikingError('PROVIDER_UNAVAILABLE', 'OpenViking 世界 User 未在时限内完成删除')
     state.userIds.delete(userId)
     this.userKeys.delete(userId)
+  }
+
+  /**
+   * 等待 ADMIN 发起的异步 User 删除任务进入成功终态。
+   * @param taskId OpenViking User 删除任务 UUID。
+   * @returns User 注册表和存储清理完成时结束。
+   */
+  private async waitForAdminTask(taskId: string): Promise<void> {
+    const deadline = Date.now() + Math.max(this.getConfiguration().timeoutMs, USER_RELEASE_TIMEOUT_MS)
+    while (Date.now() < deadline) {
+      const result = readOkResult(
+        await this.request(`/api/v1/tasks/${encodeURIComponent(taskId)}`, { method: 'GET' }, this.requireAdminKey()),
+        'OpenViking User 删除任务响应结构无效',
+      )
+      if (result.status === 'completed') return
+      if (['failed', 'cancelled'].includes(String(result.status))) {
+        throw new OpenVikingError('PROVIDER_UNAVAILABLE', 'OpenViking User 删除任务失败', {
+          retryable: true, operation: '用户空间管理',
+        })
+      }
+      await new Promise(resolve => setTimeout(resolve, 250))
+    }
+    throw new OpenVikingError('PROVIDER_UNAVAILABLE', 'OpenViking User 删除任务超时', {
+      retryable: true, operation: '用户空间管理',
+    })
   }
 
   /** @param apiKey ADMIN 或世界 User Key。 @returns 清空该 User 下的人样资料、Session 和人物 Peer 后结束。 */
@@ -825,11 +853,17 @@ function describeRequestOperation(path: string, method?: string): string {
 function readProviderError(payload: unknown): { code: string | null, message: string | null, retryable: boolean | null } {
   if (!isRecord(payload) || !isRecord(payload.error)) return { code: null, message: null, retryable: null }
   const details = isRecord(payload.error.details) ? payload.error.details : null
-  const message = typeof payload.error.message === 'string' ? sanitizeProviderMessage(payload.error.message) : null
+  const rawMessage = typeof payload.error.message === 'string' ? payload.error.message : null
+  const inputLimitExceeded = rawMessage !== null && isOpenVikingInputLimitError(rawMessage)
+  const message = inputLimitExceeded
+    ? '资料内容超出 OpenViking 嵌入模型上下文上限，请缩短资料或调整嵌入模型上下文后重新同步'
+    : rawMessage ? sanitizeProviderMessage(rawMessage) : null
   return {
     code: typeof payload.error.code === 'string' ? payload.error.code.slice(0, 100) : null,
     message,
-    retryable: details && typeof details.retryable === 'boolean' ? details.retryable : null,
+    retryable: inputLimitExceeded
+      ? false
+      : details && typeof details.retryable === 'boolean' ? details.retryable : null,
   }
 }
 
@@ -862,7 +896,7 @@ function parseEndpoint(value: string): URL | null {
 
 /** 单次 OpenViking 请求的世界 User 与可选人物 Peer。 */
 interface OpenVikingIdentity {
-  /** 当前世界或独立人物 User。 */
+  /** 当前世界 User；无世界人物使用 default。 */
   userId: string
   /** 当前人物 Peer；世界级维护为空。 */
   peerId: string | null
@@ -876,18 +910,23 @@ interface OpenVikingAdminState {
   userIds: Set<string>
 }
 
-/** @param userIds SQLite 目标 User。 @returns 已校验、去重并排序的受管 User 集合。 */
+/** @param userIds SQLite 目标 User。 @returns 已校验、去重并排序的世界 User 集合。 */
 function normalizeManagedUserIds(userIds: string[]): Set<string> {
   const normalized = [...new Set(userIds)]
-  if (normalized.some(userId => !isManagedUserId(userId))) {
+  if (normalized.some(userId => !isTargetWorldUserId(userId))) {
     throw new OpenVikingError('PROVIDER_OUTPUT_INVALID', 'SQLite 产生了不受管理的 OpenViking User 标识')
   }
   return new Set(normalized.sort())
 }
 
-/** @param userId OpenViking User 标识。 @returns 是否属于世界或独立人物命名空间。 */
+/** @param userId OpenViking User 标识。 @returns 是否属于当前世界或待清理的旧独立人物命名空间。 */
 function isManagedUserId(userId: string): boolean {
   return /^(?:world|standalone)-[0-9a-z-]+$/i.test(userId)
+}
+
+/** @param userId SQLite 生成的 OpenViking User 标识。 @returns 是否属于当前世界命名空间。 */
+function isTargetWorldUserId(userId: string): boolean {
+  return /^world-[0-9a-z-]+$/i.test(userId)
 }
 
 /** @param payload OpenViking User 注册或刷新响应。 @returns 不落盘的 User Key。 */

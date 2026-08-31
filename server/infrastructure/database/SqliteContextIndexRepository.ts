@@ -22,14 +22,10 @@ export class SqliteContextIndexRepository implements ContextIndexRepository {
    */
   constructor(private readonly client: BetterSqliteDatabase) {}
 
-  /** @returns 全部业务世界 User，以及未关联世界人物的隐藏 User。 */
+  /** @returns 全部业务世界 User；无世界人物统一使用既有 default ADMIN User。 */
   async listTargetUserIds(): Promise<string[]> {
     return this.client.prepare(`
-      SELECT user_id FROM (
-        SELECT 'world-' || id AS user_id FROM worlds
-        UNION
-        SELECT 'standalone-' || id AS user_id FROM personas WHERE world_id IS NULL
-      ) ORDER BY user_id
+      SELECT 'world-' || id AS user_id FROM worlds ORDER BY user_id
     `).all().map((value) => String(row(value).user_id))
   }
 
@@ -91,7 +87,7 @@ export class SqliteContextIndexRepository implements ContextIndexRepository {
       SELECT source_materials.id, source_materials.name, source_materials.role,
         source_materials.content_hash, source_materials.content_text,
         'persona' AS scope_type, personas.id AS scope_id,
-        CASE WHEN personas.world_id IS NULL THEN 'standalone-' || personas.id ELSE 'world-' || personas.world_id END AS user_id,
+        CASE WHEN personas.world_id IS NULL THEN 'default' ELSE 'world-' || personas.world_id END AS user_id,
         'persona-' || personas.id AS peer_id, persona_sources.priority,
         'source_material' AS entity_type, 'upsert' AS operation,
         'viking://~/peers/persona-' || personas.id || '/resources/ren-yang/persona-source/' || source_materials.id || '.md' AS remote_uri
@@ -108,7 +104,7 @@ export class SqliteContextIndexRepository implements ContextIndexRepository {
           'feedback' AS role, persona_feedback_sources.content_hash,
           persona_feedback_sources.content AS content_text,
           'persona' AS scope_type, personas.id AS scope_id,
-          CASE WHEN personas.world_id IS NULL THEN 'standalone-' || personas.id ELSE 'world-' || personas.world_id END AS user_id,
+          CASE WHEN personas.world_id IS NULL THEN 'default' ELSE 'world-' || personas.world_id END AS user_id,
           'persona-' || personas.id AS peer_id, 0 AS priority,
           'persona_feedback_source' AS entity_type,
           CASE persona_feedback_sources.deletion_state WHEN 'active' THEN 'upsert' ELSE 'delete' END AS operation,
@@ -153,7 +149,7 @@ export class SqliteContextIndexRepository implements ContextIndexRepository {
     const persona = this.client.prepare('SELECT world_id FROM personas WHERE id = ?').get(personaId) as { world_id: string | null } | undefined
     if (!persona) return null
     const effectiveWorldId = worldId ?? persona.world_id
-    const userId = effectiveWorldId ? `world-${effectiveWorldId}` : `standalone-${personaId}`
+    const userId = effectiveWorldId ? `world-${effectiveWorldId}` : 'default'
     const peerId = `persona-${personaId}`
     const sourceTargets = this.client.prepare(`
       SELECT context_sync_records.source_id, source_materials.role,
@@ -276,7 +272,7 @@ export class SqliteContextIndexRepository implements ContextIndexRepository {
       sourceType,
       sourceId,
       personaId,
-      userId: worldId ? `world-${worldId}` : `standalone-${personaId}`,
+      userId: worldId ? `world-${worldId}` : 'default',
       peerId: `persona-${personaId}`,
       sessionId: `ren-yang-${sourceType}-${sourceId}`,
       userContent,

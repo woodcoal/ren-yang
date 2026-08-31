@@ -176,7 +176,7 @@ describe('OpenViking 可关闭索引与 SQLite 重建', () => {
     ])
   })
 
-  it('User 对账为世界创建 User，并为无世界人物创建隐藏 User', async () => {
+  it('User 对账只创建世界 User且无世界人物复用 default', async () => {
     database.getClient().prepare(`
       INSERT INTO personas (id, world_id, name, origin, active_soul_version_id, created_at, updated_at)
       VALUES ('00000000-0000-4000-8000-000000000200', NULL, '独立人物', 'original', NULL, 1000, 1000)
@@ -193,7 +193,6 @@ describe('OpenViking 可关闭索引与 SQLite 重建', () => {
     })
 
     expect([...openViking.userIds].sort()).toEqual([
-      'standalone-00000000-0000-4000-8000-000000000200',
       'world-00000000-0000-4000-8000-000000000100',
     ])
   })

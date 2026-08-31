@@ -13,7 +13,7 @@ import type { TaskJob } from '../../domain/tasks/TaskJob'
 import type { TaskHandler } from '../../ports/TaskPorts'
 import { TaskExecutionError } from '../../ports/TaskPorts'
 import { ApplicationError } from '../errors/ApplicationError'
-import { calculateOpenVikingRetryDelay } from '../../domain/context/OpenVikingRetryPolicy'
+import { calculateOpenVikingRetryDelay, isOpenVikingInputLimitError } from '../../domain/context/OpenVikingRetryPolicy'
 
 /** OpenViking ADMIN Key 与其他凭据隔离的加密上下文。 */
 export const OPEN_VIKING_SECRET_CONTEXT = 'openviking:administrator-api-key'
@@ -109,7 +109,9 @@ export class ContextSynchronizationApplicationService implements TaskHandler {
   async checkProvider() {
     this.requireConfigured(false)
     try {
-      return await this.dependencies.openViking.checkHealth()
+      const health = await this.dependencies.openViking.checkHealth()
+      await this.dependencies.repository.markSyncHealthy(this.dependencies.clock.now())
+      return health
     }
     catch (error: unknown) {
       throw toApplicationError(error)
@@ -125,12 +127,19 @@ export class ContextSynchronizationApplicationService implements TaskHandler {
     const capability = this.dependencies.openViking.getCapability()
     if (!queue || !capability.enabled) return
     const timestamp = this.dependencies.clock.now()
-    const [projections, records, sessions, runtime] = await Promise.all([
+    const [projections, records, sessions, storedRuntime] = await Promise.all([
       this.dependencies.repository.listSourceProjections(),
       this.dependencies.repository.listSyncRecords(),
       this.dependencies.repository.listPendingSessionSources(),
       this.dependencies.repository.getSyncRuntime(),
     ])
+    // 旧版本曾把单项嵌入长度错误持久化为全局人工降级；升级后启动时直接修复该错误状态。
+    const runtime = storedRuntime.state === 'degraded'
+      && storedRuntime.retryAfter === null
+      && storedRuntime.lastError !== null
+      && isOpenVikingInputLimitError(storedRuntime.lastError)
+      ? await this.dependencies.repository.markSyncHealthy(timestamp)
+      : storedRuntime
     // 达到人工处理状态后禁止应用重启再次制造任务；管理员重试会把 retryAfter 改为当前时间。
     if (runtime.state !== 'degraded' || runtime.retryAfter !== null) {
       await queue.enqueueUserReconciliation(this.dependencies.identifiers.create(), timestamp)
@@ -193,6 +202,8 @@ export class ContextSynchronizationApplicationService implements TaskHandler {
     if (!this.dependencies.openViking.getCapability().enabled) return
     try {
       await this.dependencies.openViking.checkWriteHealth()
+      // 队列接口当前可达即可解除历史累计错误造成的旧降级；后续服务级失败会在 catch 中重新降级。
+      await this.dependencies.repository.markSyncHealthy(this.dependencies.clock.now())
       if (job.type === 'sync_openviking_users') {
         await this.reconcileUsers()
       }
@@ -207,7 +218,6 @@ export class ContextSynchronizationApplicationService implements TaskHandler {
       else {
         throw new TaskExecutionError(`上下文同步服务未注册任务类型：${job.type}`, false)
       }
-      await this.dependencies.repository.markSyncHealthy(this.dependencies.clock.now())
     }
     catch (error: unknown) {
       const normalized = normalizeTaskError(error)
@@ -222,7 +232,7 @@ export class ContextSynchronizationApplicationService implements TaskHandler {
     }
   }
 
-  /** @returns 按 SQLite 当前世界和独立人物对账 OpenViking User 后结束。 */
+  /** @returns 按 SQLite 当前世界对账 OpenViking User，并清理旧独立人物 User 后结束。 */
   async reconcileUsers(): Promise<void> {
     this.requireConfigured(true)
     try {

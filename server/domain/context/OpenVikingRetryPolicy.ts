@@ -13,3 +13,13 @@ export function calculateOpenVikingRetryDelay(failureCount: number): number {
   const index = Math.max(0, Math.min(Math.trunc(failureCount) - 1, RETRY_DELAYS_MS.length - 1))
   return RETRY_DELAYS_MS[index]!
 }
+
+/**
+ * 判断错误是否来自重试无法改变结果的单项嵌入输入长度限制。
+ * @param message OpenViking 返回或 SQLite 持久化的脱敏错误文本。
+ * @returns 属于单项输入长度错误时返回 true。
+ */
+export function isOpenVikingInputLimitError(message: string): boolean {
+  const normalized = message.toLowerCase()
+  return normalized.includes('exceed_context_size_error') || normalized.includes('exceeds the available context size')
+}

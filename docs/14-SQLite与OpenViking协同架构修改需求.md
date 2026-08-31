@@ -12,9 +12,13 @@ FTS5 持续维护资料切片以及当前有效成长和记忆索引。OpenVikin
 
 ```text
 Account：租户或独立部署
-└── User：世界
+├── default：ADMIN，同时承载无世界人物
+│   └── Peer：无世界人物
+│       ├── Peer Resources：人物参考资料和人物反馈资料
+│       └── Peer Session：人物处理过程
+└── world-{worldId}：世界
     ├── User Resources：世界资料
-    └── Peer：人物
+    └── Peer：该世界人物
         ├── Peer Resources：人物参考资料和人物反馈资料
         └── Peer Session：人物处理过程
 ```
@@ -22,7 +26,7 @@ Account：租户或独立部署
 稳定标识：
 
 - 世界 User：`world-{worldId}`。
-- 无显式世界的人物使用系统隐藏独立世界范围：`standalone-{personaId}`。
+- 无显式世界的人物复用 `default` ADMIN User，不创建额外 User。
 - 人物 Peer：`persona-{personaId}`。
 - 世界资料 URI：`viking://~/resources/ren-yang/world-source/{sourceId}.md`。
 - 人物资料 URI：`viking://~/peers/{peerId}/resources/ren-yang/persona-source/{sourceId}.md`。
@@ -136,13 +140,15 @@ OpenViking 故障时仍可使用：
 
 ## 11. 部署前提
 
-OpenViking 使用 `api_key` 模式。配置的 `NUXT_OPEN_VIKING_API_KEY` 必须是当前 Account 的 ADMIN User Key，只允许调用 User 管理接口；应用为每个世界创建 `world-{worldId}` User，为无世界人物创建 `standalone-{personaId}` User。
+OpenViking 使用 `api_key` 模式。数据库配置的 ADMIN User Key 必须属于当前 Account 的 `default` ADMIN User；应用为每个世界创建 `world-{worldId}` User，无世界人物直接使用 `default`。
 
-业务资料、检索、删除和 Session 必须使用目标 User 自己的 User Key，人物操作额外携带 Peer。User Key 由 ADMIN Key 创建或刷新，只在当前应用进程内缓存，不写入 SQLite、备份、响应或日志。进程重启后可按 SQLite 的确定性 User 标识重新取得，因此 OpenViking 仍是可重建投影。
+世界业务资料、检索、删除和 Session 必须使用目标世界 User 自己的 User Key；无世界人物的数据操作使用 ADMIN Key，人物操作额外携带 Peer。世界 User Key 由 ADMIN Key 创建或刷新，只在当前应用进程内缓存，不写入 SQLite、备份、响应或日志。进程重启后可按 SQLite 的确定性 User 标识重新取得，因此 OpenViking 仍是可重建投影。
 
 健康检查必须验证 `auth_mode=api_key`，并实际调用当前 Account 的 User 列表接口确认 ADMIN 权限。认证模式错误、密钥不是 ADMIN Key 或管理接口不可用时，OpenViking 能力判定不可用，新运行固定降级到 FTS5，同步任务保留失败事实并等待恢复。
 
 OpenViking 使用本项目专用 Account 或独立部署，不与其他插件或项目共用普通用户空间。
+
+`/api/v1/observer/queue` 的 `is_healthy` 和 `has_errors` 是进程启动后的累计错误状态，不能作为当前写入能力判断；健康检查只验证队列接口当前可达。单条资料的嵌入上下文超限只标记该投影失败并回退 SQLite，不得触发全局自动降级。
 
 ## 12. 全量重建
 
@@ -156,6 +162,8 @@ OpenViking 使用本项目专用 Account 或独立部署，不与其他插件或
 - 待删除投影。
 
 重建只恢复可重建投影。SQLite 已审核内容、分析批次和运行快照不由 OpenViking 反向覆盖。
+
+User 对账必须删除 SQLite 已不存在的 `world-*` 和旧版遗留 `standalone-*`。OpenViking 删除 User 返回异步任务时，必须等待任务成功终态后才能判定重建完成。
 
 ## 13. 验收标准
 

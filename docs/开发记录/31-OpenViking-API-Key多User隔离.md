@@ -8,9 +8,9 @@
 
 ```text
 Account：ren-yang
-├── default：admin，只执行 User 管理
-├── world-{worldId}：一个世界对应一个业务 User
-└── standalone-{personaId}：无世界人物对应一个隐藏业务 User
+├── default：ADMIN，同时承载全部无世界人物
+│   └── persona-{personaId}：无世界人物 Peer
+└── world-{worldId}：一个世界对应一个业务 User
 ```
 
 人物在所属业务 User 内映射为 `persona-{personaId}` Peer。SQLite 继续作为唯一业务事实源，OpenViking 只保存可删除、可重建的检索和记忆投影。
@@ -31,8 +31,8 @@ Account：ren-yang
 ### 控制面与数据面
 
 - `NUXT_OPEN_VIKING_API_KEY` 只接受当前 Account 的 ADMIN User Key。
-- ADMIN Key 只调用 Account User 管理接口和旧 `default` 投影清理接口。
-- 世界资料、人物资料、检索和 Session 均使用目标业务 User 的 User Key。
+- ADMIN Key 调用 Account User 管理接口，并承载无世界人物的数据操作。
+- 世界资料、人物资料、检索和 Session 使用目标世界 User 的 User Key；无世界人物使用 ADMIN Key。
 - User Key 只缓存在当前进程内，不写入 SQLite、日志或接口响应。
 - 进程重启后按需刷新 User Key；业务请求遇到 401 或 403 时刷新一次并重试。
 - 人物请求只附加 `X-OpenViking-Actor-Peer`，不再发送在 API Key 模式下无效的动态 Account/User 请求头。
@@ -41,6 +41,7 @@ Account：ren-yang
 
 - 世界创建、删除，人物创建、删除和人物切换世界后，排入持久化 `sync_openviking_users` 对账任务。
 - 对账创建 SQLite 缺失的业务 User，并删除 SQLite 已不存在的孤立业务 User。
+- 对账还会删除旧版本遗留的 `standalone-*` User；OpenViking 返回异步删除任务时，等待任务完成后再判定成功。
 - OpenViking 对 User 初始化、删除返回 412 时，在有限维护窗口内重试。
 - 全量重建保留仍有效的 User，只刷新 User Key 并原位清理受管 Resource、Session 和 Peer；不再删除后立即同名重建。
 - 全量重建后把 SQLite 中已完成的 Session 标记为待重放，并重新排入 Session 同步任务；SQLite 已保存的派生记忆不删除。
@@ -57,6 +58,8 @@ OpenViking v0.4.16 的 `DELETE /api/v1/fs` 在文件和向量删除完成后，`
 - 每次写入前读取稳定资源目录内的原文并核对 SHA-256，已一致时直接收敛 SQLite 同步状态，避免客户端超时后重复删除重传；
 - 首次写入的远端原文不存在时跳过无效删除，只有远端原文存在且哈希变化时才删除替换；
 - 日常增量资料删除仍使用 `wait=true`，不改变已有一致性语义。
+
+OpenViking v0.4.16 队列观察接口的 `is_healthy/has_errors` 来自进程启动后的累计错误次数，一次资料错误会一直保留到服务重启。因此应用只用该接口判断队列组件当前是否可达，不再把累计错误解释为全局不可写。单条资料嵌入上下文超限属于输入限制，只失败该条投影并使用 SQLite 回退。
 
 ## 主要修改文件
 
@@ -82,7 +85,7 @@ OpenViking v0.4.16 的 `DELETE /api/v1/fs` 在文件和向量删除完成后，`
 - Nuxt 生产构建通过。
 - `pnpm typecheck` 仍被既有 TypeScript 7.0.2 与 vue-tsc 3.3.11 导出兼容问题阻断：TypeScript 未导出 `./lib/tsc`。该问题发生在项目源码检查前，不是本次代码错误。
 
-测试覆盖 ADMIN 权限门禁、不同世界使用不同 User Key、User 对账、旧 `default` 清理顺序、原位重建、412 重试、过期 User 状态恢复、已删除 User 不重建、递归维护删除不等待语义队列、原文哈希幂等收敛、Session 重放和 SQLite 派生记忆保留。
+测试覆盖 ADMIN 权限门禁、不同世界使用不同 User Key、无世界人物复用 `default`、User 对账等待异步删除、累计队列错误不误降级、单条嵌入超限不全局降级、旧 `default` 清理顺序、原位重建、412 重试、过期 User 状态恢复、已删除 User 不重建、递归维护删除不等待语义队列、原文哈希幂等收敛、Session 重放和 SQLite 派生记忆保留。
 
 ## 真实环境结果
 
@@ -92,6 +95,8 @@ Account `ren-yang` 已存在并与 SQLite 一致：
 - `world-78c316ad-4965-4eff-b1d7-5195d86ba226`：三国；
 - `world-2dbb3a08-ef3a-4f60-bb57-084dd83b16ec`：北宋末年·宋徽宗时期；
 - `standalone-a72b0d3e-db93-4a6c-9e69-d3192111ef61`：当前无世界的刘备。
+
+以上是 2026-08-30 的历史实测快照。当前映射已调整为：无世界人物刘备位于 `default` 下的 `persona-a72b0d3e-db93-4a6c-9e69-d3192111ef61` Peer；旧 `standalone-*` 由 User 对账删除。
 
 首次真实资料重建共 8 条投影，客户端均因 OpenViking 语义等待超时保存为失败状态。后续按稳定 URI 核对原文发现其中 6 条已在客户端超时后由 OpenViking 完成写入；加入哈希幂等逻辑并执行增量收敛后，这 6 条无需重传即改为同步。另 2 条三国资料跳过无效删除后首次上传，其中 1 条在超时后完成并经哈希确认。最终 SQLite 为 7 条 `synchronized`、1 条 `failed`。
 
@@ -111,11 +116,13 @@ Account `ren-yang` 已存在并与 SQLite 一致：
 
 因此，多 User 隔离已经真实验证；剩余阻断是 1 条资料投影和语义检索完整性尚未通过。当前机器没有 Docker，OpenViking 位于另一台主机的 20000 端口，本项目没有可安全调用的远程重启接口。
 
-## 外部恢复后的验收步骤
+## 当前恢复与验收步骤
 
-1. 在 OpenViking 所在主机检查 Embedding 错误日志并重启或修复 OpenViking 服务。
-2. 确认 `/api/v1/observer/queue` 返回健康，且无长期处理中或持续重排队任务。
-3. 启动人样应用，让启动补偿重新排入剩余失败投影；不要在队列未恢复前再次执行全量重建。
-4. 确认 SQLite `context_sync_records` 的 8 条记录全部为 `synchronized`。
-5. 分别在三个业务 User 内执行语义检索，确认三国、北宋和独立人物只返回各自范围资料。
-6. 确认无持续重排队任务后恢复常规使用。
+后续源码核对确认，`/api/v1/observer/queue` 的错误数是进程生命周期内的累计值，不能据此要求重启 OpenViking。当前失败资料实际超过嵌入模型 1280 Token 上下文限制，属于单条输入问题。
+
+1. 缩短失败资料，或提高 OpenViking 嵌入模型上下文上限后重新同步该资料。
+2. 在系统中心执行 OpenViking 连接测试；服务、ADMIN 权限和队列接口可达即通过，不再要求累计错误数归零。
+3. 执行全量重建，确认 User 对账等待异步删除完成，并移除多余 `world-*` 与旧 `standalone-*`。
+4. 后台存在四个世界时，远端最终只保留 `default` 和四个对应 `world-*`，共五个 User。
+5. 确认其他资料不受单条嵌入超限影响，失败资料保留明确错误并使用 SQLite 回退。
+6. 分别在世界 User 和 `default` 下的无世界人物 Peer 执行语义检索，确认资料范围不串台。
