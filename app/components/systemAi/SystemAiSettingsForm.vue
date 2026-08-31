@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import type { FormSubmitEvent } from '@nuxt/ui'
 import { updateSystemAiSettingsSchema, type SystemAiSettingsValues } from '#shared/schemas/systemAi'
+import type { SystemAiOperation } from '#shared/types/systemAi'
 import OperationParameterFields from './OperationParameterFields.vue'
 
 defineProps<{
   /** 保存请求是否正在执行。 */
   loading: boolean
+  /** 当前业务选项卡需要编辑的参数组。 */
+  operation: SystemAiOperation
 }>()
 
 const emit = defineEmits<{
@@ -27,7 +30,7 @@ function handleSubmit(event: FormSubmitEvent<SystemAiSettingsValues>): void {
 
 <template>
   <UForm :schema="updateSystemAiSettingsSchema" :state="values" class="space-y-5" data-system-ai-settings-form @submit="handleSubmit">
-    <section class="archive-panel" aria-labelledby="interest-ai-heading">
+    <section v-if="operation === 'interestAnalysis'" class="archive-panel" aria-labelledby="interest-ai-heading">
       <div class="section-heading">
         <div class="section-heading-copy">
           <p class="eyebrow">人物判断</p>
@@ -47,7 +50,7 @@ function handleSubmit(event: FormSubmitEvent<SystemAiSettingsValues>): void {
       </UFormField>
     </section>
 
-    <section class="archive-panel" aria-labelledby="content-analysis-ai-heading">
+    <section v-else-if="operation === 'contentAnalysis'" class="archive-panel" aria-labelledby="content-analysis-ai-heading">
       <div class="section-heading">
         <div class="section-heading-copy">
           <p class="eyebrow">内容提炼</p>
@@ -58,7 +61,7 @@ function handleSubmit(event: FormSubmitEvent<SystemAiSettingsValues>): void {
       <OperationParameterFields :model-value="values.contentAnalysis" name-prefix="contentAnalysis" />
     </section>
 
-    <section class="archive-panel" aria-labelledby="draft-ai-heading">
+    <section v-else-if="operation === 'draftGeneration'" class="archive-panel" aria-labelledby="draft-ai-heading">
       <div class="section-heading">
         <div class="section-heading-copy">
           <p class="eyebrow">快速建立对象</p>
@@ -69,7 +72,7 @@ function handleSubmit(event: FormSubmitEvent<SystemAiSettingsValues>): void {
       <OperationParameterFields :model-value="values.draftGeneration" name-prefix="draftGeneration" />
     </section>
 
-    <section class="archive-panel" aria-labelledby="feedback-ai-heading">
+    <section v-else class="archive-panel" aria-labelledby="feedback-ai-heading">
       <div class="section-heading">
         <div class="section-heading-copy">
           <p class="eyebrow">结果归因</p>
@@ -81,8 +84,8 @@ function handleSubmit(event: FormSubmitEvent<SystemAiSettingsValues>): void {
     </section>
 
     <div class="sticky-action-bar">
-      <p class="text-sm text-muted">保存后只影响新创建或新执行的 AI 操作，已有运行和分析批次继续使用原参数快照。</p>
-      <UButton type="submit" size="lg" :loading="loading">保存系统 AI 设置</UButton>
+      <p class="text-sm text-muted">保存时会连同其他分类的当前参数一起提交；只影响新创建的 AI 操作。</p>
+      <UButton type="submit" size="lg" :loading="loading">保存当前 AI 参数</UButton>
     </div>
   </UForm>
 </template>

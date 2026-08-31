@@ -18,6 +18,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   /** 校验固定步骤集合后请求发布新配置版本。 */
   save: [input: PublishAiAlgorithmConfigurationInput]
+  /** 请求在当前算法页编辑指定步骤的提示词。 */
+  editPrompt: [code: string]
 }>()
 
 const validationError = shallowRef<string | null>(null)
@@ -66,8 +68,9 @@ function submit(): void {
       <section v-for="(definition, index) in algorithm.stepDefinitions" :key="definition.key" class="rounded-lg border border-default p-4">
         <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
           <div><h3 class="font-medium text-highlighted">{{ index + 1 }}. {{ definition.name }}</h3><p class="mt-1 text-sm text-muted">{{ definition.description }}</p></div>
-          <NuxtLink to="/prompts" class="text-xs text-primary">提示词：{{ definition.promptCode }}</NuxtLink>
+          <UButton type="button" size="xs" color="neutral" variant="soft" icon="i-lucide-braces" @click="emit('editPrompt', definition.promptCode)">编辑该步骤提示词</UButton>
         </div>
+        <p class="mb-4 break-all text-xs text-muted">固定编码：<code>{{ definition.promptCode }}</code></p>
         <div class="grid gap-4 md:grid-cols-4">
           <UFormField label="文本模型" required><USelect v-model="form.steps[index]!.modelDeploymentId" class="w-full" :items="deploymentItems" /></UFormField>
           <UFormField label="温度" required><UInput v-model.number="form.steps[index]!.parameters.temperature" class="w-full" type="number" min="0" max="2" step="0.1" /></UFormField>

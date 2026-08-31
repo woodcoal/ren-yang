@@ -69,12 +69,14 @@ describe('后台品牌与主题组件', () => {
     expect(wrapper.get('.page-heading-identity').text()).toContain('林默')
   })
 
-  it('系统菜单提供集中提示词管理入口', () => {
+  it('系统菜单只保留三个集中 AI 管理入口', () => {
     const systemGroup = appNavigationGroups.find(group => group.label === '系统')
 
-    expect(systemGroup?.items).toContainEqual({ label: '提示词', to: '/prompts', icon: 'i-lucide-braces' })
     expect(systemGroup?.items).toContainEqual({ label: 'AI 模型', to: '/ai-models', icon: 'i-lucide-server-cog' })
     expect(systemGroup?.items).toContainEqual({ label: 'AI 算法', to: '/ai-algorithms', icon: 'i-lucide-workflow' })
-    expect(systemGroup?.items).toContainEqual({ label: '系统 AI', to: '/system-ai-settings', icon: 'i-lucide-cpu' })
+    expect(systemGroup?.items).toContainEqual({ label: 'AI 设置', to: '/ai-settings', icon: 'i-lucide-sliders-horizontal' })
+    expect(systemGroup?.items).not.toContainEqual(expect.objectContaining({ to: '/prompts' }))
+    expect(systemGroup?.items).not.toContainEqual(expect.objectContaining({ to: '/system-ai-settings' }))
+    expect(systemGroup?.items).not.toContainEqual(expect.objectContaining({ to: '/parameter-profiles' }))
   })
 })

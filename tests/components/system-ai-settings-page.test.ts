@@ -3,7 +3,7 @@ import { flushPromises } from '@vue/test-utils'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
 import type { SystemAiSettingsValues } from '../../shared/schemas/systemAi'
-import SystemAiSettingsPage from '../../app/pages/system-ai-settings.vue'
+import AiSettingsPage from '../../app/pages/ai-settings.vue'
 import WorkbenchPage from '../../app/pages/workbench.vue'
 
 /** 测试页面读取与保存的完整系统 AI 参数。 */
@@ -33,6 +33,8 @@ registerEndpoint('/api/v1/system/ai-settings', {
     return { data: { values: savedSettings, updatedAt: 3_000 } }
   },
 })
+registerEndpoint('/api/v1/ai-prompts', () => ({ data: [] }))
+registerEndpoint('/api/v1/ai/algorithms', () => ({ data: [] }))
 registerEndpoint('/api/v1/personas', () => ({ data: [] }))
 registerEndpoint('/api/v1/parameter-profiles', () => ({ data: [{
   id: '10000000-0000-4000-8000-000000000001', name: '图文方案', version: 1, values: {}, isActive: true, createdAt: 1_000,
@@ -48,16 +50,22 @@ beforeEach(() => {
   savedSettings = null
 })
 
-describe('系统 AI 设置页面', () => {
-  it('展示四类参数边界并提交完整设置', async () => {
-    const wrapper = await mountSuspended(SystemAiSettingsPage, { route: '/system-ai-settings' })
+describe('AI 设置页面', () => {
+  it('按业务选项卡展示四类参数并提交完整设置', async () => {
+    const wrapper = await mountSuspended(AiSettingsPage, { route: '/ai-settings' })
     await flushPromises()
 
     expect(wrapper.text()).toContain('兴趣分析')
+    await wrapper.findAll('button').find(button => button.text().includes('人物记忆'))!.trigger('click')
+    await flushPromises()
     expect(wrapper.text()).toContain('记忆提炼')
+    await wrapper.findAll('button').find(button => button.text().includes('草稿生成'))!.trigger('click')
+    await flushPromises()
     expect(wrapper.text()).toContain('草稿生成')
+    await wrapper.findAll('button').find(button => button.text().includes('反馈分类'))!.trigger('click')
+    await flushPromises()
     expect(wrapper.text()).toContain('反馈分类')
-    expect(wrapper.text()).toContain('灵魂与成长参数由 AI 算法配置')
+    expect(wrapper.text()).toContain('灵魂与成长提示词在 AI 算法中维护')
 
     await wrapper.get('form[data-system-ai-settings-form]').trigger('submit')
     await flushPromises()

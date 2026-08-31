@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
 import type { SaveAiPromptDraftInput } from '#shared/schemas/aiPrompt'
 import type { AiPromptWorkspaceView } from '#shared/types/aiPrompt'
-import AiPromptManagementPage from '../../app/pages/prompts.vue'
+import AiSettingsPage from '../../app/pages/ai-settings.vue'
 
 /** 测试使用的固定世界草稿版本标识。 */
 const WORLD_VERSION_ID = '10000000-0000-4000-8000-000000000001'
@@ -84,6 +84,26 @@ function createPromptWorkspaces(): AiPromptWorkspaceView[] {
       versions: [],
       updatedAt: 1_000,
     },
+    {
+      code: 'content.persona_soul_analysis',
+      name: '人物灵魂整理',
+      category: '提示词提炼',
+      description: '固定灵魂算法提示词。',
+      kind: 'text',
+      variables: [],
+      activeVersion: {
+        id: '10000000-0000-4000-8000-000000000005',
+        promptCode: 'content.persona_soul_analysis',
+        versionNo: 1,
+        systemPromptTemplate: '灵魂系统规则',
+        userPromptTemplate: '灵魂用户模板',
+        changeSummary: '初始版本',
+        publishedAt: 1_000,
+      },
+      draft: null,
+      versions: [],
+      updatedAt: 1_000,
+    },
   ]
 }
 
@@ -92,6 +112,26 @@ registerEndpoint('/api/v1/auth/session', () => ({
 }))
 
 registerEndpoint('/api/v1/ai-prompts', () => ({ data: promptWorkspaces }))
+registerEndpoint('/api/v1/ai/algorithms', () => ({ data: [{
+  code: 'persona_soul',
+  name: '人物灵魂整理',
+  description: '固定灵魂算法。',
+  implementationVersion: 1,
+  activeConfigurationVersion: null,
+  configurationVersionCount: 0,
+  updatedAt: 1_000,
+  stepDefinitions: [{ key: 'organize', name: '整理', description: '整理灵魂。', promptCode: 'content.persona_soul_analysis', ordinal: 0 }],
+  steps: [],
+}] }))
+registerEndpoint('/api/v1/system/ai-settings', () => ({ data: {
+  values: {
+    interestAnalysis: { temperature: 0.4, maxOutputTokens: 2_048, timeoutMs: 60_000, maxEvidenceChunks: 8 },
+    contentAnalysis: { temperature: 0.2, maxOutputTokens: 4_096, timeoutMs: 60_000 },
+    draftGeneration: { temperature: 0.4, maxOutputTokens: 2_048, timeoutMs: 60_000 },
+    feedbackClassification: { temperature: 0, maxOutputTokens: 4_096, timeoutMs: 60_000 },
+  },
+  updatedAt: null,
+} }))
 
 registerEndpoint('/api/v1/ai-prompts/generation.world_draft/draft', {
   method: 'PUT',
@@ -154,29 +194,33 @@ beforeEach(() => {
   vi.stubGlobal('scrollTo', vi.fn())
 })
 
-describe('AI 提示词管理页', () => {
-  it('展示固定目录、模板变量和不可变发布历史', async () => {
-    const wrapper = await mountSuspended(AiPromptManagementPage, { route: '/prompts' })
+describe('AI 设置中的提示词管理', () => {
+  it('按业务分类展示模板变量、视觉提示词和不可变历史', async () => {
+    const wrapper = await mountSuspended(AiSettingsPage, { route: '/ai-settings?code=generation.world_draft' })
     await flushPromises()
 
-    expect(wrapper.text()).toContain('固定提示词2')
+    expect(wrapper.text()).toContain('非算法提示词2')
     expect(wrapper.text()).toContain('世界草稿')
-    expect(wrapper.text()).toContain('人物头像')
     expect(wrapper.text()).toContain('{{promptJson}}')
     expect(wrapper.text()).toContain('世界输入：用户提交的世界设定 JSON。')
     expect(wrapper.text()).toContain('不可变版本记录')
     expect(wrapper.text()).toContain('初始版本')
+
+    await wrapper.findAll('button').find(button => button.text().includes('内容与视觉'))!.trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('人物头像')
+    expect(wrapper.text()).not.toContain('人物灵魂整理')
   })
 
   it('保存草稿后经确认发布，并能把历史版本载入编辑器', async () => {
-    const wrapper = await mountSuspended(AiPromptManagementPage, { route: '/prompts' })
+    const wrapper = await mountSuspended(AiSettingsPage, { route: '/ai-settings?code=generation.world_draft' })
     await flushPromises()
 
     const textareas = wrapper.findAll('textarea')
     await textareas[0]!.setValue('调整后的系统规则')
     await textareas[1]!.setValue('<世界资料>{{promptJson}}</世界资料>')
     await wrapper.get('input[name="changeSummary"]').setValue('校准世界草稿')
-    await wrapper.get('form').trigger('submit')
+    await wrapper.get('[data-ai-prompt-editor] form').trigger('submit')
     await vi.waitFor(() => expect(savedDrafts).toHaveLength(1))
     await flushPromises()
 
@@ -189,7 +233,7 @@ describe('AI 提示词管理页', () => {
 
     const publishButton = wrapper.findAllComponents({ name: 'UButton' })
       .find(button => button.text() === '发布新版本')!
-    expect(publishButton.props('disabled')).toBe(false)
+    await vi.waitFor(() => expect(publishButton.props('disabled')).toBe(false))
     await publishButton.trigger('click')
     await flushPromises()
     expect(publishCount).toBe(0)
