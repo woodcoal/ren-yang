@@ -205,3 +205,5 @@ Temporary Items
 # Other
 .attachments/
 .testagent/
+
+pnpm-lock.yaml
