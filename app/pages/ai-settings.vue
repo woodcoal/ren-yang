@@ -45,6 +45,7 @@ const values = reactive<SystemAiSettingsValues>(systemAiSettingsValuesSchema.par
 const prompts = computed(() => promptRequest.data.value?.data ?? [])
 const algorithms = computed(() => algorithmRequest.data.value?.data ?? [])
 const deployments = computed(() => deploymentRequest.data.value?.data ?? [])
+const { notifySuccess, notifyError } = useOperationNotifications()
 const algorithmPromptCodes = computed(() => new Set(algorithms.value.flatMap(algorithm => algorithm.stepDefinitions.map(step => step.promptCode))))
 const requestedPromptCode = typeof route.query.code === 'string' ? route.query.code : ''
 const activeSectionCode = shallowRef<AiSettingsSection['code']>(findSettingsSectionCode(requestedPromptCode))
@@ -52,8 +53,6 @@ const pendingSectionCode = shallowRef<AiSettingsSection['code'] | null>(null)
 const switchConfirmationOpen = shallowRef(false)
 const promptDirty = shallowRef(false)
 const loading = shallowRef(false)
-const actionError = shallowRef<string | null>(null)
-const saved = shallowRef(false)
 const activeSection = computed(() => sections.find(section => section.code === activeSectionCode.value) ?? sections[0]!)
 const currentPrompts = computed(() => prompts.value.filter(prompt => !algorithmPromptCodes.value.has(prompt.code)
   && settingsSectionForPrompt(prompt.code) === activeSectionCode.value))
@@ -112,8 +111,6 @@ function applySection(code: AiSettingsSection['code']): void {
   pendingSectionCode.value = null
   switchConfirmationOpen.value = false
   promptDirty.value = false
-  saved.value = false
-  actionError.value = null
 }
 
 /**
@@ -131,8 +128,6 @@ function confirmSectionSwitch(): void {
  */
 async function saveSettings(submittedValues: SystemAiSettingsValues): Promise<void> {
   loading.value = true
-  actionError.value = null
-  saved.value = false
   try {
     const response = await $fetch<ApiResponse<SystemAiSettingsView>>('/api/v1/system/ai-settings', {
       method: 'PUT',
@@ -140,10 +135,10 @@ async function saveSettings(submittedValues: SystemAiSettingsValues): Promise<vo
     })
     Object.assign(values, systemAiSettingsValuesSchema.parse(response.data.values))
     settingsRequest.data.value = response
-    saved.value = true
+    notifySuccess('后续新操作将使用当前参数。', 'AI 参数已保存')
   }
   catch (requestError: unknown) {
-    actionError.value = getApiErrorMessage(requestError, 'AI 参数保存失败')
+    notifyError(getApiErrorMessage(requestError, 'AI 参数保存失败'), '保存失败')
   }
   finally {
     loading.value = false
@@ -196,8 +191,6 @@ function formatTime(timestamp: number): string {
 
     <div class="space-y-5 py-9">
       <UAlert v-if="requestFailed" color="error" title="AI 设置加载失败" description="参数、提示词或算法定义不完整，已停止编辑。" :actions="[{ label: '重试', onClick: refreshAll }]" />
-      <UAlert v-if="actionError" color="error" title="保存失败" :description="actionError" />
-      <UAlert v-if="saved" color="success" title="AI 参数已保存" description="后续新操作将使用当前参数。" />
       <div v-if="requestsPending" class="content-empty-state"><div><strong>正在读取 AI 设置</strong><p>加载参数、提示词与算法归属。</p></div></div>
       <template v-else-if="!requestFailed">
         <div class="section-heading">

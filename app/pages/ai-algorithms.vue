@@ -31,6 +31,7 @@ const [algorithmRequest, deploymentRequest, promptRequest] = await Promise.all([
 const algorithms = computed(() => algorithmRequest.data.value?.data ?? [])
 const deployments = computed(() => deploymentRequest.data.value?.data ?? [])
 const prompts = computed(() => promptRequest.data.value?.data ?? [])
+const { notifySuccess, notifyError } = useOperationNotifications()
 const requestedAlgorithmCode = typeof route.query.algorithm === 'string' ? route.query.algorithm : ''
 const requestedPromptCode = typeof route.query.prompt === 'string' ? route.query.prompt : ''
 const initialAlgorithm = findInitialAlgorithm()
@@ -42,8 +43,6 @@ const pendingSelection = shallowRef<PendingAlgorithmSelection | null>(null)
 const switchConfirmationOpen = shallowRef(false)
 const promptDirty = shallowRef(false)
 const savingCode = shallowRef<AiAlgorithmCode | null>(null)
-const actionError = shallowRef<string | null>(null)
-const actionMessage = shallowRef<string | null>(null)
 const selectedAlgorithm = computed(() => algorithms.value.find(algorithm => algorithm.code === selectedAlgorithmCode.value) ?? algorithms.value[0] ?? null)
 const activeCategory = computed<AiAlgorithmCategory>(() => selectedAlgorithm.value?.code.endsWith('_growth') ? 'growth' : 'soul')
 const categoryAlgorithms = computed(() => algorithms.value.filter(algorithm => algorithmCategory(algorithm.code) === activeCategory.value))
@@ -127,8 +126,6 @@ function applySelection(selection: PendingAlgorithmSelection): void {
   pendingSelection.value = null
   switchConfirmationOpen.value = false
   promptDirty.value = false
-  actionError.value = null
-  actionMessage.value = null
 }
 
 /**
@@ -147,15 +144,13 @@ function confirmSelection(): void {
  */
 async function saveAlgorithm(code: AiAlgorithmCode, input: PublishAiAlgorithmConfigurationInput): Promise<void> {
   savingCode.value = code
-  actionError.value = null
-  actionMessage.value = null
   try {
     await $fetch(`/api/v1/ai/algorithms/${code}`, { method: 'PUT', body: input })
     await algorithmRequest.refresh()
-    actionMessage.value = '算法配置新版本已发布，之后创建的任务将使用新快照。'
+    notifySuccess('算法配置新版本已发布，之后创建的任务将使用新快照。', '发布完成')
   }
   catch (error: unknown) {
-    actionError.value = getApiErrorMessage(error, '算法配置发布失败')
+    notifyError(getApiErrorMessage(error, '算法配置发布失败'), '发布失败')
   }
   finally {
     savingCode.value = null
@@ -191,8 +186,6 @@ async function saveAlgorithm(code: AiAlgorithmCode, input: PublishAiAlgorithmCon
     <div class="space-y-5 py-9">
       <UAlert color="neutral" variant="subtle" title="算法边界" description="步骤、顺序、变量组装和输出结构固定在代码中；这里只维护每个步骤的模型、调用参数和提示词版本。" />
       <UAlert v-if="algorithmRequest.error.value || deploymentRequest.error.value || promptRequest.error.value" color="error" title="算法配置加载失败" />
-      <UAlert v-if="actionError" color="error" title="发布失败" :description="actionError" />
-      <UAlert v-if="actionMessage" color="success" title="发布完成" :description="actionMessage" />
 
       <div v-if="selectedAlgorithm" class="space-y-6">
         <div class="algorithm-subject-tabs" aria-label="人物与世界算法">

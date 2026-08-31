@@ -7,7 +7,7 @@ import { getApiErrorMessage } from '../utils/apiError'
 definePageMeta({ layout: 'authentication' })
 
 const loading = shallowRef(false)
-const errorMessage = shallowRef<string | null>(null)
+const { notifySuccess, notifyError } = useOperationNotifications()
 
 /**
  * 调用本机首次设置接口，并在成功后进入工作台。
@@ -16,16 +16,16 @@ const errorMessage = shallowRef<string | null>(null)
  */
 async function handleSetup(input: SetupAdministratorInput): Promise<void> {
   loading.value = true
-  errorMessage.value = null
   try {
     await $fetch<ApiResponse<AdministratorIdentity>>('/api/v1/setup/admin', {
       method: 'POST',
       body: input,
     })
+    notifySuccess('本机管理员已创建。', '首次设置完成')
     await navigateTo('/')
   }
   catch (error: unknown) {
-    errorMessage.value = getApiErrorMessage(error, '管理员创建失败')
+    notifyError(getApiErrorMessage(error, '管理员创建失败'), '管理员创建失败')
   }
   finally {
     loading.value = false
@@ -41,7 +41,7 @@ async function handleSetup(input: SetupAdministratorInput): Promise<void> {
 
     <AuthenticationSetupForm
       :loading="loading"
-      :error-message="errorMessage"
+      :error-message="null"
       @submit="handleSetup"
     />
 

@@ -7,7 +7,7 @@ import { getApiErrorMessage } from '../utils/apiError'
 definePageMeta({ layout: 'authentication' })
 
 const loading = shallowRef(false)
-const errorMessage = shallowRef<string | null>(null)
+const { notifySuccess, notifyError } = useOperationNotifications()
 
 /**
  * 调用登录接口，并在成功后进入工作台。
@@ -16,16 +16,16 @@ const errorMessage = shallowRef<string | null>(null)
  */
 async function handleLogin(input: LoginInput): Promise<void> {
   loading.value = true
-  errorMessage.value = null
   try {
     await $fetch<ApiResponse<AdministratorIdentity>>('/api/v1/auth/login', {
       method: 'POST',
       body: input,
     })
+    notifySuccess('管理员身份已验证。', '登录成功')
     await navigateTo('/')
   }
   catch (error: unknown) {
-    errorMessage.value = getApiErrorMessage(error, '登录失败，请检查用户名和密码')
+    notifyError(getApiErrorMessage(error, '登录失败，请检查用户名和密码'), '登录失败')
   }
   finally {
     loading.value = false
@@ -41,7 +41,7 @@ async function handleLogin(input: LoginInput): Promise<void> {
 
     <AuthenticationLoginForm
       :loading="loading"
-      :error-message="errorMessage"
+      :error-message="null"
       @submit="handleLogin"
     />
 

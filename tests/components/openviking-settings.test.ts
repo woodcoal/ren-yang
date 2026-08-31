@@ -1,4 +1,5 @@
 import { readBody } from 'h3'
+import { useToast } from '#imports'
 import { flushPromises } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
@@ -92,6 +93,7 @@ describe('OpenViking 后台设置', () => {
       global: { stubs: { SystemBackupPanel: true, SystemCapabilityStatusPanel: true } },
     })
     await flushPromises()
+    wrapper.vm.$nuxt.runWithContext(() => useToast().clear())
     const form = wrapper.get('form[data-openviking-settings-form]')
     const inputs = form.findAll('input')
     await inputs.find(input => input.attributes('type') !== 'password' && input.attributes('type') !== 'number' && input.attributes('type') !== 'checkbox')!.setValue('https://ov.test')
@@ -105,6 +107,14 @@ describe('OpenViking 后台设置', () => {
     expect(savedSettings).toEqual({
       enabled: true, endpoint: 'https://ov.test', apiKey: 'admin-key', timeoutMs: 5_000,
     })
-    expect(wrapper.text()).toContain('ADMIN Key 具有 User 管理权限')
+    await vi.waitFor(() => expect(wrapper.vm.$nuxt.runWithContext(() => useToast().toasts.value)
+      .some(notification => notification.description?.toString().includes('ADMIN Key 具有 User 管理权限'))).toBe(true))
+    expect(wrapper.text()).not.toContain('操作完成')
+
+    wrapper.vm.$nuxt.runWithContext(() => useToast().clear())
+    await wrapper.findAll('button').find(button => button.text() === '检测服务')!.trigger('click')
+    await vi.waitFor(() => expect(permissionCheckCount).toBe(2))
+    await vi.waitFor(() => expect(wrapper.vm.$nuxt.runWithContext(() => useToast().toasts.value)
+      .some(notification => notification.title === 'OpenViking 检测通过')).toBe(true))
   })
 })

@@ -31,9 +31,8 @@ const pendingFeedback = computed(() => runFeedback.value.filter(item => item.con
 const personaDetails = computed(() => personaData.value?.data ?? null)
 const personaVersion = computed(() => personaDetails.value?.versions.find(version => version.id === details.value?.run.personaVersionId) ?? null)
 const personaSnapshotFields = computed(() => personaVersion.value ? toPersonaSnapshotFields(personaVersion.value.snapshot) : [])
+const { notifySuccess, notifyError } = useOperationNotifications()
 const actionLoading = shallowRef(false)
-const actionError = shallowRef<string | null>(null)
-const actionMessage = shallowRef<string | null>(null)
 const pollingTimer = shallowRef<ReturnType<typeof setInterval> | null>(null)
 const artifactPreview = shallowRef<RenderedArtifactView | null>(null)
 const selectedTab = shallowRef<'result' | 'content' | 'evidence' | 'feedback' | 'settings'>('result')
@@ -61,70 +60,63 @@ onUnmounted(stopPolling)
 
 /** @param spec 已通过组件校验的文档规格。 @returns 保存一个新的不可变规格修订。 */
 async function saveSpec(spec: DocumentSpec): Promise<void> {
-  await executeAction(async () => {
+  await executeAction('已保存新的规格修订', async () => {
     await $fetch(`/api/v1/runs/${runId}/document-spec`, { method: 'PUT', body: spec })
-    actionMessage.value = '已保存新的规格修订'
   })
 }
 
 /** @param spec 已通过组件校验的当前规格。 @returns 保存修订、确认规格并创建块执行任务。 */
 async function confirmSpec(spec: DocumentSpec): Promise<void> {
-  await executeAction(async () => {
+  await executeAction('规格已确认，图文块已进入执行队列', async () => {
     await $fetch(`/api/v1/runs/${runId}/document-spec`, { method: 'PUT', body: spec })
     await runWithAiLoading({
       title: 'AI 正在准备生成图文内容',
       description: '系统正在确认内容规划并创建各图文块的生成任务。',
       completionHint: '任务进入队列后，详情页会持续显示每个图文块的处理状态。',
     }, async () => await $fetch(`/api/v1/runs/${runId}/document-spec/confirm`, { method: 'POST' }))
-    actionMessage.value = '规格已确认，图文块已进入执行队列'
   })
 }
 
 /** @returns 请求取消排队或运行中的任务。 */
 async function cancelRun(): Promise<void> {
-  await executeAction(async () => {
+  await executeAction('取消请求已处理', async () => {
     await $fetch(`/api/v1/runs/${runId}/cancel`, { method: 'POST' })
-    actionMessage.value = '取消请求已处理'
   })
 }
 
 /** @returns 为失败或部分成功运行创建新的任务记录。 */
 async function retryRun(): Promise<void> {
-  await executeAction(async () => {
+  await executeAction('已创建新的重试任务', async () => {
     await runWithAiLoading({
       title: 'AI 正在准备重试任务',
       description: '系统正在复制固定输入与生成设置，并为失败内容创建新的运行任务。',
       completionHint: '重试任务建立后，详情页会继续显示处理进度。',
     }, async () => await $fetch(`/api/v1/runs/${runId}/retry`, { method: 'POST' }))
-    actionMessage.value = '已创建新的重试任务'
   })
 }
 
 /** @param blockId 目标块 UUID。 @returns 创建单块任务并刷新尝试历史。 */
 async function retryBlock(blockId: string): Promise<void> {
-  await executeAction(async () => {
+  await executeAction('已创建单块重试任务', async () => {
     await runWithAiLoading({
       title: 'AI 正在准备重新生成内容块',
       description: '系统正在按当前锁定的规格为这个内容块创建新尝试。',
       completionHint: '新尝试建立后，当前内容块会持续显示处理状态。',
     }, async () => await $fetch(`/api/v1/runs/${runId}/blocks/${blockId}/attempts`, { method: 'POST' }))
-    actionMessage.value = '已创建单块重试任务'
   })
 }
 
 /** @param blockId 目标块 UUID。 @param attemptId 历史成功尝试 UUID。 @returns 切换当前选择并刷新详情。 */
 async function selectBlockAttempt(blockId: string, attemptId: string): Promise<void> {
-  await executeAction(async () => {
+  await executeAction('已切换当前选中尝试', async () => {
     await $fetch(`/api/v1/runs/${runId}/blocks/${blockId}/select`, { method: 'POST', body: { attemptId } })
-    actionMessage.value = '已切换当前选中尝试'
   })
 }
 
 /** @param blockId 目标块 UUID。 @param locked 新锁定状态。 @returns 更新锁定状态并刷新详情。 */
 async function setBlockLock(blockId: string, locked: boolean): Promise<void> {
-  await executeAction(async () => {
+  await executeAction(locked ? '已锁定当前结果' : '已解除块锁定', async () => {
     await $fetch(`/api/v1/runs/${runId}/blocks/${blockId}/lock`, { method: 'POST', body: { locked } })
-    actionMessage.value = locked ? '已锁定当前结果' : '已解除块锁定'
   })
 }
 
@@ -132,16 +124,15 @@ async function setBlockLock(blockId: string, locked: boolean): Promise<void> {
 async function renderArtifact(): Promise<void> {
   if (actionLoading.value || artifactFormats.value.length === 0) return
   actionLoading.value = true
-  actionError.value = null
-  actionMessage.value = null
   try {
     const response = await $fetch<ApiResponse<RenderedArtifactView>>(`/api/v1/runs/${runId}/render`, {
       method: 'POST', body: { formats: artifactFormats.value },
     })
     artifactPreview.value = response.data
+    notifySuccess('已根据当前选中结果生成预览。', '产物预览已生成')
   }
   catch (requestError: unknown) {
-    actionError.value = getApiErrorMessage(requestError, '产物预览失败')
+    notifyError(getApiErrorMessage(requestError, '产物预览失败'), '产物预览失败')
   }
   finally {
     actionLoading.value = false
@@ -150,41 +141,39 @@ async function renderArtifact(): Promise<void> {
 
 /** @param input 原始反馈输入。 @returns 保存反馈并展示 AI 分类建议。 */
 async function submitFeedback(input: SubmitFeedbackInput): Promise<void> {
-  await executeAction(async () => {
+  await executeAction('反馈已保存，请确认或纠正 AI 分类建议', async () => {
     await runWithAiLoading({
       title: 'AI 正在分析反馈用途',
       description: '模型正在判断反馈更适合作为本次修正、人物成长素材或其他长期依据。',
       completionHint: '完成后会展示分类建议，最终用途仍由你确认。',
     }, async () => await $fetch(`/api/v1/runs/${runId}/feedback`, { method: 'POST', body: input }))
     await refreshFeedback()
-    actionMessage.value = '反馈已保存，请确认或纠正 AI 分类建议'
   })
 }
 
 /** @param feedbackId 反馈 UUID。 @param input 用户确认后的分类动作。 @returns 执行动作并刷新运行、人物和反馈。 */
 async function confirmFeedback(feedbackId: string, input: ConfirmFeedbackClassificationInput): Promise<void> {
-  await executeAction(async () => {
+  const successMessage = input.targetType === 'persona'
+    ? '反馈已加入人物成长素材池，尚未改变当前提示词'
+    : '反馈分类已确认，对应动作已执行'
+  await executeAction(successMessage, async () => {
     await $fetch(`/api/v1/feedback/${feedbackId}/classify`, { method: 'POST', body: input })
     await Promise.all([refreshFeedback(), refreshPersona()])
-    actionMessage.value = input.targetType === 'persona'
-      ? '反馈已加入人物成长素材池，尚未改变当前提示词'
-      : '反馈分类已确认，对应动作已执行'
   })
 }
 
-/** @param action 单次写操作。 @returns 统一处理提交锁、错误和详情刷新。 */
-async function executeAction(action: () => Promise<void>): Promise<void> {
+/** @param successMessage 操作成功通知。 @param action 单次写操作。 @returns 统一处理提交锁、通知和详情刷新。 */
+async function executeAction(successMessage: string, action: () => Promise<void>): Promise<void> {
   if (actionLoading.value) return
   actionLoading.value = true
-  actionError.value = null
-  actionMessage.value = null
   try {
     await action()
     artifactPreview.value = null
     await refresh()
+    notifySuccess(successMessage)
   }
   catch (requestError: unknown) {
-    actionError.value = getApiErrorMessage(requestError, '运行操作失败')
+    notifyError(getApiErrorMessage(requestError, '运行操作失败'))
   }
   finally {
     actionLoading.value = false
@@ -223,9 +212,6 @@ function skippedReasonLabel(reason: string | null): string {
 
     <UAlert v-if="error || !details" color="error" title="运行详情加载失败" :actions="[{ label: '重试', onClick: () => refresh() }]" />
     <template v-else>
-      <UAlert v-if="actionError" class="mb-5" color="error" title="操作失败" :description="actionError" />
-      <UAlert v-if="actionMessage" class="mb-5" color="success" title="操作完成" :description="actionMessage" />
-
       <GenerationRunStatusPanel :run="details.run" :tasks="details.tasks" :loading="actionLoading" @cancel="cancelRun" @retry="retryRun" />
       <nav class="mind-tabs my-6" aria-label="任务详情标签">
         <button class="mind-tab" :aria-selected="selectedTab === 'result'" @click="selectedTab = 'result'">结果</button>

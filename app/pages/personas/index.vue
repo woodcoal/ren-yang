@@ -7,6 +7,7 @@ import { getApiErrorMessage } from '../../utils/apiError'
 
 const route = useRoute()
 const { runWithAiLoading } = useAiLoading()
+const { notifySuccess, notifyError } = useOperationNotifications()
 
 /** @param value 查询参数原值。 @param fallback 无效时的默认值。 @returns 正整数。 */
 function readPositiveInteger(value: unknown, fallback: number): number {
@@ -48,8 +49,6 @@ const usablePersonaCount = computed(() => personas.value.filter(persona => perso
 const disabledPersonaCount = computed(() => personas.value.filter(persona => !persona.isEnabled).length)
 const showCreate = shallowRef(false)
 const createLoading = shallowRef(false)
-const createErrorMessage = shallowRef<string | null>(null)
-const actionErrorMessage = shallowRef<string | null>(null)
 const personaFilterInput = shallowRef(requestedPersonaFilter.value)
 const selectedPersonaIds = ref<string[]>([])
 const batchEnableConfirmationOpen = shallowRef(false)
@@ -128,7 +127,6 @@ function updateCurrentPageSelection(event: Event): void {
 
 /** @returns 打开人物快速创建弹窗并清除上一次请求错误。 */
 function openCreateModal(): void {
-  createErrorMessage.value = null
   showCreate.value = true
 }
 
@@ -139,7 +137,6 @@ function openCreateModal(): void {
  */
 async function createPersona(input: QuickCreateSubjectInput): Promise<void> {
   createLoading.value = true
-  createErrorMessage.value = null
   try {
     let snapshot: SoulSnapshot = { promptText: input.promptText }
     if (input.autoAnalyze) {
@@ -159,10 +156,11 @@ async function createPersona(input: QuickCreateSubjectInput): Promise<void> {
         username: input.username, email: input.email, password: input.password,
       },
     })
+    notifySuccess(`人物“${created.data.persona.name}”已创建。`, '人物创建完成')
     await navigateTo(`/personas/${created.data.persona.id}`)
   }
   catch (requestError: unknown) {
-    createErrorMessage.value = getApiErrorMessage(requestError, '人物创建失败')
+    notifyError(getApiErrorMessage(requestError, '人物创建失败'), '人物创建失败')
   }
   finally {
     createLoading.value = false
@@ -173,17 +171,17 @@ async function createPersona(input: QuickCreateSubjectInput): Promise<void> {
 async function updateSelectedPersonasStatus(personaIds: string[], isEnabled: boolean): Promise<boolean> {
   if (personaIds.length === 0 || batchStatusUpdating.value !== null) return false
   batchStatusUpdating.value = isEnabled
-  actionErrorMessage.value = null
   try {
     await $fetch<ApiResponse<PersonaStatusUpdateResult>>('/api/v1/personas/status', {
       method: 'PATCH', body: { personaIds, isEnabled },
     })
     clearPersonaSelection()
     await refresh()
+    notifySuccess(`已${isEnabled ? '启用' : '禁用'} ${personaIds.length} 个人物。`)
     return true
   }
   catch (requestError: unknown) {
-    actionErrorMessage.value = getApiErrorMessage(requestError, isEnabled ? '批量启用人物失败' : '批量禁用人物失败')
+    notifyError(getApiErrorMessage(requestError, isEnabled ? '批量启用人物失败' : '批量禁用人物失败'))
     return false
   }
   finally {
@@ -231,12 +229,11 @@ async function changePageSize(pageSize: number): Promise<void> {
   <div>
     <ContentPageHeader title="人物工作区" description="查看每个人物的启用状态、灵魂版本、所属世界和资料。">
       <ContentQuickCreateSubjectModal v-model:open="showCreate" subject-type="persona" :loading="createLoading"
-        :error-message="createErrorMessage" @submit="createPersona">
+        :error-message="null" @submit="createPersona">
         <UButton icon="i-lucide-plus">创建人物</UButton>
       </ContentQuickCreateSubjectModal>
     </ContentPageHeader>
 
-    <UAlert v-if="actionErrorMessage" class="mb-5" color="error" title="操作失败" :description="actionErrorMessage" />
     <UAlert v-if="error" color="error" title="人物列表加载失败" :actions="[{ label: '重试', onClick: () => refresh() }]" />
     <section v-else class="content-section" aria-labelledby="persona-list-heading">
       <h2 id="persona-list-heading" class="visually-hidden">人物列表</h2>

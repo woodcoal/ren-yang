@@ -85,9 +85,8 @@ const metadata = reactive<UpdatePersonaInput>({
   worldId: details.value?.persona.worldId ?? null,
 })
 const deletionImpact = shallowRef<DeletionImpact | null>(null)
+const { notifySuccess, notifyError, notifyWarning } = useOperationNotifications()
 const actionLoading = shallowRef(false)
-const actionError = shallowRef<string | null>(null)
-const actionMessage = shallowRef<string | null>(null)
 /** 只有用户主动查看后才暂存在当前页面内存中的密码和账号信息。 */
 const revealedCredential = shallowRef<PersonaCredentialSecretView | null>(null)
 /** 头像更新后用于强制刷新页首同地址图片。 */
@@ -399,8 +398,6 @@ async function createPastedSource(input: CreateSourceWithTargetsInput): Promise<
  */
 async function importSourceFile(input: SourceFileSubmission): Promise<void> {
   actionLoading.value = true
-  actionError.value = null
-  actionMessage.value = null
   let succeeded = 0
   const failures: string[] = []
   try {
@@ -420,10 +417,10 @@ async function importSourceFile(input: SourceFileSubmission): Promise<void> {
     }
     if (succeeded > 0) await Promise.all([refresh(), refreshSources(), refreshGrowth()])
     if (failures.length > 0) {
-      actionError.value = `成功 ${succeeded} 个，失败 ${failures.length} 个。${failures.join('；')}`
+      notifyWarning(`成功 ${succeeded} 个，失败 ${failures.length} 个。${failures.join('；')}`, '资料导入部分完成')
     }
     else {
-      actionMessage.value = `${succeeded} 个新资料已创建并加入这个人物`
+      notifySuccess(`${succeeded} 个新资料已创建并加入这个人物`, '资料导入完成')
     }
   }
   finally {
@@ -448,7 +445,7 @@ async function inspectDeletion(): Promise<void> {
  */
 async function deletePersona(): Promise<void> {
   if (!deletionImpact.value?.canDelete) return
-  await runAction(null, async () => {
+  await runAction('人物已永久删除', async () => {
     await $fetch(`/api/v1/personas/${personaId}`, { method: 'DELETE' })
     await navigateTo('/personas')
   })
@@ -507,14 +504,12 @@ async function retryPersonaWorkspace(): Promise<void> {
  */
 async function runAction(successMessage: string | null, action: () => Promise<void>): Promise<void> {
   actionLoading.value = true
-  actionError.value = null
-  actionMessage.value = null
   try {
     await action()
-    actionMessage.value = successMessage
+    if (successMessage) notifySuccess(successMessage)
   }
   catch (requestError: unknown) {
-    actionError.value = getApiErrorMessage(requestError, '操作失败')
+    notifyError(getApiErrorMessage(requestError, '操作失败'))
   }
   finally {
     actionLoading.value = false
@@ -537,8 +532,6 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
 
     <UAlert v-if="error || !details || !soul" color="error" title="人物工作区加载失败" :actions="[{ label: '重试', onClick: retryPersonaWorkspace }]" />
     <template v-else>
-      <UAlert v-if="actionError" class="mb-5" color="error" title="操作失败" :description="actionError" />
-      <UAlert v-if="actionMessage" class="mb-5" color="success" title="操作完成" :description="actionMessage" />
       <UAlert v-if="!details.persona.isEnabled" class="mb-6" color="warning" title="人物当前已禁用" description="人物设定、成长、记忆、资料关系和历史任务仍会保留，但不能用来创建新任务。" />
 
       <div class="status-strip page-status-strip mb-6">
@@ -621,7 +614,7 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
           :linked-sources="details.sources"
           :all-sources="allSources"
           :loading="actionLoading"
-          :error-message="actionError"
+          :error-message="null"
           @link="linkSources"
           @unlink="unlinkSource"
           @status="updateLinkedSourceStatus"

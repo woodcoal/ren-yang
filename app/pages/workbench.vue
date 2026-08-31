@@ -20,6 +20,7 @@ const [{ data: personaData }, { data: profileData }, { data: templateData }, { d
   useFetch<ApiResponse<CapabilityResponse>>('/api/v1/system/capabilities'),
 ])
 const { runWithAiLoading } = useAiLoading()
+const { notifySuccess, notifyError } = useOperationNotifications()
 
 const personas = computed(() => (personaData.value?.data ?? []).filter(persona => persona.isEnabled))
 const profiles = computed(() => profileData.value?.data ?? [])
@@ -28,7 +29,6 @@ const capabilities = computed(() => capabilityData.value?.data ?? null)
 const textCapability = computed(() => capabilities.value?.textModel ?? null)
 const imageCapability = computed(() => capabilities.value?.imageModel ?? null)
 const loading = shallowRef(false)
-const errorMessage = shallowRef<string | null>(null)
 const form = reactive({
   task: 'interest' as 'interest' | 'generation',
   personaId: '',
@@ -41,9 +41,8 @@ const form = reactive({
 
 /** @returns 创建异步运行并进入可轮询的运行详情页。 */
 async function submitRun(): Promise<void> {
-  errorMessage.value = null
   if (!form.personaId || !form.content.trim()) {
-    errorMessage.value = '必须选择已发布人物并填写任务内容'
+    notifyError('必须选择已发布人物并填写任务内容', '无法创建运行')
     return
   }
   loading.value = true
@@ -65,10 +64,11 @@ async function submitRun(): Promise<void> {
           method: 'POST',
           body: { ...common, requirement: form.content, parameterProfileId: form.parameterProfileId, formatTemplateId: form.formatTemplateId, includeImages: form.includeImages },
         }))
+    notifySuccess('任务已建立，正在进入运行详情。', '运行创建完成')
     await navigateTo(`/runs/${response.data.runId}`)
   }
   catch (error: unknown) {
-    errorMessage.value = getApiErrorMessage(error, '创建运行失败')
+    notifyError(getApiErrorMessage(error, '创建运行失败'), '无法创建运行')
   }
   finally {
     loading.value = false
@@ -83,8 +83,6 @@ async function submitRun(): Promise<void> {
     </ContentPageHeader>
 
     <UAlert v-if="!textCapability?.configured" class="mb-5" color="warning" title="文本模型未配置" description="请通过环境变量配置 OpenAI-compatible 接口后重启服务；密钥不会进入数据库。" />
-    <UAlert v-if="errorMessage" class="mb-5" color="error" title="无法创建运行" :description="errorMessage" />
-
     <div class="workflow-steps" aria-label="新建任务步骤">
       <div class="workflow-step workflow-step--current"><span class="workflow-step-index">01</span><span>选择人物</span></div>
       <div class="workflow-step"><span class="workflow-step-index">02</span><span>任务类型</span></div>

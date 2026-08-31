@@ -8,10 +8,10 @@ import { getApiErrorMessage } from '../utils/apiError'
 
 const { data, error, refresh } = await useFetch<ApiResponse<ParameterProfileView[]>>('/api/v1/parameter-profiles')
 const profiles = computed(() => data.value?.data ?? [])
+const { notifySuccess, notifyError } = useOperationNotifications()
 const activeProfileCount = computed(() => profiles.value.filter(profile => profile.isActive).length)
 const latestProfile = computed(() => profiles.value[0] ?? null)
 const loading = shallowRef(false)
-const actionError = shallowRef<string | null>(null)
 const form = reactive<CreateParameterProfileInput>({
   name: '',
   values: {
@@ -42,14 +42,14 @@ const availableInputTokens = computed(() => form.values.contextWindowTokens - fo
 /** @param event Nuxt UI 已通过共享 Schema 校验的提交事件。 @returns 创建新版本并刷新列表。 */
 async function createProfile(event: FormSubmitEvent<CreateParameterProfileInput>): Promise<void> {
   loading.value = true
-  actionError.value = null
   try {
     await $fetch('/api/v1/parameter-profiles', { method: 'POST', body: event.data })
     form.name = ''
     await refresh()
+    notifySuccess('新版本已保存并用于后续新任务。', '生成设置已创建')
   }
   catch (requestError: unknown) {
-    actionError.value = getApiErrorMessage(requestError, '生成设置创建失败')
+    notifyError(getApiErrorMessage(requestError, '生成设置创建失败'), '创建失败')
   }
   finally {
     loading.value = false
@@ -72,7 +72,6 @@ function formatTime(timestamp: number): string { return new Date(timestamp).toLo
     <div class="grid gap-6 py-9 2xl:grid-cols-[32rem_minmax(0,1fr)]">
       <section class="archive-panel" aria-labelledby="profile-create-heading">
         <div class="section-heading"><div class="section-heading-copy"><p class="eyebrow">新版本</p><h2 id="profile-create-heading">新建生成设置</h2><p>同名再次保存会生成新记录，已经创建的任务不会随之变化。</p></div></div>
-        <UAlert v-if="actionError" class="mb-4" color="error" title="创建失败" :description="actionError" />
         <UForm :schema="createParameterProfileSchema" :state="form" class="space-y-4" @submit="createProfile">
           <UFormField name="name" label="方案名称" required><UInput v-model="form.name" class="w-full" /></UFormField>
           <UFormField name="values.temperature" label="内容随机程度（0–2）" description="数值越低越稳定，越高越有变化。" required><UInput v-model.number="form.values.temperature" type="number" min="0" max="2" step="0.1" class="w-full" /></UFormField>

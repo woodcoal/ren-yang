@@ -26,9 +26,8 @@ const editState = reactive<UpdateSourceInput>({
   content: '',
 })
 const relationTargets = ref<SourceCreationTarget[]>([])
+const { notifySuccess, notifyError } = useOperationNotifications()
 const actionLoading = shallowRef(false)
-const actionError = shallowRef<string | null>(null)
-const actionMessage = shallowRef<string | null>(null)
 const deletionImpact = shallowRef<DeletionImpact | null>(null)
 const enableConfirmationOpen = shallowRef(false)
 const disableConfirmationOpen = shallowRef(false)
@@ -170,7 +169,7 @@ async function inspectDeletion(): Promise<void> {
 /** @returns 永久删除和导航完成时结束。 */
 async function deleteSource(): Promise<void> {
   if (!deletionImpact.value?.canDelete) return
-  await runAction(null, async () => {
+  await runAction('资料已永久删除', async () => {
     await $fetch(`/api/v1/sources/${sourceId}`, { method: 'DELETE' })
     await navigateTo('/sources')
   })
@@ -179,15 +178,13 @@ async function deleteSource(): Promise<void> {
 /** @param successMessage 成功消息或 null。 @param action 异步操作。 @returns 操作是否成功完成。 */
 async function runAction(successMessage: string | null, action: () => Promise<void>): Promise<boolean> {
   actionLoading.value = true
-  actionError.value = null
-  actionMessage.value = null
   try {
     await action()
-    actionMessage.value = successMessage
+    if (successMessage) notifySuccess(successMessage)
     return true
   }
   catch (requestError: unknown) {
-    actionError.value = getApiErrorMessage(requestError, '操作失败')
+    notifyError(getApiErrorMessage(requestError, '操作失败'))
     return false
   }
   finally {
@@ -209,8 +206,6 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
       :actions="[{ label: '重试', onClick: () => refresh() }]"
     />
     <template v-else>
-      <UAlert v-if="actionError" class="mb-5" color="error" title="操作失败" :description="actionError" />
-      <UAlert v-if="actionMessage" class="mb-5" color="success" title="操作完成" :description="actionMessage" />
       <div class="status-strip page-status-strip mb-6">
         <div class="status-cell"><span class="status-kicker">AI 使用方式</span><strong class="status-value">{{ details.source.role === 'canon_fact' ? '确定事实' : details.source.role === 'style_sample' ? '风格参考' : '背景参考' }}</strong></div>
         <div class="status-cell"><span class="status-kicker">当前状态</span><strong class="status-value">{{ details.source.isEnabled ? '已启用' : '已禁用' }}</strong></div>

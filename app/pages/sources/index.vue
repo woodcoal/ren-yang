@@ -7,6 +7,7 @@ import type { SourceFileSubmission } from '../../components/content/SourceImport
 import { getApiErrorMessage } from '../../utils/apiError'
 
 const route = useRoute()
+const { notifySuccess, notifyError, notifyWarning } = useOperationNotifications()
 
 /**
  * 从 URL 查询参数读取大于零的整数。
@@ -74,7 +75,6 @@ const fileSourceCount = computed(() => sources.value.filter(source => source.inp
 const enabledSourceCount = computed(() => sources.value.filter(source => source.isEnabled).length)
 const showImport = shallowRef(false)
 const loading = shallowRef(false)
-const errorMessage = shallowRef<string | null>(null)
 const sourceFilterInput = shallowRef(requestedSourceFilter.value)
 const selectedSourceIds = ref<string[]>([])
 const batchEnableConfirmationOpen = shallowRef(false)
@@ -172,7 +172,6 @@ async function createPastedSource(input: CreateSourceWithTargetsInput): Promise<
  */
 async function importFiles(input: SourceFileSubmission): Promise<void> {
   loading.value = true
-  errorMessage.value = null
   let succeeded = 0
   const failures: string[] = []
   try {
@@ -193,9 +192,10 @@ async function importFiles(input: SourceFileSubmission): Promise<void> {
     if (succeeded > 0) await refreshFirstPage()
     if (failures.length === 0) {
       showImport.value = false
+      notifySuccess(`已成功导入 ${succeeded} 项资料。`, '资料导入完成')
       return
     }
-    errorMessage.value = `成功 ${succeeded} 个，失败 ${failures.length} 个。${failures.join('；')}`
+    notifyWarning(`成功 ${succeeded} 个，失败 ${failures.length} 个。${failures.join('；')}`, '资料导入部分完成')
   }
   finally {
     loading.value = false
@@ -230,14 +230,14 @@ async function clearSourceFilter(): Promise<void> {
 /** @param action 单次创建或上传动作。 @returns 动作与列表刷新结束时完成。 */
 async function runImport(action: () => Promise<void>): Promise<void> {
   loading.value = true
-  errorMessage.value = null
   try {
     await action()
     showImport.value = false
     await refreshFirstPage()
+    notifySuccess('资料已创建并加入资料库。', '资料导入完成')
   }
   catch (requestError: unknown) {
-    errorMessage.value = getApiErrorMessage(requestError, '资料导入失败')
+    notifyError(getApiErrorMessage(requestError, '资料导入失败'), '资料导入失败')
   }
   finally {
     loading.value = false
@@ -322,7 +322,6 @@ async function confirmBatchDisable(): Promise<void> {
 async function updateSelectedSourcesStatus(sourceIds: string[], isEnabled: boolean): Promise<boolean> {
   if (sourceIds.length === 0) return false
   batchStatusUpdating.value = isEnabled
-  errorMessage.value = null
   try {
     await $fetch<ApiResponse<SourceStatusUpdateResult>>('/api/v1/sources/status', {
       method: 'PATCH',
@@ -330,10 +329,11 @@ async function updateSelectedSourcesStatus(sourceIds: string[], isEnabled: boole
     })
     clearSourceSelection()
     await refresh()
+    notifySuccess(`已${isEnabled ? '启用' : '禁用'} ${sourceIds.length} 项资料。`)
     return true
   }
   catch (requestError: unknown) {
-    errorMessage.value = getApiErrorMessage(requestError, isEnabled ? '批量启用资料失败' : '批量禁用资料失败')
+    notifyError(getApiErrorMessage(requestError, isEnabled ? '批量启用资料失败' : '批量禁用资料失败'))
     return false
   }
   finally {
@@ -351,9 +351,8 @@ async function updateSelectedSourcesStatus(sourceIds: string[], isEnabled: boole
 
     <UAlert v-if="showImport && (personaError || worldError)" class="mt-6" color="warning" title="部分关联对象加载失败"
       description="仍可不选择人物或世界，直接把资料保存到资料库。" />
-    <ContentSourceImportForm v-if="showImport" class="mt-6 mb-7" :loading="loading" :error-message="errorMessage"
+    <ContentSourceImportForm v-if="showImport" class="mt-6 mb-7" :loading="loading" :error-message="null"
       :personas="personas" :worlds="worlds" show-target-picker @paste="createPastedSource" @file="importFiles" />
-    <UAlert v-if="errorMessage && !showImport" class="mt-6" color="error" title="操作失败" :description="errorMessage" />
     <UAlert v-if="error" color="error" title="资料列表加载失败" :actions="[{ label: '重试', onClick: () => refresh() }]" />
 
     <section v-else class="content-section" aria-labelledby="source-list-heading">

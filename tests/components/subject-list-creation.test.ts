@@ -1,4 +1,5 @@
 import { createError, getQuery, readBody } from 'h3'
+import { useToast } from '#imports'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DOMWrapper, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
@@ -188,6 +189,7 @@ describe('世界与人物列表快速初始化', () => {
 
   it('列表创建未选择 AI 时按原始提示词直接创建人物和世界', async () => {
     const wrapper = await mountSuspended(PersonasPage, { route: '/personas' })
+    wrapper.vm.$nuxt.runWithContext(() => useToast().clear())
     const personaPrompt = '谨慎且重视证据的档案员。'
     const personaInputs = await submitQuickCreate(wrapper, '创建人物', '直接创建人物', '林默', personaPrompt, false)
 
@@ -198,11 +200,13 @@ describe('世界与人物列表快速初始化', () => {
     }])
     expect(personaInputs.nameInput.value).toBe('林默')
     expect(personaInputs.promptTextarea.value).toBe(personaPrompt)
-    expect(document.body.textContent).toContain('创建失败')
+    await vi.waitFor(() => expect(wrapper.vm.$nuxt.runWithContext(() => useToast().toasts.value)
+      .some(notification => notification.title === '人物创建失败')).toBe(true))
     wrapper.unmount()
     document.body.innerHTML = ''
 
     const worldWrapper = await mountSuspended(WorldsPage, { route: '/worlds' })
+    worldWrapper.vm.$nuxt.runWithContext(() => useToast().clear())
     const worldPrompt = '浮岛依靠浮石能量维持稳定。'
     const worldInputs = await submitQuickCreate(worldWrapper, '创建世界', '直接创建世界', '浮岛纪元', worldPrompt, false)
 
@@ -213,7 +217,8 @@ describe('世界与人物列表快速初始化', () => {
     }])
     expect(worldInputs.nameInput.value).toBe('浮岛纪元')
     expect(worldInputs.promptTextarea.value).toBe(worldPrompt)
-    expect(document.body.textContent).toContain('创建失败')
+    await vi.waitFor(() => expect(worldWrapper.vm.$nuxt.runWithContext(() => useToast().toasts.value)
+      .some(notification => notification.title === '世界创建失败')).toBe(true))
   })
 
   it('列表创建选择 AI 时先整理提示词再创建且保留用户名称', async () => {
@@ -243,6 +248,7 @@ describe('世界与人物列表快速初始化', () => {
 
   it('列表创建 AI 整理失败时不创建对象并保留输入', async () => {
     const wrapper = await mountSuspended(PersonasPage, { route: '/personas' })
+    wrapper.vm.$nuxt.runWithContext(() => useToast().clear())
     const inputs = await submitQuickCreate(
       wrapper,
       '创建人物',
@@ -256,7 +262,8 @@ describe('世界与人物列表快速初始化', () => {
     expect(personaCreateRequests).toEqual([])
     expect(inputs.nameInput.value).toBe('失败保护人物')
     expect(inputs.promptTextarea.value).toBe('触发整理失败。')
-    expect(document.body.textContent).toContain('创建失败')
+    await vi.waitFor(() => expect(wrapper.vm.$nuxt.runWithContext(() => useToast().toasts.value)
+      .some(notification => notification.title === '人物创建失败')).toBe(true))
   })
 
   it('人物与世界列表移除设定状态且默认每页十项并保留启停确认', async () => {

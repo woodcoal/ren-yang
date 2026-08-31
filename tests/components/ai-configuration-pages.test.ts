@@ -1,9 +1,11 @@
 import { readBody } from 'h3'
+import { useToast } from '#imports'
 import { flushPromises } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
 import type { PublishAiAlgorithmConfigurationInput, UpdateAiConnectionInput } from '../../shared/schemas/aiConfiguration'
 import type { GrowthExtractAlgorithmTestInput, GrowthSynthesizeAlgorithmTestInput } from '../../shared/schemas/aiAlgorithmTest'
+import type { SystemAiSettingsValues } from '../../shared/schemas/systemAi'
 import type { AiAlgorithmTestResult } from '../../shared/types/aiAlgorithmTest'
 import type { AiAlgorithmView, AiConnectionView, AiModelDeploymentView } from '../../shared/types/aiConfiguration'
 import type { AiPromptWorkspaceView } from '../../shared/types/aiPrompt'
@@ -23,6 +25,23 @@ const deployment: AiModelDeploymentView = {
   id: '10000000-0000-4000-8000-000000000002', connectionId: connection.id,
   name: '成长模型', model: 'growth-model', modality: 'text', isEnabled: true,
   createdAt: 1_000, updatedAt: 1_000,
+}
+
+/** 页面测试使用的图片模型部署。 */
+const imageDeployment: AiModelDeploymentView = {
+  id: '10000000-0000-4000-8000-000000000003', connectionId: connection.id,
+  name: '图片模型', model: 'image-model', modality: 'image', isEnabled: true,
+  createdAt: 1_000, updatedAt: 1_000,
+}
+
+/** AI 模型页读取的完整系统 AI 设置。 */
+const systemAiSettings: SystemAiSettingsValues = {
+  textModelDeploymentId: '',
+  imageModelDeploymentId: '',
+  interestAnalysis: { temperature: 0.4, maxOutputTokens: 2_048, timeoutMs: 60_000, maxEvidenceChunks: 8 },
+  contentAnalysis: { temperature: 0.2, maxOutputTokens: 4_096, timeoutMs: 60_000 },
+  draftGeneration: { temperature: 0.4, maxOutputTokens: 2_048, timeoutMs: 60_000 },
+  feedbackClassification: { temperature: 0, maxOutputTokens: 4_096, timeoutMs: 60_000 },
 }
 
 /** 页面测试使用的已配置成长算法。 */
@@ -65,6 +84,8 @@ const algorithmPrompts: AiPromptWorkspaceView[] = algorithm.stepDefinitions.map(
 let savedConnection: UpdateAiConnectionInput | null = null
 /** 发布算法配置最后提交的正文。 */
 let savedAlgorithm: PublishAiAlgorithmConfigurationInput | null = null
+/** 默认模型表单最后提交的完整系统 AI 设置。 */
+let savedSystemAiSettings: SystemAiSettingsValues | null = null
 /** 算法测试按交互顺序提交的分步输入。 */
 const algorithmTestInputs: Array<GrowthExtractAlgorithmTestInput | GrowthSynthesizeAlgorithmTestInput> = []
 
@@ -108,7 +129,20 @@ registerEndpoint(`/api/v1/ai/connections/${connection.id}`, {
     return { data: connection }
   },
 })
-registerEndpoint('/api/v1/ai/model-deployments', () => ({ data: [deployment] }))
+registerEndpoint('/api/v1/ai/model-deployments', () => ({ data: [deployment, imageDeployment] }))
+registerEndpoint('/api/v1/system/ai-settings', () => ({ data: { values: systemAiSettings, updatedAt: null } }))
+registerEndpoint('/api/v1/system/ai-settings', {
+  method: 'PUT',
+  /**
+   * 记录默认模型选项卡提交的完整设置。
+   * @param event Nuxt 测试服务器收到的设置保存请求。
+   * @returns 模拟数据库保存后的设置视图。
+   */
+  handler: async (event) => {
+    savedSystemAiSettings = await readBody<SystemAiSettingsValues>(event)
+    return { data: { values: savedSystemAiSettings, updatedAt: 2_000 } }
+  },
+})
 registerEndpoint('/api/v1/ai/algorithms', () => ({ data: [algorithm] }))
 registerEndpoint('/api/v1/ai-prompts', () => ({ data: algorithmPrompts }))
 registerEndpoint(`/api/v1/ai/algorithms/${algorithm.code}`, {
@@ -134,6 +168,7 @@ registerEndpoint(`/api/v1/ai/algorithms/${algorithm.code}/test`, {
 beforeEach(() => {
   savedConnection = null
   savedAlgorithm = null
+  savedSystemAiSettings = null
   algorithmTestInputs.splice(0)
 })
 
@@ -163,6 +198,31 @@ describe('AI 模型与算法配置页面', () => {
     await wrapper.findAll('button').find(button => button.text().includes('模型部署'))!.trigger('click')
     expect(wrapper.find('#ai-deployment-list-heading').exists()).toBe(true)
     expect(wrapper.text()).toContain('按接口筛选')
+  })
+
+  it('在 AI 模型页直接选择并保存平台默认文本与图片模型', async () => {
+    const wrapper = await mountSuspended(AiModelsPage, { route: '/ai-models' })
+    await flushPromises()
+    wrapper.vm.$nuxt.runWithContext(() => useToast().clear())
+
+    await wrapper.findAll('button').find(button => button.text().includes('默认模型'))!.trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('默认文本与图片模型')
+    const modelSelectors = wrapper.findAllComponents({ name: 'USelect' })
+    expect(modelSelectors).toHaveLength(2)
+    await modelSelectors[0]!.setValue(deployment.id)
+    await modelSelectors[1]!.setValue(imageDeployment.id)
+    await wrapper.get('form[data-system-ai-settings-form]').trigger('submit')
+    await flushPromises()
+
+    expect(savedSystemAiSettings).toEqual({
+      ...systemAiSettings,
+      textModelDeploymentId: deployment.id,
+      imageModelDeploymentId: imageDeployment.id,
+    })
+    await vi.waitFor(() => expect(wrapper.vm.$nuxt.runWithContext(() => useToast().toasts.value)
+      .some(notification => notification.description === '默认文本与图片模型已保存。')).toBe(true))
+    expect(wrapper.text()).not.toContain('操作完成')
   })
 
   it('展示固定步骤和提示词绑定，并提交全部模型与参数作为新版本', async () => {

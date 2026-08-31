@@ -1,4 +1,5 @@
 import { readBody } from 'h3'
+import { useToast } from '#imports'
 import { defineComponent } from 'vue'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { DOMWrapper, flushPromises } from '@vue/test-utils'
@@ -136,12 +137,14 @@ describe('人物头像编辑器', () => {
     const wrapper = await mountSuspended(PersonaAvatarEditor, {
       props: { personaId: PERSONA_ID, personaName: '林默', avatarUrl: null },
     })
+    wrapper.vm.$nuxt.runWithContext(() => useToast().clear())
     const input = wrapper.get<HTMLInputElement>('[data-persona-avatar-input]')
     const file = new File(['text'], 'avatar.gif', { type: 'image/gif' })
     Object.defineProperty(input.element, 'files', { configurable: true, value: [file] })
     await input.trigger('change')
 
     expect(uploadRequests).toBe(0)
-    expect(wrapper.text()).toContain('仅支持 PNG、JPEG 或 WebP 图片')
+    await vi.waitFor(() => expect(wrapper.vm.$nuxt.runWithContext(() => useToast().toasts.value)
+      .some(notification => notification.description === '仅支持 PNG、JPEG 或 WebP 图片')).toBe(true))
   })
 })

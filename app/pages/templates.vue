@@ -8,10 +8,10 @@ import { getApiErrorMessage } from '../utils/apiError'
 
 const { data, error, refresh } = await useFetch<ApiResponse<FormatTemplateView[]>>('/api/v1/format-templates')
 const templates = computed(() => data.value?.data ?? [])
+const { notifySuccess, notifyError } = useOperationNotifications()
 const activeTemplateCount = computed(() => templates.value.filter(template => template.isActive).length)
 const latestTemplate = computed(() => templates.value[0] ?? null)
 const loading = shallowRef(false)
-const actionError = shallowRef<string | null>(null)
 const form = reactive<CreateFormatTemplateInput>({
   name: '',
   spec: { guidance: '', minimumBlocks: 1, maximumBlocks: 8 },
@@ -20,15 +20,15 @@ const form = reactive<CreateFormatTemplateInput>({
 /** @param event Nuxt UI 已通过共享 Schema 校验的提交事件。 @returns 创建模板新版本并刷新列表。 */
 async function createTemplate(event: FormSubmitEvent<CreateFormatTemplateInput>): Promise<void> {
   loading.value = true
-  actionError.value = null
   try {
     await $fetch('/api/v1/format-templates', { method: 'POST', body: event.data })
     form.name = ''
     form.spec.guidance = ''
     await refresh()
+    notifySuccess('新版本已保存并用于后续新任务。', '内容格式已创建')
   }
   catch (requestError: unknown) {
-    actionError.value = getApiErrorMessage(requestError, '内容格式创建失败')
+    notifyError(getApiErrorMessage(requestError, '内容格式创建失败'), '创建失败')
   }
   finally {
     loading.value = false
@@ -51,7 +51,6 @@ function formatTime(timestamp: number): string { return new Date(timestamp).toLo
     <div class="grid gap-6 py-9 xl:grid-cols-[26rem_minmax(0,1fr)]">
       <section class="archive-panel" aria-labelledby="template-create-heading">
         <div class="section-heading"><div class="section-heading-copy"><p class="eyebrow">新版本</p><h2 id="template-create-heading">新建内容格式</h2><p>同名再次保存会生成一条新记录，旧任务仍保留原来的格式。</p></div></div>
-        <UAlert v-if="actionError" class="mb-4" color="error" title="创建失败" :description="actionError" />
         <UForm :schema="createFormatTemplateSchema" :state="form" class="space-y-4" @submit="createTemplate">
           <UFormField name="name" label="模板名称" required><UInput v-model="form.name" class="w-full" /></UFormField>
           <UFormField name="spec.guidance" label="希望内容怎样组织" description="例如：先给结论，再分三段说明，每段带一个小标题。" required><UTextarea v-model="form.spec.guidance" :rows="7" class="w-full" /></UFormField>

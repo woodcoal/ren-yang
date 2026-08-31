@@ -7,6 +7,7 @@ import { getApiErrorMessage } from '../../utils/apiError'
 
 const route = useRoute()
 const { runWithAiLoading } = useAiLoading()
+const { notifySuccess, notifyError } = useOperationNotifications()
 
 /** @param value 查询参数原值。 @param fallback 无效时的默认值。 @returns 正整数。 */
 function readPositiveInteger(value: unknown, fallback: number): number {
@@ -48,8 +49,6 @@ const usableWorldCount = computed(() => worlds.value.filter(world => world.isEna
 const disabledWorldCount = computed(() => worlds.value.filter(world => !world.isEnabled).length)
 const showCreate = shallowRef(false)
 const loading = shallowRef(false)
-const errorMessage = shallowRef<string | null>(null)
-const actionErrorMessage = shallowRef<string | null>(null)
 const worldFilterInput = shallowRef(requestedWorldFilter.value)
 const selectedWorldIds = ref<string[]>([])
 const batchEnableConfirmationOpen = shallowRef(false)
@@ -133,7 +132,6 @@ function updateCurrentPageSelection(event: Event): void {
  */
 async function createWorld(input: QuickCreateSubjectInput): Promise<void> {
   loading.value = true
-  errorMessage.value = null
   try {
     let snapshot: SoulSnapshot = { promptText: input.promptText }
     if (input.autoAnalyze) {
@@ -152,10 +150,11 @@ async function createWorld(input: QuickCreateSubjectInput): Promise<void> {
         changeSummary: input.autoAnalyze ? 'AI 整理初始世界灵魂' : '按原文建立初始世界灵魂',
       },
     })
+    notifySuccess(`世界“${created.data.world.name}”已创建。`, '世界创建完成')
     await navigateTo(`/worlds/${created.data.world.id}`)
   }
   catch (requestError: unknown) {
-    errorMessage.value = getApiErrorMessage(requestError, '世界创建失败')
+    notifyError(getApiErrorMessage(requestError, '世界创建失败'), '世界创建失败')
   }
   finally {
     loading.value = false
@@ -166,17 +165,17 @@ async function createWorld(input: QuickCreateSubjectInput): Promise<void> {
 async function updateSelectedWorldsStatus(worldIds: string[], isEnabled: boolean): Promise<boolean> {
   if (worldIds.length === 0 || batchStatusUpdating.value !== null) return false
   batchStatusUpdating.value = isEnabled
-  actionErrorMessage.value = null
   try {
     await $fetch<ApiResponse<WorldStatusUpdateResult>>('/api/v1/worlds/status', {
       method: 'PATCH', body: { worldIds, isEnabled },
     })
     clearWorldSelection()
     await refresh()
+    notifySuccess(`已${isEnabled ? '启用' : '禁用'} ${worldIds.length} 个世界。`)
     return true
   }
   catch (requestError: unknown) {
-    actionErrorMessage.value = getApiErrorMessage(requestError, isEnabled ? '批量启用世界失败' : '批量禁用世界失败')
+    notifyError(getApiErrorMessage(requestError, isEnabled ? '批量启用世界失败' : '批量禁用世界失败'))
     return false
   }
   finally {
@@ -224,12 +223,11 @@ async function changePageSize(pageSize: number): Promise<void> {
   <div>
     <ContentPageHeader title="世界" description="世界是相关人物共用的背景与规则；人物也可以不关联世界，独立完成任务。">
       <ContentQuickCreateSubjectModal v-model:open="showCreate" subject-type="world" :loading="loading"
-        :error-message="errorMessage" @submit="createWorld">
+        :error-message="null" @submit="createWorld">
         <UButton icon="i-lucide-plus">创建世界</UButton>
       </ContentQuickCreateSubjectModal>
     </ContentPageHeader>
 
-    <UAlert v-if="actionErrorMessage" class="mb-5" color="error" title="操作失败" :description="actionErrorMessage" />
     <UAlert v-if="error" color="error" title="世界列表加载失败" :actions="[{ label: '重试', onClick: () => refresh() }]" />
 
     <section v-else class="content-section" aria-labelledby="world-list-heading">

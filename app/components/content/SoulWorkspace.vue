@@ -16,6 +16,7 @@ interface Props {
 
 const props = defineProps<Props>()
 const { runWithAiLoading } = useAiLoading()
+const { notifySuccess, notifyError } = useOperationNotifications()
 
 const emit = defineEmits<{
   /** 保存编辑框内容并立即生成新的当前版本。 */
@@ -31,8 +32,6 @@ const editor = reactive<SaveSoulVersionInput>({
 const historyOpen = shallowRef(false)
 /** AI 是否正在整理当前编辑文本。 */
 const analysisLoading = shallowRef(false)
-/** AI 整理失败后的通俗错误信息。 */
-const analysisError = shallowRef<string | null>(null)
 /** 编辑区灵魂文本的保守 Token 估算，仅用于即时提示。 */
 const estimatedTokens = computed(() => Math.ceil(new TextEncoder().encode(editor.snapshot.promptText).length / 3))
 /** 当前对象的通俗中文名称。 */
@@ -54,7 +53,6 @@ function synchronizeActiveVersion(version: SoulVersionView | null, previousVersi
   if (!version || version.id === previousVersion?.id) return
   editor.baseVersionId = version.id
   editor.snapshot.promptText = version.snapshot.promptText
-  analysisError.value = null
 }
 
 /**
@@ -65,7 +63,6 @@ function synchronizeActiveVersion(version: SoulVersionView | null, previousVersi
 function selectHistoryVersion(version: SoulVersionView): void {
   editor.baseVersionId = version.id
   editor.snapshot.promptText = version.snapshot.promptText
-  analysisError.value = null
   historyOpen.value = false
 }
 
@@ -76,7 +73,6 @@ function selectHistoryVersion(version: SoulVersionView): void {
 async function analyzePrompt(): Promise<void> {
   if (!editor.snapshot.promptText.trim() || analysisLoading.value || props.loading) return
   analysisLoading.value = true
-  analysisError.value = null
   try {
     const response = await runWithAiLoading({
       title: `AI 正在整理${subjectLabel.value}灵魂`,
@@ -87,9 +83,10 @@ async function analyzePrompt(): Promise<void> {
       body: { subjectType: props.workspace.subjectType, promptText: editor.snapshot.promptText },
     }))
     editor.snapshot.promptText = response.data.promptText
+    notifySuccess('整理结果已回填编辑框，检查后请手动保存并发布。', 'AI 整理完成')
   }
   catch (requestError: unknown) {
-    analysisError.value = getApiErrorMessage(requestError, 'AI 整理灵魂提示词失败')
+    notifyError(getApiErrorMessage(requestError, 'AI 整理灵魂提示词失败'), 'AI 整理失败')
   }
   finally {
     analysisLoading.value = false
@@ -149,8 +146,6 @@ watch(() => props.workspace.activeVersion, synchronizeActiveVersion, { immediate
             placeholder="输入人物核心人设，或世界背景、规则与边界……"
           />
         </UFormField>
-
-        <UAlert v-if="analysisError" color="error" title="AI 整理失败" :description="analysisError" />
 
         <div class="flex flex-wrap items-center justify-between gap-3">
           <div class="flex flex-wrap items-center gap-1">

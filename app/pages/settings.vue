@@ -29,9 +29,8 @@ const contextProvider = computed(() => capabilityData.value?.data.contextProvide
 const administrator = computed(() => sessionData.value?.data.administrator ?? null)
 const openVikingSettings = computed(() => openVikingSettingsData.value?.data ?? null)
 const failedSyncCount = computed(() => statusData.value?.data.failedCount ?? 0)
+const { notifySuccess, notifyError, notifyWarning } = useOperationNotifications()
 const actionLoading = shallowRef(false)
-const actionError = shallowRef<string | null>(null)
-const actionMessage = shallowRef<string | null>(null)
 const reindexConfirmed = shallowRef(false)
 
 /** @returns 主动检测外部上下文服务，不改变开关或索引。 */
@@ -40,7 +39,7 @@ async function checkProvider(): Promise<void> {
     const response = await $fetch<ApiResponse<{ healthy: boolean, version: string | null, authMode: 'api_key' }>>('/api/v1/system/providers/check', {
       method: 'POST', body: { provider: 'openviking' },
     })
-    actionMessage.value = `服务正常，版本 ${response.data.version ?? '未知'}，ADMIN Key 可管理隔离 User`
+    notifySuccess(`服务正常，版本 ${response.data.version ?? '未知'}，ADMIN Key 可管理隔离 User`, 'OpenViking 检测通过')
   })
 }
 
@@ -52,8 +51,6 @@ async function checkProvider(): Promise<void> {
 async function saveOpenVikingSettings(input: UpdateOpenVikingSettingsInput): Promise<void> {
   if (actionLoading.value) return
   actionLoading.value = true
-  actionError.value = null
-  actionMessage.value = null
   try {
     const response = await $fetch<ApiResponse<OpenVikingSettingsView>>('/api/v1/system/context/settings', {
       method: 'PUT', body: input,
@@ -64,19 +61,19 @@ async function saveOpenVikingSettings(input: UpdateOpenVikingSettingsInput): Pro
         const checked = await $fetch<ApiResponse<{ healthy: boolean, version: string | null, authMode: 'api_key' }>>('/api/v1/system/providers/check', {
           method: 'POST', body: { provider: 'openviking' },
         })
-        actionMessage.value = `设置已保存并立即生效；服务版本 ${checked.data.version ?? '未知'}，ADMIN Key 具有 User 管理权限`
+        notifySuccess(`设置已保存并立即生效；服务版本 ${checked.data.version ?? '未知'}，ADMIN Key 具有 User 管理权限`, 'OpenViking 设置已保存')
       }
       catch (error: unknown) {
-        actionError.value = `设置已保存，但服务或 ADMIN 权限检测失败：${getApiErrorMessage(error, '检测失败')}`
+        notifyWarning(`设置已保存，但服务或 ADMIN 权限检测失败：${getApiErrorMessage(error, '检测失败')}`, 'OpenViking 检测未通过')
       }
     }
     else {
-      actionMessage.value = '设置已保存；新任务已切换为 SQLite 本地检索'
+      notifySuccess('设置已保存；新任务已切换为 SQLite 本地检索', 'OpenViking 设置已保存')
     }
     await Promise.all([refreshCapabilities(), refreshStatus(), refreshOpenVikingSettings()])
   }
   catch (error: unknown) {
-    actionError.value = getApiErrorMessage(error, 'OpenViking 设置保存失败')
+    notifyError(getApiErrorMessage(error, 'OpenViking 设置保存失败'), 'OpenViking 设置保存失败')
   }
   finally {
     actionLoading.value = false
@@ -86,14 +83,16 @@ async function saveOpenVikingSettings(input: UpdateOpenVikingSettingsInput): Pro
 /** @returns 明确确认后从 SQLite 全量重建外部索引。 */
 async function reindex(): Promise<void> {
   if (!reindexConfirmed.value) {
-    actionError.value = '重建前必须勾选确认'
+    notifyError('重建前必须勾选确认', '未执行索引重建')
     return
   }
   await executeAction(async () => {
     const response = await $fetch<ApiResponse<ContextReindexResult>>('/api/v1/system/context/reindex', {
       method: 'POST', body: { provider: 'openviking', confirmed: true },
     })
-    actionMessage.value = `重建完成：成功 ${response.data.synchronized}，失败 ${response.data.failed}`
+    const result = `成功 ${response.data.synchronized}，失败 ${response.data.failed}`
+    if (response.data.failed > 0) notifyWarning(result, '索引重建部分完成')
+    else notifySuccess(result, '索引重建完成')
     reindexConfirmed.value = false
   })
 }
@@ -102,14 +101,12 @@ async function reindex(): Promise<void> {
 async function executeAction(action: () => Promise<void>): Promise<void> {
   if (actionLoading.value) return
   actionLoading.value = true
-  actionError.value = null
-  actionMessage.value = null
   try {
     await action()
     await Promise.all([refreshCapabilities(), refreshStatus()])
   }
   catch (error: unknown) {
-    actionError.value = getApiErrorMessage(error, '上下文提供器操作失败')
+    notifyError(getApiErrorMessage(error, '上下文提供器操作失败'))
   }
   finally {
     actionLoading.value = false
@@ -127,8 +124,6 @@ async function executeAction(action: () => Promise<void>): Promise<void> {
       <div class="status-cell"><span class="status-kicker">资料检索</span><strong class="status-value">{{ contextProvider === 'openviking' ? 'OpenViking 增强' : 'SQLite 本地检索' }}</strong></div>
       <div class="status-cell"><span class="status-kicker">同步失败</span><strong class="status-value">{{ failedSyncCount }}</strong></div>
     </div>
-    <UAlert v-if="actionError" class="mb-5" color="error" title="操作失败" :description="actionError" />
-    <UAlert v-if="actionMessage" class="mb-5" color="success" title="操作完成" :description="actionMessage" />
     <UAlert v-if="capabilityError || statusError || sessionError || openVikingSettingsError" class="mb-5" color="error" title="系统数据加载失败" />
 
     <div class="mt-8 mb-6 grid gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(20rem,0.6fr)]">

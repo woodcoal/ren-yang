@@ -71,9 +71,8 @@ const metadata = reactive<UpdateWorldInput>({
   summary: details.value?.world.summary ?? '',
 })
 const deletionImpact = shallowRef<DeletionImpact | null>(null)
+const { notifySuccess, notifyError, notifyWarning } = useOperationNotifications()
 const actionLoading = shallowRef(false)
-const actionError = shallowRef<string | null>(null)
-const actionMessage = shallowRef<string | null>(null)
 const enableConfirmationOpen = shallowRef(false)
 const disableConfirmationOpen = shallowRef(false)
 
@@ -308,8 +307,6 @@ async function createPastedSource(input: CreateSourceWithTargetsInput): Promise<
  */
 async function importSourceFile(input: SourceFileSubmission): Promise<void> {
   actionLoading.value = true
-  actionError.value = null
-  actionMessage.value = null
   let succeeded = 0
   const failures: string[] = []
   try {
@@ -329,10 +326,10 @@ async function importSourceFile(input: SourceFileSubmission): Promise<void> {
     }
     if (succeeded > 0) await Promise.all([refresh(), refreshSources(), refreshGrowth()])
     if (failures.length > 0) {
-      actionError.value = `成功 ${succeeded} 个，失败 ${failures.length} 个。${failures.join('；')}`
+      notifyWarning(`成功 ${succeeded} 个，失败 ${failures.length} 个。${failures.join('；')}`, '资料导入部分完成')
     }
     else {
-      actionMessage.value = `${succeeded} 个新资料已创建并加入这个世界`
+      notifySuccess(`${succeeded} 个新资料已创建并加入这个世界`, '资料导入完成')
     }
   }
   finally {
@@ -357,7 +354,7 @@ async function inspectDeletion(): Promise<void> {
  */
 async function deleteWorld(): Promise<void> {
   if (!deletionImpact.value?.canDelete) return
-  await runAction(null, async () => {
+  await runAction('世界已永久删除', async () => {
     await $fetch(`/api/v1/worlds/${worldId}`, { method: 'DELETE' })
     await navigateTo('/worlds')
   })
@@ -416,14 +413,12 @@ async function retryWorldWorkspace(): Promise<void> {
  */
 async function runAction(successMessage: string | null, action: () => Promise<void>): Promise<void> {
   actionLoading.value = true
-  actionError.value = null
-  actionMessage.value = null
   try {
     await action()
-    actionMessage.value = successMessage
+    if (successMessage) notifySuccess(successMessage)
   }
   catch (requestError: unknown) {
-    actionError.value = getApiErrorMessage(requestError, '操作失败')
+    notifyError(getApiErrorMessage(requestError, '操作失败'))
   }
   finally {
     actionLoading.value = false
@@ -441,8 +436,6 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
     <UAlert v-if="error || personaError || !details || !soul" color="error" title="世界工作区加载失败"
       :actions="[{ label: '重试', onClick: retryWorldWorkspace }]" />
     <template v-else>
-      <UAlert v-if="actionError" class="mb-5" color="error" title="操作失败" :description="actionError" />
-      <UAlert v-if="actionMessage" class="mb-5" color="success" title="操作完成" :description="actionMessage" />
       <UAlert v-if="!details.world.isEnabled" class="mb-6" color="warning" title="世界当前已禁用"
         description="世界版本、人物关系、资料和历史任务仍会保留，但该世界不会进入后续新任务。" />
 
@@ -513,7 +506,7 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
           :linked-sources="details.sources"
           :all-sources="allSources"
           :loading="actionLoading"
-          :error-message="actionError"
+          :error-message="null"
           @link="linkSources"
           @unlink="unlinkSource"
           @status="updateLinkedSourceStatus"

@@ -29,12 +29,12 @@ const form = reactive<AiPromptDraftFormState>({
   userPromptTemplate: '',
   changeSummary: '',
 })
+const { notifySuccess, notifyError } = useOperationNotifications()
 const publishConfirmationOpen = shallowRef(false)
 const deleteConfirmationOpen = shallowRef(false)
 const saving = shallowRef(false)
 const publishing = shallowRef(false)
 const deleting = shallowRef(false)
-const actionError = shallowRef<string | null>(null)
 const editorSource = computed(() => props.prompt.draft ?? props.prompt.activeVersion)
 const isDirty = computed(() => {
   const source = editorSource.value
@@ -60,7 +60,6 @@ function resetForm(prompt: AiPromptWorkspaceView): void {
   form.systemPromptTemplate = source?.systemPromptTemplate ?? ''
   form.userPromptTemplate = source?.userPromptTemplate ?? ''
   form.changeSummary = prompt.draft?.changeSummary ?? ''
-  actionError.value = null
 }
 
 /**
@@ -79,7 +78,6 @@ function notifyDirtyState(dirty: boolean): void {
  */
 async function saveDraft(event: FormSubmitEvent<SaveAiPromptDraftInput>): Promise<void> {
   saving.value = true
-  actionError.value = null
   try {
     await $fetch(`/api/v1/ai-prompts/${encodeURIComponent(props.prompt.code)}/draft`, {
       method: 'PUT',
@@ -89,10 +87,10 @@ async function saveDraft(event: FormSubmitEvent<SaveAiPromptDraftInput>): Promis
       },
     })
     emit('changed')
-    useToast().add({ title: '草稿已保存', description: '尚未影响任何新的 AI 操作。', color: 'success', icon: 'i-lucide-check' })
+    notifySuccess('尚未影响任何新的 AI 操作。', '草稿已保存')
   }
   catch (requestError: unknown) {
-    actionError.value = getApiErrorMessage(requestError, '提示词草稿保存失败')
+    notifyError(getApiErrorMessage(requestError, '提示词草稿保存失败'))
   }
   finally {
     saving.value = false
@@ -106,7 +104,6 @@ async function saveDraft(event: FormSubmitEvent<SaveAiPromptDraftInput>): Promis
 async function publishDraft(): Promise<void> {
   if (!props.prompt.draft) return
   publishing.value = true
-  actionError.value = null
   try {
     await $fetch(`/api/v1/ai-prompts/${encodeURIComponent(props.prompt.code)}/publish`, {
       method: 'POST',
@@ -114,10 +111,10 @@ async function publishDraft(): Promise<void> {
     })
     publishConfirmationOpen.value = false
     emit('changed')
-    useToast().add({ title: '新版本已发布', description: '之后创建的 AI 操作将使用该版本。', color: 'success', icon: 'i-lucide-rocket' })
+    notifySuccess('之后创建的 AI 操作将使用该版本。', '新版本已发布')
   }
   catch (requestError: unknown) {
-    actionError.value = getApiErrorMessage(requestError, '提示词发布失败')
+    notifyError(getApiErrorMessage(requestError, '提示词发布失败'))
     publishConfirmationOpen.value = false
   }
   finally {
@@ -132,15 +129,14 @@ async function publishDraft(): Promise<void> {
 async function deleteDraft(): Promise<void> {
   if (!props.prompt.draft) return
   deleting.value = true
-  actionError.value = null
   try {
     await $fetch(`/api/v1/ai-prompts/${encodeURIComponent(props.prompt.code)}/draft`, { method: 'DELETE' })
     deleteConfirmationOpen.value = false
     emit('changed')
-    useToast().add({ title: '草稿已删除', description: '当前发布版本保持不变。', color: 'neutral', icon: 'i-lucide-trash-2' })
+    notifySuccess('当前发布版本保持不变。', '草稿已删除')
   }
   catch (requestError: unknown) {
-    actionError.value = getApiErrorMessage(requestError, '提示词草稿删除失败')
+    notifyError(getApiErrorMessage(requestError, '提示词草稿删除失败'))
     deleteConfirmationOpen.value = false
   }
   finally {
@@ -172,8 +168,6 @@ function formatTime(timestamp: number): string {
 
 <template>
   <div class="space-y-5" data-ai-prompt-editor :data-prompt-code="prompt.code">
-    <UAlert v-if="actionError" color="error" title="操作失败" :description="actionError" />
-
     <section class="archive-panel" :aria-labelledby="`prompt-editor-${prompt.code}`">
       <div class="section-heading">
         <div class="section-heading-copy">

@@ -25,9 +25,9 @@ interface Emits {
 const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
 const { runWithAiLoading } = useAiLoading()
+const { notifySuccess, notifyError } = useOperationNotifications()
 const fileInput = useTemplateRef<HTMLInputElement>('fileInput')
 const activeAction = shallowRef<'upload' | 'generate' | null>(null)
-const errorMessage = shallowRef<string | null>(null)
 const avatarRevision = shallowRef(0)
 const customGenerationOpen = shallowRef(false)
 /** 自定义生成弹窗的唯一表单状态；生成失败时保留输入以便修改后重试。 */
@@ -54,14 +54,13 @@ async function uploadAvatar(event: Event): Promise<void> {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
   if (!file) return
-  errorMessage.value = null
   if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
-    errorMessage.value = '仅支持 PNG、JPEG 或 WebP 图片'
+    notifyError('仅支持 PNG、JPEG 或 WebP 图片', '头像文件无效')
     input.value = ''
     return
   }
   if (file.size > 2 * 1024 * 1024) {
-    errorMessage.value = '上传头像不能超过 2 MB'
+    notifyError('上传头像不能超过 2 MB', '头像文件过大')
     input.value = ''
     return
   }
@@ -76,9 +75,10 @@ async function uploadAvatar(event: Event): Promise<void> {
     })
     avatarRevision.value += 1
     emit('updated')
+    notifySuccess('新头像已保存。', '头像上传完成')
   }
   catch (error: unknown) {
-    errorMessage.value = getApiErrorMessage(error, '头像上传失败')
+    notifyError(getApiErrorMessage(error, '头像上传失败'), '头像上传失败')
   }
   finally {
     activeAction.value = null
@@ -93,7 +93,6 @@ async function uploadAvatar(event: Event): Promise<void> {
  */
 async function generateAvatar(input: GeneratePersonaAvatarInput): Promise<void> {
   activeAction.value = 'generate'
-  errorMessage.value = null
   try {
     await runWithAiLoading({
       title: 'AI 正在生成人物头像',
@@ -106,9 +105,10 @@ async function generateAvatar(input: GeneratePersonaAvatarInput): Promise<void> 
     avatarRevision.value += 1
     emit('updated')
     customGenerationState.additionalPrompt = ''
+    notifySuccess('新头像已生成并保存。', '头像生成完成')
   }
   catch (error: unknown) {
-    errorMessage.value = getApiErrorMessage(error, '头像生成失败')
+    notifyError(getApiErrorMessage(error, '头像生成失败'), '头像生成失败')
   }
   finally {
     activeAction.value = null
@@ -128,7 +128,6 @@ async function generateDefaultAvatar(): Promise<void> {
  * @returns 无返回值。
  */
 function openCustomGeneration(): void {
-  errorMessage.value = null
   customGenerationOpen.value = true
 }
 
@@ -152,7 +151,6 @@ async function submitCustomGeneration(event: FormSubmitEvent<GeneratePersonaAvat
       <div class="persona-avatar-copy">
         <h2 class="font-semibold text-highlighted">人物头像</h2>
         <p class="mt-1 text-sm text-muted">上传现有图片，或根据人物当前名称和灵魂提示词生成头像；系统会自动居中裁切并统一保存为 512×512。</p>
-        <UAlert v-if="errorMessage" class="mt-3" color="error" title="头像更新失败" :description="errorMessage" />
         <div class="mt-4 flex flex-wrap gap-2">
           <input ref="fileInput" data-persona-avatar-input class="sr-only" type="file"
             accept="image/png,image/jpeg,image/webp" @change="uploadAvatar">
@@ -177,7 +175,6 @@ async function submitCustomGeneration(event: FormSubmitEvent<GeneratePersonaAvat
           <UTextarea v-model="customGenerationState.additionalPrompt" class="w-full" :rows="6" autoresize :maxrows="12"
             maxlength="2000" placeholder="例如：水彩插画风格，暖色逆光，深蓝色大衣，神情沉静，背景为模糊的旧档案馆。" :disabled="activeAction !== null" />
         </UFormField>
-        <UAlert v-if="errorMessage" color="error" title="头像生成失败" :description="errorMessage" />
         <div class="flex justify-end gap-2">
           <UButton type="button" color="neutral" variant="ghost" :disabled="activeAction !== null"
             @click="customGenerationOpen = false">取消</UButton>

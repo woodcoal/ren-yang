@@ -21,8 +21,8 @@ interface GrowthTestContinuation {
 const soulText = shallowRef('')
 const baselineText = shallowRef('')
 const materialText = shallowRef('')
+const { notifySuccess, notifyError } = useOperationNotifications()
 const running = shallowRef(false)
-const errorMessage = shallowRef<string | null>(null)
 const steps = shallowRef<AiAlgorithmTestStepResult[]>([])
 const configurationVersion = shallowRef<number | null>(null)
 const continuation = shallowRef<GrowthTestContinuation | null>(null)
@@ -54,7 +54,6 @@ const resultTitle = computed(() => {
 async function runTest(): Promise<void> {
   if (!canRun.value || running.value) return
   running.value = true
-  errorMessage.value = null
   try {
     const body = isGrowth.value
       ? continuation.value
@@ -77,11 +76,16 @@ async function runTest(): Promise<void> {
       : [...steps.value.filter(item => item.stepKey !== step.stepKey), step]
     if (step.stepKey === 'extract' && step.status === 'succeeded') {
       continuation.value = readGrowthContinuation(step.nextStepInput)
-      if (!continuation.value) errorMessage.value = '第一步未返回有效的第二步输入，请重新开始测试'
+      if (!continuation.value) {
+        notifyError('第一步未返回有效的第二步输入，请重新开始测试', '算法测试失败')
+        return
+      }
     }
+    if (step.status === 'failed') notifyError(step.error ?? '当前步骤没有完成', `${step.stepName}测试失败`)
+    else notifySuccess(step.stepKey === 'extract' && isGrowth.value ? '第一步已通过，可继续测试第二步。' : '当前步骤已通过真实调用测试。', '算法测试通过')
   }
   catch (error: unknown) {
-    errorMessage.value = getApiErrorMessage(error, '算法测试失败')
+    notifyError(getApiErrorMessage(error, '算法测试失败'), '测试请求失败')
   }
   finally {
     running.value = false
@@ -96,7 +100,6 @@ function resetTest(): void {
   steps.value = []
   configurationVersion.value = null
   continuation.value = null
-  errorMessage.value = null
 }
 
 /**
@@ -179,8 +182,6 @@ function formatUsage(step: AiAlgorithmTestStepResult): string {
               <span v-if="algorithm.activeConfigurationVersion === null">请先发布算法配置</span>
             </div>
           </form>
-
-          <UAlert v-if="errorMessage" color="error" title="测试请求失败" :description="errorMessage" />
 
           <div v-if="steps.length" class="test-results" aria-live="polite">
             <div class="test-result-heading">
