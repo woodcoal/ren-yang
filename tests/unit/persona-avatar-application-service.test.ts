@@ -53,6 +53,8 @@ const VERSION: PersonaVersionRecord = {
 class RecordingImageModel implements ImageModelPort {
   /** 收到的全部图片生成请求。 */
   public readonly requests: ImageModelRequest[] = []
+  /** 是否模拟算法二次裁剪并返回裁剪前原图。 */
+  public retainOriginal = false
 
   /**
    * 返回固定非敏感模型配置。
@@ -69,7 +71,13 @@ class RecordingImageModel implements ImageModelPort {
    */
   async generate(request: ImageModelRequest): Promise<ImageModelResponse> {
     this.requests.push(request)
-    return { bytes: PNG_BYTES, declaredMediaType: 'image/png' }
+    return {
+      bytes: PNG_BYTES,
+      declaredMediaType: 'image/png',
+      ...(this.retainOriginal
+        ? { original: { bytes: PNG_BYTES, declaredMediaType: 'image/png' } }
+        : {}),
+    }
   }
 }
 
@@ -150,14 +158,17 @@ describe('人物头像应用服务', () => {
     const metadata = await sharp(avatar.bytes).metadata()
 
     expect(summary.avatarUrl).toBe(`/api/v1/personas/${PERSONA_ID}/avatar`)
+    expect(summary.avatarOriginalUrl).toBeNull()
     expect(avatar.mediaType).toBe('image/png')
     expect(metadata).toMatchObject({ width: 640, height: 320 })
   })
 
   it('使用人物名称和当前灵魂请求 1:1 图片并原样保存模型结果', async () => {
+    imageModel.retainOriginal = true
     const summary = await service.generatePersonaAvatar(PERSONA_ID, { additionalPrompt: '' })
 
     expect(summary.avatarUrl).toBe(`/api/v1/personas/${PERSONA_ID}/avatar`)
+    expect(summary.avatarOriginalUrl).toBe(`/api/v1/personas/${PERSONA_ID}/avatar?variant=original`)
     expect(imageModel.requests).toHaveLength(1)
     expect(imageModel.requests[0]).toMatchObject({ aspectRatio: '1:1', timeoutMs: 120_000 })
     expect(imageModel.requests[0]?.prompt).toContain('人物名称：林默')
@@ -165,6 +176,7 @@ describe('人物头像应用服务', () => {
     expect(imageModel.requests[0]?.prompt).toContain('不得出现文字')
     const avatar = await service.getPersonaAvatar(PERSONA_ID)
     await expect(sharp(avatar.bytes).metadata()).resolves.toMatchObject({ width: 640, height: 320 })
+    await expect(service.getPersonaAvatar(PERSONA_ID, 'original')).resolves.toMatchObject({ bytes: PNG_BYTES })
   })
 
   it('把自定义视觉要求追加到人物设定后并保留头像安全约束', async () => {

@@ -79,7 +79,6 @@ function submit(): void {
           { label: 'enable_thinking: false', value: 'enable_thinking' },
           { label: 'reasoning_effort: none', value: 'reasoning_effort' },
           { label: 'reasoning: { enabled: false }', value: 'reasoning' },
-          { label: 'reasoning: { effort: none }', value: 'reasoning_effort_object' },
         ]" />
       </UFormField>
       <UCheckbox v-model="form.isEnabled" label="允许新算法配置使用此模型" />

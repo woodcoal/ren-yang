@@ -28,8 +28,7 @@ const contextProvider = computed(() => capabilityData.value?.data.contextProvide
 const administrator = computed(() => sessionData.value?.data.administrator ?? null)
 const openVikingSettings = computed(() => openVikingSettingsData.value?.data ?? null)
 const failedSyncCount = computed(() => statusData.value?.data.failedCount ?? 0)
-const retryingSyncCount = computed(() => statusData.value?.data.retryingCount ?? 0)
-const attentionSyncCount = computed(() => statusData.value?.data.attentionCount ?? 0)
+
 const syncRuntime = computed(() => statusData.value?.data.runtime ?? null)
 const { notifySuccess, notifyError, notifyWarning } = useOperationNotifications()
 const actionLoading = shallowRef(false)
@@ -130,23 +129,26 @@ async function executeAction(action: () => Promise<void>): Promise<void> {
 <template>
   <div>
     <ContentPageHeader title="系统中心" description="按能力、检索同步和备份分区检查系统；浏览器只显示可确认的非敏感状态。" />
-    <div class="status-strip page-status-strip" aria-label="系统能力状态摘要">
-      <div class="status-cell"><span class="status-kicker">文本生成</span><strong class="status-value">{{ capabilities?.textModel.configured ? '已配置' : '未配置' }}</strong></div>
-      <div class="status-cell"><span class="status-kicker">图片能力</span><strong class="status-value">{{ capabilities?.imageModel.configured ? '已配置' : '未配置' }}</strong></div>
-      <div class="status-cell"><span class="status-kicker">资料检索</span><strong class="status-value">{{ contextProvider === 'openviking' ? 'OpenViking 增强' : 'SQLite 本地检索' }}</strong></div>
-      <div class="status-cell"><span class="status-kicker">等待自动重试</span><strong class="status-value">{{ retryingSyncCount }}</strong></div>
-      <div class="status-cell"><span class="status-kicker">需要处理</span><strong class="status-value">{{ attentionSyncCount }}</strong></div>
-    </div>
-    <UAlert v-if="capabilityError || statusError || sessionError || openVikingSettingsError" class="mb-5" color="error" title="系统数据加载失败" />
+
+    <UAlert v-if="capabilityError || statusError || sessionError || openVikingSettingsError" class="mb-5" color="error"
+      title="系统数据加载失败" />
 
     <div class="mt-8 mb-6 grid gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(20rem,0.6fr)]">
       <SystemCapabilityStatusPanel v-if="capabilities" :capabilities="capabilities" show-limits />
       <UAlert v-else color="error" title="能力状态不可用" description="无法安全展示模型能力和系统默认运行限制。" />
       <UCard>
-        <template #header><h2 class="font-semibold text-highlighted">账户安全</h2></template>
+        <template #header>
+          <h2 class="font-semibold text-highlighted">账户安全</h2>
+        </template>
         <dl v-if="administrator" class="space-y-3 text-sm">
-          <div><dt class="text-muted">当前管理员</dt><dd class="mt-1 font-medium text-highlighted">{{ administrator.username }}</dd></div>
-          <div><dt class="text-muted">账户范围</dt><dd class="mt-1">本机唯一管理员</dd></div>
+          <div>
+            <dt class="text-muted">当前管理员</dt>
+            <dd class="mt-1 font-medium text-highlighted">{{ administrator.username }}</dd>
+          </div>
+          <div>
+            <dt class="text-muted">账户范围</dt>
+            <dd class="mt-1">本机唯一管理员</dd>
+          </div>
         </dl>
         <UAlert class="mt-5" color="neutral" title="密码不在浏览器内维护" description="忘记密码时停止应用并执行本机维护命令；重置会撤销既有会话并写入审计。" />
       </UCard>
@@ -154,54 +156,70 @@ async function executeAction(action: () => Promise<void>): Promise<void> {
 
     <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_24rem]">
       <section class="archive-panel" aria-labelledby="openviking-settings-heading">
-        <div class="section-heading"><div class="section-heading-copy"><p class="eyebrow">检索与同步</p><h2 id="openviking-settings-heading">OpenViking 上下文索引</h2><p>SQLite 保存业务事实，OpenViking 只承担按世界和人物隔离的上下文增强。</p></div></div>
+        <div class="section-heading">
+          <div class="section-heading-copy">
+            <p class="eyebrow">检索与同步</p>
+            <h2 id="openviking-settings-heading">OpenViking 上下文索引</h2>
+            <p>SQLite 保存业务事实，OpenViking 只承担按世界和人物隔离的上下文增强。</p>
+          </div>
+        </div>
         <dl v-if="capability" class="grid gap-4 sm:grid-cols-2">
-          <div><dt class="text-xs text-muted">已配置</dt><dd class="mt-1 font-medium">{{ capability.configured ? '是' : '否' }}</dd></div>
-          <div><dt class="text-xs text-muted">已启用</dt><dd class="mt-1 font-medium">{{ capability.enabled ? '是' : '否' }}</dd></div>
-          <div><dt class="text-xs text-muted">新运行提供器</dt><dd class="mt-1 font-medium">{{ contextProvider }}</dd></div>
-          <div><dt class="text-xs text-muted">服务来源</dt><dd class="mt-1 break-all font-medium">{{ capability.endpointOrigin ?? '未配置' }}</dd></div>
+          <div>
+            <dt class="text-xs text-muted">已配置</dt>
+            <dd class="mt-1 font-medium">{{ capability.configured ? '是' : '否' }}</dd>
+          </div>
+          <div>
+            <dt class="text-xs text-muted">已启用</dt>
+            <dd class="mt-1 font-medium">{{ capability.enabled ? '是' : '否' }}</dd>
+          </div>
+          <div>
+            <dt class="text-xs text-muted">新运行提供器</dt>
+            <dd class="mt-1 font-medium">{{ contextProvider }}</dd>
+          </div>
+          <div>
+            <dt class="text-xs text-muted">服务来源</dt>
+            <dd class="mt-1 break-all font-medium">{{ capability.endpointOrigin ?? '未配置' }}</dd>
+          </div>
         </dl>
-        <UAlert class="mt-5" color="neutral" title="SQLite 始终保存原始数据" description="OpenViking 不可用时，新任务会改用本地全文搜索；远端同步任务会保留并在服务恢复后重试。已经创建的任务不会中途更换搜索方式。" />
-        <UAlert
-          v-if="syncRuntime?.state === 'degraded'"
-          class="mt-4"
-          color="warning"
-          title="OpenViking 已进入自动降级"
+        <UAlert class="mt-5" color="neutral" title="SQLite 始终保存原始数据"
+          description="OpenViking 不可用时，新任务会改用本地全文搜索；远端同步任务会保留并在服务恢复后重试。已经创建的任务不会中途更换搜索方式。" />
+        <UAlert v-if="syncRuntime?.state === 'degraded'" class="mt-4" color="warning" title="OpenViking 已进入自动降级"
           :description="syncRuntime.retryAfter === null
             ? `自动重试已停止：${syncRuntime.lastError ?? '需要管理员检查 OpenViking'}`
-            : `新任务使用 SQLite；下次远端探测时间 ${new Date(syncRuntime.retryAfter).toLocaleString('zh-CN')}。${syncRuntime.lastError ?? ''}`"
-        />
-        <SystemOpenVikingSettingsForm
-          v-if="openVikingSettings"
-          :key="openVikingSettings.updatedAt ?? 'default'"
-          :settings="openVikingSettings"
-          :loading="actionLoading"
-          @submit="saveOpenVikingSettings"
-        />
+            : `新任务使用 SQLite；下次远端探测时间 ${new Date(syncRuntime.retryAfter).toLocaleString('zh-CN')}。${syncRuntime.lastError ?? ''}`" />
+        <SystemOpenVikingSettingsForm v-if="openVikingSettings" :key="openVikingSettings.updatedAt ?? 'default'"
+          :settings="openVikingSettings" :loading="actionLoading" @submit="saveOpenVikingSettings" />
         <div class="mt-5 flex flex-wrap gap-2">
           <UButton :loading="actionLoading" color="neutral" variant="soft" @click="checkProvider">检测服务</UButton>
-          <UButton v-if="failedSyncCount > 0" :loading="actionLoading" color="neutral" variant="soft" icon="i-lucide-refresh-cw" @click="retryAllFailed">重新同步失败资料</UButton>
+          <UButton v-if="failedSyncCount > 0" :loading="actionLoading" color="neutral" variant="soft"
+            icon="i-lucide-refresh-cw" @click="retryAllFailed">重新同步失败资料</UButton>
         </div>
         <div class="mt-6 border-t border-default pt-5">
-          <UAlert
-            class="mb-4"
-            color="warning"
-            title="全量重建会替换全部远端投影"
-            description="系统先检查 OpenViking 处理队列；通过后保留有效世界 User，清理人样管理的资料、Session 和人物 Peer，再按世界 User／人物 Peer 隔离关系从 SQLite 完整重放。预检失败时不会清理远端数据。"
-          />
+          <UAlert class="mb-4" color="warning" title="全量重建会替换全部远端投影"
+            description="系统先检查 OpenViking 处理队列；通过后保留有效世界 User，清理人样管理的资料、Session 和人物 Peer，再按世界 User／人物 Peer 隔离关系从 SQLite 完整重放。预检失败时不会清理远端数据。" />
           <UCheckbox v-model="reindexConfirmed" label="确认删除人样专属远端索引并从 SQLite 全量重建" />
-          <UButton class="mt-3" :loading="actionLoading" color="warning" variant="soft" @click="reindex">全量重建索引</UButton>
+          <UButton class="mt-3" :loading="actionLoading" color="warning" variant="soft" @click="reindex">全量重建索引
+          </UButton>
         </div>
       </section>
 
       <UCard>
-        <template #header><h2 class="font-semibold text-highlighted">日志与审计</h2></template>
+        <template #header>
+          <h2 class="font-semibold text-highlighted">日志与审计</h2>
+        </template>
         <p class="text-sm text-muted">同步日志和关键管理动作已迁移到独立页面，通过服务端分页查看，避免系统中心堆积长列表。</p>
         <dl class="mt-5 grid gap-3 text-sm">
-          <div><dt class="text-muted">当前同步失败</dt><dd class="mt-1 font-medium text-highlighted">{{ failedSyncCount }} 项</dd></div>
-          <div><dt class="text-muted">记录范围</dt><dd class="mt-1">OpenViking 同步与系统审计</dd></div>
+          <div>
+            <dt class="text-muted">当前同步失败</dt>
+            <dd class="mt-1 font-medium text-highlighted">{{ failedSyncCount }} 项</dd>
+          </div>
+          <div>
+            <dt class="text-muted">记录范围</dt>
+            <dd class="mt-1">OpenViking 同步与系统审计</dd>
+          </div>
         </dl>
-        <UButton class="mt-5" to="/system-records" color="neutral" variant="soft" icon="i-lucide-scroll-text">查看日志与审计</UButton>
+        <UButton class="mt-5" to="/system-records" color="neutral" variant="soft" icon="i-lucide-scroll-text">查看日志与审计
+        </UButton>
       </UCard>
     </div>
     <div class="mt-6">

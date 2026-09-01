@@ -102,6 +102,8 @@ export interface PersonaSummary {
   name: string
   /** 已设置头像时返回受认证保护的读取地址，否则为 null。 */
   avatarUrl: string | null
+  /** 模型发生二次裁剪时返回裁剪前原图读取地址，否则为 null。 */
+  avatarOriginalUrl: string | null
   /** 历史兼容字段；不再参与业务或界面展示。 */
   origin: 'original' | 'source_based' | 'hybrid'
   /** 当前已发布版本 UUID。 */

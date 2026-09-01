@@ -1,6 +1,7 @@
 import type { H3Event } from 'h3'
-import { getRouterParam, setResponseHeader } from 'h3'
+import { getQuery, getRouterParam, setResponseHeader } from 'h3'
 import { resourceIdSchema } from '#shared/schemas/content'
+import { imageAssetVariantSchema } from '#shared/schemas/generation'
 import { executeBinaryController } from '../../../../presentation/http/controller'
 
 /**
@@ -12,7 +13,8 @@ async function handleGetPersonaAvatar(event: H3Event) {
   setResponseHeader(event, 'cache-control', 'no-store')
   return await executeBinaryController(event, async () => {
     const personaId = resourceIdSchema.parse(getRouterParam(event, 'personaId'))
-    return await event.context.applicationServices.content.getPersonaAvatar(personaId)
+    const variant = imageAssetVariantSchema.parse(getQuery(event).variant)
+    return await event.context.applicationServices.content.getPersonaAvatar(personaId, variant)
   })
 }
 

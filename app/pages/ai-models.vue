@@ -207,93 +207,119 @@ async function checkDeployment(deployment: AiModelDeploymentView): Promise<void>
 <template>
   <div>
     <ContentPageHeader title="模型配置" description="维护 AI 接口连接和具体模型部署；算法使用模型部署，不直接保存连接凭据。" />
-    <div class="status-strip page-status-strip" aria-label="AI 模型状态摘要">
-      <div class="status-cell"><span class="status-kicker">接口连接</span><strong class="status-value">{{ connections.length }}</strong></div>
-      <div class="status-cell"><span class="status-kicker">模型部署</span><strong class="status-value">{{ deployments.length }}</strong></div>
-      <div class="status-cell"><span class="status-kicker">启用文本模型</span><strong class="status-value">{{ deployments.filter(item => item.modality === 'text' && item.isEnabled).length }}</strong></div>
-      <div class="status-cell"><span class="status-kicker">凭据展示</span><strong class="status-value">仅显示已配置</strong></div>
-    </div>
 
     <div class="model-setup-path" aria-label="AI 模型配置顺序">
-      <button type="button" :class="{ 'model-setup-step--active': activeView === 'connections' }" class="model-setup-step" @click="switchView('connections')">
-        <span>1</span><span><strong>接口连接</strong><small>端点、协议和加密 API Key</small></span><UBadge :color="connections.length ? 'success' : 'warning'" variant="subtle">{{ connections.length ? '已建立' : '先配置' }}</UBadge>
+      <button type="button" :class="{ 'model-setup-step--active': activeView === 'connections' }"
+        class="model-setup-step" @click="switchView('connections')">
+        <span>1</span><span><strong>接口连接</strong><small>端点、协议和加密 API Key</small></span>
+        <UBadge :color="connections.length ? 'success' : 'warning'" variant="subtle">{{ connections.length ? '已建立' :
+          '先配置' }}</UBadge>
       </button>
-      <button type="button" :class="{ 'model-setup-step--active': activeView === 'deployments' }" class="model-setup-step" @click="switchView('deployments')">
-        <span>2</span><span><strong>模型部署</strong><small>一个接口可登记多个模型</small></span><UBadge :color="deployments.length ? 'success' : 'neutral'" variant="subtle">{{ deployments.length }} 个</UBadge>
+      <button type="button" :class="{ 'model-setup-step--active': activeView === 'deployments' }"
+        class="model-setup-step" @click="switchView('deployments')">
+        <span>2</span><span><strong>模型部署</strong><small>一个接口可登记多个模型</small></span>
+        <UBadge :color="deployments.length ? 'success' : 'neutral'" variant="subtle">{{ deployments.length }} 个</UBadge>
       </button>
-      <button type="button" :class="{ 'model-setup-step--active': activeView === 'defaults' }" class="model-setup-step" @click="switchView('defaults')">
-        <span>3</span><span><strong>默认模型</strong><small>算法未选择模型时回退使用</small></span><UBadge :color="defaultModelValues.textModelDeploymentId ? 'success' : 'warning'" variant="subtle">{{ defaultModelValues.textModelDeploymentId ? '已设置' : '待设置' }}</UBadge>
+      <button type="button" :class="{ 'model-setup-step--active': activeView === 'defaults' }" class="model-setup-step"
+        @click="switchView('defaults')">
+        <span>3</span><span><strong>默认模型</strong><small>算法未选择模型时回退使用</small></span>
+        <UBadge :color="defaultModelValues.textModelDeploymentId ? 'success' : 'warning'" variant="subtle">{{
+          defaultModelValues.textModelDeploymentId ? '已设置' : '待设置' }}</UBadge>
       </button>
     </div>
 
     <div class="space-y-5 py-9">
-      <UAlert color="neutral" variant="subtle" title="凭据安全边界" description="API Key 使用 AES-256-GCM 加密存入数据库；本地主密钥不入库，浏览器、审计和运行快照均不返回明文。" />
-      <UAlert v-if="connectionRequest.error.value || deploymentRequest.error.value || defaultModelsRequest.error.value" color="error" title="AI 模型配置加载失败" />
+      <UAlert color="neutral" variant="subtle" title="凭据安全边界"
+        description="API Key 使用 AES-256-GCM 加密存入数据库；本地主密钥不入库，浏览器、审计和运行快照均不返回明文。" />
+      <UAlert v-if="connectionRequest.error.value || deploymentRequest.error.value || defaultModelsRequest.error.value"
+        color="error" title="AI 模型配置加载失败" />
 
       <template v-if="activeView === 'connections'">
         <section class="archive-panel" aria-labelledby="ai-connection-list-heading">
           <div class="section-heading">
-            <div class="section-heading-copy"><p class="eyebrow">第一步</p><h2 id="ai-connection-list-heading">接口连接</h2><p>每个连接代表一个独立端点和其加密凭据。</p></div>
+            <div class="section-heading-copy">
+              <p class="eyebrow">第一步</p>
+              <h2 id="ai-connection-list-heading">接口连接</h2>
+              <p>每个连接代表一个独立端点和其加密凭据。</p>
+            </div>
             <UButton icon="i-lucide-plus" @click="createConnection">新增接口</UButton>
           </div>
-          <AiConfigurationAiConnectionEditor
-            v-if="connectionEditorOpen"
-            :key="`${selectedConnection?.id ?? 'new'}-${selectedConnection?.updatedAt ?? 0}`"
-            class="mb-6"
-            :connection="selectedConnection"
-            :loading="savingConnection"
-            @save="saveConnection"
-            @cancel="closeConnectionEditor"
-          />
+          <AiConfigurationAiConnectionEditor v-if="connectionEditorOpen"
+            :key="`${selectedConnection?.id ?? 'new'}-${selectedConnection?.updatedAt ?? 0}`" class="mb-6"
+            :connection="selectedConnection" :loading="savingConnection" @save="saveConnection"
+            @cancel="closeConnectionEditor" />
           <div v-if="connections.length" class="log-list">
             <article v-for="connection in connections" :key="connection.id" class="log-row">
-              <span class="log-row-meta">{{ connection.protocol === 'openai_compatible' ? 'OpenAI 兼容' : connection.protocol }}</span>
-              <div class="log-row-main"><strong class="log-row-title">{{ connection.name }}</strong><p class="break-all text-sm text-muted">{{ connection.endpoint }}</p><p class="break-all text-xs text-muted">UserAgent：{{ connection.userAgent || '运行环境默认值' }}</p></div>
-              <div class="log-row-end flex flex-wrap items-center justify-end gap-2"><UBadge color="neutral" variant="subtle">{{ connection.hasApiKey ? '密钥已配置' : '无密钥' }}</UBadge><UBadge :color="connection.isEnabled ? 'success' : 'neutral'" variant="subtle">{{ connection.isEnabled ? '已启用' : '未启用' }}</UBadge><UButton size="xs" color="neutral" variant="soft" @click="editConnection(connection)">编辑</UButton></div>
+              <span class="log-row-meta">{{ connection.protocol === 'openai_compatible' ? 'OpenAI 兼容' :
+                connection.protocol }}</span>
+              <div class="log-row-main"><strong class="log-row-title">{{ connection.name }}</strong>
+                <p class="break-all text-sm text-muted">{{ connection.endpoint }}</p>
+                <p class="break-all text-xs text-muted">UserAgent：{{ connection.userAgent || '运行环境默认值' }}</p>
+              </div>
+              <div class="log-row-end flex flex-wrap items-center justify-end gap-2">
+                <UBadge color="neutral" variant="subtle">{{ connection.hasApiKey ? '密钥已配置' : '无密钥' }}</UBadge>
+                <UBadge :color="connection.isEnabled ? 'success' : 'neutral'" variant="subtle">{{ connection.isEnabled ?
+                  '已启用' : '未启用' }}</UBadge>
+                <UButton size="xs" color="neutral" variant="soft" @click="editConnection(connection)">编辑</UButton>
+              </div>
             </article>
           </div>
-          <div v-else-if="!connectionEditorOpen" class="content-empty-state"><div><strong>还没有接口连接</strong><p>先录入端点与 API Key，再登记具体模型。</p><UButton class="mt-4" @click="createConnection">创建第一个接口</UButton></div></div>
+          <div v-else-if="!connectionEditorOpen" class="content-empty-state">
+            <div><strong>还没有接口连接</strong>
+              <p>先录入端点与 API Key，再登记具体模型。</p>
+              <UButton class="mt-4" @click="createConnection">创建第一个接口</UButton>
+            </div>
+          </div>
         </section>
       </template>
 
       <template v-else-if="activeView === 'deployments'">
         <section class="archive-panel" aria-labelledby="ai-deployment-list-heading">
           <div class="section-heading">
-            <div class="section-heading-copy"><p class="eyebrow">第二步</p><h2 id="ai-deployment-list-heading">模型部署</h2><p>算法只选择具体部署，同一接口可登记多个不同模型。</p></div>
+            <div class="section-heading-copy">
+              <p class="eyebrow">第二步</p>
+              <h2 id="ai-deployment-list-heading">模型部署</h2>
+              <p>算法只选择具体部署，同一接口可登记多个不同模型。</p>
+            </div>
             <UButton icon="i-lucide-plus" :disabled="connections.length === 0" @click="createDeployment">新增模型</UButton>
           </div>
-          <UAlert v-if="connections.length === 0" class="mb-5" color="warning" title="请先建立接口连接" description="模型必须属于一个已知端点。" :actions="[{ label: '返回第一步', onClick: () => switchView('connections') }]" />
-          <AiConfigurationAiModelDeploymentEditor
-            v-if="deploymentEditorOpen"
+          <UAlert v-if="connections.length === 0" class="mb-5" color="warning" title="请先建立接口连接"
+            description="模型必须属于一个已知端点。" :actions="[{ label: '返回第一步', onClick: () => switchView('connections') }]" />
+          <AiConfigurationAiModelDeploymentEditor v-if="deploymentEditorOpen"
             :key="`${selectedDeployment?.id ?? 'new'}-${selectedDeployment?.updatedAt ?? 0}-${connections.length}`"
-            class="mb-6"
-            :connections="connections"
-            :deployment="selectedDeployment"
-            :loading="savingDeployment"
-            @save="saveDeployment"
-            @cancel="closeDeploymentEditor"
-          />
+            class="mb-6" :connections="connections" :deployment="selectedDeployment" :loading="savingDeployment"
+            @save="saveDeployment" @cancel="closeDeploymentEditor" />
           <div v-if="deployments.length" class="mb-4 max-w-sm">
-            <UFormField label="按接口筛选"><USelect v-model="connectionFilter" class="w-full" :items="connectionFilterItems" /></UFormField>
+            <UFormField label="按接口筛选">
+              <USelect v-model="connectionFilter" class="w-full" :items="connectionFilterItems" />
+            </UFormField>
           </div>
           <div v-if="filteredDeployments.length" class="log-list">
             <article v-for="deployment in filteredDeployments" :key="deployment.id" class="log-row">
               <span class="log-row-meta">{{ deployment.modality === 'text' ? '文本模型' : '图片模型' }}</span>
-              <div class="log-row-main"><strong class="log-row-title">{{ deployment.name }}</strong><p class="text-sm text-muted">{{ connectionName(deployment.connectionId) }} · {{ deployment.model }}</p></div>
-              <div class="log-row-end flex flex-wrap items-center justify-end gap-2"><UBadge :color="deployment.isEnabled ? 'success' : 'neutral'" variant="subtle">{{ deployment.isEnabled ? '已启用' : '未启用' }}</UBadge><UButton v-if="deployment.modality === 'text'" size="xs" color="neutral" variant="soft" :loading="checkingDeploymentId === deployment.id" @click="checkDeployment(deployment)">真实检测</UButton><UButton size="xs" color="neutral" variant="soft" @click="editDeployment(deployment)">编辑</UButton></div>
+              <div class="log-row-main"><strong class="log-row-title">{{ deployment.name }}</strong>
+                <p class="text-sm text-muted">{{ connectionName(deployment.connectionId) }} · {{ deployment.model }}</p>
+              </div>
+              <div class="log-row-end flex flex-wrap items-center justify-end gap-2">
+                <UBadge :color="deployment.isEnabled ? 'success' : 'neutral'" variant="subtle">{{ deployment.isEnabled ?
+                  '已启用' : '未启用' }}</UBadge>
+                <UButton v-if="deployment.modality === 'text'" size="xs" color="neutral" variant="soft"
+                  :loading="checkingDeploymentId === deployment.id" @click="checkDeployment(deployment)">真实检测</UButton>
+                <UButton size="xs" color="neutral" variant="soft" @click="editDeployment(deployment)">编辑</UButton>
+              </div>
             </article>
           </div>
-          <div v-else-if="connections.length && !deploymentEditorOpen" class="content-empty-state"><div><strong>{{ deployments.length ? '当前筛选下没有模型' : '还没有模型部署' }}</strong><p>登记供应商模型标识后，算法才能选择它。</p></div></div>
+          <div v-else-if="connections.length && !deploymentEditorOpen" class="content-empty-state">
+            <div><strong>{{ deployments.length ? '当前筛选下没有模型' : '还没有模型部署' }}</strong>
+              <p>登记供应商模型标识后，算法才能选择它。</p>
+            </div>
+          </div>
         </section>
       </template>
 
       <template v-else>
-        <SystemAiDefaultModelsForm
-          :model-value="defaultModelValues"
-          :deployments="deployments"
-          :loading="savingDefaultModels"
-          @submit="saveDefaultModels"
-        />
+        <SystemAiDefaultModelsForm :model-value="defaultModelValues" :deployments="deployments"
+          :loading="savingDefaultModels" @submit="saveDefaultModels" />
       </template>
 
     </div>
@@ -329,7 +355,7 @@ async function checkDeployment(deployment: AiModelDeploymentView): Promise<void>
   border-left: 0;
 }
 
-.model-setup-step > span:first-child {
+.model-setup-step>span:first-child {
   display: grid;
   width: 2rem;
   height: 2rem;
@@ -340,7 +366,7 @@ async function checkDeployment(deployment: AiModelDeploymentView): Promise<void>
   font-size: 0.75rem;
 }
 
-.model-setup-step > span:nth-child(2) {
+.model-setup-step>span:nth-child(2) {
   display: grid;
   gap: 0.2rem;
 }
@@ -362,7 +388,7 @@ async function checkDeployment(deployment: AiModelDeploymentView): Promise<void>
   box-shadow: inset 0 -3px 0 var(--app-accent);
 }
 
-.model-setup-step--active > span:first-child {
+.model-setup-step--active>span:first-child {
   border-color: var(--app-accent);
   background: var(--app-accent);
   color: var(--app-surface-raised);

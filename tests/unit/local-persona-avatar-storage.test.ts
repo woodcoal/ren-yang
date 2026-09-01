@@ -11,6 +11,10 @@ const PERSONA_ID = '00000000-0000-4000-8000-000000000001'
 const PNG_BYTES = new Uint8Array(await sharp({
   create: { width: 640, height: 320, channels: 4, background: '#32658f' },
 }).png().toBuffer())
+/** 用于验证二次裁剪前原图保留的 800×400 测试 PNG。 */
+const ORIGINAL_PNG_BYTES = new Uint8Array(await sharp({
+  create: { width: 800, height: 400, channels: 4, background: '#17324d' },
+}).png().toBuffer())
 /** 当前测试独占数据目录。 */
 let directory: string | null = null
 
@@ -47,6 +51,25 @@ describe('LocalPersonaAvatarStorage', () => {
     await expect(storage.saveAvatar(PERSONA_ID, PNG_BYTES, 'image/jpeg')).rejects.toMatchObject({ code: 'IMAGE_OUTPUT_INVALID' })
     await expect(storage.saveAvatar(PERSONA_ID, new Uint8Array([1, 2, 3]), null)).rejects.toMatchObject({ code: 'IMAGE_OUTPUT_INVALID' })
     await expect(storage.readAvatar('../outside')).rejects.toMatchObject({ code: 'ASSET_PATH_INVALID' })
+  })
+
+  it('保留模型二次裁剪前原图，并在未裁剪头像覆盖后清除旧原图', async () => {
+    const storage = createStorage()
+    await storage.saveAvatar(PERSONA_ID, PNG_BYTES, 'image/png', {
+      bytes: ORIGINAL_PNG_BYTES,
+      declaredMediaType: 'image/png',
+    })
+
+    await expect(storage.hasAvatar(PERSONA_ID, 'original')).resolves.toBe(true)
+    await expect(storage.readAvatar(PERSONA_ID, 'original')).resolves.toEqual({
+      bytes: ORIGINAL_PNG_BYTES,
+      mediaType: 'image/png',
+    })
+
+    await storage.saveAvatar(PERSONA_ID, PNG_BYTES, 'image/png')
+
+    await expect(storage.hasAvatar(PERSONA_ID, 'original')).resolves.toBe(false)
+    await expect(storage.readAvatar(PERSONA_ID, 'original')).rejects.toMatchObject({ code: 'ASSET_NOT_FOUND' })
   })
 
   it('只删除明确人物的头像目录', async () => {

@@ -70,7 +70,7 @@ export class AiConfigurationApplicationService {
    * 创建 AI 配置管理服务。
    * @param dependencies 仓储、加密器、模型工厂、提示词、标识和时钟。
    */
-  constructor(private readonly dependencies: AiConfigurationApplicationServiceDependencies) {}
+  constructor(private readonly dependencies: AiConfigurationApplicationServiceDependencies) { }
 
   /** @returns 全部脱敏 AI 接口连接。 */
   async listConnections(): Promise<AiConnectionView[]> {
@@ -176,6 +176,7 @@ export class AiConfigurationApplicationService {
       parameters: CONNECTION_CHECK_PARAMETERS,
       responseSchemaName: 'connection_check',
       responseFormat: 'text',
+      thinkingDisableMode: deployment.thinkingControl
     })
     return { healthy: true, message: '接口、凭据和文本模型均可用' }
   }
@@ -196,11 +197,11 @@ export class AiConfigurationApplicationService {
         activeConfigurationVersion: active?.versionNo ?? null,
         steps: active
           ? definition.steps.map(step => ({
-              ...step,
-              modelDeploymentId: active.steps.find(item => item.stepKey === step.key)?.modelDeploymentId ?? '',
-              parameters: active.steps.find(item => item.stepKey === step.key)?.parameters
-                ?? { temperature: 0.2, maxOutputTokens: 4_096, timeoutMs: 60_000 },
-            }))
+            ...step,
+            modelDeploymentId: active.steps.find(item => item.stepKey === step.key)?.modelDeploymentId ?? '',
+            parameters: active.steps.find(item => item.stepKey === step.key)?.parameters
+              ?? { temperature: 0.2, maxOutputTokens: 4_096, timeoutMs: 60_000 },
+          }))
           : [],
         configurationVersionCount: versionCount,
         updatedAt: active?.createdAt ?? 0,

@@ -243,6 +243,7 @@ export class ContentApplicationService {
         personaId,
         response.bytes,
         response.declaredMediaType,
+        response.original,
       )
     }
     catch (error: unknown) {
@@ -255,12 +256,13 @@ export class ContentApplicationService {
   /**
    * 读取人物头像文件。
    * @param personaId 人物 UUID。
-   * @returns 已校验的头像字节与媒体类型。
+   * @param variant 最终头像或二次裁剪前原图。
+   * @returns 已校验的指定头像字节与媒体类型。
    */
-  async getPersonaAvatar(personaId: string): Promise<PersonaAvatarFile> {
+  async getPersonaAvatar(personaId: string, variant: 'result' | 'original' = 'result'): Promise<PersonaAvatarFile> {
     await this.requirePersona(personaId)
     try {
-      return await this.requirePersonaAvatarStorage().readAvatar(personaId)
+      return await this.requirePersonaAvatarStorage().readAvatar(personaId, variant)
     }
     catch (error: unknown) {
       throw mapAvatarStorageError(error, 400)
@@ -1110,10 +1112,15 @@ export class ContentApplicationService {
     const avatarUrl = this.dependencies.personaAvatars && await this.dependencies.personaAvatars.hasAvatar(persona.id)
       ? `/api/v1/personas/${persona.id}/avatar`
       : null
+    const hasAvatarOriginal = avatarUrl && this.dependencies.personaAvatars
+      ? await this.dependencies.personaAvatars.hasAvatar(persona.id, 'original')
+      : false
+    const avatarOriginalUrl = hasAvatarOriginal ? `${avatarUrl}?variant=original` : null
     return {
       ...persona,
       worldName: world?.name ?? null,
       avatarUrl,
+      avatarOriginalUrl,
       currentSummary: active?.snapshot.promptText ?? null,
       versionCount: versions.length,
       sourceCount: sources.length,

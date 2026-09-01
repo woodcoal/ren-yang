@@ -572,6 +572,7 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
             :persona-id="details.persona.id"
             :persona-name="details.persona.name"
             :avatar-url="details.persona.avatarUrl"
+            :avatar-original-url="details.persona.avatarOriginalUrl"
             @updated="refreshPersonaAvatar"
           />
         </div>

@@ -40,10 +40,10 @@ const form = reactive<PublishAiAlgorithmConfigurationInput>({
       modelDeploymentId: active?.modelDeploymentId ?? '',
       parameters: definition.modality === 'image'
         ? {
-            ...parameters,
-            maxImageWidth: parameters.maxImageWidth ?? DEFAULT_IMAGE_MAX_DIMENSION,
-            maxImageHeight: parameters.maxImageHeight ?? DEFAULT_IMAGE_MAX_DIMENSION,
-          }
+          ...parameters,
+          maxImageWidth: parameters.maxImageWidth ?? DEFAULT_IMAGE_MAX_DIMENSION,
+          maxImageHeight: parameters.maxImageHeight ?? DEFAULT_IMAGE_MAX_DIMENSION,
+        }
         : textParameters,
     }
   }),
@@ -159,7 +159,7 @@ function submit(): void {
             <UInput v-model.number="form.steps[index]!.parameters.temperature" class="w-full" type="number" min="0"
               max="2" step="0.1" />
           </UFormField>
-          <UFormField v-if="definition.modality === 'text'" label="输出 Token" description="填写 0 时不发送最大输出限制，由模型使用默认长度。" required>
+          <UFormField v-if="definition.modality === 'text'" label="输出 Token" required>
             <UInput v-model.number="form.steps[index]!.parameters.maxOutputTokens" class="w-full" type="number" min="0"
               step="64" />
           </UFormField>

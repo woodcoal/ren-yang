@@ -11,6 +11,7 @@ import { SqliteAiConfigurationRepository } from '../../server/infrastructure/dat
 import { SqliteDatabase } from '../../server/infrastructure/database/SqliteDatabase'
 import { SqliteSystemAiSettingsRepository } from '../../server/infrastructure/database/SqliteSystemAiSettingsRepository'
 import { AesGcmSecretCipher } from '../../server/infrastructure/security/AesGcmSecretCipher'
+import { saveAiModelDeploymentSchema } from '../../shared/schemas/aiConfiguration'
 import type { AiModelFactory, AiTextModelOptions } from '../../server/ports/AiModelFactory'
 import type { TextModelPort, TextModelRequest, TextModelResponse } from '../../server/ports/TextModelPort'
 import { TextModelError } from '../../server/ports/TextModelPort'
@@ -149,6 +150,13 @@ describe('AI 接口、模型部署与算法配置', () => {
     })])
   })
 
+  it('拒绝已移除的 reasoning effort 对象格式', () => {
+    expect(saveAiModelDeploymentSchema.safeParse({
+      connectionId: '00000000-0000-4000-8000-000000000001', name: '旧格式模型', model: 'test-model',
+      modality: 'text', thinkingControl: 'reasoning_effort_object', isEnabled: true,
+    }).success).toBe(false)
+  })
+
   it('把关闭思考格式和零输出 Token 固定到文本算法步骤快照', async () => {
     const { service, algorithms, modelFactory } = createServices()
     const connection = await service.createConnection({
@@ -157,7 +165,7 @@ describe('AI 接口、模型部署与算法配置', () => {
     })
     const deployment = await service.createModelDeployment({
       connectionId: connection.id, name: '可关闭思考模型', model: 'thinking-model', modality: 'text',
-      thinkingControl: 'reasoning_effort_object', isEnabled: true,
+      thinkingControl: 'reasoning_effort', isEnabled: true,
     })
     await service.publishAlgorithmConfiguration('persona_soul', {
       steps: [{
@@ -169,12 +177,12 @@ describe('AI 接口、模型部署与算法配置', () => {
     const snapshot = await algorithms.prepare('persona_soul')
     expect(snapshot.steps).toEqual([expect.objectContaining({
       modelDeploymentId: deployment.id,
-      thinkingDisableMode: 'reasoning_effort_object',
+      thinkingDisableMode: 'reasoning_effort',
       parameters: expect.objectContaining({ maxOutputTokens: 0, disableThinking: true }),
     })])
     await algorithms.executeStep(snapshot, 'organize', { promptTextJson: '"整理资料"' }, 'soul_prompt_analysis', 'json_object')
     expect(modelFactory.requests).toEqual([expect.objectContaining({
-      thinkingDisableMode: 'reasoning_effort_object',
+      thinkingDisableMode: 'reasoning_effort',
       parameters: expect.objectContaining({ maxOutputTokens: 0 }),
     })])
   })

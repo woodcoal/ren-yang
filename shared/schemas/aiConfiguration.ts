@@ -16,7 +16,7 @@ export const aiModelModalitySchema = z.enum(['text', 'image'], { error: '模型�
 
 /** 文本模型关闭思考时采用的供应商请求字段；无控制表示不额外发送字段。 */
 export const aiThinkingControlModeSchema = z.enum([
-  'none', 'enable_thinking', 'reasoning_effort', 'reasoning', 'reasoning_effort_object',
+  'none', 'enable_thinking', 'reasoning_effort', 'reasoning',
 ], { error: '思考控制格式无效' })
 
 /** 代码固定流程的全部算法编码。 */

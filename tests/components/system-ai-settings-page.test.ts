@@ -45,8 +45,11 @@ describe('统一 AI 管理入口', () => {
     expect(wrapper.find('[aria-label="输出格式"]').exists()).toBe(true)
     expect(wrapper.find('[aria-label="图片数量"]').exists()).toBe(true)
     expect(wrapper.text()).toContain('不经过大纲或规格确认')
+    const taskNavigation = wrapper.get('nav[aria-label="新建任务类型"]')
+    expect(taskNavigation.get('button[aria-label="文章创作"]').attributes('aria-current')).toBe('page')
 
-    await wrapper.findAll('button').find(button => button.text().includes('批量判断人物是否感兴趣'))!.trigger('click')
+    await taskNavigation.get('button[aria-label="兴趣判断"]').trigger('click')
+    expect(taskNavigation.get('button[aria-label="兴趣判断"]').attributes('aria-current')).toBe('page')
     expect(wrapper.find('textarea[aria-label="附加提示词"]').exists()).toBe(true)
     expect(wrapper.find('textarea[aria-label="待判断文本 1"]').exists()).toBe(true)
     expect(wrapper.text()).not.toContain('年龄阶段')

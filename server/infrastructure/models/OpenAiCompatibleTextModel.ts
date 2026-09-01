@@ -111,7 +111,6 @@ function buildThinkingDisablePayload(mode: TextModelRequest['thinkingDisableMode
   if (mode === 'enable_thinking') return { enable_thinking: false }
   if (mode === 'reasoning_effort') return { reasoning_effort: 'none' }
   if (mode === 'reasoning') return { reasoning: { enabled: false } }
-  if (mode === 'reasoning_effort_object') return { reasoning: { effort: 'none' } }
   return {}
 }
 

@@ -68,7 +68,6 @@ describe('OpenAiCompatibleTextModel', () => {
     ['enable_thinking', { enable_thinking: false }],
     ['reasoning_effort', { reasoning_effort: 'none' }],
     ['reasoning', { reasoning: { enabled: false } }],
-    ['reasoning_effort_object', { reasoning: { effort: 'none' } }],
   ] as const)('关闭思考时按 %s 格式只发送对应字段', async (thinkingDisableMode, expected) => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       choices: [{ message: { content: '{"answer":"ok"}' } }],
@@ -83,7 +82,6 @@ describe('OpenAiCompatibleTextModel', () => {
     if (thinkingDisableMode !== 'enable_thinking') expect(body).not.toHaveProperty('enable_thinking')
     if (thinkingDisableMode !== 'reasoning_effort') expect(body).not.toHaveProperty('reasoning_effort')
     if (thinkingDisableMode === 'reasoning') expect(body.reasoning).toEqual({ enabled: false })
-    if (thinkingDisableMode === 'reasoning_effort_object') expect(body.reasoning).toEqual({ effort: 'none' })
   })
 
   it.each([

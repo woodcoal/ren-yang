@@ -355,15 +355,16 @@ describe('AI 模型与算法配置页面', () => {
 
     const editor = wrapper.findComponent(AiModelDeploymentEditor)
     expect(editor.text()).toContain('关闭思考字段')
+    expect(editor.text()).not.toContain('reasoning: { effort: none }')
     editor.vm.$emit('save', {
       connectionId: connection.id, name: '关闭思考模型', model: 'reasoning-model', modality: 'text',
-      thinkingControl: 'reasoning_effort_object', isEnabled: true,
+      thinkingControl: 'reasoning_effort', isEnabled: true,
     })
     await flushPromises()
 
     expect(savedDeployment).toEqual({
       connectionId: connection.id, name: '关闭思考模型', model: 'reasoning-model', modality: 'text',
-      thinkingControl: 'reasoning_effort_object', isEnabled: true,
+      thinkingControl: 'reasoning_effort', isEnabled: true,
     })
   })
 
@@ -406,7 +407,7 @@ describe('AI 模型与算法配置页面', () => {
       parameters: { temperature: 0, maxOutputTokens: 0, timeoutMs: 30_000, disableThinking: true },
     })
     expect(form.text()).toContain('关闭思考')
-    expect(form.text()).toContain('填写 0 时不发送最大输出限制')
+    expect(inputs[1]!.attributes('min')).toBe('0')
   })
 
   it('明确真实调用边界，并用业务化成长输入展示逐步诊断', async () => {

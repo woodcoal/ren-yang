@@ -14,6 +14,8 @@ interface Props {
   personaName: string
   /** 已保存头像的读取地址；未设置时为 null。 */
   avatarUrl: string | null
+  /** 模型发生二次裁剪时保留的原图地址；未裁剪时为 null。 */
+  avatarOriginalUrl?: string | null
 }
 
 /** 人物头像编辑器事件。 */
@@ -160,8 +162,10 @@ async function submitCustomGeneration(event: FormSubmitEvent<GeneratePersonaAvat
             @click="generateDefaultAvatar">生成头像</UButton>
           <UButton color="neutral" variant="soft" icon="i-lucide-wand-sparkles" :disabled="activeAction !== null"
             @click="openCustomGeneration">自定义生成</UButton>
+          <UButton v-if="props.avatarOriginalUrl" :to="props.avatarOriginalUrl" external color="neutral" variant="ghost"
+            :aria-label="`查看${props.personaName}头像的裁剪前原图`">查看原图</UButton>
         </div>
-        <p class="mt-3 text-xs text-muted">支持 PNG、JPEG、WebP，上传文件最大 2 MB；图片将按原始尺寸保存，不裁剪、不缩放。</p>
+        <p class="mt-3 text-xs text-muted">支持 PNG、JPEG、WebP，上传文件最大 2 MB；上传图片按原始尺寸保存，算法触发尺寸裁剪时可查看原图。</p>
       </div>
     </div>
   </UCard>

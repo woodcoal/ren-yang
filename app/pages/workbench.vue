@@ -34,6 +34,15 @@ const algorithmCapabilities = computed(() => capabilityData.value?.data.algorith
   interestAssessment: false,
 })
 const task = shallowRef<'generation' | 'interest'>('generation')
+/** 新建任务页按业务类型切换的两个固定模块。 */
+const taskModules: Array<{
+  id: 'generation' | 'interest'
+  label: string
+  description: string
+}> = [
+    { id: 'generation', label: '文章创作', description: '输入条件后直接得到最终结果，不经过大纲或规格确认。' },
+    { id: 'interest', label: '兴趣判断', description: '一次提交一条或多条文本，可选添加整批附加提示词。' },
+  ]
 const loading = shallowRef(false)
 
 /**
@@ -108,36 +117,16 @@ async function createRun(title: string, description: string, request: () => Prom
       <UButton to="/history" color="neutral" variant="ghost">运行历史</UButton>
     </ContentPageHeader>
 
-    <UAlert v-if="!textCapability?.configured" class="mb-5" color="warning" title="文本算法未配置" description="请在 AI 管理中配置接口、模型和对应固定算法。" />
+    <UAlert v-if="!textCapability?.configured" class="mb-5" color="warning" title="文本算法未配置"
+      description="请在 AI 管理中配置接口、模型和对应固定算法。" />
 
-    <div class="mb-6 grid gap-3 sm:grid-cols-2">
-      <button class="workflow-panel text-left" :aria-pressed="task === 'generation'" @click="task = 'generation'">
-        <p class="eyebrow">文章创作</p>
-        <h2 class="mt-1 font-semibold text-highlighted">直接生成文章和配图</h2>
-        <p class="mt-2 text-sm text-muted">输入条件后直接得到最终结果，不经过大纲或规格确认。</p>
-      </button>
-      <button class="workflow-panel text-left" :aria-pressed="task === 'interest'" @click="task = 'interest'">
-        <p class="eyebrow">人物判断</p>
-        <h2 class="mt-1 font-semibold text-highlighted">批量判断人物是否感兴趣</h2>
-        <p class="mt-2 text-sm text-muted">一次提交一条或多条文本，可选添加整批附加提示词。</p>
-      </button>
-    </div>
+    <ContentWorkspaceModuleNav v-model="task" :items="taskModules" ariaLabel="新建任务类型" />
 
-    <GenerationArtifactGenerationForm
-      v-if="task === 'generation'"
-      :personas="personas"
+    <GenerationArtifactGenerationForm v-if="task === 'generation'" :personas="personas"
       :image-configured="algorithmCapabilities.articleImageGeneration && Boolean(imageCapability?.configured)"
-      :generation-configured="algorithmCapabilities.articleGeneration"
-      :loading="loading"
-      @submit="submitGeneration"
-    />
+      :generation-configured="algorithmCapabilities.articleGeneration" :loading="loading" @submit="submitGeneration" />
 
-    <GenerationInterestBatchForm
-      v-else
-      :personas="personas"
-      :configured="algorithmCapabilities.interestAssessment"
-      :loading="loading"
-      @submit="submitInterest"
-    />
+    <GenerationInterestBatchForm v-else :personas="personas" :configured="algorithmCapabilities.interestAssessment"
+      :loading="loading" @submit="submitInterest" />
   </div>
 </template>

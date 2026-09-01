@@ -105,6 +105,20 @@ describe('人物头像编辑器', () => {
     await vi.waitFor(() => expect(wrapper.emitted('updated')).toHaveLength(1))
   })
 
+  it('仅在发生算法二次裁剪时显示裁剪前原图入口', async () => {
+    const originalUrl = `/api/v1/personas/${PERSONA_ID}/avatar?variant=original`
+    const wrapper = await mountSuspended(PersonaAvatarEditor, {
+      props: {
+        personaId: PERSONA_ID,
+        personaName: '林默',
+        avatarUrl: `/api/v1/personas/${PERSONA_ID}/avatar`,
+        avatarOriginalUrl: originalUrl,
+      },
+    })
+
+    expect(wrapper.get('a[aria-label="查看林默头像的裁剪前原图"]').attributes('href')).toBe(originalUrl)
+  })
+
   it('自定义生成提交后关闭弹窗并显示全局 AI 加载层', async () => {
     delayGenerationResponse = true
     const wrapper = await mountSuspended(PersonaAvatarGenerationHarness)
