@@ -64,6 +64,56 @@ describe('OpenAiCompatibleTextModel', () => {
     expect(init?.headers).toMatchObject({ authorization: 'Bearer secret-key', 'user-agent': 'RenYang-Unit/1.0' })
   })
 
+  it('GPT-5.6 缓存亲和请求使用稳定键并在系统消息末尾设置显式断点', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      choices: [{ message: { content: '{"answer":"ok"}' } }],
+    }), { status: 200, headers: { 'content-type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetchMock)
+    const model = new OpenAiCompatibleTextModel({
+      endpoint: 'https://model.example/v1/chat/completions',
+      apiKey: 'secret-key',
+      model: 'gpt-5.6-luna',
+    })
+
+    await model.generateStructured({ ...REQUEST, promptCacheKey: 'stable-system-affinity-key' })
+
+    const [, init] = fetchMock.mock.calls[0]!
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>
+    expect(body).toMatchObject({
+      prompt_cache_key: 'stable-system-affinity-key',
+      prompt_cache_options: { mode: 'explicit', ttl: '30m' },
+      messages: [
+        {
+          role: 'system',
+          content: [{
+            type: 'text',
+            text: REQUEST.systemPrompt,
+            prompt_cache_breakpoint: { mode: 'explicit' },
+          }],
+        },
+        { role: 'user', content: REQUEST.userPrompt },
+      ],
+    })
+  })
+
+  it('其他 OpenAI-compatible 模型即使收到亲和键也保持基础消息契约', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      choices: [{ message: { content: '{"answer":"ok"}' } }],
+    }), { status: 200, headers: { 'content-type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await createModel().generateStructured({ ...REQUEST, promptCacheKey: 'internal-affinity-key' })
+
+    const [, init] = fetchMock.mock.calls[0]!
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>
+    expect(body.messages).toEqual([
+      { role: 'system', content: REQUEST.systemPrompt },
+      { role: 'user', content: REQUEST.userPrompt },
+    ])
+    expect(body).not.toHaveProperty('prompt_cache_key')
+    expect(body).not.toHaveProperty('prompt_cache_options')
+  })
+
   it.each([
     ['enable_thinking', { enable_thinking: false }],
     ['reasoning_effort', { reasoning_effort: 'none' }],

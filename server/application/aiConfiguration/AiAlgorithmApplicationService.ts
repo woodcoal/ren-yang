@@ -186,7 +186,7 @@ export class AiAlgorithmApplicationService {
     })
     return await this.cacheAffinityScheduler.run(
       key,
-      async () => await this.generate(step, connection, prompt, responseSchemaName, responseFormat),
+      async () => await this.generate(step, connection, prompt, responseSchemaName, responseFormat, key),
     )
   }
 
@@ -306,6 +306,7 @@ export class AiAlgorithmApplicationService {
    * @param prompt 已完成变量替换的系统与用户提示词。
    * @param responseSchemaName 供应商诊断使用的结构名称。
    * @param responseFormat JSON 对象或纯文本输出。
+   * @param promptCacheKey 可选 GPT-5.6 缓存路由键。
    * @returns 模型输出和用量。
    */
   private async generate(
@@ -314,6 +315,7 @@ export class AiAlgorithmApplicationService {
     prompt: { systemPrompt: string, userPrompt: string },
     responseSchemaName: string,
     responseFormat: 'json_object' | 'text',
+    promptCacheKey?: string,
   ): Promise<TextModelResponse> {
     const model = this.dependencies.modelFactory.createTextModel({
       endpoint: connection.endpoint,
@@ -328,6 +330,7 @@ export class AiAlgorithmApplicationService {
       thinkingDisableMode: step.thinkingDisableMode ?? 'none',
       responseSchemaName,
       responseFormat,
+      ...(promptCacheKey ? { promptCacheKey } : {}),
     })
   }
 

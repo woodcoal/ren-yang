@@ -16,6 +16,8 @@ export interface TextModelRequest {
   responseSchemaName: string
   /** 供应商响应格式；省略时保持现有 JSON 对象模式。 */
   responseFormat?: 'json_object' | 'text'
+  /** GPT-5.6 缓存路由使用的稳定非敏感键；省略时保持普通兼容请求。 */
+  promptCacheKey?: string
 }
 
 /** 文本模型结构化调用结果。 */

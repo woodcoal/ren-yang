@@ -53,14 +53,31 @@ export class OpenAiCompatibleTextModel implements TextModelPort {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), request.parameters.timeoutMs)
     try {
+      // 其他 OpenAI-compatible 服务可能拒绝新缓存字段，只对当前已验证的 GPT-5.6 模型族启用。
+      const useExplicitPromptCache = Boolean(request.promptCacheKey) && /^gpt-5\.6(?:-|$)/.test(snapshot.model)
       const requestBody: Record<string, unknown> = {
         model: snapshot.model,
         messages: [
-          { role: 'system', content: request.systemPrompt },
+          {
+            role: 'system',
+            content: useExplicitPromptCache
+              ? [{
+                  type: 'text',
+                  text: request.systemPrompt,
+                  prompt_cache_breakpoint: { mode: 'explicit' },
+                }]
+              : request.systemPrompt,
+          },
           { role: 'user', content: request.userPrompt },
         ],
         temperature: request.parameters.temperature,
         ...(request.parameters.maxOutputTokens > 0 ? { max_tokens: request.parameters.maxOutputTokens } : {}),
+        ...(useExplicitPromptCache
+          ? {
+              prompt_cache_key: request.promptCacheKey,
+              prompt_cache_options: { mode: 'explicit', ttl: '30m' },
+            }
+          : {}),
         ...buildThinkingDisablePayload(request.thinkingDisableMode),
       }
       if (request.responseFormat !== 'text') {

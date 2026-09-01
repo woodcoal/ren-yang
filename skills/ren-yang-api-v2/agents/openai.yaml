@@ -1,0 +1,4 @@
+interface:
+  display_name: "人样 API v2"
+  short_description: "通过人样公共 API 管理人物、世界、资料并执行兴趣与图文任务"
+  default_prompt: "使用 $ren-yang-api-v2 批量判断指定人物对多条文本的兴趣。"

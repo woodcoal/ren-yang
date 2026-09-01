@@ -250,7 +250,7 @@ describe('AI 接口、模型部署与算法配置', () => {
         return await operation()
       },
     }
-    const { service, algorithms } = createServices(cacheAffinityScheduler)
+    const { service, algorithms, modelFactory } = createServices(cacheAffinityScheduler)
     await configureSoulAlgorithm(service)
     const snapshot = await algorithms.prepare('persona_soul')
 
@@ -268,6 +268,9 @@ describe('AI 接口、模型部署与算法配置', () => {
 
     expect(affinityKeys).toHaveLength(2)
     expect(affinityKeys[0]).toBe(affinityKeys[1])
+    expect(modelFactory.requests[0]?.promptCacheKey).toBe(affinityKeys[0])
+    expect(modelFactory.requests[1]?.promptCacheKey).toBe(affinityKeys[1])
+    expect(modelFactory.requests[2]?.promptCacheKey).toBeUndefined()
   })
 
   it('文章生成与文章配图分析作为两个独立固定算法配置', async () => {
