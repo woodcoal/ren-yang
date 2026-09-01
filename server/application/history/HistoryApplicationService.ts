@@ -1,5 +1,5 @@
 import type { ListHistoryPageInput } from '../../../shared/schemas/history'
-import type { HistoryPageView } from '../../../shared/types/history'
+import type { ClearOpenVikingHistoryResult, HistoryPageView } from '../../../shared/types/history'
 import type { HistoryRepository } from '../../ports/HistoryRepository'
 
 /** 任务记录页应用服务依赖。 */
@@ -23,5 +23,13 @@ export class HistoryApplicationService {
    */
   async listPage(input: ListHistoryPageInput): Promise<HistoryPageView> {
     return await this.dependencies.history.listPage(input)
+  }
+
+  /**
+   * 清理已经结束的 OpenViking 后台任务记录。
+   * @returns 实际删除数量；活动任务、生成运行和分析批次始终保留。
+   */
+  async clearTerminalContextTasks(): Promise<ClearOpenVikingHistoryResult> {
+    return await this.dependencies.history.clearTerminalOpenVikingTasks()
   }
 }

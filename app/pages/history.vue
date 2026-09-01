@@ -1,11 +1,14 @@
 <script setup lang="ts">
-import { computed, reactive, watch } from 'vue'
+import { computed, reactive, shallowRef, watch } from 'vue'
 import type { ApiResponse } from '#shared/types/api'
 import type { PersonaSummary } from '#shared/types/content'
 import type { HistoryKind, HistoryStatus } from '#shared/schemas/history'
-import type { HistoryItemView, HistoryPageView } from '#shared/types/history'
+import type { ClearOpenVikingHistoryResult, HistoryItemView, HistoryPageView } from '#shared/types/history'
 
 const route = useRoute()
+const { notifyError, notifySuccess } = useOperationNotifications()
+const clearConfirmationOpen = shallowRef(false)
+const clearingHistory = shallowRef(false)
 
 /** 任务记录页允许的任务类型。 */
 const historyKinds: readonly HistoryKind[] = [
@@ -162,6 +165,26 @@ async function refreshAll(): Promise<void> {
   await Promise.all([refreshHistory(), refreshPersonas()])
 }
 
+/** @returns 清理终态 OpenViking 任务、关闭确认框并刷新当前历史页。 */
+async function clearOpenVikingHistory(): Promise<void> {
+  if (clearingHistory.value) return
+  clearingHistory.value = true
+  try {
+    const response = await $fetch<ApiResponse<ClearOpenVikingHistoryResult>>('/api/v1/history/openviking', {
+      method: 'DELETE', body: { confirmed: true },
+    })
+    clearConfirmationOpen.value = false
+    await refreshHistory()
+    notifySuccess(`已清理 ${response.data.deleted} 条 OpenViking 历史任务。`, '历史任务已清理')
+  }
+  catch (requestError: unknown) {
+    notifyError(getApiErrorMessage(requestError, 'OpenViking 历史任务清理失败'), '清理失败')
+  }
+  finally {
+    clearingHistory.value = false
+  }
+}
+
 /** @param page 新页码。 @param pageSize 新每页数量。 @returns 路由导航完成时结束。 */
 async function updatePagination(page: number, pageSize: 5 | 10 | 20 | 50 | 100): Promise<void> {
   await navigateTo({ path: route.path, query: { ...route.query, page: String(page), pageSize: String(pageSize) } })
@@ -186,6 +209,7 @@ function formatTime(timestamp: number): string {
 <template>
   <div>
     <ContentPageHeader title="在可追溯的记录中继续工作" description="统一查看生成任务、后台成长提炼和记忆提炼，并按对象、类型和状态定位记录。">
+      <UButton color="neutral" variant="outline" icon="i-lucide-trash-2" @click="clearConfirmationOpen = true">清理 OpenViking 历史</UButton>
       <UButton to="/workbench" icon="i-lucide-plus">创建新任务</UButton>
     </ContentPageHeader>
 
@@ -277,5 +301,17 @@ function formatTime(timestamp: number): string {
         </div>
       </div>
     </section>
+
+    <UModal v-model:open="clearConfirmationOpen" title="确认清理 OpenViking 历史任务" description="活动同步任务和业务历史不会被删除。">
+      <template #body>
+        <p class="text-sm text-muted">只会删除成功、失败或已取消的 OpenViking 后台任务。该操作无法撤销。</p>
+      </template>
+      <template #footer>
+        <div class="flex w-full justify-end gap-2">
+          <UButton color="neutral" variant="ghost" :disabled="clearingHistory" @click="clearConfirmationOpen = false">取消</UButton>
+          <UButton color="error" :loading="clearingHistory" @click="clearOpenVikingHistory">确认清理</UButton>
+        </div>
+      </template>
+    </UModal>
   </div>
 </template>

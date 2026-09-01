@@ -1,8 +1,16 @@
-import { describe, expect, it } from 'vitest'
-import { flushPromises } from '@vue/test-utils'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { DOMWrapper, flushPromises } from '@vue/test-utils'
 import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
-import { getQuery } from 'h3'
+import { getQuery, readBody } from 'h3'
 import HistoryPage from '../../app/pages/history.vue'
+
+const clearHistoryRequests: unknown[] = []
+let historyRequestCount = 0
+
+beforeEach(() => {
+  clearHistoryRequests.length = 0
+  historyRequestCount = 0
+})
 
 registerEndpoint('/api/v1/auth/session', () => ({
   data: { authenticated: true, administrator: { id: 'administrator', username: 'admin' } },
@@ -15,6 +23,7 @@ registerEndpoint('/api/v1/personas', () => ({
   }],
 }))
 registerEndpoint('/api/v1/history', (event) => {
+  historyRequestCount += 1
   const query = getQuery(event)
   const page = Number(query.page ?? 1)
   return { data: {
@@ -54,6 +63,13 @@ registerEndpoint('/api/v1/history', (event) => {
     totalPages: 2,
   } }
 })
+registerEndpoint('/api/v1/history/openviking', {
+  method: 'DELETE',
+  handler: async (event) => {
+    clearHistoryRequests.push(await readBody(event))
+    return { data: { deleted: 688 } }
+  },
+})
 
 describe('统一任务记录页', () => {
   it('展示后台人物记忆提炼批次及排队状态', async () => {
@@ -89,5 +105,29 @@ describe('统一任务记录页', () => {
     expect(wrapper.text()).toContain('已尝试 1 / 3 次')
     expect(wrapper.text()).toContain('OpenViking 请求超时')
     expect(wrapper.get('a[href="/system-records"]').exists()).toBe(true)
+  })
+
+  it('确认后清理终态 OpenViking 历史并刷新列表', async () => {
+    const wrapper = await mountSuspended(HistoryPage, { route: '/history' })
+    await flushPromises()
+    const initialHistoryRequestCount = historyRequestCount
+
+    await wrapper.findAllComponents({ name: 'UButton' })
+      .find(button => button.text() === '清理 OpenViking 历史')!.trigger('click')
+    await flushPromises()
+    expect(clearHistoryRequests).toHaveLength(0)
+    expect(document.body.textContent).toContain('只会删除成功、失败或已取消的 OpenViking 后台任务')
+
+    const confirm = [...document.querySelectorAll<HTMLButtonElement>('button')]
+      .find(button => button.textContent?.trim() === '确认清理')
+    expect(confirm).toBeDefined()
+    await new DOMWrapper(confirm!).trigger('click')
+    await flushPromises()
+
+    expect(clearHistoryRequests).toEqual([{ confirmed: true }])
+    await vi.waitFor(() => expect(document.body.textContent).not.toContain('确认清理 OpenViking 历史任务'))
+    expect(historyRequestCount).toBeGreaterThan(initialHistoryRequestCount)
+    wrapper.unmount()
+    document.body.innerHTML = ''
   })
 })

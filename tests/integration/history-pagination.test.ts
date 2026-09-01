@@ -147,4 +147,29 @@ describe('统一任务记录分页', () => {
       }),
     ])
   })
+
+  it('只清理终态 OpenViking 后台任务并保留活动任务与业务历史', async () => {
+    const insert = database.getClient().prepare(`
+      INSERT INTO task_jobs (
+        id, type, payload_json, status, attempt_count, max_attempts, created_at, updated_at
+      ) VALUES (?, 'sync_context_source', ?, ?, 1, 3, ?, ?)
+    `)
+    const statuses = ['succeeded', 'failed', 'canceled', 'queued', 'running', 'cancel_requested'] as const
+    statuses.forEach((status, index) => insert.run(
+      `51000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
+      JSON.stringify({ entityType: 'source_material', sourceId: `source-${index + 1}` }),
+      status,
+      1_200 + index,
+      1_200 + index,
+    ))
+
+    await expect(repository.clearTerminalOpenVikingTasks()).resolves.toEqual({ deleted: 3 })
+    const history = await repository.listPage({ page: 1, pageSize: 20 })
+
+    expect(history).toMatchObject({ total: 9 })
+    expect(history.items.filter(item => item.sourceType === 'task').map(item => item.status)).toEqual([
+      'cancel_requested', 'running', 'queued',
+    ])
+    expect(history.items.filter(item => item.sourceType !== 'task')).toHaveLength(6)
+  })
 })

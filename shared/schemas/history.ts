@@ -23,6 +23,11 @@ export const listHistoryPageSchema = z.object({
   status: historyStatusSchema.optional(),
 })
 
+/** 清理外部上下文终态任务前必须由管理员明确确认。 */
+export const clearContextHistorySchema = z.object({
+  confirmed: z.literal(true, { error: '清理 OpenViking 历史任务前必须明确确认' }),
+})
+
 /** 任务记录页查询输入。 */
 export type ListHistoryPageInput = z.infer<typeof listHistoryPageSchema>
 /** 任务记录统一类型。 */

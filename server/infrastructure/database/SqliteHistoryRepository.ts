@@ -1,6 +1,6 @@
 import type { Database as BetterSqliteDatabase } from 'better-sqlite3'
 import type { ListHistoryPageInput } from '../../../shared/schemas/history'
-import type { HistoryItemView, HistoryPageView } from '../../../shared/types/history'
+import type { ClearOpenVikingHistoryResult, HistoryItemView, HistoryPageView } from '../../../shared/types/history'
 import type { HistoryRepository } from '../../ports/HistoryRepository'
 
 /** 参数化 SQL 及按占位符顺序排列的绑定参数。 */
@@ -35,6 +35,19 @@ export class SqliteHistoryRepository implements HistoryRepository {
       LIMIT ? OFFSET ?
     `).all(...query.parameters, input.pageSize, (page - 1) * input.pageSize).map(toHistoryItem)
     return { items, total, page, pageSize: input.pageSize, totalPages }
+  }
+
+  /**
+   * 删除成功、失败或已取消的 OpenViking 后台任务。
+   * @returns 实际删除数量；排队、运行和取消中的任务不受影响。
+   */
+  async clearTerminalOpenVikingTasks(): Promise<ClearOpenVikingHistoryResult> {
+    const result = this.client.prepare(`
+      DELETE FROM task_jobs
+      WHERE type IN ('sync_context_source', 'sync_openviking_session', 'sync_openviking_users')
+        AND status IN ('succeeded', 'failed', 'canceled')
+    `).run()
+    return { deleted: result.changes }
   }
 }
 

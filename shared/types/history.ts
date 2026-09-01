@@ -43,3 +43,9 @@ export interface HistoryPageView {
   /** 总页数；空列表时仍为 1。 */
   totalPages: number
 }
+
+/** 清理 OpenViking 终态后台任务的结果。 */
+export interface ClearOpenVikingHistoryResult {
+  /** 实际删除的成功、失败或已取消任务数量。 */
+  deleted: number
+}
