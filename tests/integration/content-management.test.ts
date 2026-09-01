@@ -466,6 +466,32 @@ describe('人物、世界与资料管理闭环', () => {
     await expect(service.deleteWorld(world.world.id)).resolves.toBeUndefined()
   })
 
+  it('永久删除已有成长分析历史的世界', async () => {
+    const world = await service.createWorld({
+      name: '分析历史世界',
+      summary: '验证已有成长分析历史时仍可删除',
+      snapshot: createWorldSnapshot('世界规则。'),
+      changeSummary: '建立世界',
+    })
+    database.getClient().prepare(`
+      INSERT INTO analysis_batches (
+        id, analysis_type, world_id, mode, baseline_soul_version_id,
+        baseline_json, model_snapshot_json, parameter_snapshot_json,
+        prompt_version, status, created_at, updated_at
+      ) VALUES (?, 'world_growth', ?, 'incremental', ?, '{}', '{}', '{}', 'test', 'completed', ?, ?)
+    `).run(
+      '00000000-0000-4000-8000-999999999999',
+      world.world.id,
+      world.world.activeVersionId,
+      clock.now(),
+      clock.now(),
+    )
+
+    await expect(service.deleteWorld(world.world.id)).resolves.toBeUndefined()
+    expect(database.getClient().prepare('SELECT COUNT(*) AS count FROM analysis_batches WHERE world_id = ?').get(world.world.id))
+      .toEqual({ count: 0 })
+  })
+
   it('只允许删除非当前、无后续修改且未被历史任务使用的世界版本', async () => {
     const world = await service.createWorld({
       name: '浮岛纪元',

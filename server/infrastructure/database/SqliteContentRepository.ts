@@ -436,6 +436,8 @@ export class SqliteContentRepository implements ContentRepository, SoulRepositor
   /** @param worldId 世界 UUID。 @param timestamp 删除时间。 @returns 删除的世界行数；人物外键仍会阻止错误级联。 */
   async deleteWorld(worldId: string, timestamp: number): Promise<number> {
     return this.client.transaction(() => {
+      // SQLite 的即时 RESTRICT 会在世界级联删除灵魂版本前阻止分析批次引用；需先清理本就随世界删除的分析历史。
+      this.client.prepare('DELETE FROM analysis_batches WHERE world_id = ?').run(worldId)
       const changes = this.client.prepare('DELETE FROM worlds WHERE id = ?').run(worldId).changes
       if (changes === 1) insertAuditEvent(this.client, {
         actor: 'administrator', action: 'world_deleted', targetType: 'world', targetId: worldId, timestamp,
