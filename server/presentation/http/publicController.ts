@@ -1,5 +1,6 @@
 import type { H3Event } from 'h3'
-import { getHeader, getMethod, getRequestURL, setResponseStatus } from 'h3'
+import { getHeader, getMethod, getRequestURL, setResponseHeader, setResponseStatus } from 'h3'
+import type { BinaryControllerResult } from './controller'
 import { ZodError } from 'zod'
 import { idempotencyKeySchema, type ApiKeyScope } from '../../../shared/schemas/publicApi'
 import type { PublicApiJsonValue } from '../../ports/PublicApiRepository'
@@ -161,6 +162,35 @@ export async function executePublicController<TData>(
     if (!principal) throw new ApplicationError('API_KEY_INVALID', 'API Key 无效、已过期或已吊销', 401)
     await event.context.applicationServices.apiKeys.requireScope(principal, scope)
     return { data: await action(), meta: { requestId: requireRequestId(event) } }
+  }
+  catch (error: unknown) {
+    return writePublicErrorResponse(event, error)
+  }
+}
+
+/**
+ * 校验公共读取权限并返回受控二进制资产或导出文件。
+ * @param event 当前公共请求。
+ * @param scope 接口要求的读取权限。
+ * @param action 只调用应用服务并返回已验证字节与媒体类型的动作。
+ * @returns 文件字节或带请求追踪标识的统一错误响应。
+ */
+export async function executePublicBinaryController(
+  event: H3Event,
+  scope: ApiKeyScope,
+  action: () => Promise<BinaryControllerResult>,
+): Promise<Uint8Array | PublicApiErrorResponse> {
+  try {
+    const principal = event.context.apiKeyPrincipal
+    if (!principal) throw new ApplicationError('API_KEY_INVALID', 'API Key 无效、已过期或已吊销', 401)
+    await event.context.applicationServices.apiKeys.requireScope(principal, scope)
+    const result = await action()
+    setResponseHeader(event, 'content-type', result.mediaType)
+    setResponseHeader(event, 'content-length', result.bytes.byteLength)
+    setResponseHeader(event, 'x-content-type-options', 'nosniff')
+    setResponseHeader(event, 'x-request-id', requireRequestId(event))
+    if (result.fileName) setResponseHeader(event, 'content-disposition', `attachment; filename*=UTF-8''${encodeURIComponent(result.fileName)}`)
+    return result.bytes
   }
   catch (error: unknown) {
     return writePublicErrorResponse(event, error)

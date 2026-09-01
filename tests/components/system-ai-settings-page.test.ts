@@ -11,7 +11,6 @@ const settings: SystemAiSettingsValues = {
   textModelDeploymentId: '',
   imageModelDeploymentId: '',
   interestAnalysis: { temperature: 0.4, maxOutputTokens: 2_048, timeoutMs: 60_000, maxEvidenceChunks: 8 },
-  contentAnalysis: { temperature: 0.2, maxOutputTokens: 4_096, timeoutMs: 60_000 },
   draftGeneration: { temperature: 0.4, maxOutputTokens: 2_048, timeoutMs: 60_000 },
   feedbackClassification: { temperature: 0, maxOutputTokens: 4_096, timeoutMs: 60_000 },
 }
@@ -54,21 +53,21 @@ beforeEach(() => {
 })
 
 describe('AI 设置页面', () => {
-  it('按业务选项卡展示四类参数并提交完整设置', async () => {
+  it('只展示仍有实际调用者的三类参数并提交完整设置', async () => {
     const wrapper = await mountSuspended(AiSettingsPage, { route: '/ai-settings' })
     await flushPromises()
 
     expect(wrapper.text()).toContain('兴趣分析')
-    await wrapper.findAll('button').find(button => button.text().includes('人物记忆'))!.trigger('click')
-    await flushPromises()
-    expect(wrapper.text()).toContain('记忆提炼')
+    expect(wrapper.text()).not.toContain('人物记忆')
+    expect(wrapper.text()).not.toContain('记忆提炼')
+    expect(wrapper.text()).not.toContain('内容分析')
     await wrapper.findAll('button').find(button => button.text().includes('草稿生成'))!.trigger('click')
     await flushPromises()
     expect(wrapper.text()).toContain('草稿生成')
     await wrapper.findAll('button').find(button => button.text().includes('反馈分类'))!.trigger('click')
     await flushPromises()
     expect(wrapper.text()).toContain('反馈分类')
-    expect(wrapper.text()).toContain('灵魂与成长提示词在 AI 算法中维护')
+    expect(wrapper.text()).toContain('灵魂、成长、记忆与文章提示词在 AI 算法中维护')
 
     await wrapper.get('form[data-system-ai-settings-form]').trigger('submit')
     await flushPromises()

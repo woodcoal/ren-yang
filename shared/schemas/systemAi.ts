@@ -12,17 +12,16 @@ export const interestAnalysisParametersSchema = systemAiOperationParametersSchem
   maxEvidenceChunks: z.number().int().min(0).max(50),
 })
 
-/** 系统内部四类 AI 操作的当前参数。 */
+/** 系统内部仍由默认文本模型执行的三类 AI 操作参数。 */
 export const systemAiSettingsValuesSchema = z.object({
   textModelDeploymentId: z.union([z.literal(''), z.string().uuid('默认文本模型标识无效')]).default(''),
   imageModelDeploymentId: z.union([z.literal(''), z.string().uuid('默认图片模型标识无效')]).default(''),
   interestAnalysis: interestAnalysisParametersSchema,
-  contentAnalysis: systemAiOperationParametersSchema,
   draftGeneration: systemAiOperationParametersSchema,
   feedbackClassification: systemAiOperationParametersSchema,
 })
 
-/** 保存系统 AI 设置时必须提交四类完整参数，避免局部更新产生隐式继承。 */
+/** 保存系统 AI 设置时必须提交三类完整参数，避免局部更新产生隐式继承。 */
 export const updateSystemAiSettingsSchema = systemAiSettingsValuesSchema
 
 export type SystemAiOperationParameters = z.infer<typeof systemAiOperationParametersSchema>

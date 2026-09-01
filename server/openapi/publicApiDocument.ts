@@ -52,6 +52,14 @@ const LIST_PARAMETERS: OpenApiParameter[] = [
   { name: 'order', in: 'query', description: '排序方向。', schema: { type: 'string', enum: ['asc', 'desc'], default: 'desc' } },
 ]
 
+/** 图文运行历史使用的固定筛选参数。 */
+const RUN_LIST_PARAMETERS: OpenApiParameter[] = [
+  { name: 'personaId', in: 'query', description: '按人物 UUID 筛选。', schema: { type: 'string', format: 'uuid' } },
+  { name: 'kind', in: 'query', description: '按运行类型筛选。', schema: { type: 'string', enum: ['interest_assessment', 'artifact_generation'] } },
+  { name: 'status', in: 'query', description: '按运行状态筛选。', schema: { type: 'string', enum: ['planning', 'awaiting_confirmation', 'queued', 'running', 'succeeded', 'partial', 'failed', 'canceled'] } },
+  { name: 'limit', in: 'query', description: '最多返回数量。', schema: { type: 'integer', minimum: 1, maximum: 100, default: 50 } },
+]
+
 /** 公共写接口要求的持久幂等请求头。 */
 const IDEMPOTENCY_PARAMETER: OpenApiParameter = {
   name: 'Idempotency-Key',
@@ -98,6 +106,12 @@ const RESPONSE_SCHEMA_BY_OPERATION: Record<string, string> = {
   unlinkSource: 'SourceDetails',
   linkGlobalSource: 'GlobalSources',
   unlinkGlobalSource: 'GlobalSources',
+  createGenerationRun: 'CreatedRun',
+  listRuns: 'RunList',
+  getRun: 'RunDetails',
+  cancelRun: 'RunDetails',
+  retryRun: 'CreatedRun',
+  renderRun: 'RenderedArtifact',
 }
 
 /**
@@ -111,26 +125,30 @@ function idParameter(name: string, label: string): OpenApiParameter {
 }
 
 /**
- * 创建人物、世界和资料库公共 API 的唯一 OpenAPI 契约。
+ * 创建人物、世界、资料库和图文运行公共 API 的唯一 OpenAPI 契约。
  * @returns 只包含 `/api/v2` 业务接口的 OpenAPI 3.1 文档。
  */
 export function createPublicOpenApiDocument(): PublicOpenApiDocument {
   const personaId = idParameter('personaId', '人物')
   const worldId = idParameter('worldId', '世界')
   const sourceId = idParameter('sourceId', '资料')
+  const runId = idParameter('runId', '运行')
+  const assetId = idParameter('assetId', '图片资产')
+  const format: OpenApiParameter = { name: 'format', in: 'path', required: true, description: '导出格式。', schema: { type: 'string', enum: ['html', 'markdown', 'txt'] } }
   const linkId: OpenApiParameter = { name: 'linkId', in: 'path', required: true, description: '资料关系稳定标识。', schema: { type: 'string' } }
   return {
     openapi: '3.1.0',
     info: {
       title: '人样公共 API',
       version: '2.0.0',
-      description: '面向外部 Agent、脚本和集成系统的人物、世界与资料库 API。AI 兴趣判断和文档生成尚未纳入 v2。所有时间均为 ISO 8601 UTC。',
+      description: '面向外部 Agent、脚本和集成系统的人物、世界、资料库与直接图文生成 API。所有时间均为 ISO 8601 UTC。',
     },
     servers: [{ url: '/', description: '当前人样实例' }],
     tags: [
       { name: '人物', description: '人物元数据、启停、世界关系和灵魂发布。' },
       { name: '世界', description: '世界元数据、启停和灵魂发布。' },
       { name: '资料库', description: '文本/文件资料、启停以及人物、世界、全局关系。' },
+      { name: '图文运行', description: '创建直接图文任务、查询状态、取消、整体重试、渲染与下载结果。' },
     ],
     paths: {
       '/api/v2/personas': {
@@ -213,6 +231,30 @@ export function createPublicOpenApiDocument(): PublicOpenApiDocument {
         put: writeOperation('资料库', 'linkGlobalSource', '把资料加入全局范围', 'library:write', [sourceId]),
         delete: writeOperation('资料库', 'unlinkGlobalSource', '把资料移出全局范围', 'library:write', [sourceId]),
       },
+      '/api/v2/generation-runs': {
+        post: writeOperation('图文运行', 'createGenerationRun', '创建直接图文生成运行', 'generation:write', [], '#/components/schemas/CreateGenerationRun', 202),
+      },
+      '/api/v2/runs': {
+        get: readOperation('图文运行', 'listRuns', '查询运行历史', 'generation:read', RUN_LIST_PARAMETERS),
+      },
+      '/api/v2/runs/{runId}': {
+        get: readOperation('图文运行', 'getRun', '查询运行状态与结果', 'generation:read', [runId]),
+      },
+      '/api/v2/runs/{runId}/cancel': {
+        post: writeOperation('图文运行', 'cancelRun', '请求协作式取消运行', 'generation:write', [runId]),
+      },
+      '/api/v2/runs/{runId}/retry': {
+        post: writeOperation('图文运行', 'retryRun', '整体重试失败或部分成功运行', 'generation:write', [runId], undefined, 202),
+      },
+      '/api/v2/runs/{runId}/render': {
+        post: writeOperation('图文运行', 'renderRun', '即时渲染运行结果', 'generation:read', [runId], '#/components/schemas/RenderRun'),
+      },
+      '/api/v2/runs/{runId}/assets/{assetId}': {
+        get: binaryReadOperation('图文运行', 'getRunAsset', '读取运行图片资产', 'generation:read', [runId, assetId], 'image/png, image/jpeg 或 image/webp'),
+      },
+      '/api/v2/runs/{runId}/exports/{format}': {
+        get: binaryReadOperation('图文运行', 'exportRun', '下载运行结果', 'generation:read', [runId, format], 'text/plain、text/html 或 application/zip'),
+      },
     },
     components: {
       securitySchemes: {
@@ -235,6 +277,41 @@ export function createPublicOpenApiDocument(): PublicOpenApiDocument {
  */
 function readOperation(tag: string, operationId: string, summary: string, scope: string, parameters: OpenApiParameter[]): OpenApiOperation {
   return operation(tag, operationId, summary, scope, parameters, false, undefined, 200)
+}
+
+/**
+ * 创建受 API Key 保护的二进制读取操作。
+ * @param tag 业务分组。
+ * @param operationId 稳定操作名。
+ * @param summary 接口摘要。
+ * @param scope 所需读取权限。
+ * @param parameters 路径参数。
+ * @param mediaDescription 成功媒体类型说明。
+ * @returns 含二进制成功响应和统一失败响应的操作。
+ */
+function binaryReadOperation(
+  tag: string,
+  operationId: string,
+  summary: string,
+  scope: string,
+  parameters: OpenApiParameter[],
+  mediaDescription: string,
+): OpenApiOperation {
+  return {
+    tags: [tag], operationId, summary,
+    description: `${summary}。权限：\`${scope}\`。成功响应通过 X-Request-Id 返回追踪标识。`,
+    security: [{ ApiKeyBearer: [] }],
+    'x-required-scope': scope,
+    parameters,
+    responses: {
+      '200': { description: `返回受控二进制内容：${mediaDescription}。` },
+      '401': { $ref: '#/components/responses/Unauthorized' },
+      '403': { $ref: '#/components/responses/Forbidden' },
+      '404': { $ref: '#/components/responses/NotFound' },
+      '422': { $ref: '#/components/responses/ValidationFailed' },
+      '429': { $ref: '#/components/responses/TooManyRequests' },
+    },
+  }
 }
 
 /** @param tag 业务标签。 @param operationId 稳定操作名。 @param summary 用途。 @param scope 权限。 @param parameters 路径参数。 @param schemaRef 可选请求 Schema。 @param status 成功状态。 @param mediaType 请求媒体类型。 @returns 写操作契约。 */
@@ -410,6 +487,19 @@ function createSchemas(): Record<string, Record<string, unknown>> {
     UpdateSource: { type: 'object', required: ['name', 'role', 'content'], properties: { name: { type: 'string', maxLength: 200 }, role, content: { type: 'string', maxLength: 2_000_000 } } },
     SourceLinkInput: { type: 'object', required: ['targetType', 'targetId'], properties: { targetType: { type: 'string', enum: ['persona', 'world'] }, targetId: { type: 'string', format: 'uuid' }, priority: { type: 'integer', minimum: 0, maximum: 10_000, default: 100 } } },
     SourceFileForm: { type: 'object', required: ['file', 'name', 'role'], properties: { file: { type: 'string', format: 'binary' }, name: { type: 'string', maxLength: 200 }, role, targets: { type: 'string', description: 'SourceTarget JSON 数组。', default: '[]' } } },
+    CreateGenerationRun: {
+      type: 'object', required: ['personaId', 'requirement'],
+      properties: {
+        personaId: uuid,
+        requirement: { type: 'string', minLength: 1, maxLength: 50_000 },
+        outputFormat: { type: 'string', enum: ['html', 'text'], default: 'text' },
+        imageCount: { type: 'integer', minimum: 0, maximum: 4, default: 0 },
+      },
+    },
+    RenderRun: {
+      type: 'object', required: ['formats'],
+      properties: { formats: { type: 'array', minItems: 1, maxItems: 3, uniqueItems: true, items: { type: 'string', enum: ['html', 'markdown', 'txt'] } } },
+    },
     PersonaSummary: personaSummary,
     PersonaPage: {
       type: 'object', required: ['items', 'total', 'page', 'pageSize', 'totalPages'],
@@ -500,6 +590,44 @@ function createSchemas(): Record<string, Record<string, unknown>> {
     NamedResource: { type: 'object', required: ['id', 'name'], properties: { id: uuid, name: { type: 'string' } } },
     GlobalSources: { type: 'object', required: ['sourceIds', 'addedSourceIds', 'removedSourceIds'], properties: { sourceIds: { type: 'array', items: uuid }, addedSourceIds: { type: 'array', items: uuid }, removedSourceIds: { type: 'array', items: uuid } } },
     DeleteResult: { type: 'object', required: ['id', 'deleted'], properties: { id: uuid, deleted: { type: 'boolean' } } },
+    CreatedRun: {
+      type: 'object', required: ['runId', 'taskId', 'status'],
+      properties: { runId: uuid, taskId: uuid, status: { type: 'string', enum: ['planning', 'queued'] } },
+    },
+    RunSummary: {
+      type: 'object', required: ['id', 'kind', 'personaId', 'personaName', 'status', 'input', 'parameters', 'model', 'contextProvider', 'createdAt', 'updatedAt'],
+      properties: {
+        id: uuid, kind: { type: 'string', enum: ['interest_assessment', 'artifact_generation'] },
+        personaId: uuid, personaName: { type: 'string' },
+        status: { type: 'string', enum: ['planning', 'awaiting_confirmation', 'queued', 'running', 'succeeded', 'partial', 'failed', 'canceled'] },
+        input: { type: 'object', description: '创建运行时固定的业务输入。' },
+        parameters: { type: 'object', description: '运行安全预算快照。' },
+        model: { type: 'object', description: '默认文本模型非敏感快照。' },
+        imageModel: { oneOf: [{ type: 'object' }, { type: 'null' }] },
+        contextProvider: { type: 'string', enum: ['sqlite_fts5', 'openviking'] },
+        errorCode: nullableString, errorMessage: nullableString,
+        createdAt: timestamp, updatedAt: timestamp, completedAt: { oneOf: [timestamp, { type: 'null' }] },
+      },
+    },
+    RunList: { type: 'array', items: { $ref: '#/components/schemas/RunSummary' } },
+    RunDetails: {
+      type: 'object', required: ['run', 'evidence', 'documentSpecs', 'blocks', 'tasks'],
+      properties: {
+        run: { $ref: '#/components/schemas/RunSummary' },
+        evidence: { type: 'array', items: { type: 'object' } },
+        documentSpecs: { type: 'array', items: { type: 'object' } },
+        blocks: { type: 'array', items: { type: 'object' } },
+        tasks: { type: 'array', items: { type: 'object' } },
+      },
+    },
+    RenderedArtifact: {
+      type: 'object', required: ['runId', 'documents', 'assets'],
+      properties: {
+        runId: uuid,
+        documents: { type: 'object', description: '按请求格式返回的文档正文。' },
+        assets: { type: 'array', items: { type: 'object', description: '文本格式独立返回的图片资产数据。' } },
+      },
+    },
   }
 }
 

@@ -39,7 +39,6 @@ const systemAiSettings: SystemAiSettingsValues = {
   textModelDeploymentId: '',
   imageModelDeploymentId: '',
   interestAnalysis: { temperature: 0.4, maxOutputTokens: 2_048, timeoutMs: 60_000, maxEvidenceChunks: 8 },
-  contentAnalysis: { temperature: 0.2, maxOutputTokens: 4_096, timeoutMs: 60_000 },
   draftGeneration: { temperature: 0.4, maxOutputTokens: 2_048, timeoutMs: 60_000 },
   feedbackClassification: { temperature: 0, maxOutputTokens: 4_096, timeoutMs: 60_000 },
 }
@@ -69,6 +68,36 @@ const memoryAlgorithm: AiAlgorithmView = {
   steps: [
     { key: 'extract', name: '证据提取', description: '提取带来源信号的候选。', promptCode: 'analysis.persona_memory_extract', ordinal: 0, modelDeploymentId: deployment.id, parameters: { temperature: 0, maxOutputTokens: 2_048, timeoutMs: 30_000 } },
     { key: 'synthesize', name: '记忆编译', description: '编译完整记忆草稿。', promptCode: 'analysis.persona_memory_synthesize', ordinal: 1, modelDeploymentId: deployment.id, parameters: { temperature: 0.2, maxOutputTokens: 4_096, timeoutMs: 60_000 } },
+  ],
+}
+
+/** AI 算法页使用的文章生成单步骤算法。 */
+const articleAlgorithm: AiAlgorithmView = {
+  code: 'article_generation', name: '文章生成', description: '一次生成完整文章。', implementationVersion: 1,
+  activeConfigurationVersion: 1, configurationVersionCount: 1, updatedAt: 1_000,
+  stepDefinitions: [
+    { key: 'generate', name: '生成文章', description: '生成完整文章。', promptCode: 'generation.article', ordinal: 0 },
+  ],
+  steps: [
+    {
+      key: 'generate', name: '生成文章', description: '生成完整文章。', promptCode: 'generation.article', ordinal: 0,
+      modelDeploymentId: deployment.id, parameters: { temperature: 0.6, maxOutputTokens: 4_096, timeoutMs: 60_000 },
+    },
+  ],
+}
+
+/** AI 算法页使用的文章配图分析单步骤算法。 */
+const articleImageAlgorithm: AiAlgorithmView = {
+  code: 'article_image_analysis', name: '文章配图分析', description: '分析配图位置。', implementationVersion: 1,
+  activeConfigurationVersion: 1, configurationVersionCount: 1, updatedAt: 1_000,
+  stepDefinitions: [
+    { key: 'analyze', name: '分析配图', description: '分析配图位置。', promptCode: 'generation.article_images', ordinal: 0 },
+  ],
+  steps: [
+    {
+      key: 'analyze', name: '分析配图', description: '分析配图位置。', promptCode: 'generation.article_images', ordinal: 0,
+      modelDeploymentId: deployment.id, parameters: { temperature: 0.2, maxOutputTokens: 2_048, timeoutMs: 30_000 },
+    },
   ],
 }
 
@@ -179,7 +208,7 @@ registerEndpoint('/api/v1/system/ai-settings', {
     return { data: { values: savedSystemAiSettings, updatedAt: 2_000 } }
   },
 })
-registerEndpoint('/api/v1/ai/algorithms', () => ({ data: [algorithm, memoryAlgorithm] }))
+registerEndpoint('/api/v1/ai/algorithms', () => ({ data: [algorithm, memoryAlgorithm, articleAlgorithm, articleImageAlgorithm] }))
 registerEndpoint('/api/v1/ai-prompts', () => ({ data: [...algorithmPrompts, ...memoryAlgorithmPrompts] }))
 registerEndpoint(`/api/v1/ai/algorithms/${algorithm.code}`, {
   method: 'PUT',
@@ -337,5 +366,23 @@ describe('AI 模型与算法配置页面', () => {
     expect(panel.text()).toContain('当前记忆提示词基线')
     expect(panel.text()).toContain('本次记忆素材')
     expect(panel.findAll('textarea')[1]!.attributes('placeholder')).toContain('---')
+  })
+
+  it('把文章生成与文章配图分析放入独立文章创作分类', async () => {
+    const wrapper = await mountSuspended(AiAlgorithmsPage, { route: '/ai-algorithms' })
+    await flushPromises()
+
+    const categoryButton = wrapper.findAll('button').find(button => button.text().includes('直接生成完整文章'))!
+    await categoryButton.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('文章生成')
+    expect(wrapper.text()).toContain('文章配图分析')
+    expect(wrapper.text()).toContain('generation.article')
+    expect(wrapper.text()).toContain('文章算法使用创作闭环验证')
+    expect(wrapper.find('[data-ai-algorithm-test-panel]').exists()).toBe(false)
+    await wrapper.findAll('button').find(button => button.text().includes('文章配图分析'))!.trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('generation.article_images')
   })
 })

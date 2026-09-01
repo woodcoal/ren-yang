@@ -244,7 +244,6 @@ export class ApplicationRuntime {
       souls: contentRepository,
       identifiers,
       clock: this.clock,
-      systemAiSettings: this.systemAiSettingsService,
       tokenCounter,
       model: textModel,
       prompts: this.aiPromptService,
@@ -271,7 +270,6 @@ export class ApplicationRuntime {
       prompts: this.aiPromptService,
       identifiers,
       clock: this.clock,
-      systemAiSettings: this.systemAiSettingsService,
       algorithms: aiAlgorithms,
     })
     this.generationService = new GenerationApplicationService({
@@ -289,6 +287,7 @@ export class ApplicationRuntime {
       learning: learningRepository,
       contextSyncQueue,
       systemAiSettings: this.systemAiSettingsService,
+      algorithms: aiAlgorithms,
     })
     this.historyService = new HistoryApplicationService({
       history: new SqliteHistoryRepository(this.sqlite.getClient()),

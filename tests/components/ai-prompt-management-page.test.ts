@@ -127,7 +127,6 @@ registerEndpoint('/api/v1/ai/model-deployments', () => ({ data: [] }))
 registerEndpoint('/api/v1/system/ai-settings', () => ({ data: {
   values: {
     interestAnalysis: { temperature: 0.4, maxOutputTokens: 2_048, timeoutMs: 60_000, maxEvidenceChunks: 8 },
-    contentAnalysis: { temperature: 0.2, maxOutputTokens: 4_096, timeoutMs: 60_000 },
     draftGeneration: { temperature: 0.4, maxOutputTokens: 2_048, timeoutMs: 60_000 },
     feedbackClassification: { temperature: 0, maxOutputTokens: 4_096, timeoutMs: 60_000 },
   },

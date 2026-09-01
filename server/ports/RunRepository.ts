@@ -6,6 +6,7 @@ import type {
   DocumentSpecRecord,
   EvidenceSnapshotRecord,
   FormatTemplateRecord,
+  GenerationAlgorithmSnapshot,
   GenerationRunRecord,
   ImageAssetRecord,
   ImageModelSnapshot,
@@ -47,6 +48,8 @@ export interface CreateRunCommand {
   contextProvider: 'sqlite_fts5' | 'openviking'
   /** 最终心智选择、预算和初始提示哈希。 */
   promptContextSnapshot: PromptContextSnapshot
+  /** 图文运行固定的文章与配图分析算法；兴趣运行为空。 */
+  algorithmSnapshot: GenerationAlgorithmSnapshot | null
   evidence: NewEvidenceSnapshot[]
   timestamp: number
 }

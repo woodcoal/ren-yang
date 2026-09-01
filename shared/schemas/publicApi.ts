@@ -9,6 +9,8 @@ export const apiKeyScopeSchema = z.enum([
   'world:write',
   'library:read',
   'library:write',
+  'generation:read',
+  'generation:write',
 ])
 
 /** 管理员创建 API Key 的输入。 */
@@ -16,7 +18,7 @@ export const createApiKeySchema = z.object({
   name: z.string().trim().min(1, 'Key 名称不能为空').max(100, 'Key 名称不能超过 100 字'),
   scopes: z.array(apiKeyScopeSchema)
     .min(1, '至少选择一个权限范围')
-    .max(6, '权限范围数量无效')
+    .max(8, '权限范围数量无效')
     .refine(scopes => new Set(scopes).size === scopes.length, '权限范围不能重复'),
   expiresAt: z.iso.datetime({ offset: true, error: '到期时间必须是带时区的 ISO 8601 时间' }).nullable().default(null),
 })

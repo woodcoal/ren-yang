@@ -56,7 +56,7 @@ describe('SqliteDatabase', () => {
     ])
     expect(current.getClient().prepare(`
       SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations
-    `).get()).toEqual({ count: 4, version: 1789372800000 })
+    `).get()).toEqual({ count: 5, version: 1789459200000 })
     expect(current.getClient().prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name IN (
       'api_keys', 'public_api_idempotency_records', 'public_api_audit_events'
     ) ORDER BY name`).all()).toEqual([
@@ -68,8 +68,19 @@ describe('SqliteDatabase', () => {
       SELECT COUNT(*) AS count FROM ai_prompts WHERE active_version_id IS NOT NULL
     `).get()).toEqual({ count: 22 })
     expect(current.getClient().prepare(`SELECT COUNT(*) AS count FROM ai_prompt_versions`).get()).toEqual({ count: 22 })
-    expect(current.getClient().prepare(`SELECT COUNT(*) AS count FROM ai_algorithms`).get()).toEqual({ count: 5 })
+    expect(current.getClient().prepare(`SELECT COUNT(*) AS count FROM ai_algorithms`).get()).toEqual({ count: 7 })
     expect(current.getClient().prepare(`SELECT code FROM ai_algorithms WHERE code = 'persona_memory'`).get()).toEqual({ code: 'persona_memory' })
+    expect(current.getClient().prepare(`SELECT code FROM ai_algorithms WHERE code IN (
+      'article_generation', 'article_image_analysis'
+    ) ORDER BY code`).all()).toEqual([
+      { code: 'article_generation' },
+      { code: 'article_image_analysis' },
+    ])
+    expect(current.getClient().prepare(`PRAGMA table_info(generation_runs)`).all()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'algorithm_snapshot_json', notnull: 0 }),
+    ]))
+    expect(current.getClient().prepare(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'generation_runs'`).get())
+      .toEqual(expect.objectContaining({ sql: expect.stringContaining('json_valid(`algorithm_snapshot_json`)') }))
     expect(current.getClient().prepare(`PRAGMA table_info(ai_connections)`).all()).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'user_agent', notnull: 1, dflt_value: "''" }),
     ]))
@@ -105,6 +116,48 @@ describe('SqliteDatabase', () => {
       { name: 'task_jobs_run_insert_check' },
       { name: 'task_jobs_run_update_check' },
     ])
+  })
+
+  it('既有 0003 数据库升级到文章算法迁移且重复启动不重复执行', () => {
+    temporaryDirectory = mkdtempSync(resolve(tmpdir(), 'ren-yang-sqlite-generation-upgrade-test-'))
+    const dataDirectory = resolve(temporaryDirectory, 'data')
+    const migrationsDirectory = resolve(temporaryDirectory, 'migrations')
+    mkdirSync(resolve(migrationsDirectory, 'meta'), { recursive: true })
+    for (const migration of ['0000_schema.sql', '0001_public_api_keys.sql', '0002_public_api_idempotency_audit.sql', '0003_direct_artifact_generation.sql']) {
+      copyFileSync(resolve(process.cwd(), 'drizzle', migration), resolve(migrationsDirectory, migration))
+    }
+    writeFileSync(resolve(migrationsDirectory, 'meta', '_journal.json'), `${JSON.stringify({
+      version: '7',
+      dialect: 'sqlite',
+      entries: [
+        { idx: 0, version: '6', when: 1789113600000, tag: '0000_schema', breakpoints: true },
+        { idx: 1, version: '6', when: 1789200000000, tag: '0001_public_api_keys', breakpoints: true },
+        { idx: 2, version: '6', when: 1789286400000, tag: '0002_public_api_idempotency_audit', breakpoints: true },
+        { idx: 3, version: '6', when: 1789372800000, tag: '0003_direct_artifact_generation', breakpoints: true },
+      ],
+    }, null, 2)}\n`)
+
+    database = new SqliteDatabase({ dataDirectory, migrationsDirectory })
+    expect(database.getClient().prepare(`SELECT COUNT(*) AS count FROM ai_algorithms`).get()).toEqual({ count: 5 })
+    expect(database.getClient().prepare(`PRAGMA table_info(generation_runs)`).all())
+      .not.toEqual(expect.arrayContaining([expect.objectContaining({ name: 'algorithm_snapshot_json' })]))
+    database.close()
+    database = null
+
+    database = new SqliteDatabase({ dataDirectory, migrationsDirectory: resolve(process.cwd(), 'drizzle') })
+    expect(database.getClient().prepare(`SELECT COUNT(*) AS count FROM ai_algorithms`).get()).toEqual({ count: 7 })
+    expect(database.getClient().prepare(`PRAGMA table_info(generation_runs)`).all()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'algorithm_snapshot_json', notnull: 0 }),
+    ]))
+    expect(database.getClient().prepare('PRAGMA foreign_key_check').all()).toEqual([])
+    database.close()
+    database = null
+
+    database = new SqliteDatabase({ dataDirectory, migrationsDirectory: resolve(process.cwd(), 'drizzle') })
+    expect(database.getClient().prepare(`
+      SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations
+    `).get()).toEqual({ count: 5, version: 1789459200000 })
+    expect(database.getClient().prepare(`SELECT COUNT(*) AS count FROM ai_algorithms`).get()).toEqual({ count: 7 })
   })
 
   it('已完成压平前最终迁移的旧数据库不会重复执行新基线', () => {
@@ -177,8 +230,11 @@ describe('SqliteDatabase', () => {
     `).get()).toEqual({ name: '旧资料', content_text: '压平前正文。', is_enabled: 1 })
     expect(database.getClient().prepare(`
       SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations
-    `).get()).toEqual({ count: 19, version: 1789372800000 })
-    expect(database.getClient().prepare(`SELECT COUNT(*) AS count FROM ai_algorithms`).get()).toEqual({ count: 5 })
+    `).get()).toEqual({ count: 20, version: 1789459200000 })
+    expect(database.getClient().prepare(`SELECT COUNT(*) AS count FROM ai_algorithms`).get()).toEqual({ count: 7 })
+    expect(database.getClient().prepare(`PRAGMA table_info(generation_runs)`).all()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'algorithm_snapshot_json', notnull: 0 }),
+    ]))
     expect(database.getClient().prepare(`SELECT name FROM sqlite_master
       WHERE type = 'table' AND name = 'openviking_sync_runtime'`).get()).toEqual({ name: 'openviking_sync_runtime' })
     expect(database.getClient().prepare(`

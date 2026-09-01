@@ -7,7 +7,7 @@ import type { AiPromptWorkspaceView } from '#shared/types/aiPrompt'
 import { getApiErrorMessage } from '../utils/apiError'
 
 /** AI 算法页的顶层分类。 */
-type AiAlgorithmCategory = 'soul' | 'growth' | 'memory'
+type AiAlgorithmCategory = 'soul' | 'growth' | 'memory' | 'generation'
 
 /** 等待确认的算法与提示词选择。 */
 interface PendingAlgorithmSelection {
@@ -21,6 +21,7 @@ const categories: Array<{ code: AiAlgorithmCategory, label: string, description:
   { code: 'soul', label: '灵魂整理', description: '整理管理员手工设定的人物或世界初始灵魂。' },
   { code: 'growth', label: '成长提炼', description: '先提取带证据结论，再综合为待审核的成长提示词。' },
   { code: 'memory', label: '记忆提炼', description: '按来源与独立证据门槛提炼人物长期记忆。' },
+  { code: 'generation', label: '文章创作', description: '直接生成完整文章，并根据文章分析配图位置。' },
 ]
 
 const route = useRoute()
@@ -68,8 +69,19 @@ function findInitialAlgorithm(): AiAlgorithmView | null {
  * @returns 算法所属顶层分类。
  */
 function algorithmCategory(code: AiAlgorithmCode): AiAlgorithmCategory {
+  if (code.startsWith('article_')) return 'generation'
   if (code === 'persona_memory') return 'memory'
   return code.endsWith('_growth') ? 'growth' : 'soul'
+}
+
+/**
+ * 把算法编码转换为分类内的简短业务标签。
+ * @param code 固定算法编码。
+ * @returns 人物、世界或文章标签。
+ */
+function algorithmScopeLabel(code: AiAlgorithmCode): string {
+  if (code.startsWith('article_')) return '文章'
+  return code.startsWith('persona_') ? '人物' : '世界'
 }
 
 /**
@@ -162,7 +174,7 @@ async function saveAlgorithm(code: AiAlgorithmCode, input: PublishAiAlgorithmCon
 
 <template>
   <div>
-    <ContentPageHeader title="AI 算法" description="按灵魂整理、成长提炼与记忆提炼分类维护固定流程；模型、参数和步骤提示词在同一处调整。" />
+    <ContentPageHeader title="AI 算法" description="按灵魂、成长、记忆与文章创作分类维护固定流程；模型、参数和步骤提示词在同一处调整。" />
     <div class="status-strip page-status-strip" aria-label="AI 算法状态摘要">
       <div class="status-cell"><span class="status-kicker">固定算法</span><strong class="status-value">{{ algorithms.length }}</strong></div>
       <div class="status-cell"><span class="status-kicker">已配置</span><strong class="status-value">{{ configuredCount }}</strong></div>
@@ -199,7 +211,7 @@ async function saveAlgorithm(code: AiAlgorithmCode, input: PublishAiAlgorithmCon
             :class="{ 'algorithm-subject-tab--active': algorithm.code === selectedAlgorithm.code }"
             @click="requestAlgorithm(algorithm)"
           >
-            <span>{{ algorithm.code.startsWith('persona_') ? '人物' : '世界' }}</span>
+            <span>{{ algorithmScopeLabel(algorithm.code) }}</span>
             <strong>{{ algorithm.name }}</strong>
             <UBadge :color="algorithm.activeConfigurationVersion ? 'success' : 'warning'" variant="subtle">{{ algorithm.activeConfigurationVersion ? `配置 v${algorithm.activeConfigurationVersion}` : '待配置' }}</UBadge>
           </button>
@@ -214,7 +226,8 @@ async function saveAlgorithm(code: AiAlgorithmCode, input: PublishAiAlgorithmCon
           @edit-prompt="requestPrompt"
         />
 
-        <AiConfigurationAiAlgorithmTestPanel :key="selectedAlgorithm.code" :algorithm="selectedAlgorithm" />
+        <AiConfigurationAiAlgorithmTestPanel v-if="!selectedAlgorithm.code.startsWith('article_')" :key="selectedAlgorithm.code" :algorithm="selectedAlgorithm" />
+        <UAlert v-else color="neutral" variant="subtle" title="文章算法使用创作闭环验证" description="请在工作台创建文本或图文任务，验证人物风格、文章结果和配图位置；测试会保留完整运行快照。" />
 
         <section class="content-section" aria-labelledby="algorithm-prompt-heading">
           <div class="section-heading">
@@ -242,7 +255,7 @@ async function saveAlgorithm(code: AiAlgorithmCode, input: PublishAiAlgorithmCon
 <style scoped>
 .algorithm-category-tabs {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   margin-top: 2rem;
   overflow: hidden;
   border: 1px solid var(--app-border);

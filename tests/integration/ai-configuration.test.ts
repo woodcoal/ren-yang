@@ -159,6 +159,46 @@ describe('AI 接口、模型部署与算法配置', () => {
     `).get()).toEqual({ action: 'ai_algorithm_configuration_published' })
   })
 
+  it('文章生成与文章配图分析作为两个独立固定算法配置', async () => {
+    const { service, algorithms } = createServices()
+    const connection = await service.createConnection({
+      name: '文章接口', protocol: 'openai_compatible', endpoint: 'https://article.example/v1',
+      apiKey: 'article-secret', isEnabled: true,
+    })
+    const deployment = await service.createModelDeployment({
+      connectionId: connection.id, name: '文章文本模型', model: 'article-model', modality: 'text', isEnabled: true,
+    })
+
+    const views = await service.listAlgorithms()
+    expect(views.map(item => item.code)).toEqual(expect.arrayContaining(['article_generation', 'article_image_analysis']))
+    expect(views.find(item => item.code === 'article_generation')?.stepDefinitions).toEqual([
+      expect.objectContaining({ key: 'generate', promptCode: 'generation.article', ordinal: 0 }),
+    ])
+    expect(views.find(item => item.code === 'article_image_analysis')?.stepDefinitions).toEqual([
+      expect.objectContaining({ key: 'analyze', promptCode: 'generation.article_images', ordinal: 0 }),
+    ])
+
+    await service.publishAlgorithmConfiguration('article_generation', {
+      steps: [{
+        stepKey: 'generate', modelDeploymentId: deployment.id,
+        parameters: { temperature: 0.6, maxOutputTokens: 4_096, timeoutMs: 60_000 },
+      }],
+    })
+    await service.publishAlgorithmConfiguration('article_image_analysis', {
+      steps: [{
+        stepKey: 'analyze', modelDeploymentId: deployment.id,
+        parameters: { temperature: 0.2, maxOutputTokens: 2_048, timeoutMs: 30_000 },
+      }],
+    })
+
+    await expect(algorithms.prepare('article_generation')).resolves.toMatchObject({
+      algorithmCode: 'article_generation', steps: [{ stepKey: 'generate', promptCode: 'generation.article' }],
+    })
+    await expect(algorithms.prepare('article_image_analysis')).resolves.toMatchObject({
+      algorithmCode: 'article_image_analysis', steps: [{ stepKey: 'analyze', promptCode: 'generation.article_images' }],
+    })
+  })
+
   it('成长测试分步执行并把第一步已校验事实显式传给第二步', async () => {
     const { service, testing, prompts, modelFactory } = createServices()
     const deploymentId = await configureAlgorithm(service, 'persona_growth')

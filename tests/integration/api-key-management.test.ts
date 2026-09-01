@@ -51,8 +51,8 @@ describe('API Key 管理', () => {
     const service = createService()
 
     const created = await service.create({
-      name: '资料同步脚本',
-      scopes: ['persona:read', 'library:write'],
+      name: '图文运行脚本',
+      scopes: ['generation:read', 'generation:write'],
       expiresAt: null,
     })
 
@@ -65,7 +65,7 @@ describe('API Key 管理', () => {
     expect(persisted).toEqual({
       key_digest: 'e4cbe6e16f6ff10e5c3a0331df485a6aa559982f7e559e44e141ec263d3cb47e',
       key_prefix: 'ry_v2_abcdef',
-      scopes_json: '["persona:read","library:write"]',
+      scopes_json: '["generation:read","generation:write"]',
     })
     expect(JSON.stringify(persisted)).not.toContain(created.secret)
   })

@@ -31,11 +31,34 @@ describe('系统 AI 设置', () => {
         textModelDeploymentId: '',
         imageModelDeploymentId: '',
         interestAnalysis: { temperature: 0.4, maxOutputTokens: 2_048, timeoutMs: 60_000, maxEvidenceChunks: 8 },
-        contentAnalysis: { temperature: 0.2, maxOutputTokens: 4_096, timeoutMs: 60_000 },
         draftGeneration: { temperature: 0.4, maxOutputTokens: 2_048, timeoutMs: 60_000 },
         feedbackClassification: { temperature: 0, maxOutputTokens: 4_096, timeoutMs: 60_000 },
       },
       updatedAt: null,
+    })
+  })
+
+  it('读取旧记录时丢弃已经由固定算法接管的内容分析参数', async () => {
+    database.getClient().prepare(`
+      INSERT INTO system_ai_settings (id, values_json, updated_at) VALUES ('system_ai_settings', ?, 7000)
+    `).run(JSON.stringify({
+      textModelDeploymentId: '',
+      imageModelDeploymentId: '',
+      interestAnalysis: { temperature: 0.4, maxOutputTokens: 2_048, timeoutMs: 60_000, maxEvidenceChunks: 8 },
+      contentAnalysis: { temperature: 1.8, maxOutputTokens: 8_192, timeoutMs: 120_000 },
+      draftGeneration: { temperature: 0.4, maxOutputTokens: 2_048, timeoutMs: 60_000 },
+      feedbackClassification: { temperature: 0, maxOutputTokens: 4_096, timeoutMs: 60_000 },
+    }))
+
+    await expect(createService().getSettings()).resolves.toEqual({
+      values: {
+        textModelDeploymentId: '',
+        imageModelDeploymentId: '',
+        interestAnalysis: { temperature: 0.4, maxOutputTokens: 2_048, timeoutMs: 60_000, maxEvidenceChunks: 8 },
+        draftGeneration: { temperature: 0.4, maxOutputTokens: 2_048, timeoutMs: 60_000 },
+        feedbackClassification: { temperature: 0, maxOutputTokens: 4_096, timeoutMs: 60_000 },
+      },
+      updatedAt: 7_000,
     })
   })
 

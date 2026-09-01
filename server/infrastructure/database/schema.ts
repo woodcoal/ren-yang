@@ -702,7 +702,7 @@ export const aiAlgorithms = sqliteTable(
     updatedAt: integer('updated_at').notNull(),
   },
   table => [
-    check('ai_algorithms_code_check', sql`${table.code} IN ('persona_soul', 'world_soul', 'persona_growth', 'world_growth', 'persona_memory')`),
+    check('ai_algorithms_code_check', sql`${table.code} IN ('persona_soul', 'world_soul', 'persona_growth', 'world_growth', 'persona_memory', 'article_generation', 'article_image_analysis')`),
     check('ai_algorithms_name_check', sql`length(trim(${table.name})) > 0`),
     check('ai_algorithms_implementation_version_check', sql`${table.implementationVersion} > 0`),
   ],
@@ -762,6 +762,7 @@ export const generationRuns = sqliteTable(
     promptVersion: text('prompt_version').notNull(),
     contextProvider: text('context_provider').notNull(),
     promptContextSnapshotJson: text('prompt_context_snapshot_json'),
+    algorithmSnapshotJson: text('algorithm_snapshot_json'),
     resultJson: text('result_json'),
     usageJson: text('usage_json'),
     errorCode: text('error_code'),
@@ -780,6 +781,7 @@ export const generationRuns = sqliteTable(
     ),
     check('generation_runs_context_provider_check', sql`${table.contextProvider} IN ('sqlite_fts5', 'openviking')`),
     check('generation_runs_prompt_context_json_check', sql`${table.promptContextSnapshotJson} IS NULL OR json_valid(${table.promptContextSnapshotJson})`),
+    check('generation_runs_algorithm_json_check', sql`${table.algorithmSnapshotJson} IS NULL OR json_valid(${table.algorithmSnapshotJson})`),
   ],
 )
 

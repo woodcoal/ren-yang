@@ -50,6 +50,20 @@ export const AI_ALGORITHM_DEFINITIONS: Record<AiAlgorithmCode, AiAlgorithmDefini
       { key: 'synthesize', name: '记忆编译', description: '把通过独立证据门槛的事实编译为完整人物记忆提示词草稿。', promptCode: 'analysis.persona_memory_synthesize', ordinal: 1 },
     ],
   },
+  article_generation: {
+    code: 'article_generation', name: '文章生成', implementationVersion: 1,
+    description: '结合人物个性、创作条件和有效资料一次生成完整文章。',
+    steps: [
+      { key: 'generate', name: '生成文章', description: '一次生成最终标题、摘要和全部正文段落。', promptCode: 'generation.article', ordinal: 0 },
+    ],
+  },
+  article_image_analysis: {
+    code: 'article_image_analysis', name: '文章配图分析', implementationVersion: 1,
+    description: '根据最终文章分析指定数量配图的内容与正文插入位置。',
+    steps: [
+      { key: 'analyze', name: '分析配图', description: '确定每张配图的视觉要求和段落插入位置。', promptCode: 'generation.article_images', ordinal: 0 },
+    ],
+  },
 }
 
 /**

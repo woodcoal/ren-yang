@@ -30,6 +30,9 @@ import type { AiPromptApplicationService } from '../../server/application/aiProm
 import { createTestAiPromptService } from '../support/createTestAiPromptService'
 import { SystemAiSettingsApplicationService } from '../../server/application/systemAi/SystemAiSettingsApplicationService'
 import { SqliteSystemAiSettingsRepository } from '../../server/infrastructure/database/SqliteSystemAiSettingsRepository'
+import type { AiAlgorithmApplicationService } from '../../server/application/aiConfiguration/AiAlgorithmApplicationService'
+import type { AiAlgorithmSnapshot } from '../../server/domain/ai/AiAlgorithmModels'
+import type { AiAlgorithmCode } from '../../shared/types/aiConfiguration'
 
 /** 测试固定时钟。 */
 class TestClock implements Clock {
@@ -286,6 +289,7 @@ beforeEach(async () => {
     identifiers, clock: testClock, sourceProcessor: processor,
     tokenCounter: new ConservativeTokenCounter(), learning: learningRepository,
     systemAiSettings,
+    algorithms: createGenerationAlgorithms(aiPrompts, model),
   })
   worker = new WorkerApplicationService({
     taskJobRepository: new SqliteTaskJobRepository(database.getClient()), taskHandler: generation,
@@ -497,6 +501,14 @@ describe('阶段三纯文本运行', () => {
       '这里的课程值得认真研究。',
       '每一门课都需要结合可靠资料判断价值。',
     ])
+    const snapshot = database.getClient().prepare(`
+      SELECT algorithm_snapshot_json FROM generation_runs WHERE id = ?
+    `).get(created.runId) as { algorithm_snapshot_json: string }
+    expect(JSON.parse(snapshot.algorithm_snapshot_json)).toMatchObject({
+      articleGeneration: { algorithmCode: 'article_generation', steps: [{ parameters: { temperature: 0.65 } }] },
+      articleImageAnalysis: null,
+    })
+    expect(model.requests.get('article')?.parameters.temperature).toBe(0.65)
   })
 
   it('排队运行可协作取消且不会再被 Worker 领取', async () => {
@@ -650,6 +662,56 @@ describe('阶段三纯文本运行', () => {
     await expect(contentService.getSource(sourceId)).resolves.toMatchObject({ source: { id: sourceId } })
   })
 })
+
+/**
+ * 使用现有固定模型模拟数据库算法执行接缝，验证生成服务确实读取运行算法快照。
+ * @param prompts 真实迁移提示词目录。
+ * @param textModel 可观察的免费测试文本模型。
+ * @returns 只实现生成服务所需准备与执行方法的算法服务。
+ */
+function createGenerationAlgorithms(
+  prompts: AiPromptApplicationService,
+  textModel: FixedTextModel,
+): Pick<AiAlgorithmApplicationService, 'prepare' | 'executeStep'> {
+  return {
+    /** @param code 文章生成或配图分析算法编码。 @returns 固定单步骤快照。 */
+    async prepare(code: AiAlgorithmCode): Promise<AiAlgorithmSnapshot> {
+      const isArticle = code === 'article_generation'
+      const promptCode = isArticle ? 'generation.article' : 'generation.article_images'
+      const versions = await prompts.snapshotPublishedVersions([promptCode])
+      return {
+        algorithmCode: code,
+        implementationVersion: 1,
+        configurationVersionId: isArticle ? '00000000-0000-4000-8000-000000000701' : '00000000-0000-4000-8000-000000000702',
+        configurationVersion: 1,
+        steps: [{
+          stepKey: isArticle ? 'generate' : 'analyze', ordinal: 0,
+          modelDeploymentId: '00000000-0000-4000-8000-000000000703',
+          connectionId: '00000000-0000-4000-8000-000000000704',
+          protocol: 'openai_compatible', endpoint: 'https://model.test/v1', userAgent: '',
+          model: 'fixed-test-model', promptCode, promptVersionId: versions[promptCode]!,
+          parameters: {
+            temperature: isArticle ? 0.65 : 0.15,
+            maxOutputTokens: isArticle ? 4_096 : 2_048,
+            timeoutMs: 60_000,
+          },
+        }],
+      }
+    },
+    /** @param snapshot 固定算法快照。 @param stepKey 步骤键。 @param variables 模板变量。 @param responseSchemaName 响应结构名。 @param responseFormat 响应格式。 @returns 测试模型响应。 */
+    async executeStep(snapshot, stepKey, variables, responseSchemaName, responseFormat) {
+      const step = snapshot.steps.find(item => item.stepKey === stepKey)
+      if (!step) throw new Error('测试算法步骤不存在')
+      const prompt = await prompts.render(step.promptCode, variables, step.promptVersionId)
+      return await textModel.generateStructured({
+        ...prompt,
+        parameters: { ...DEFAULT_TEXT_PARAMETERS, ...step.parameters },
+        responseSchemaName,
+        responseFormat,
+      })
+    },
+  }
+}
 
 /**
  * 按新契约完成一次直接图文生成。

@@ -40,7 +40,8 @@ import type { SystemCapabilitiesResult } from '../../../shared/types/system'
 import type { LearningPromptVersionView } from '../../../shared/types/learning'
 import type { PersonaRecord, PersonaVersionRecord } from '../../domain/content/ContentModels'
 import { ImageAssetError } from '../../domain/generation/ImageAssetError'
-import type { ArtifactBlockRecord, GenerationRunRecord, TextModelUsage } from '../../domain/generation/GenerationModels'
+import type { ArtifactBlockRecord, GenerationAlgorithmSnapshot, GenerationRunRecord, TextModelUsage } from '../../domain/generation/GenerationModels'
+import type { AiAlgorithmSnapshot } from '../../domain/ai/AiAlgorithmModels'
 import { selectPromptContextByBudget, type PromptBudgetCandidate } from '../../domain/generation/PromptContextBudget'
 import type { TaskJob } from '../../domain/tasks/TaskJob'
 import type { Clock } from '../../ports/Clock'
@@ -63,6 +64,7 @@ import type { TokenCounter } from '../../ports/TokenCounter'
 import { TextModelError } from '../../ports/TextModelPort'
 import { ApplicationError } from '../errors/ApplicationError'
 import type { AiPromptApplicationService } from '../aiPrompts/AiPromptApplicationService'
+import type { AiAlgorithmApplicationService } from '../aiConfiguration/AiAlgorithmApplicationService'
 import type { SystemAiSettingsApplicationService } from '../systemAi/SystemAiSettingsApplicationService'
 import {
   buildArticleImagesPromptVariables,
@@ -129,6 +131,8 @@ export interface GenerationApplicationServiceDependencies {
   contextSyncQueue?: ContextSyncTaskQueue
   /** 系统内部 AI 操作的分场景参数；未提供时保持原固定参数，便于独立测试。 */
   systemAiSettings?: Pick<SystemAiSettingsApplicationService, 'resolveParameters'>
+  /** 文章生成与配图分析固定算法；未提供时仅供独立旧路径测试。 */
+  algorithms?: Pick<AiAlgorithmApplicationService, 'prepare' | 'executeStep'>
 }
 
 /** 编排运行创建、查询、文章直出、内部结果保存和 Worker 模型执行。 */
@@ -437,6 +441,9 @@ export class GenerationApplicationService implements TaskHandler {
     if ('imageCount' in input && input.imageCount > 0 && !imageModel) {
       throw new ApplicationError('CAPABILITY_DISABLED', '图片模型尚未配置，不能创建包含图片的运行', 422)
     }
+    const algorithmSnapshot = kind === 'artifact_generation' && this.dependencies.algorithms
+      ? await this.prepareGenerationAlgorithms('imageCount' in input ? input.imageCount : 0)
+      : null
     const promptCodes = kind === 'interest_assessment'
       ? [GENERATION_PROMPT_CODES.interestAssessment, GENERATION_PROMPT_CODES.jsonRetry]
       : [
@@ -618,6 +625,7 @@ export class GenerationApplicationService implements TaskHandler {
       promptVersion: `ai-catalog:${this.dependencies.sourceProcessor.hash(JSON.stringify(aiPromptVersions)).slice(0, 16)}`,
       contextProvider: contextSearch.provider,
       promptContextSnapshot,
+      algorithmSnapshot,
       evidence: [
         ...userSettings,
         ...fixedLearningPrompts.map((item, index) => ({ ...item.evidence, rank: userSettings.length + index })),
@@ -626,6 +634,20 @@ export class GenerationApplicationService implements TaskHandler {
       timestamp,
     })
     return { runId, taskId, status: kind === 'interest_assessment' ? 'queued' : 'planning' }
+  }
+
+  /**
+   * 固定新图文运行使用的文章生成和可选配图分析算法。
+   * @param imageCount 用户明确要求的图片数量。
+   * @returns 不含访问密钥的完整算法配置快照。
+   */
+  private async prepareGenerationAlgorithms(imageCount: number): Promise<GenerationAlgorithmSnapshot> {
+    if (!this.dependencies.algorithms) throw new Error('图文算法服务未配置')
+    const [articleGeneration, articleImageAnalysis] = await Promise.all([
+      this.dependencies.algorithms.prepare('article_generation'),
+      imageCount > 0 ? this.dependencies.algorithms.prepare('article_image_analysis') : Promise.resolve(null),
+    ])
+    return { articleGeneration, articleImageAnalysis }
   }
 
   /**
@@ -759,23 +781,28 @@ export class GenerationApplicationService implements TaskHandler {
   /** @param runId 图文创作运行 UUID。 @returns 最终文章、可选配图计划和自动确认文档保存完成时结束。 */
   private async executeDocumentPlan(runId: string): Promise<void> {
     const run = await this.requireRun(runId)
-    this.requireMatchingModel(run)
+    if (!run.algorithmSnapshot) this.requireMatchingModel(run)
     await this.requireRunStarted(run, ['planning', 'running'])
     const context = await this.loadPromptContext(run)
     if (!('requirement' in run.input)) throw new Error('图文运行缺少创作条件')
-    const prompt = await this.dependencies.prompts.render(
-      GENERATION_PROMPT_CODES.article,
-      buildArticlePromptVariables(context, run.input.requirement, run.input.outputFormat),
-      requireRunPromptVersion(run, GENERATION_PROMPT_CODES.article),
-    )
-    const articleResult = await this.generateValidated(
-      prompt,
-      requireRunPromptVersion(run, GENERATION_PROMPT_CODES.jsonRetry),
-      run.parameterSnapshot,
-      'article',
-      value => articleOutputSchema.parse(value),
-      run.usage,
-    )
+    const articleVariables = buildArticlePromptVariables(context, run.input.requirement, run.input.outputFormat)
+    const articleResult = run.algorithmSnapshot
+      ? await this.executeConfiguredGenerationStep(
+          run.algorithmSnapshot.articleGeneration, 'generate', articleVariables, 'article',
+          value => articleOutputSchema.parse(value), run.parameterSnapshot, run.usage,
+        )
+      : await this.generateValidated(
+          await this.dependencies.prompts.render(
+            GENERATION_PROMPT_CODES.article,
+            articleVariables,
+            requireRunPromptVersion(run, GENERATION_PROMPT_CODES.article),
+          ),
+          requireRunPromptVersion(run, GENERATION_PROMPT_CODES.jsonRetry),
+          run.parameterSnapshot,
+          'article',
+          value => articleOutputSchema.parse(value),
+          run.usage,
+        )
     if (articleResult.output.paragraphs.length > run.parameterSnapshot.maxTextBlocks) {
       throw new ApplicationError('TASK_LIMIT_EXCEEDED', '文章段落数量超过运行上限', 422)
     }
@@ -785,19 +812,26 @@ export class GenerationApplicationService implements TaskHandler {
     let operationUsage = articleResult.usage
     if (run.input.imageCount > 0) {
       this.requireMatchingImageModel(run)
-      const imagePrompt = await this.dependencies.prompts.render(
-        GENERATION_PROMPT_CODES.articleImages,
-        buildArticleImagesPromptVariables(articleResult.output, run.input.imageCount),
-        requireRunPromptVersion(run, GENERATION_PROMPT_CODES.articleImages),
-      )
-      const imageResult = await this.generateValidated(
-        imagePrompt,
-        requireRunPromptVersion(run, GENERATION_PROMPT_CODES.jsonRetry),
-        run.parameterSnapshot,
-        'article_images',
-        value => validateArticleImages(value, run.input.imageCount, articleResult.output.paragraphs.length),
-        aggregateTextModelUsage(run.usage ? [run.usage, articleResult.usage] : [articleResult.usage]),
-      )
+      const imageVariables = buildArticleImagesPromptVariables(articleResult.output, run.input.imageCount)
+      const priorUsage = aggregateTextModelUsage(run.usage ? [run.usage, articleResult.usage] : [articleResult.usage])
+      const imageResult = run.algorithmSnapshot?.articleImageAnalysis
+        ? await this.executeConfiguredGenerationStep(
+            run.algorithmSnapshot.articleImageAnalysis, 'analyze', imageVariables, 'article_images',
+            value => validateArticleImages(value, run.input.imageCount, articleResult.output.paragraphs.length),
+            run.parameterSnapshot, priorUsage,
+          )
+        : await this.generateValidated(
+            await this.dependencies.prompts.render(
+              GENERATION_PROMPT_CODES.articleImages,
+              imageVariables,
+              requireRunPromptVersion(run, GENERATION_PROMPT_CODES.articleImages),
+            ),
+            requireRunPromptVersion(run, GENERATION_PROMPT_CODES.jsonRetry),
+            run.parameterSnapshot,
+            'article_images',
+            value => validateArticleImages(value, run.input.imageCount, articleResult.output.paragraphs.length),
+            priorUsage,
+          )
       operationUsage = aggregateTextModelUsage([operationUsage, imageResult.usage])
       imagePlan = imageResult.output
       if (await this.finishCancellationIfRequested(runId, operationUsage)) return
@@ -821,6 +855,40 @@ export class GenerationApplicationService implements TaskHandler {
       this.dependencies.clock.now(),
     )
     if (!confirmed) throw new Error('文章自动确认时运行状态已经变化')
+  }
+
+  /**
+   * 使用运行创建时固定的算法快照执行文章类单步骤并保留结构错误用量。
+   * @param snapshot 固定算法实现、模型、提示词和参数。
+   * @param stepKey 代码定义的唯一步骤键。
+   * @param variables 已由代码组装的完整提示词变量。
+   * @param schemaName 供应商诊断使用的结构名称。
+   * @param parse 与生产业务一致的输出校验器。
+   * @param limits 本次运行固定的总 Token 安全上限。
+   * @param priorUsage 当前运行此前已持久化或本轮已产生的用量。
+   * @returns 已校验业务输出和本步骤新增用量。
+   */
+  private async executeConfiguredGenerationStep<T>(
+    snapshot: AiAlgorithmSnapshot,
+    stepKey: string,
+    variables: Record<string, string>,
+    schemaName: string,
+    parse: (value: unknown) => T,
+    limits: TextModelParameters,
+    priorUsage: TextModelUsage | null,
+  ): Promise<{ output: T, usage: TextModelUsage }> {
+    if (!this.dependencies.algorithms) throw new ApplicationError('AI_ALGORITHM_NOT_CONFIGURED', '图文算法服务未配置', 422)
+    const response = await this.dependencies.algorithms.executeStep(snapshot, stepKey, variables, schemaName, 'json_object')
+    const cumulativeUsage = aggregateTextModelUsage(priorUsage ? [priorUsage, response.usage] : [response.usage])
+    const totalTokens = usageTotalTokens(cumulativeUsage)
+    if (totalTokens !== null && totalTokens > limits.maxTotalTokens) throw new TextUsageLimitError(response.usage)
+    try {
+      return { output: parse(response.structuredOutput), usage: response.usage }
+    }
+    catch (error: unknown) {
+      const normalized = normalizeExecutionError(error)
+      throw new TextResponseUsageError(normalized.code, normalized.message, normalized.retryable, response.usage)
+    }
   }
 
   /** @param runId 已确认文档运行 UUID。 @returns 所有图文块串行执行结束时完成。 */

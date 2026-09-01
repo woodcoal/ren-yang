@@ -24,6 +24,8 @@ const scopeLabels: Record<ApiKeyView['scopes'][number], string> = {
   'world:write': '世界写入',
   'library:read': '资料读取',
   'library:write': '资料写入',
+  'generation:read': '图文运行读取',
+  'generation:write': '图文运行创建与操作',
 }
 
 /**

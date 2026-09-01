@@ -20,6 +20,8 @@ const scopeOptions: Array<{ value: ApiKeyScope, label: string }> = [
   { value: 'world:write', label: '世界写入' },
   { value: 'library:read', label: '资料读取' },
   { value: 'library:write', label: '资料写入' },
+  { value: 'generation:read', label: '图文运行读取' },
+  { value: 'generation:write', label: '图文运行创建与操作' },
 ]
 
 const form = reactive<{ name: string, scopes: ApiKeyScope[], expiresAt: string }>({

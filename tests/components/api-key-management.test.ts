@@ -8,7 +8,7 @@ const ACTIVE_KEY: ApiKeyView = {
   id: '00000000-0000-4000-8000-000000000301',
   name: '资料同步',
   prefix: 'ry_v2_abcdef',
-  scopes: ['library:read', 'library:write'],
+  scopes: ['library:read', 'library:write', 'generation:read', 'generation:write'],
   status: 'active',
   createdAt: Date.parse('2026-09-01T08:00:00.000Z'),
   expiresAt: null,
@@ -53,6 +53,8 @@ describe('API Key 管理界面', () => {
     expect(wrapper.text()).toContain('ry_v2_abcdef')
     expect(wrapper.text()).toContain('资料读取')
     expect(wrapper.text()).toContain('资料写入')
+    expect(wrapper.text()).toContain('图文运行读取')
+    expect(wrapper.text()).toContain('图文运行创建与操作')
     expect(wrapper.text()).toContain('尚未使用')
     expect(wrapper.text()).not.toContain('keyDigest')
   })

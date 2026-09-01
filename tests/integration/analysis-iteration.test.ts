@@ -264,10 +264,6 @@ beforeEach(async () => {
     prompts,
     identifiers,
     clock,
-    systemAiSettings: {
-      /** @param _operation 固定内容分析场景。 @param defaults 业务安全参数。 @returns 覆盖温度后的完整参数。 */
-      resolveParameters: async (_operation, defaults) => ({ ...defaults, temperature: 0.7 }),
-    },
   })
   worker = new WorkerApplicationService({
     taskJobRepository: new SqliteTaskJobRepository(database.getClient()),
@@ -303,7 +299,7 @@ describe('AI 综合提炼学习提示词', () => {
       inputs: [expect.objectContaining({ inputType: 'growth_material', importance: 5 })],
     })
     expect(model.lastRequest?.userPrompt).toContain('"importance":5')
-    expect(model.lastRequest).toMatchObject({ responseFormat: 'text', parameters: { temperature: 0.7 } })
+    expect(model.lastRequest).toMatchObject({ responseFormat: 'text', parameters: { temperature: 0.2 } })
 
     const workspace = await learning.getWorldGrowthWorkspace(worldId)
     expect(workspace.prompt).toMatchObject({

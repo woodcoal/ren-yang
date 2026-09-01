@@ -22,7 +22,6 @@ const systemAiSettings = reactive<SystemAiSettingsValues>(systemAiSettingsValues
   textModelDeploymentId: '',
   imageModelDeploymentId: '',
   interestAnalysis: { temperature: 0.4, maxOutputTokens: 2_048, timeoutMs: 60_000, maxEvidenceChunks: 8 },
-  contentAnalysis: { temperature: 0.2, maxOutputTokens: 4_096, timeoutMs: 60_000 },
   draftGeneration: { temperature: 0.4, maxOutputTokens: 2_048, timeoutMs: 60_000 },
   feedbackClassification: { temperature: 0, maxOutputTokens: 4_096, timeoutMs: 60_000 },
 }))

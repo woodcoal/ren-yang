@@ -15,7 +15,6 @@ import type { TextModelPort } from '../../ports/TextModelPort'
 import { TextModelError } from '../../ports/TextModelPort'
 import { ApplicationError } from '../errors/ApplicationError'
 import type { AiPromptApplicationService } from '../aiPrompts/AiPromptApplicationService'
-import type { SystemAiSettingsApplicationService } from '../systemAi/SystemAiSettingsApplicationService'
 import type { AiAlgorithmApplicationService } from '../aiConfiguration/AiAlgorithmApplicationService'
 import { validateAndMergeGrowthFacts } from './GrowthFactValidator'
 import type { AiAlgorithmSnapshot } from '../../domain/ai/AiAlgorithmModels'
@@ -56,8 +55,6 @@ export interface AnalysisApplicationServiceDependencies {
   identifiers: IdentifierGenerator
   /** 可测试时钟。 */
   clock: Clock
-  /** 系统内容分析参数；未提供时保持原固定参数，便于独立测试。 */
-  systemAiSettings?: Pick<SystemAiSettingsApplicationService, 'resolveParameters'>
   /** 数据库配置的两阶段成长或记忆算法；未提供时保持旧单模型路径。 */
   algorithms?: Pick<AiAlgorithmApplicationService, 'prepare' | 'executeStep'>
 }
@@ -86,9 +83,7 @@ export class AnalysisApplicationService implements TaskHandler {
       : (await this.dependencies.prompts.snapshotPublishedVersions([promptCode]))[promptCode]!
     const parameters = algorithmSnapshot
       ? { ...ANALYSIS_PARAMETERS, ...algorithmSnapshot.steps[0]!.parameters }
-      : this.dependencies.systemAiSettings
-        ? await this.dependencies.systemAiSettings.resolveParameters('contentAnalysis', ANALYSIS_PARAMETERS)
-        : { ...ANALYSIS_PARAMETERS }
+      : { ...ANALYSIS_PARAMETERS }
     const batchId = this.dependencies.identifiers.create()
     const created = await this.dependencies.analysis.createBatch({
       id: batchId,

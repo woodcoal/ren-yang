@@ -12,7 +12,6 @@ export const DEFAULT_SYSTEM_AI_SETTINGS: SystemAiSettingsValues = {
   textModelDeploymentId: '',
   imageModelDeploymentId: '',
   interestAnalysis: { temperature: 0.4, maxOutputTokens: 2_048, timeoutMs: 60_000, maxEvidenceChunks: 8 },
-  contentAnalysis: { temperature: 0.2, maxOutputTokens: 4_096, timeoutMs: 60_000 },
   draftGeneration: { temperature: 0.4, maxOutputTokens: 2_048, timeoutMs: 60_000 },
   feedbackClassification: { temperature: 0, maxOutputTokens: 4_096, timeoutMs: 60_000 },
 }
@@ -39,7 +38,7 @@ export class SystemAiSettingsApplicationService {
     return { values: systemAiSettingsValuesSchema.parse(DEFAULT_SYSTEM_AI_SETTINGS), updatedAt: null }
   }
 
-  /** @param values 四类完整参数。 @returns 保存后的当前设置。 */
+  /** @param values 默认模型和三类完整参数。 @returns 保存后的当前设置。 */
   async updateSettings(values: SystemAiSettingsValues): Promise<SystemAiSettingsView> {
     const normalized = systemAiSettingsValuesSchema.parse(values)
     await Promise.all([

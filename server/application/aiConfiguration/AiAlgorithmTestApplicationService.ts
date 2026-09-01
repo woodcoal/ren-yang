@@ -60,6 +60,9 @@ export class AiAlgorithmTestApplicationService {
    * @remarks 成长算法由前端显式推进步骤；提示词草稿优先且不写入任何业务数据。
    */
   async run(code: AiAlgorithmCode, input: AiAlgorithmTestInput): Promise<AiAlgorithmTestResult> {
+    if (code.startsWith('article_')) {
+      throw new ApplicationError('OPERATION_NOT_SUPPORTED', '文章算法请通过工作台图文创作闭环测试', 409)
+    }
     const snapshot = await this.dependencies.algorithms.prepare(code)
     if (code.endsWith('_soul')) return await this.runSoul(snapshot, input)
     if (!('stepKey' in input)) throw new ApplicationError('VALIDATION_FAILED', '学习算法测试输入无效', 400)

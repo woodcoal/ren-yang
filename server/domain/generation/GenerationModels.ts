@@ -5,6 +5,7 @@ import type {
   TextModelParameters,
 } from '../../../shared/schemas/generation'
 import type { PromptContextSnapshot, TextModelUsage } from '../../../shared/types/generation'
+import type { AiAlgorithmSnapshot } from '../ai/AiAlgorithmModels'
 
 export type { TextModelUsage }
 
@@ -31,6 +32,14 @@ export interface ImageModelSnapshot {
   endpointOrigin: string
 }
 
+/** 图文运行创建时固定的文章生成与可选配图分析算法。 */
+export interface GenerationAlgorithmSnapshot {
+  /** 完整文章生成算法快照。 */
+  articleGeneration: AiAlgorithmSnapshot
+  /** 需要图片时固定的配图分析算法快照。 */
+  articleImageAnalysis: AiAlgorithmSnapshot | null
+}
+
 /** 一次兴趣或生成运行的完整事实记录。 */
 export interface GenerationRunRecord {
   id: string
@@ -48,6 +57,8 @@ export interface GenerationRunRecord {
   contextProvider: 'sqlite_fts5' | 'openviking'
   /** 创建运行时固定的心智与预算快照；迁移前历史运行为空。 */
   promptContextSnapshot: PromptContextSnapshot | null
+  /** 新图文运行使用的固定算法配置；迁移前历史运行为空。 */
+  algorithmSnapshot: GenerationAlgorithmSnapshot | null
   result: InterestAssessment | null
   usage: TextModelUsage | null
   errorCode: string | null

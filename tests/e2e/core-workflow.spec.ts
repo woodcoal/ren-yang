@@ -87,6 +87,74 @@ async function downloadArtifact(page: Page, label: string, extension: string): P
   expect(await download.createReadStream()).not.toBeNull()
 }
 
+/**
+ * 使用一次性 API Key 验证公共图文运行的创建、幂等复用、查询、渲染和下载闭环。
+ * @param page 已登录管理员且后台模型与文章算法均已配置的浏览器页面。
+ * @param personaId 已发布灵魂的人物 UUID。
+ * @returns 公共纯文本运行完成且导出响应通过校验时结束。
+ * @remarks 只调用浏览器测试模型替身，不触发真实收费模型。
+ */
+async function verifyPublicGenerationApi(page: Page, personaId: string): Promise<void> {
+  const keyResponse = await page.evaluate(async () => {
+    const response = await fetch('/api/v1/api-keys', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: '浏览器测试图文接口', scopes: ['generation:read', 'generation:write'], expiresAt: null }),
+    })
+    return { status: response.status, text: await response.text() }
+  })
+  expect(keyResponse.status).toBe(201)
+  const keyPayload = JSON.parse(keyResponse.text) as { data: { secret: string } }
+  const authorization = `Bearer ${keyPayload.data.secret}`
+  const creationRequest = {
+    headers: { authorization, 'idempotency-key': 'e2e-public-generation-create-001' },
+    data: { personaId, requirement: '用人物风格简要介绍学院课程。', outputFormat: 'text', imageCount: 0 },
+  }
+
+  const createResponse = await page.request.post('/api/v2/generation-runs', creationRequest)
+  expect(createResponse.status()).toBe(202)
+  const created = await createResponse.json() as { data: { runId: string }, meta: { requestId: string, idempotencyReplayed: boolean } }
+  expect(created.meta).toMatchObject({ requestId: expect.any(String), idempotencyReplayed: false })
+
+  const replayResponse = await page.request.post('/api/v2/generation-runs', creationRequest)
+  expect(replayResponse.status()).toBe(202)
+  await expect(replayResponse.json()).resolves.toMatchObject({
+    data: { runId: created.data.runId },
+    meta: { idempotencyReplayed: true },
+  })
+
+  await expect.poll(async () => {
+    const response = await page.request.get(`/api/v2/runs/${created.data.runId}`, { headers: { authorization } })
+    expect(response.status()).toBe(200)
+    const payload = await response.json() as { data: { run: { status: string } } }
+    return payload.data.run.status
+  }, { timeout: 30_000 }).toBe('succeeded')
+
+  const detailResponse = await page.request.get(`/api/v2/runs/${created.data.runId}`, { headers: { authorization } })
+  const details = await detailResponse.json() as { data: { run: { createdAt: string } } }
+  expect(details.data.run.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T/)
+
+  const listResponse = await page.request.get('/api/v2/runs?kind=artifact_generation&limit=10', { headers: { authorization } })
+  expect(listResponse.status()).toBe(200)
+  await expect(listResponse.json()).resolves.toMatchObject({
+    data: expect.arrayContaining([expect.objectContaining({ id: created.data.runId })]),
+  })
+
+  const renderResponse = await page.request.post(`/api/v2/runs/${created.data.runId}/render`, {
+    headers: { authorization, 'idempotency-key': 'e2e-public-generation-render-001' },
+    data: { formats: ['txt'] },
+  })
+  expect(renderResponse.status()).toBe(200)
+  await expect(renderResponse.json()).resolves.toMatchObject({ data: { runId: created.data.runId, documents: { txt: expect.stringContaining('学院观察') } } })
+
+  const exportResponse = await page.request.get(`/api/v2/runs/${created.data.runId}/exports/txt`, { headers: { authorization } })
+  expect(exportResponse.status()).toBe(200)
+  expect(exportResponse.headers()['content-type']).toContain('text/plain')
+  expect(exportResponse.headers()['x-request-id']).toBeTruthy()
+  expect(await exportResponse.text()).toContain('学院观察')
+}
+
 /** 学习提示词浏览器闭环的稳定文本和反馈。 */
 interface LearningPromptFlowOptions {
   /** 当前可见的世界成长、人物成长或人物记忆标题。 */
@@ -287,6 +355,8 @@ test('首次设置、灵魂保存及文章直接生成形成可复现闭环', as
   await page.getByRole('button', { name: '直接创建人物', exact: true }).click()
   await expect(page.getByRole('heading', { name: '林默', exact: true })).toBeVisible()
   const personaWorkspaceUrl = page.url()
+  const personaId = new URL(personaWorkspaceUrl).pathname.split('/').at(-1)
+  if (!personaId) throw new Error('浏览器测试未能从人物工作台地址读取人物 UUID')
 
   await page.getByRole('button', { name: '提示词', exact: true }).click()
   await page.getByRole('button', { name: '灵魂', exact: true }).click()
@@ -395,6 +465,8 @@ test('首次设置、灵魂保存及文章直接生成形成可复现闭环', as
     calibratedPrompt: '记住曾完成学院课程介绍；后续同类任务先规划严谨、克制且便于多格式导出的结构。',
     publishedMessage: '提示词已发布，之后创建的新任务将固定使用这一版',
   })
+
+  await verifyPublicGenerationApi(page, personaId)
 
   await page.getByRole('button', { name: '系统', exact: true }).click()
   await page.getByRole('link', { name: '系统中心', exact: true }).click()

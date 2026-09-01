@@ -26,6 +26,14 @@ const EXPECTED_PATHS = [
   '/api/v2/sources/{sourceId}/links',
   '/api/v2/sources/{sourceId}/links/{linkId}',
   '/api/v2/sources/{sourceId}/global',
+  '/api/v2/generation-runs',
+  '/api/v2/runs',
+  '/api/v2/runs/{runId}',
+  '/api/v2/runs/{runId}/cancel',
+  '/api/v2/runs/{runId}/retry',
+  '/api/v2/runs/{runId}/render',
+  '/api/v2/runs/{runId}/assets/{assetId}',
+  '/api/v2/runs/{runId}/exports/{format}',
 ]
 
 describe('公共 OpenAPI 契约', () => {
@@ -50,17 +58,26 @@ describe('公共 OpenAPI 契约', () => {
         expect(operation.responses['404']).toBeTruthy()
         expect(operation.responses['422']).toBeTruthy()
         expect(operation.responses['429']).toBeTruthy()
-        const success = operation.responses['200'] ?? operation.responses['201']
-        expect(success?.content?.['application/json']?.examples?.success).toBeTruthy()
-        expect(success?.content?.['application/json']?.schema).toMatchObject({
-          properties: { data: { $ref: expect.stringMatching(/^#\/components\/schemas\//) } },
-        })
+        const success = operation.responses['200'] ?? operation.responses['201'] ?? operation.responses['202']
+        if (operation.operationId === 'getRunAsset' || operation.operationId === 'exportRun') {
+          expect(success?.description).toContain('二进制')
+        }
+        else {
+          expect(success?.content?.['application/json']?.examples?.success).toBeTruthy()
+          expect(success?.content?.['application/json']?.schema).toMatchObject({
+            properties: { data: { $ref: expect.stringMatching(/^#\/components\/schemas\//) } },
+          })
+        }
       }
     }
     expect(document.paths['/api/v2/personas']?.get?.responses['200']?.content?.['application/json']?.schema)
       .toMatchObject({ properties: { data: { $ref: '#/components/schemas/PersonaPage' } } })
     expect(document.paths['/api/v2/sources/{sourceId}']?.get?.responses['200']?.content?.['application/json']?.schema)
       .toMatchObject({ properties: { data: { $ref: '#/components/schemas/SourceDetails' } } })
+    expect(document.paths['/api/v2/generation-runs']?.post?.responses['202']?.content?.['application/json']?.schema)
+      .toMatchObject({ properties: { data: { $ref: '#/components/schemas/CreatedRun' } } })
+    expect(document.paths['/api/v2/runs/{runId}']?.get?.['x-required-scope']).toBe('generation:read')
+    expect(document.paths['/api/v2/runs/{runId}/retry']?.post?.['x-required-scope']).toBe('generation:write')
   })
 
   it('所有写操作都声明幂等键，同一分页参数用于三类列表', () => {
@@ -80,5 +97,8 @@ describe('公共 OpenAPI 契约', () => {
         'page', 'pageSize', 'query', 'status', 'sort', 'order',
       ])
     }
+    expect(document.paths['/api/v2/runs']?.get?.parameters?.map(parameter => parameter.name)).toEqual([
+      'personaId', 'kind', 'status', 'limit',
+    ])
   })
 })

@@ -79,17 +79,6 @@ function handleSubmit(event: FormSubmitEvent<SystemAiSettingsValues>): void {
       </UFormField>
     </section>
 
-    <section v-else-if="operation === 'contentAnalysis'" class="archive-panel" aria-labelledby="content-analysis-ai-heading">
-      <div class="section-heading">
-        <div class="section-heading-copy">
-          <p class="eyebrow">内容提炼</p>
-          <h2 id="content-analysis-ai-heading">记忆提炼</h2>
-          <p>当前用于人物记忆提炼；灵魂和成长步骤的参数已迁移到 AI 算法页面。</p>
-        </div>
-      </div>
-      <OperationParameterFields :model-value="values.contentAnalysis" name-prefix="contentAnalysis" />
-    </section>
-
     <section v-else-if="operation === 'draftGeneration'" class="archive-panel" aria-labelledby="draft-ai-heading">
       <div class="section-heading">
         <div class="section-heading-copy">
