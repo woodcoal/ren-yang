@@ -262,11 +262,6 @@ function readInterestItems(prompt: string): Array<{ itemId: string, text: string
   return serialized ? JSON.parse(serialized) as Array<{ itemId: string, text: string }> : []
 }
 
-/** @param prompt 批量兴趣用户提示词。 @returns 不包含变化文本列表的固定缓存前缀。 */
-function interestPromptPrefix(prompt: string): string {
-  return prompt.split('<待判断文本列表>')[0] ?? prompt
-}
-
 const PERSONA_SNAPSHOT: PersonaSnapshot = {
   promptText: '热爱知识的学院观察员；重视求证；冷静简洁；资料不足时说明未知。',
 }
@@ -469,8 +464,8 @@ describe('阶段三纯文本运行', () => {
     expect(details.evidence[1]?.metadata).toMatchObject({ fixedLearningPrompt: true, learningPromptType: 'persona_growth' })
     expect(details.evidence[2]?.metadata).toMatchObject({ fixedLearningPrompt: true, learningPromptType: 'persona_memory' })
     expect(details.run.result?.supportingEvidenceIds).toEqual(details.evidence[3] ? [details.evidence[3].id] : [])
-    expect(model.requests.get('interest_batch_assessment')?.userPrompt).toContain('<当前人物成长提示词>"回答时先给简洁结论。"</当前人物成长提示词>')
-    expect(model.requests.get('interest_batch_assessment')?.userPrompt).toContain('<当前人物记忆提示词>"过去处理事实内容时会优先核验依据。"</当前人物记忆提示词>')
+    expect(model.requests.get('interest_batch_assessment')?.systemPrompt).toContain('<当前人物成长提示词>"回答时先给简洁结论。"</当前人物成长提示词>')
+    expect(model.requests.get('interest_batch_assessment')?.systemPrompt).toContain('<当前人物记忆提示词>"过去处理事实内容时会优先核验依据。"</当前人物记忆提示词>')
     expect(model.calls.get('interest_batch_assessment')).toBe(1)
     expect(database.getClient().prepare('SELECT usage_json FROM interest_batches WHERE id = (SELECT batch_id FROM interest_batch_items WHERE run_id = ?)').get(created.runId))
       .toEqual({ usage_json: JSON.stringify({ inputTokens: 10, outputTokens: 5, totalTokens: 15 }) })
@@ -537,8 +532,10 @@ describe('阶段三纯文本运行', () => {
       .toEqual([{ itemId: 'missing', text: '需要重试的文本' }])
     const interestRequests = model.requestHistory.filter(request => request.responseSchemaName === 'interest_batch_assessment')
     expect(interestRequests).toHaveLength(2)
-    expect(interestPromptPrefix(interestRequests[0]?.userPrompt ?? ''))
-      .toBe(interestPromptPrefix(interestRequests[1]?.userPrompt ?? ''))
+    expect(interestRequests[0]?.systemPrompt).toBe(interestRequests[1]?.systemPrompt)
+    expect(interestRequests[0]?.systemPrompt).toContain(PERSONA_SNAPSHOT.promptText)
+    expect(interestRequests[0]?.userPrompt).not.toContain(PERSONA_SNAPSHOT.promptText)
+    expect(interestRequests[1]?.userPrompt).not.toBe(interestRequests[0]?.userPrompt)
     expect(interestRequests[1]?.userPrompt)
       .toContain('<附加提示词>"失败条目重试时继续使用这条附加要求。"</附加提示词>')
   })
@@ -713,7 +710,10 @@ describe('阶段三纯文本运行', () => {
       articleGeneration: { algorithmCode: 'article_generation', steps: [{ parameters: { temperature: 0.65 } }] },
       articleImageAnalysis: null,
     })
-    expect(model.requests.get('article')?.parameters.temperature).toBe(0.65)
+    const articleRequest = model.requests.get('article')
+    expect(articleRequest?.parameters.temperature).toBe(0.65)
+    expect(articleRequest?.systemPrompt).toContain(PERSONA_SNAPSHOT.promptText)
+    expect(articleRequest?.userPrompt).not.toContain(PERSONA_SNAPSHOT.promptText)
   })
 
   it('排队运行可协作取消且不会再被 Worker 领取', async () => {

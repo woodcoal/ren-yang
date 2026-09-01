@@ -116,7 +116,6 @@ export class FeedbackApplicationService {
           variables,
           'feedback_classification',
           'json_object',
-          { subjectSnapshotHash: runPersona.personaVersionId },
         )
       }
       else {

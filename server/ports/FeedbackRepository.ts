@@ -33,8 +33,8 @@ export interface FeedbackRepository {
   listFeedback(): Promise<FeedbackAggregate[]>
   /** @param feedbackId 反馈 UUID。 @returns 反馈聚合或 null。 */
   findFeedback(feedbackId: string): Promise<FeedbackAggregate | null>
-  /** @param runId 运行 UUID。 @returns 运行固定的人物及人物版本，找不到时为 null。 */
-  findRunPersona(runId: string): Promise<{ personaId: string, personaVersionId: string } | null>
+  /** @param runId 运行 UUID。 @returns 运行固定的人物，找不到时为 null。 */
+  findRunPersona(runId: string): Promise<{ personaId: string } | null>
   /** @param feedbackId 反馈 UUID。 @param blockId 块 UUID。 @param taskId 新任务 UUID。 @param timestamp 确认时间。 @returns 原子确认和入队是否成功。 */
   confirmArtifactFeedback(feedbackId: string, blockId: string, taskId: string, timestamp: number): Promise<boolean>
   /** @param feedbackId 反馈 UUID。 @param targetType 参数或资料目标。 @param resolution 业务结果。 @param timestamp 确认时间。 @returns 是否首次确认。 */

@@ -44,14 +44,23 @@ describe('全站 AI 提示词目录', () => {
       'generation.article_images',
     ]))
     const interestPrompt = prompts.find(prompt => prompt.code === 'generation.interest_assessment')
-    expect(interestPrompt?.activeVersion?.versionNo).toBe(3)
+    expect(interestPrompt?.activeVersion?.versionNo).toBe(4)
+    expect(interestPrompt?.activeVersion?.systemPromptTemplate).toContain('<已发布人物灵魂>{{personaPromptJson}}</已发布人物灵魂>')
+    expect(interestPrompt?.activeVersion?.userPromptTemplate).not.toContain('{{personaPromptJson}}')
     expect(interestPrompt?.activeVersion?.userPromptTemplate).toContain('<附加提示词>{{sceneJson}}</附加提示词>')
     expect(interestPrompt?.variables.find(variable => variable.name === 'sceneJson')).toMatchObject({
       label: '附加提示词', description: 'JSON 字符串或 null',
     })
-    expect(interestPrompt?.versions.map(version => version.versionNo)).toEqual([3, 2, 1])
+    expect(interestPrompt?.versions.map(version => version.versionNo)).toEqual([4, 3, 2, 1])
+    for (const code of ['generation.article', 'generation.text_block']) {
+      const prompt = prompts.find(item => item.code === code)
+      expect(prompt?.activeVersion?.versionNo).toBe(2)
+      expect(prompt?.activeVersion?.systemPromptTemplate).toContain('<已发布人物灵魂>{{personaPromptJson}}</已发布人物灵魂>')
+      expect(prompt?.activeVersion?.userPromptTemplate).not.toContain('{{personaPromptJson}}')
+      expect(prompt?.versions.map(version => version.versionNo)).toEqual([2, 1])
+    }
     expect(prompts
-      .filter(prompt => prompt.code !== 'generation.interest_assessment')
+      .filter(prompt => !['generation.interest_assessment', 'generation.article', 'generation.text_block'].includes(prompt.code))
       .every(prompt => prompt.activeVersion?.versionNo === 1 && prompt.versions.length === 1)).toBe(true)
     for (const prompt of prompts) {
       const variables = Object.fromEntries(prompt.variables.map(variable => [variable.name, `测试-${variable.name}`]))

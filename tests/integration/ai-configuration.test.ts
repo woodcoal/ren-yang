@@ -241,7 +241,7 @@ describe('AI 接口、模型部署与算法配置', () => {
     `).get()).toEqual({ action: 'ai_algorithm_configuration_published' })
   })
 
-  it('人物文本调用按固定快照字段进入缓存亲和队列且诊断调用绕过队列', async () => {
+  it('文本调用按实际系统提示词进入缓存亲和队列且诊断调用绕过队列', async () => {
     const affinityKeys: string[] = []
     const cacheAffinityScheduler: Pick<AiCacheAffinityScheduler, 'run'> = {
       /** @param key 统一算法服务生成的亲和键。 @param operation 实际模型调用。 @returns 模型调用结果。 */
@@ -256,23 +256,18 @@ describe('AI 接口、模型部署与算法配置', () => {
 
     await algorithms.executeStep(
       snapshot, 'organize', { promptTextJson: '"第一次输入"' }, 'soul_prompt_analysis', 'json_object',
-      { subjectSnapshotHash: 'persona-version-a' },
+      true,
     )
     await algorithms.executeStep(
       snapshot, 'organize', { promptTextJson: '"变化后的输入"' }, 'soul_prompt_analysis', 'json_object',
-      { subjectSnapshotHash: 'persona-version-a' },
-    )
-    await algorithms.executeStep(
-      snapshot, 'organize', { promptTextJson: '"第三次输入"' }, 'soul_prompt_analysis', 'json_object',
-      { subjectSnapshotHash: 'persona-version-b' },
+      true,
     )
     await algorithms.executeTestStep(
       snapshot, 'organize', { promptTextJson: '"后台诊断"' }, 'soul_prompt_analysis', 'json_object',
     )
 
-    expect(affinityKeys).toHaveLength(3)
+    expect(affinityKeys).toHaveLength(2)
     expect(affinityKeys[0]).toBe(affinityKeys[1])
-    expect(affinityKeys[2]).not.toBe(affinityKeys[0])
   })
 
   it('文章生成与文章配图分析作为两个独立固定算法配置', async () => {

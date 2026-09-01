@@ -15,7 +15,7 @@ function createSignal(): { promise: Promise<void>, resolve: () => void } {
 
 /** 构造不包含变化文本、运行标识或凭据的固定亲和键输入。 */
 const FIXED_KEY_INPUT = {
-  subjectSnapshotHash: 'persona-version-a',
+  systemPrompt: '固定算法规则与人物心智 A',
   algorithmCode: 'interest_assessment',
   promptVersionId: 'prompt-version-a',
   modelDeploymentId: 'deployment-a',
@@ -108,7 +108,7 @@ describe('buildAiCacheAffinityKey', () => {
   })
 
   it.each([
-    ['人物快照', { subjectSnapshotHash: 'persona-version-b' }],
+    ['系统提示词', { systemPrompt: '固定算法规则与人物心智 B' }],
     ['算法', { algorithmCode: 'article_generation' }],
     ['提示词版本', { promptVersionId: 'prompt-version-b' }],
     ['模型部署', { modelDeploymentId: 'deployment-b' }],

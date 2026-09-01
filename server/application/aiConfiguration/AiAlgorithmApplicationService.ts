@@ -17,12 +17,6 @@ import {
   buildAiCacheAffinityKey,
 } from './AiCacheAffinityScheduler'
 
-/** 文本模型调用可选的业务主体缓存亲和上下文。 */
-export interface AiCacheAffinityContext {
-  /** 人物或其他业务主体不可变快照的哈希或稳定版本标识。 */
-  subjectSnapshotHash: string
-}
-
 /** 管理员测试单个步骤时返回的只读执行事实。 */
 export interface AiAlgorithmTestStepExecution {
   /** 实际执行的步骤快照。 */
@@ -163,7 +157,7 @@ export class AiAlgorithmApplicationService {
    * @param variables 提示词模板的完整变量。
    * @param responseSchemaName 供应商诊断使用的结构名称。
    * @param responseFormat JSON 对象或纯文本输出。
-   * @param cacheAffinity 可选业务主体不可变快照；未提供时直接执行，不进入队列。
+   * @param useCacheAffinity 系统提示词已固定且适合缓存时为 true；默认直接执行。
    * @returns 模型输出和用量。
    */
   async executeStep(
@@ -172,14 +166,14 @@ export class AiAlgorithmApplicationService {
     variables: Record<string, string>,
     responseSchemaName: string,
     responseFormat: 'json_object' | 'text',
-    cacheAffinity?: AiCacheAffinityContext,
+    useCacheAffinity = false,
   ): Promise<TextModelResponse> {
     const { step, connection } = await this.resolveStep(snapshot, stepKey, 'text')
     const prompt = await this.dependencies.prompts.render(step.promptCode, variables, step.promptVersionId)
     this.validatePromptLength(prompt.systemPrompt, prompt.userPrompt)
-    if (!cacheAffinity) return await this.generate(step, connection, prompt, responseSchemaName, responseFormat)
+    if (!useCacheAffinity) return await this.generate(step, connection, prompt, responseSchemaName, responseFormat)
     const key = buildAiCacheAffinityKey({
-      subjectSnapshotHash: cacheAffinity.subjectSnapshotHash,
+      systemPrompt: prompt.systemPrompt,
       algorithmCode: snapshot.algorithmCode,
       promptVersionId: step.promptVersionId,
       modelDeploymentId: step.modelDeploymentId,

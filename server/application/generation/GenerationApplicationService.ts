@@ -1230,7 +1230,7 @@ export class GenerationApplicationService implements TaskHandler {
       value => interestBatchModelOutputSchema.parse(value),
       anchor.parameterSnapshot,
       batch.usage,
-      anchor.personaVersionId,
+      true,
     )
     if (await this.finishCancellationIfRequested(anchor.id, generated.usage)) return
     const rawById = new Map<string, unknown>()
@@ -1288,7 +1288,7 @@ export class GenerationApplicationService implements TaskHandler {
     const articleResult = run.algorithmSnapshot
       ? await this.executeConfiguredGenerationStep(
           run.algorithmSnapshot.articleGeneration, 'generate', articleVariables, 'article',
-          value => articleOutputSchema.parse(value), run.parameterSnapshot, run.usage, run.personaVersionId,
+          value => articleOutputSchema.parse(value), run.parameterSnapshot, run.usage, true,
         )
       : await this.generateValidated(
           await this.dependencies.prompts.render(
@@ -1317,7 +1317,7 @@ export class GenerationApplicationService implements TaskHandler {
         ? await this.executeConfiguredGenerationStep(
             run.algorithmSnapshot.articleImageAnalysis, 'analyze', imageVariables, 'article_images',
             value => validateArticleImages(value, run.input.imageCount, articleResult.output.paragraphs.length),
-            run.parameterSnapshot, priorUsage, run.personaVersionId,
+            run.parameterSnapshot, priorUsage, false,
           )
         : await this.generateValidated(
             await this.dependencies.prompts.render(
@@ -1365,7 +1365,7 @@ export class GenerationApplicationService implements TaskHandler {
    * @param parse 与生产业务一致的输出校验器。
    * @param limits 本次运行固定的总 Token 安全上限。
    * @param priorUsage 当前运行此前已持久化或本轮已产生的用量。
-   * @param personaSnapshotHash 当前运行固定的人物版本标识。
+   * @param useCacheAffinity 当前步骤是否具有稳定人物系统提示词。
    * @returns 已校验业务输出和本步骤新增用量。
    */
   private async executeConfiguredGenerationStep<T>(
@@ -1376,7 +1376,7 @@ export class GenerationApplicationService implements TaskHandler {
     parse: (value: unknown) => T,
     limits: TextModelParameters,
     priorUsage: TextModelUsage | null,
-    personaSnapshotHash: string,
+    useCacheAffinity: boolean,
   ): Promise<{ output: T, usage: TextModelUsage }> {
     if (!this.dependencies.algorithms) throw new ApplicationError('AI_ALGORITHM_NOT_CONFIGURED', 'AI 算法服务未配置', 422)
     const response = await this.dependencies.algorithms.executeStep(
@@ -1385,7 +1385,7 @@ export class GenerationApplicationService implements TaskHandler {
       variables,
       schemaName,
       'json_object',
-      { subjectSnapshotHash: personaSnapshotHash },
+      useCacheAffinity,
     )
     const cumulativeUsage = aggregateTextModelUsage(priorUsage ? [priorUsage, response.usage] : [response.usage])
     const totalTokens = usageTotalTokens(cumulativeUsage)
@@ -1614,7 +1614,7 @@ export class GenerationApplicationService implements TaskHandler {
               variables,
               'text_block',
               'json_object',
-              { subjectSnapshotHash: run.personaVersionId },
+              true,
             )
           : await this.generateLegacyTextBlock(run, variables)
         responseUsage = response.usage

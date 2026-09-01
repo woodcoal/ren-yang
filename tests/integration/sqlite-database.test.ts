@@ -56,7 +56,7 @@ describe('SqliteDatabase', () => {
     ])
     expect(current.getClient().prepare(`
       SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations
-    `).get()).toEqual({ count: 11, version: 1789977600000 })
+    `).get()).toEqual({ count: 12, version: 1790236800000 })
     expect(current.getClient().prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name IN (
       'api_keys', 'public_api_idempotency_records', 'public_api_audit_events'
     ) ORDER BY name`).all()).toEqual([
@@ -67,7 +67,20 @@ describe('SqliteDatabase', () => {
     expect(current.getClient().prepare(`
       SELECT COUNT(*) AS count FROM ai_prompts WHERE active_version_id IS NOT NULL
     `).get()).toEqual({ count: 22 })
-    expect(current.getClient().prepare(`SELECT COUNT(*) AS count FROM ai_prompt_versions`).get()).toEqual({ count: 24 })
+    expect(current.getClient().prepare(`SELECT COUNT(*) AS count FROM ai_prompt_versions`).get()).toEqual({ count: 27 })
+    expect(current.getClient().prepare(`
+      SELECT p.code,
+        instr(v.system_prompt_template, '{{personaPromptJson}}') > 0 AS persona_in_system,
+        instr(v.user_prompt_template, '{{personaPromptJson}}') > 0 AS persona_in_user
+      FROM ai_prompts AS p
+      INNER JOIN ai_prompt_versions AS v ON v.id = p.active_version_id
+      WHERE p.code IN ('generation.article', 'generation.interest_assessment', 'generation.text_block')
+      ORDER BY p.code
+    `).all()).toEqual([
+      { code: 'generation.article', persona_in_system: 1, persona_in_user: 0 },
+      { code: 'generation.interest_assessment', persona_in_system: 1, persona_in_user: 0 },
+      { code: 'generation.text_block', persona_in_system: 1, persona_in_user: 0 },
+    ])
     expect(current.getClient().prepare(`SELECT COUNT(*) AS count FROM ai_algorithms`).get()).toEqual({ count: 14 })
     expect(current.getClient().prepare(`SELECT code FROM ai_algorithms WHERE code = 'persona_memory'`).get()).toEqual({ code: 'persona_memory' })
     expect(current.getClient().prepare(`SELECT code FROM ai_algorithms WHERE code IN (
@@ -130,6 +143,63 @@ describe('SqliteDatabase', () => {
       { name: 'task_jobs_run_insert_check' },
       { name: 'task_jobs_run_update_check' },
     ])
+  })
+
+  it('高于旧迁移链的历史时间戳仍会执行稳定人物系统提示词迁移且重复启动幂等', () => {
+    const current = createDatabase()
+    const client = current.getClient()
+    client.prepare(`UPDATE ai_prompts SET active_version_id = ? WHERE code = ?`).run(
+      '00000000-0000-4000-8001-000000000030',
+      'generation.article',
+    )
+    client.prepare(`UPDATE ai_prompts SET active_version_id = ? WHERE code = ?`).run(
+      '00000000-0000-4000-8001-000000000047',
+      'generation.interest_assessment',
+    )
+    client.prepare(`UPDATE ai_prompts SET active_version_id = ? WHERE code = ?`).run(
+      '00000000-0000-4000-8001-000000000005',
+      'generation.text_block',
+    )
+    client.prepare(`DELETE FROM ai_prompt_versions WHERE id IN (?, ?, ?)`).run(
+      '00000000-0000-4000-8001-000000000051',
+      '00000000-0000-4000-8001-000000000052',
+      '00000000-0000-4000-8001-000000000053',
+    )
+    client.prepare(`DELETE FROM __drizzle_migrations`).run()
+    client.prepare(`INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)`).run(
+      'legacy-latest-before-stable-persona-system-prompts',
+      1790150400000,
+    )
+    if (!temporaryDirectory) {
+      throw new Error('测试临时目录尚未创建')
+    }
+    const dataDirectory = temporaryDirectory
+    current.close()
+    database = null
+
+    database = new SqliteDatabase({ dataDirectory, migrationsDirectory: resolve(process.cwd(), 'drizzle') })
+    expect(database.getClient().prepare(`
+      SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations
+    `).get()).toEqual({ count: 2, version: 1790236800000 })
+    expect(database.getClient().prepare(`
+      SELECT p.code,
+        instr(v.system_prompt_template, '{{personaPromptJson}}') > 0 AS persona_in_system,
+        instr(v.user_prompt_template, '{{personaPromptJson}}') > 0 AS persona_in_user
+      FROM ai_prompts AS p
+      INNER JOIN ai_prompt_versions AS v ON v.id = p.active_version_id
+      WHERE p.code IN ('generation.article', 'generation.interest_assessment', 'generation.text_block')
+      ORDER BY p.code
+    `).all()).toEqual([
+      { code: 'generation.article', persona_in_system: 1, persona_in_user: 0 },
+      { code: 'generation.interest_assessment', persona_in_system: 1, persona_in_user: 0 },
+      { code: 'generation.text_block', persona_in_system: 1, persona_in_user: 0 },
+    ])
+    database.close()
+    database = new SqliteDatabase({ dataDirectory, migrationsDirectory: resolve(process.cwd(), 'drizzle') })
+    expect(database.getClient().prepare(`
+      SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations
+    `).get()).toEqual({ count: 2, version: 1790236800000 })
+    expect(database.getClient().prepare('PRAGMA integrity_check').get()).toEqual({ integrity_check: 'ok' })
   })
 
   it('既有 0005 数据库升级统一算法且保留历史设置和算法配置并支持重复启动', () => {
@@ -254,7 +324,7 @@ describe('SqliteDatabase', () => {
     database = new SqliteDatabase({ dataDirectory, migrationsDirectory: resolve(process.cwd(), 'drizzle') })
     expect(database.getClient().prepare(`
       SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations
-    `).get()).toEqual({ count: 11, version: 1789977600000 })
+    `).get()).toEqual({ count: 12, version: 1790236800000 })
     expect(database.getClient().prepare(`SELECT COUNT(*) AS count FROM ai_algorithms`).get()).toEqual({ count: 14 })
     expect(database.getClient().prepare('PRAGMA foreign_key_check').all()).toEqual([])
     expect(database.getClient().prepare('PRAGMA integrity_check').get()).toEqual({ integrity_check: 'ok' })
@@ -330,7 +400,7 @@ describe('SqliteDatabase', () => {
     `).get()).toEqual({ name: '旧资料', content_text: '压平前正文。', is_enabled: 1 })
     expect(database.getClient().prepare(`
       SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations
-    `).get()).toEqual({ count: 26, version: 1789977600000 })
+    `).get()).toEqual({ count: 27, version: 1790236800000 })
     expect(database.getClient().prepare(`SELECT COUNT(*) AS count FROM ai_algorithms`).get()).toEqual({ count: 14 })
     expect(database.getClient().prepare(`PRAGMA table_info(generation_runs)`).all()).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'algorithm_snapshot_json', notnull: 0 }),

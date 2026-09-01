@@ -2,8 +2,8 @@ import { createHash } from 'node:crypto'
 
 /** 构造文本模型缓存亲和键所需的稳定非敏感事实。 */
 export interface AiCacheAffinityKeyInput {
-  /** 人物或其他业务主体不可变快照的哈希或稳定版本标识。 */
-  subjectSnapshotHash: string
+  /** 已渲染且不包含本次变化内容的完整系统提示词。 */
+  systemPrompt: string
   /** 固定算法编码。 */
   algorithmCode: string
   /** 不可变提示词版本 UUID。 */
@@ -53,13 +53,14 @@ export class AiCacheAffinityScheduler {
 
 /**
  * 对固定缓存前缀事实做稳定序列化并生成 SHA-256 亲和键。
- * @param input 人物快照、算法、提示词、模型部署和固定参数。
+ * @param input 实际系统提示词、算法、提示词版本、模型部署和固定参数。
  * @returns 不包含原始提示词、用户文本、运行标识或凭据的亲和键。
  */
 export function buildAiCacheAffinityKey(input: AiCacheAffinityKeyInput): string {
+  const systemPromptHash = sha256(input.systemPrompt)
   const fixedParametersHash = sha256(stableSerialize(input.fixedParameters))
   return sha256(stableSerialize({
-    subjectSnapshotHash: input.subjectSnapshotHash,
+    systemPromptHash,
     algorithmCode: input.algorithmCode,
     promptVersionId: input.promptVersionId,
     modelDeploymentId: input.modelDeploymentId,
