@@ -1,4 +1,4 @@
-import type { AiAlgorithmStepParameters } from '../schemas/aiConfiguration'
+import type { AiAlgorithmStepParameters, AiThinkingControlMode } from '../schemas/aiConfiguration'
 
 /** 由代码固定流程的全部算法编码。 */
 export type AiAlgorithmCode = 'persona_soul' | 'world_soul' | 'persona_growth' | 'world_growth' | 'persona_memory'
@@ -40,6 +40,8 @@ export interface AiModelDeploymentView {
   model: string
   /** 文本或图片模型。 */
   modality: 'text' | 'image'
+  /** 文本算法关闭思考时发送的供应商请求格式；图片模型始终为 none。 */
+  thinkingControl: AiThinkingControlMode
   /** 是否允许新算法配置使用。 */
   isEnabled: boolean
   /** 创建时间。 */

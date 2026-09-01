@@ -85,11 +85,11 @@ export class SqliteAiConfigurationRepository implements AiConfigurationRepositor
     this.client.transaction(() => {
       this.client.prepare(`
         INSERT INTO ai_model_deployments (
-          id, connection_id, name, model, modality, is_enabled, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          id, connection_id, name, model, modality, thinking_control, is_enabled, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         record.id, record.connectionId, record.name, record.model, record.modality,
-        record.isEnabled ? 1 : 0, record.timestamp, record.timestamp,
+        record.thinkingControl, record.isEnabled ? 1 : 0, record.timestamp, record.timestamp,
       )
       insertAuditEvent(this.client, {
         actor: 'administrator', action: 'ai_model_deployment_created', targetType: 'ai_model_deployment',
@@ -104,10 +104,10 @@ export class SqliteAiConfigurationRepository implements AiConfigurationRepositor
     const changed = this.client.transaction(() => {
       const result = this.client.prepare(`
         UPDATE ai_model_deployments SET connection_id = ?, name = ?, model = ?, modality = ?,
-          is_enabled = ?, updated_at = ? WHERE id = ?
+          thinking_control = ?, is_enabled = ?, updated_at = ? WHERE id = ?
       `).run(
         record.connectionId, record.name, record.model, record.modality,
-        record.isEnabled ? 1 : 0, record.timestamp, record.id,
+        record.thinkingControl, record.isEnabled ? 1 : 0, record.timestamp, record.id,
       )
       if (result.changes !== 1) return false
       insertAuditEvent(this.client, {
@@ -231,7 +231,9 @@ function mapDeployment(value: unknown): AiModelDeploymentView {
   const row = value as Record<string, unknown>
   return {
     id: String(row.id), connectionId: String(row.connection_id), name: String(row.name), model: String(row.model),
-    modality: String(row.modality) as 'text' | 'image', isEnabled: Number(row.is_enabled) === 1,
+    modality: String(row.modality) as 'text' | 'image',
+    thinkingControl: String(row.thinking_control ?? 'none') as AiModelDeploymentView['thinkingControl'],
+    isEnabled: Number(row.is_enabled) === 1,
     createdAt: Number(row.created_at), updatedAt: Number(row.updated_at),
   }
 }

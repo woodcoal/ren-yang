@@ -64,6 +64,45 @@ describe('OpenAiCompatibleTextModel', () => {
     expect(init?.headers).toMatchObject({ authorization: 'Bearer secret-key', 'user-agent': 'RenYang-Unit/1.0' })
   })
 
+  it.each([
+    ['enable_thinking', { enable_thinking: false }],
+    ['reasoning_effort', { reasoning_effort: 'none' }],
+    ['reasoning', { reasoning: { enabled: false } }],
+    ['reasoning_effort_object', { reasoning: { effort: 'none' } }],
+  ] as const)('关闭思考时按 %s 格式只发送对应字段', async (thinkingDisableMode, expected) => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      choices: [{ message: { content: '{"answer":"ok"}' } }],
+    }), { status: 200, headers: { 'content-type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await createModel().generateStructured({ ...REQUEST, thinkingDisableMode })
+
+    const [, init] = fetchMock.mock.calls[0]!
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>
+    expect(body).toMatchObject(expected)
+    if (thinkingDisableMode !== 'enable_thinking') expect(body).not.toHaveProperty('enable_thinking')
+    if (thinkingDisableMode !== 'reasoning_effort') expect(body).not.toHaveProperty('reasoning_effort')
+    if (thinkingDisableMode === 'reasoning') expect(body.reasoning).toEqual({ enabled: false })
+    if (thinkingDisableMode === 'reasoning_effort_object') expect(body.reasoning).toEqual({ effort: 'none' })
+  })
+
+  it.each([
+    [0, false],
+    [1_000_000, true],
+  ])('最大输出 Token 为 %i 时按配置决定是否发送 max_tokens', async (maxOutputTokens, hasMaxTokens) => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      choices: [{ message: { content: '{"answer":"ok"}' } }],
+    }), { status: 200, headers: { 'content-type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await createModel().generateStructured({ ...REQUEST, parameters: { ...REQUEST.parameters, maxOutputTokens } })
+
+    const [, init] = fetchMock.mock.calls[0]!
+    const body = JSON.parse(String(init?.body)) as Record<string, unknown>
+    if (hasMaxTokens) expect(body).toMatchObject({ max_tokens: maxOutputTokens })
+    else expect(body).not.toHaveProperty('max_tokens')
+  })
+
   it('纯文本模式直接返回提示词正文且不要求供应商输出 JSON', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       choices: [{ message: { content: '进行城邦规划时，优先保障稳定水运。' } }],

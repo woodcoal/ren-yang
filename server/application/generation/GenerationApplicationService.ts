@@ -611,7 +611,6 @@ export class GenerationApplicationService implements TaskHandler {
     const parameters = textModelParametersSchema.parse({
       ...DEFAULT_TEXT_PARAMETERS,
       ...step.parameters,
-      reservedOutputTokens: Math.max(DEFAULT_TEXT_PARAMETERS.reservedOutputTokens, step.parameters.maxOutputTokens),
     })
     const model = {
       provider: 'openai_compatible' as const,
@@ -874,7 +873,6 @@ export class GenerationApplicationService implements TaskHandler {
       ? textModelParametersSchema.parse({
           ...DEFAULT_TEXT_PARAMETERS,
           ...articleStep.parameters,
-          reservedOutputTokens: Math.max(DEFAULT_TEXT_PARAMETERS.reservedOutputTokens, articleStep.parameters.maxOutputTokens),
         })
       : { ...DEFAULT_TEXT_PARAMETERS }
     const linkedWorld = persona.worldId ? await this.dependencies.content.findWorld(persona.worldId) : null

@@ -14,6 +14,11 @@ const aiEndpointSchema = z.url('接口地址无效').max(2_000).superRefine((val
 /** AI 模型部署的输出形态。 */
 export const aiModelModalitySchema = z.enum(['text', 'image'], { error: '模型类型无效' })
 
+/** 文本模型关闭思考时采用的供应商请求字段；无控制表示不额外发送字段。 */
+export const aiThinkingControlModeSchema = z.enum([
+  'none', 'enable_thinking', 'reasoning_effort', 'reasoning', 'reasoning_effort_object',
+], { error: '思考控制格式无效' })
+
 /** 代码固定流程的全部算法编码。 */
 export const aiAlgorithmCodeSchema = z.enum([
   'persona_soul', 'world_soul', 'persona_growth', 'world_growth', 'persona_memory',
@@ -48,14 +53,16 @@ export const saveAiModelDeploymentSchema = z.object({
   name: z.string().trim().min(1, '模型名称不能为空').max(100),
   model: z.string().trim().min(1, '供应商模型标识不能为空').max(300),
   modality: aiModelModalitySchema,
+  thinkingControl: aiThinkingControlModeSchema.optional(),
   isEnabled: z.boolean().default(true),
 })
 
 /** 算法单步骤允许管理员调整的模型调用参数。 */
 export const aiAlgorithmStepParametersSchema = z.object({
   temperature: z.number().min(0).max(2),
-  maxOutputTokens: z.number().int().min(64).max(8_192),
+  maxOutputTokens: z.number().int().min(0),
   timeoutMs: z.number().int().min(1_000).max(120_000),
+  disableThinking: z.boolean().optional(),
   maxImageWidth: z.number().int().min(64).max(8_192).optional(),
   maxImageHeight: z.number().int().min(64).max(8_192).optional(),
 })
@@ -76,4 +83,5 @@ export type CreateAiConnectionInput = z.infer<typeof createAiConnectionSchema>
 export type UpdateAiConnectionInput = z.infer<typeof updateAiConnectionSchema>
 export type SaveAiModelDeploymentInput = z.infer<typeof saveAiModelDeploymentSchema>
 export type AiAlgorithmStepParameters = z.infer<typeof aiAlgorithmStepParametersSchema>
+export type AiThinkingControlMode = z.infer<typeof aiThinkingControlModeSchema>
 export type PublishAiAlgorithmConfigurationInput = z.infer<typeof publishAiAlgorithmConfigurationSchema>

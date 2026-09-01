@@ -60,7 +60,8 @@ export class OpenAiCompatibleTextModel implements TextModelPort {
           { role: 'user', content: request.userPrompt },
         ],
         temperature: request.parameters.temperature,
-        max_tokens: request.parameters.maxOutputTokens,
+        ...(request.parameters.maxOutputTokens > 0 ? { max_tokens: request.parameters.maxOutputTokens } : {}),
+        ...buildThinkingDisablePayload(request.thinkingDisableMode),
       }
       if (request.responseFormat !== 'text') {
         // 仅结构化任务要求供应商启用 JSON 模式；提示词提炼直接接收正文。
@@ -99,6 +100,19 @@ export class OpenAiCompatibleTextModel implements TextModelPort {
       clearTimeout(timeout)
     }
   }
+}
+
+/**
+ * 把已解析的供应商关闭思考格式转换为唯一的 Chat Completions 请求字段。
+ * @param mode 当前步骤快照固定的关闭思考格式。
+ * @returns 不含任意未知供应商字段的请求体片段。
+ */
+function buildThinkingDisablePayload(mode: TextModelRequest['thinkingDisableMode']): Record<string, unknown> {
+  if (mode === 'enable_thinking') return { enable_thinking: false }
+  if (mode === 'reasoning_effort') return { reasoning_effort: 'none' }
+  if (mode === 'reasoning') return { reasoning: { enabled: false } }
+  if (mode === 'reasoning_effort_object') return { reasoning: { effort: 'none' } }
+  return {}
 }
 
 /** @param status HTTP 状态码。 @returns 已脱敏的稳定模型异常。 */

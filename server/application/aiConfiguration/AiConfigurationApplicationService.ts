@@ -129,7 +129,10 @@ export class AiConfigurationApplicationService {
     const normalized = saveAiModelDeploymentSchema.parse(input)
     await this.requireConnection(normalized.connectionId)
     return await this.persistConfiguration(() => this.dependencies.repository.createModelDeployment({
-      id: this.dependencies.identifiers.create(), ...normalized, timestamp: this.dependencies.clock.now(),
+      id: this.dependencies.identifiers.create(),
+      ...normalized,
+      thinkingControl: normalized.modality === 'text' ? normalized.thinkingControl ?? 'none' : 'none',
+      timestamp: this.dependencies.clock.now(),
     }))
   }
 
@@ -141,7 +144,10 @@ export class AiConfigurationApplicationService {
       throw new ApplicationError('RESOURCE_NOT_FOUND', 'AI 模型部署不存在', 404)
     }
     const updated = await this.persistConfiguration(() => this.dependencies.repository.updateModelDeployment({
-      id, ...normalized, timestamp: this.dependencies.clock.now(),
+      id,
+      ...normalized,
+      thinkingControl: normalized.modality === 'text' ? normalized.thinkingControl ?? 'none' : 'none',
+      timestamp: this.dependencies.clock.now(),
     }))
     if (!updated) throw new ApplicationError('VERSION_CONFLICT', 'AI 模型部署已变化，请刷新后重试', 409)
     return updated
@@ -222,6 +228,9 @@ export class AiConfigurationApplicationService {
     await this.dependencies.prompts.snapshotPublishedVersions(definition.steps.map(step => step.promptCode))
     const steps = await Promise.all(definition.steps.map(async (definitionStep) => {
       const inputStep = inputs.get(definitionStep.key)!
+      if (definitionStep.modality === 'image' && inputStep.parameters.disableThinking) {
+        throw new ApplicationError('VALIDATION_FAILED', `图片步骤“${definitionStep.name}”不支持关闭思考`, 400)
+      }
       if (!inputStep.modelDeploymentId) {
         return {
           id: this.dependencies.identifiers.create(), stepKey: definitionStep.key, ordinal: definitionStep.ordinal,
@@ -235,6 +244,9 @@ export class AiConfigurationApplicationService {
       const connection = await this.requireConnection(deployment.connectionId)
       if (!connection.isEnabled) {
         throw new ApplicationError('CAPABILITY_DISABLED', `步骤“${definitionStep.name}”使用的接口连接未启用`, 422)
+      }
+      if (definitionStep.modality === 'text' && inputStep.parameters.disableThinking && deployment.thinkingControl === 'none') {
+        throw new ApplicationError('AI_THINKING_CONTROL_NOT_CONFIGURED', `步骤“${definitionStep.name}”要求关闭思考，但模型部署未配置对应请求字段`, 422)
       }
       return {
         id: this.dependencies.identifiers.create(), stepKey: definitionStep.key, ordinal: definitionStep.ordinal,

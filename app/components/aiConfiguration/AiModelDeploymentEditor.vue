@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { computed, reactive, shallowRef } from 'vue'
-import { saveAiModelDeploymentSchema, type SaveAiModelDeploymentInput } from '#shared/schemas/aiConfiguration'
+import {
+  saveAiModelDeploymentSchema,
+  type AiThinkingControlMode,
+  type SaveAiModelDeploymentInput,
+} from '#shared/schemas/aiConfiguration'
 import type { AiConnectionView, AiModelDeploymentView } from '#shared/types/aiConfiguration'
 
 const props = defineProps<{
@@ -29,7 +33,13 @@ const form = reactive<SaveAiModelDeploymentInput>({
   name: props.deployment?.name ?? '',
   model: props.deployment?.model ?? '',
   modality: props.deployment?.modality ?? 'text',
+  thinkingControl: props.deployment?.thinkingControl ?? 'none',
   isEnabled: props.deployment?.isEnabled ?? true,
+})
+/** 文本模型关闭思考字段始终向下拉框提供有效选项值，避免可选 API 输入破坏双向绑定。 */
+const thinkingControl = computed<AiThinkingControlMode>({
+  get: () => form.thinkingControl ?? 'none',
+  set: value => { form.thinkingControl = value },
 })
 
 /**
@@ -63,6 +73,15 @@ function submit(): void {
       <UFormField label="部署名称" description="用于算法配置中识别，例如“主力推理模型”。" required><UInput v-model="form.name" class="w-full" /></UFormField>
       <UFormField label="供应商模型标识" required><UInput v-model="form.model" class="w-full" placeholder="model-name" /></UFormField>
       <UFormField label="模型类型" required><USelect v-model="form.modality" class="w-full" :items="[{ label: '文本', value: 'text' }, { label: '图片', value: 'image' }]" /></UFormField>
+      <UFormField v-if="form.modality === 'text'" label="关闭思考字段" description="算法步骤启用关闭思考时，只按此格式发送一个供应商字段。">
+        <USelect v-model="thinkingControl" class="w-full" :items="[
+          { label: '不支持 / 不发送', value: 'none' },
+          { label: 'enable_thinking: false', value: 'enable_thinking' },
+          { label: 'reasoning_effort: none', value: 'reasoning_effort' },
+          { label: 'reasoning: { enabled: false }', value: 'reasoning' },
+          { label: 'reasoning: { effort: none }', value: 'reasoning_effort_object' },
+        ]" />
+      </UFormField>
       <UCheckbox v-model="form.isEnabled" label="允许新算法配置使用此模型" />
       <div class="flex flex-wrap gap-2">
         <UButton type="submit" :loading="loading">{{ deployment ? '保存模型' : '创建模型' }}</UButton>

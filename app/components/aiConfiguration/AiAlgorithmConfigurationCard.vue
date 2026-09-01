@@ -31,6 +31,10 @@ const form = reactive<PublishAiAlgorithmConfigurationInput>({
   steps: props.algorithm.stepDefinitions.map((definition) => {
     const active = props.algorithm.steps.find(step => step.key === definition.key)
     const parameters = active?.parameters ?? { temperature: 0.2, maxOutputTokens: 4_096, timeoutMs: 60_000 }
+    const textParameters = {
+      ...parameters,
+      disableThinking: parameters.disableThinking ?? false,
+    }
     return {
       stepKey: definition.key,
       modelDeploymentId: active?.modelDeploymentId ?? '',
@@ -40,7 +44,7 @@ const form = reactive<PublishAiAlgorithmConfigurationInput>({
             maxImageWidth: parameters.maxImageWidth ?? DEFAULT_IMAGE_MAX_DIMENSION,
             maxImageHeight: parameters.maxImageHeight ?? DEFAULT_IMAGE_MAX_DIMENSION,
           }
-        : parameters,
+        : textParameters,
     }
   }),
 })
@@ -155,9 +159,12 @@ function submit(): void {
             <UInput v-model.number="form.steps[index]!.parameters.temperature" class="w-full" type="number" min="0"
               max="2" step="0.1" />
           </UFormField>
-          <UFormField v-if="definition.modality === 'text'" label="输出 Token" required>
-            <UInput v-model.number="form.steps[index]!.parameters.maxOutputTokens" class="w-full" type="number" min="64"
-              max="8192" step="64" />
+          <UFormField v-if="definition.modality === 'text'" label="输出 Token" description="填写 0 时不发送最大输出限制，由模型使用默认长度。" required>
+            <UInput v-model.number="form.steps[index]!.parameters.maxOutputTokens" class="w-full" type="number" min="0"
+              step="64" />
+          </UFormField>
+          <UFormField v-if="definition.modality === 'text'" label="思考模式" description="仅在所选模型部署已配置关闭思考字段时生效。">
+            <UCheckbox v-model="form.steps[index]!.parameters.disableThinking" label="关闭思考" />
           </UFormField>
           <UFormField v-if="definition.modality === 'image'" label="最大宽度（像素）" required>
             <UInput :model-value="imageDimension(index, 'maxImageWidth')" class="w-full" type="number" min="64"

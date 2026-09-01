@@ -285,8 +285,11 @@ let sourceId: string
 let testClock: TestClock
 /** 使用真实迁移模板的测试提示词目录。 */
 let aiPrompts: AiPromptApplicationService
+/** 当前测试为固定算法步骤覆盖的最大输出 Token；为空时使用默认测试值。 */
+let configuredAlgorithmMaxOutputTokens: number | null = null
 
 beforeEach(async () => {
+  configuredAlgorithmMaxOutputTokens = null
   directory = mkdtempSync(resolve(tmpdir(), 'ren-yang-generation-test-'))
   database = new SqliteDatabase({ dataDirectory: directory, migrationsDirectory: resolve(process.cwd(), 'drizzle') })
   const identifiers = new SystemIdentifierGenerator()
@@ -650,6 +653,22 @@ describe('阶段三纯文本运行', () => {
       .toEqual({ parameter_profile_id: null })
   })
 
+  it.each([0, 1_000_000])('兴趣算法输出 Token 为 %i 时保留运行快照并不触发参数校验上限', async (maxOutputTokens) => {
+    configuredAlgorithmMaxOutputTokens = maxOutputTokens
+
+    const created = await generation.createInterestRun({ personaId, content: '魔法学院课程' })
+    const details = await generation.getRun(created.runId)
+
+    expect(details.run.parameters).toMatchObject({ maxOutputTokens, reservedOutputTokens: 4_096 })
+    const snapshot = database.getClient().prepare('SELECT interest_algorithm_snapshot_json FROM generation_runs WHERE id = ?')
+      .get(created.runId) as { interest_algorithm_snapshot_json: string }
+    expect(JSON.parse(snapshot.interest_algorithm_snapshot_json)).toMatchObject({
+      steps: [{ parameters: { maxOutputTokens } }],
+    })
+    await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: true })
+    expect(model.requests.get('interest_batch_assessment')?.parameters.maxOutputTokens).toBe(maxOutputTokens)
+  })
+
   it('兴趣分析不会继承图文生成设置的总 Token 上限', async () => {
     const profile = await generation.createParameterProfile({
       name: '小型 Token 预算',
@@ -897,7 +916,7 @@ function createGenerationAlgorithms(
           promptCode, promptVersionId: versions[promptCode]!,
           parameters: {
             temperature: code === 'article_generation' ? 0.65 : code === 'article_image_analysis' ? 0.15 : 0.4,
-            maxOutputTokens: code === 'article_generation' ? 4_096 : 2_048,
+            maxOutputTokens: configuredAlgorithmMaxOutputTokens ?? (code === 'article_generation' ? 4_096 : 2_048),
             timeoutMs: 60_000,
           },
         }],

@@ -1,4 +1,4 @@
-import type { AiAlgorithmStepParameters } from '../../../shared/schemas/aiConfiguration'
+import type { AiAlgorithmStepParameters, AiThinkingControlMode } from '../../../shared/schemas/aiConfiguration'
 import type { AiAlgorithmCode } from '../../../shared/types/aiConfiguration'
 
 /** 算法创建任务时固定且不含访问密钥的步骤快照。 */
@@ -27,6 +27,8 @@ export interface AiAlgorithmStepSnapshot {
   promptVersionId: string
   /** 步骤调用参数。 */
   parameters: AiAlgorithmStepParameters
+  /** 已解析的关闭思考请求格式；旧快照缺失时视为 none。 */
+  thinkingDisableMode?: AiThinkingControlMode
 }
 
 /** 一次算法运行使用的完整非敏感配置快照。 */

@@ -1,4 +1,4 @@
-import type { AiAlgorithmStepParameters } from '../../shared/schemas/aiConfiguration'
+import type { AiAlgorithmStepParameters, AiThinkingControlMode } from '../../shared/schemas/aiConfiguration'
 import type { AiAlgorithmCode, AiConnectionView, AiModelDeploymentView } from '../../shared/types/aiConfiguration'
 
 /** 仅供服务端解密和动态执行使用的连接记录。 */
@@ -39,6 +39,8 @@ export interface SaveAiModelDeploymentRecord {
   model: string
   /** 文本或图片模型。 */
   modality: 'text' | 'image'
+  /** 文本步骤请求关闭思考时采用的供应商格式；图片部署固定为 none。 */
+  thinkingControl: AiThinkingControlMode
   /** 是否启用。 */
   isEnabled: boolean
   /** 本次写入时间。 */

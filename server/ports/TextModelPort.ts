@@ -1,4 +1,5 @@
 import type { TextModelParameters } from '../../shared/schemas/generation'
+import type { AiThinkingControlMode } from '../../shared/schemas/aiConfiguration'
 import type { TextModelSnapshot, TextModelUsage } from '../domain/generation/GenerationModels'
 
 /** 文本模型结构化调用输入。 */
@@ -9,6 +10,8 @@ export interface TextModelRequest {
   userPrompt: string
   /** 本次运行固定参数。 */
   parameters: TextModelParameters
+  /** 当前算法步骤要求关闭思考时的供应商字段格式；none 或省略时不发送额外字段。 */
+  thinkingDisableMode?: AiThinkingControlMode
   /** 供供应商和诊断识别的结构名称。 */
   responseSchemaName: string
   /** 供应商响应格式；省略时保持现有 JSON 对象模式。 */

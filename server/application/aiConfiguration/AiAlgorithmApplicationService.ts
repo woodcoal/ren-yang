@@ -104,6 +104,16 @@ export class AiAlgorithmApplicationService {
       }
       const deployment = await this.requireDeployment(deploymentId, definitionStep.modality)
       const connection = await this.requireEnabledConnection(deployment.connectionId)
+      const thinkingDisableMode = definitionStep.modality === 'text' && configuredStep.parameters.disableThinking
+        ? deployment.thinkingControl
+        : 'none'
+      if (configuredStep.parameters.disableThinking && thinkingDisableMode === 'none') {
+        throw new ApplicationError(
+          'AI_THINKING_CONTROL_NOT_CONFIGURED',
+          `算法步骤“${definitionStep.name}”要求关闭思考，但当前模型未配置对应请求字段`,
+          422,
+        )
+      }
       return {
         stepKey: definitionStep.key,
         ordinal: definitionStep.ordinal,
@@ -117,6 +127,7 @@ export class AiAlgorithmApplicationService {
         promptCode: definitionStep.promptCode,
         promptVersionId: promptVersions[definitionStep.promptCode]!,
         parameters: configuredStep.parameters,
+        thinkingDisableMode,
       }
     }))
     return {
@@ -251,7 +262,9 @@ export class AiAlgorithmApplicationService {
     const connection = await this.requireEnabledConnection(step.connectionId)
     if (deployment.connectionId !== step.connectionId || deployment.model !== step.model
       || connection.endpoint !== step.endpoint || connection.protocol !== step.protocol
-      || connection.userAgent !== (step.userAgent ?? '')) {
+      || connection.userAgent !== (step.userAgent ?? '')
+      || (step.thinkingDisableMode !== undefined && step.thinkingDisableMode !== 'none'
+        && step.thinkingDisableMode !== deployment.thinkingControl)) {
       throw new ApplicationError('AI_ALGORITHM_CONFIGURATION_CHANGED', '算法使用的接口或模型已被编辑，请重新创建任务', 409)
     }
     return { step, connection }
@@ -283,6 +296,7 @@ export class AiAlgorithmApplicationService {
       systemPrompt: prompt.systemPrompt,
       userPrompt: prompt.userPrompt,
       parameters: buildTextModelParameters(step.parameters),
+      thinkingDisableMode: step.thinkingDisableMode ?? 'none',
       responseSchemaName,
       responseFormat,
     })

@@ -2,7 +2,7 @@ import { readBody } from 'h3'
 import { flushPromises } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
-import type { PublishAiAlgorithmConfigurationInput, UpdateAiConnectionInput } from '../../shared/schemas/aiConfiguration'
+import type { PublishAiAlgorithmConfigurationInput, SaveAiModelDeploymentInput, UpdateAiConnectionInput } from '../../shared/schemas/aiConfiguration'
 import type { GrowthExtractAlgorithmTestInput, GrowthSynthesizeAlgorithmTestInput } from '../../shared/schemas/aiAlgorithmTest'
 import type { AiAlgorithmTestResult } from '../../shared/types/aiAlgorithmTest'
 import type { AiAlgorithmView, AiConnectionView, AiModelDeploymentView } from '../../shared/types/aiConfiguration'
@@ -10,6 +10,7 @@ import type { AiPromptWorkspaceView } from '../../shared/types/aiPrompt'
 import type { SystemAiSettingsValues } from '../../shared/schemas/systemAi'
 import AiAlgorithmsPage from '../../app/pages/ai-algorithms.vue'
 import AiModelsPage from '../../app/pages/ai-models.vue'
+import AiModelDeploymentEditor from '../../app/components/aiConfiguration/AiModelDeploymentEditor.vue'
 
 /** 页面测试使用的脱敏接口连接。 */
 const connection: AiConnectionView = {
@@ -22,14 +23,14 @@ const connection: AiConnectionView = {
 /** 页面测试使用的文本模型部署。 */
 const deployment: AiModelDeploymentView = {
   id: '10000000-0000-4000-8000-000000000002', connectionId: connection.id,
-  name: '成长模型', model: 'growth-model', modality: 'text', isEnabled: true,
+  name: '成长模型', model: 'growth-model', modality: 'text', thinkingControl: 'reasoning_effort', isEnabled: true,
   createdAt: 1_000, updatedAt: 1_000,
 }
 
 /** 页面测试使用的图片模型部署。 */
 const imageDeployment: AiModelDeploymentView = {
   id: '10000000-0000-4000-8000-000000000003', connectionId: connection.id,
-  name: '图片模型', model: 'image-model', modality: 'image', isEnabled: true,
+  name: '图片模型', model: 'image-model', modality: 'image', thinkingControl: 'none', isEnabled: true,
   createdAt: 1_000, updatedAt: 1_000,
 }
 
@@ -177,6 +178,8 @@ const memoryAlgorithmPrompts: AiPromptWorkspaceView[] = memoryAlgorithm.stepDefi
 
 /** 编辑接口最后提交的正文。 */
 let savedConnection: UpdateAiConnectionInput | null = null
+/** 模型部署页最后提交的正文。 */
+let savedDeployment: SaveAiModelDeploymentInput | null = null
 /** 默认模型页最后提交的模型部署选择。 */
 let savedDefaultModels: SystemAiSettingsValues | null = null
 /** 发布算法配置最后提交的正文。 */
@@ -225,6 +228,14 @@ registerEndpoint(`/api/v1/ai/connections/${connection.id}`, {
   },
 })
 registerEndpoint('/api/v1/ai/model-deployments', () => ({ data: [deployment, imageDeployment] }))
+registerEndpoint('/api/v1/ai/model-deployments', {
+  method: 'POST',
+  /** @param event 测试请求事件。 @returns 模拟保存后的模型部署。 */
+  handler: async (event) => {
+    savedDeployment = await readBody<SaveAiModelDeploymentInput>(event)
+    return { data: deployment }
+  },
+})
 registerEndpoint('/api/v1/system/ai-settings', () => ({
   data: { values: { textModelDeploymentId: deployment.id, imageModelDeploymentId: imageDeployment.id }, updatedAt: 1_000 },
 }))
@@ -268,6 +279,7 @@ registerEndpoint(`/api/v1/ai/algorithms/${algorithm.code}/test`, {
 
 beforeEach(() => {
   savedConnection = null
+  savedDeployment = null
   savedDefaultModels = null
   savedAlgorithm = null
   algorithmTestInputs.splice(0)
@@ -334,6 +346,27 @@ describe('AI 模型与算法配置页面', () => {
     expect(wrapper.find('form[data-system-ai-settings-form]').exists()).toBe(false)
   })
 
+  it('文本模型部署选择关闭思考请求格式并完整提交', async () => {
+    const wrapper = await mountSuspended(AiModelsPage, { route: '/ai-models' })
+    await flushPromises()
+    await wrapper.findAll('.model-setup-path button')[1]!.trigger('click')
+    await wrapper.findAll('button').find(button => button.text() === '新增模型')!.trigger('click')
+    await flushPromises()
+
+    const editor = wrapper.findComponent(AiModelDeploymentEditor)
+    expect(editor.text()).toContain('关闭思考字段')
+    editor.vm.$emit('save', {
+      connectionId: connection.id, name: '关闭思考模型', model: 'reasoning-model', modality: 'text',
+      thinkingControl: 'reasoning_effort_object', isEnabled: true,
+    })
+    await flushPromises()
+
+    expect(savedDeployment).toEqual({
+      connectionId: connection.id, name: '关闭思考模型', model: 'reasoning-model', modality: 'text',
+      thinkingControl: 'reasoning_effort_object', isEnabled: true,
+    })
+  })
+
   it('展示固定步骤和提示词绑定，并提交全部模型与参数作为新版本', async () => {
     const wrapper = await mountSuspended(AiAlgorithmsPage, { route: '/ai-algorithms' })
     await flushPromises()
@@ -353,9 +386,27 @@ describe('AI 模型与算法配置页面', () => {
       steps: algorithm.steps.map(step => ({
         stepKey: step.key,
         modelDeploymentId: step.modelDeploymentId,
-        parameters: step.parameters,
+        parameters: { ...step.parameters, disableThinking: false },
       })),
     })
+  })
+
+  it('文本步骤提交关闭思考与零输出 Token，图片步骤不显示该开关', async () => {
+    const wrapper = await mountSuspended(AiAlgorithmsPage, { route: '/ai-algorithms' })
+    await flushPromises()
+    const form = wrapper.get('form[data-ai-algorithm-form]')
+    const inputs = form.findAll('input[type="number"]')
+    await inputs[1]!.setValue(0)
+    await form.findAll('[role="checkbox"]')[0]!.trigger('click')
+    await form.trigger('submit')
+    await flushPromises()
+
+    expect(savedAlgorithm?.steps[0]).toEqual({
+      stepKey: 'extract', modelDeploymentId: deployment.id,
+      parameters: { temperature: 0, maxOutputTokens: 0, timeoutMs: 30_000, disableThinking: true },
+    })
+    expect(form.text()).toContain('关闭思考')
+    expect(form.text()).toContain('填写 0 时不发送最大输出限制')
   })
 
   it('明确真实调用边界，并用业务化成长输入展示逐步诊断', async () => {
@@ -448,6 +499,7 @@ describe('AI 模型与算法配置页面', () => {
     const form = wrapper.get('form[data-ai-algorithm-form]')
     expect(form.text()).toContain('最大宽度（像素）')
     expect(form.text()).toContain('最大高度（像素）')
+    expect(form.text()).not.toContain('关闭思考')
     const inputs = form.findAll('input[type="number"]')
     expect(inputs).toHaveLength(3)
     await inputs[0]!.setValue(1_280)

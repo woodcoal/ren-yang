@@ -149,6 +149,54 @@ describe('AI 接口、模型部署与算法配置', () => {
     })])
   })
 
+  it('把关闭思考格式和零输出 Token 固定到文本算法步骤快照', async () => {
+    const { service, algorithms, modelFactory } = createServices()
+    const connection = await service.createConnection({
+      name: '思考控制接口', protocol: 'openai_compatible', endpoint: 'https://thinking.example/v1',
+      apiKey: 'thinking-secret', isEnabled: true,
+    })
+    const deployment = await service.createModelDeployment({
+      connectionId: connection.id, name: '可关闭思考模型', model: 'thinking-model', modality: 'text',
+      thinkingControl: 'reasoning_effort_object', isEnabled: true,
+    })
+    await service.publishAlgorithmConfiguration('persona_soul', {
+      steps: [{
+        stepKey: 'organize', modelDeploymentId: deployment.id,
+        parameters: { temperature: 0.4, maxOutputTokens: 0, timeoutMs: 60_000, disableThinking: true },
+      }],
+    })
+
+    const snapshot = await algorithms.prepare('persona_soul')
+    expect(snapshot.steps).toEqual([expect.objectContaining({
+      modelDeploymentId: deployment.id,
+      thinkingDisableMode: 'reasoning_effort_object',
+      parameters: expect.objectContaining({ maxOutputTokens: 0, disableThinking: true }),
+    })])
+    await algorithms.executeStep(snapshot, 'organize', { promptTextJson: '"整理资料"' }, 'soul_prompt_analysis', 'json_object')
+    expect(modelFactory.requests).toEqual([expect.objectContaining({
+      thinkingDisableMode: 'reasoning_effort_object',
+      parameters: expect.objectContaining({ maxOutputTokens: 0 }),
+    })])
+  })
+
+  it('关闭思考时拒绝未声明供应商请求格式的文本模型', async () => {
+    const { service } = createServices()
+    const connection = await service.createConnection({
+      name: '无思考控制接口', protocol: 'openai_compatible', endpoint: 'https://no-thinking.example/v1',
+      apiKey: 'no-thinking-secret', isEnabled: true,
+    })
+    const deployment = await service.createModelDeployment({
+      connectionId: connection.id, name: '普通文本模型', model: 'plain-model', modality: 'text', isEnabled: true,
+    })
+
+    await expect(service.publishAlgorithmConfiguration('persona_soul', {
+      steps: [{
+        stepKey: 'organize', modelDeploymentId: deployment.id,
+        parameters: { temperature: 0.4, maxOutputTokens: 0, timeoutMs: 60_000, disableThinking: true },
+      }],
+    })).rejects.toMatchObject({ code: 'AI_THINKING_CONTROL_NOT_CONFIGURED', statusCode: 422 })
+  })
+
   it('固定步骤发布不可变配置版本并按快照选择不同端点模型执行', async () => {
     const { service, algorithms, modelFactory } = createServices()
     const connection = await service.createConnection({

@@ -180,6 +180,7 @@ export const aiModelDeployments = sqliteTable(
     name: text('name').notNull(),
     model: text('model').notNull(),
     modality: text('modality').notNull(),
+    thinkingControl: text('thinking_control').notNull().default('none'),
     isEnabled: integer('is_enabled').notNull().default(1),
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull(),
@@ -190,6 +191,7 @@ export const aiModelDeployments = sqliteTable(
     check('ai_model_deployments_name_check', sql`length(trim(${table.name})) > 0`),
     check('ai_model_deployments_model_check', sql`length(trim(${table.model})) > 0`),
     check('ai_model_deployments_modality_check', sql`${table.modality} IN ('text', 'image')`),
+    check('ai_model_deployments_thinking_control_check', sql`${table.thinkingControl} IN ('none', 'enable_thinking', 'reasoning_effort', 'reasoning', 'reasoning_effort_object')`),
     check('ai_model_deployments_enabled_check', sql`${table.isEnabled} IN (0, 1)`),
   ],
 )

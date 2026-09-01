@@ -12,7 +12,7 @@ export const sceneContextSchema = z.object({
 /** 运行最终解析后的文本模型参数。 */
 export const textModelParametersSchema = z.object({
   temperature: z.number().min(0).max(2),
-  maxOutputTokens: z.number().int().min(64).max(8_192),
+  maxOutputTokens: z.number().int().min(0),
   timeoutMs: z.number().int().min(1_000).max(120_000),
   maxEvidenceChunks: z.number().int().min(0).max(50),
   maxTextBlocks: z.number().int().min(1).max(20),
@@ -35,9 +35,6 @@ export const textModelParametersSchema = z.object({
   const availableInputTokens = value.contextWindowTokens - value.reservedOutputTokens - value.safetyMarginTokens
   if (availableInputTokens <= 0) {
     context.addIssue({ code: 'custom', path: ['contextWindowTokens'], message: '模型上下文必须大于预留输出与安全余量之和' })
-  }
-  if (value.maxOutputTokens > value.reservedOutputTokens) {
-    context.addIssue({ code: 'custom', path: ['reservedOutputTokens'], message: '预留输出 Token 不能小于单次回答长度上限' })
   }
   if (value.worldSoulBudgetTokens + value.worldGrowthBudgetTokens > value.worldBudgetTokens) {
     context.addIssue({ code: 'custom', path: ['worldBudgetTokens'], message: '世界灵魂与世界成长预算之和不能超过世界总预算' })
