@@ -56,12 +56,14 @@ export const aiAlgorithmStepParametersSchema = z.object({
   temperature: z.number().min(0).max(2),
   maxOutputTokens: z.number().int().min(64).max(8_192),
   timeoutMs: z.number().int().min(1_000).max(120_000),
+  maxImageWidth: z.number().int().min(64).max(8_192).optional(),
+  maxImageHeight: z.number().int().min(64).max(8_192).optional(),
 })
 
 /** 算法配置中的一个固定步骤。 */
 export const saveAiAlgorithmStepSchema = z.object({
   stepKey: z.string().regex(/^[a-z][a-z0-9_]{0,63}$/, '算法步骤标识无效'),
-  modelDeploymentId: z.string().uuid('模型部署标识无效'),
+  modelDeploymentId: z.union([z.literal(''), z.string().uuid('模型部署标识无效')]),
   parameters: aiAlgorithmStepParametersSchema,
 })
 

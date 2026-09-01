@@ -20,9 +20,10 @@ const PROMPT_CONTEXT = {
 
 describe('提示词变量契约', () => {
   it('兴趣判断只输出目录定义需要的固定 JSON 变量', () => {
-    const variables = buildInterestBatchPromptVariables(PROMPT_CONTEXT, [
-      { itemId: 'item-2', text: '测试内容' },
-    ])
+    const variables = buildInterestBatchPromptVariables({
+      ...PROMPT_CONTEXT,
+      scene: '只判断长期兴趣，不考虑短期热点。',
+    }, [{ itemId: 'item-2', text: '测试内容' }])
 
     expect(GENERATION_PROMPT_CODES.interestAssessment).toBe('generation.interest_assessment')
     expect(variables).toMatchObject({
@@ -31,6 +32,7 @@ describe('提示词变量契约', () => {
       worldGrowthPromptJson: '"遵循世界成长经验。"',
       personaGrowthPromptJson: '"回答先给结论。"',
       personaMemoryPromptJson: '"曾经成功处理事实型文章。"',
+      sceneJson: '"只判断长期兴趣，不考虑短期热点。"',
       contentJson: '[{"itemId":"item-2","text":"测试内容"}]',
     })
   })

@@ -1,5 +1,6 @@
 import { lookup } from 'node:dns/promises'
 import { BlockList, isIP } from 'node:net'
+import sharp from 'sharp'
 import type { ImageModelPort, ImageModelRequest, ImageModelResponse } from '../../ports/ImageModelPort'
 import { ImageModelError } from '../../ports/ImageModelPort'
 import type { ImageModelSnapshot } from '../../domain/generation/GenerationModels'
@@ -16,6 +17,8 @@ export interface OpenAiCompatibleImageModelOptions {
 
 /** 单张供应商响应允许下载的最大字节数。 */
 const MAX_DOWNLOAD_BYTES = 10 * 1024 * 1024
+/** 二次裁剪解码时允许的最大像素总数，防止压缩图片耗尽内存。 */
+const MAX_CROP_INPUT_PIXELS = 100_000_000
 /** 图片下载禁止访问的非公网 IPv4 与 IPv6 地址范围。 */
 const PRIVATE_NETWORKS = createPrivateNetworkBlockList()
 
@@ -41,7 +44,7 @@ export class OpenAiCompatibleImageModel implements ImageModelPort {
 
   /**
    * 生成图片并解析 Base64；供应商只返回 URL 时执行受限下载。
-   * @param request 视觉提示、宽高比和超时。
+   * @param request 视觉提示、宽高比、可选二次裁剪上限和超时。
    * @returns 待本地存储继续校验的图片字节。
    */
   async generate(request: ImageModelRequest): Promise<ImageModelResponse> {
@@ -74,7 +77,8 @@ export class OpenAiCompatibleImageModel implements ImageModelPort {
       catch {
         throw new ImageModelError('IMAGE_OUTPUT_INVALID', '图片模型响应不是有效 JSON', true)
       }
-      return await parseImageResponse(payload, controller.signal)
+      const image = await parseImageResponse(payload, controller.signal)
+      return await cropImageIfNeeded(image, request.maxWidth, request.maxHeight)
     }
     catch (error: unknown) {
       if (error instanceof ImageModelError) throw error
@@ -86,6 +90,46 @@ export class OpenAiCompatibleImageModel implements ImageModelPort {
     finally {
       clearTimeout(timeout)
     }
+  }
+}
+
+/**
+ * 仅在图片超过配置上限时从中心裁掉超出部分，不缩放或放大小图。
+ * @param image 已下载或解码的供应商图片。
+ * @param maxWidth 算法步骤允许的最大宽度；省略时不限制宽度。
+ * @param maxHeight 算法步骤允许的最大高度；省略时不限制高度。
+ * @returns 未超限时返回原始字节，超限时返回保持原编码格式的居中裁剪图片。
+ */
+async function cropImageIfNeeded(
+  image: ImageModelResponse,
+  maxWidth: number | undefined,
+  maxHeight: number | undefined,
+): Promise<ImageModelResponse> {
+  if (maxWidth === undefined && maxHeight === undefined) return image
+  try {
+    const pipeline = sharp(image.bytes, { limitInputPixels: MAX_CROP_INPUT_PIXELS })
+    const metadata = await pipeline.metadata()
+    if (!metadata.width || !metadata.height) {
+      throw new ImageModelError('IMAGE_OUTPUT_INVALID', '图片模型返回的图片尺寸无效', false)
+    }
+    const width = Math.min(metadata.width, maxWidth ?? metadata.width)
+    const height = Math.min(metadata.height, maxHeight ?? metadata.height)
+    if (width === metadata.width && height === metadata.height) return image
+    const bytes = new Uint8Array(await pipeline.extract({
+      left: Math.floor((metadata.width - width) / 2),
+      top: Math.floor((metadata.height - height) / 2),
+      width,
+      height,
+    }).toBuffer())
+    return {
+      bytes,
+      declaredMediaType: image.declaredMediaType,
+      original: { bytes: image.bytes, declaredMediaType: image.declaredMediaType },
+    }
+  }
+  catch (error: unknown) {
+    if (error instanceof ImageModelError) throw error
+    throw new ImageModelError('IMAGE_OUTPUT_INVALID', '图片模型返回的图片无法按尺寸规则裁剪', false)
   }
 }
 

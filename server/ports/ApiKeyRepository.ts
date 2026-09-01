@@ -26,6 +26,8 @@ export interface ApiKeyRepository {
   findByDigest(digest: string): Promise<ApiKeyRecord | null>
   /** @param id Key 标识。 @param timestamp 吊销时间。 @returns 是否首次吊销。 */
   revoke(id: string, timestamp: number): Promise<boolean>
+  /** @param id 已吊销 Key 标识。 @param timestamp 删除时间。 @returns 是否删除成功。 */
+  deleteRevoked(id: string, timestamp: number): Promise<boolean>
   /** @param id Key 标识。 @param timestamp 最近成功认证时间。 @returns 是否更新。 */
   markUsed(id: string, timestamp: number): Promise<boolean>
 }

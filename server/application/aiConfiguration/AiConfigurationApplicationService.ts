@@ -222,6 +222,12 @@ export class AiConfigurationApplicationService {
     await this.dependencies.prompts.snapshotPublishedVersions(definition.steps.map(step => step.promptCode))
     const steps = await Promise.all(definition.steps.map(async (definitionStep) => {
       const inputStep = inputs.get(definitionStep.key)!
+      if (!inputStep.modelDeploymentId) {
+        return {
+          id: this.dependencies.identifiers.create(), stepKey: definitionStep.key, ordinal: definitionStep.ordinal,
+          modelDeploymentId: null, promptCode: definitionStep.promptCode, parameters: inputStep.parameters,
+        }
+      }
       const deployment = await this.requireDeployment(inputStep.modelDeploymentId)
       if (!deployment.isEnabled || deployment.modality !== definitionStep.modality) {
         throw new ApplicationError('CAPABILITY_DISABLED', `步骤“${definitionStep.name}”必须选择已启用的${definitionStep.modality === 'text' ? '文本' : '图片'}模型`, 422)

@@ -43,6 +43,7 @@
   },
   "dependencies": {
     "@adonisjs/hash": "^10.1.1",
+    "@internationalized/date": "^3.12.3",
     "@nuxt/ui": "^4.11.0",
     "better-sqlite3": "^13.0.3",
     "drizzle-orm": "^0.45.2",

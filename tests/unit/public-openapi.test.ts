@@ -81,10 +81,26 @@ describe('公共 OpenAPI 契约', () => {
       .toMatchObject({ properties: { data: { $ref: '#/components/schemas/CreatedRun' } } })
     expect(document.paths['/api/v2/interest-batches']?.post?.responses['202']?.content?.['application/json']?.schema)
       .toMatchObject({ properties: { data: { $ref: '#/components/schemas/InterestBatch' } } })
+    expect(document.components.schemas.CreateInterestBatch).toMatchObject({
+      properties: {
+        additionalPrompt: { type: 'string', maxLength: 4_000, default: '' },
+      },
+    })
+    expect(document.components.schemas.InterestBatchItem).toMatchObject({
+      required: expect.arrayContaining(['text']),
+      properties: { text: { type: 'string' } },
+    })
+    expect(document.components.schemas.InterestBatch).toMatchObject({
+      required: expect.arrayContaining(['additionalPrompt']),
+      properties: { additionalPrompt: { type: 'string' } },
+    })
     expect(document.paths['/api/v2/interest-batches/{batchId}']?.get?.['x-required-scope']).toBe('generation:read')
     expect(document.paths['/api/v2/interest-batches/{batchId}/items/{itemId}/retry']?.post?.['x-required-scope']).toBe('generation:write')
     expect(document.paths['/api/v2/runs/{runId}']?.get?.['x-required-scope']).toBe('generation:read')
     expect(document.paths['/api/v2/runs/{runId}/retry']?.post?.['x-required-scope']).toBe('generation:write')
+    expect(document.paths['/api/v2/runs/{runId}/assets/{assetId}']?.get?.parameters).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'variant', in: 'query', schema: { type: 'string', enum: ['result', 'original'], default: 'result' } }),
+    ]))
   })
 
   it('所有写操作都声明幂等键，同一分页参数用于三类列表', () => {

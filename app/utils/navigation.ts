@@ -43,7 +43,8 @@ export const appNavigationGroups: AppNavigationGroup[] = [
   {
     label: '系统',
     items: [
-      { label: 'AI 管理', to: '/ai-models', icon: 'i-lucide-server-cog' },
+      { label: '模型配置', to: '/ai-models', icon: 'i-lucide-server-cog' },
+      { label: '算法配置', to: '/ai-algorithms', icon: 'i-lucide-workflow' },
       { label: '系统中心', to: '/settings', icon: 'i-lucide-settings-2' },
       { label: 'API Key', to: '/api-keys', icon: 'i-lucide-key-round' },
       { label: '日志与审计', to: '/system-records', icon: 'i-lucide-scroll-text' },
@@ -54,6 +55,7 @@ export const appNavigationGroups: AppNavigationGroup[] = [
 /** 动态详情页到导航分组的映射。 */
 const routeSectionRules: Array<{ prefix: string, section: string }> = [
   { prefix: '/runs/', section: '工作台' },
+  { prefix: '/interest-batches/', section: '工作台' },
   { prefix: '/personas/new', section: '人物空间' },
   { prefix: '/personas/', section: '人物空间' },
   { prefix: '/worlds/', section: '人物空间' },
@@ -66,7 +68,6 @@ const standalonePageTitles: Record<string, string> = {
   '/setup': '首次设置',
   '/personas/new': '新建人物',
   '/sources/search': '资料段落搜索',
-  '/ai-algorithms': 'AI 管理',
   '/ai-settings': 'AI 管理',
   '/prompts': '提示词管理',
   '/system-ai-settings': 'AI 管理',
@@ -75,6 +76,7 @@ const standalonePageTitles: Record<string, string> = {
 /** 动态详情页使用的稳定浏览器标题。 */
 const dynamicPageTitleRules: Array<{ prefix: string, title: string }> = [
   { prefix: '/runs/', title: '任务详情' },
+  { prefix: '/interest-batches/', title: '兴趣批次详情' },
   { prefix: '/personas/', title: '人物详情' },
   { prefix: '/worlds/', title: '世界详情' },
   { prefix: '/sources/', title: '资料详情' },

@@ -191,81 +191,69 @@ async function saveAlgorithm(code: AiAlgorithmCode, input: PublishAiAlgorithmCon
 
 <template>
   <div>
-    <ContentPageHeader title="AI 管理" description="统一维护接口连接、模型部署和固定算法；每项 AI 操作直接绑定对应算法。" />
-    <AiConfigurationAiManagementTabs />
-    <div class="status-strip page-status-strip" aria-label="AI 算法状态摘要">
-      <div class="status-cell"><span class="status-kicker">固定算法</span><strong class="status-value">{{ algorithms.length }}</strong></div>
-      <div class="status-cell"><span class="status-kicker">已配置</span><strong class="status-value">{{ configuredCount }}</strong></div>
-      <div class="status-cell"><span class="status-kicker">可用文本模型</span><strong class="status-value">{{ enabledTextDeploymentCount }}</strong></div>
-      <div class="status-cell"><span class="status-kicker">配置策略</span><strong class="status-value">版本化发布</strong></div>
-    </div>
+    <ContentPageHeader title="算法配置" description="为固定 AI 算法选择模型部署、提示词版本和调用参数。" />
 
     <nav class="algorithm-category-tabs" aria-label="AI 算法分类">
-      <button
-        v-for="category in categories"
-        :key="category.code"
-        type="button"
-        class="algorithm-category-tab"
+      <button v-for="category in categories" :key="category.code" type="button" class="algorithm-category-tab"
         :class="{ 'algorithm-category-tab--active': category.code === activeCategory }"
-        :aria-current="category.code === activeCategory ? 'page' : undefined"
-        @click="requestCategory(category.code)"
-      >
+        :aria-current="category.code === activeCategory ? 'page' : undefined" @click="requestCategory(category.code)">
         <strong>{{ category.label }}</strong>
         <span>{{ category.description }}</span>
       </button>
     </nav>
 
     <div class="space-y-5 py-9">
-      <UAlert color="neutral" variant="subtle" title="算法边界" description="步骤、顺序、变量组装和输出结构固定在代码中；这里只维护每个步骤的模型、调用参数和提示词版本。" />
-      <UAlert v-if="algorithmRequest.error.value || deploymentRequest.error.value || promptRequest.error.value" color="error" title="算法配置加载失败" />
+      <UAlert v-if="algorithmRequest.error.value || deploymentRequest.error.value || promptRequest.error.value"
+        color="error" title="算法配置加载失败" />
 
       <div v-if="selectedAlgorithm" class="space-y-6">
         <div class="algorithm-subject-tabs" aria-label="人物与世界算法">
-          <button
-            v-for="algorithm in categoryAlgorithms"
-            :key="algorithm.code"
-            type="button"
+          <button v-for="algorithm in categoryAlgorithms" :key="algorithm.code" type="button"
             class="algorithm-subject-tab"
             :class="{ 'algorithm-subject-tab--active': algorithm.code === selectedAlgorithm.code }"
-            @click="requestAlgorithm(algorithm)"
-          >
+            @click="requestAlgorithm(algorithm)">
             <span>{{ algorithmScopeLabel(algorithm.code) }}</span>
             <strong>{{ algorithm.name }}</strong>
-            <UBadge :color="algorithm.activeConfigurationVersion ? 'success' : 'warning'" variant="subtle">{{ algorithm.activeConfigurationVersion ? `配置 v${algorithm.activeConfigurationVersion}` : '待配置' }}</UBadge>
+            <UBadge :color="algorithm.activeConfigurationVersion ? 'success' : 'warning'" variant="subtle">{{
+              algorithm.activeConfigurationVersion ? `配置 v${algorithm.activeConfigurationVersion}` : '待配置' }}</UBadge>
           </button>
         </div>
 
         <AiConfigurationAiAlgorithmConfigurationCard
           :key="`${selectedAlgorithm.code}-${selectedAlgorithm.activeConfigurationVersion ?? 0}`"
-          :algorithm="selectedAlgorithm"
-          :deployments="deployments"
-          :loading="savingCode === selectedAlgorithm.code"
-          @save="saveAlgorithm(selectedAlgorithm.code, $event)"
-          @edit-prompt="requestPrompt"
-        />
-
-        <AiConfigurationAiAlgorithmTestPanel v-if="supportsDedicatedTest(selectedAlgorithm.code)" :key="selectedAlgorithm.code" :algorithm="selectedAlgorithm" />
-        <UAlert v-else color="neutral" variant="subtle" title="当前算法使用业务闭环验证" description="请从人物、世界、工作台或反馈入口执行实际操作；运行会使用并记录这里发布的算法配置。" />
+          :algorithm="selectedAlgorithm" :deployments="deployments" :loading="savingCode === selectedAlgorithm.code"
+          @save="saveAlgorithm(selectedAlgorithm.code, $event)" @edit-prompt="requestPrompt" />
 
         <section class="content-section" aria-labelledby="algorithm-prompt-heading">
           <div class="section-heading">
-            <div class="section-heading-copy"><p class="eyebrow">步骤提示词</p><h2 id="algorithm-prompt-heading">同页校准提示词</h2><p>点击上方任一步骤的“编辑该步骤提示词”，即可在不离开算法上下文的情况下维护版本。</p></div>
+            <div class="section-heading-copy">
+              <p class="eyebrow">步骤提示词</p>
+              <h2 id="algorithm-prompt-heading">同页校准提示词</h2>
+              <p>点击上方任一步骤的“编辑该步骤提示词”，即可在不离开算法上下文的情况下维护版本。</p>
+            </div>
           </div>
-          <AiPromptEditor
-            v-if="selectedPrompt"
-            :key="selectedPrompt.code"
-            :prompt="selectedPrompt"
-            @changed="promptRequest.refresh()"
-            @dirty-change="promptDirty = $event"
-          />
+          <AiPromptEditor v-if="selectedPrompt" :key="selectedPrompt.code" :prompt="selectedPrompt"
+            @changed="promptRequest.refresh()" @dirty-change="promptDirty = $event" />
           <UAlert v-else color="error" title="步骤提示词不存在" :description="`未找到固定提示词：${selectedPromptCode || '未绑定'}`" />
         </section>
+
+        <AiConfigurationAiAlgorithmTestPanel v-if="supportsDedicatedTest(selectedAlgorithm.code)"
+          :key="selectedAlgorithm.code" :algorithm="selectedAlgorithm" />
+        <UAlert v-else color="neutral" variant="subtle" title="当前算法使用业务闭环验证"
+          description="请从人物、世界、工作台或反馈入口执行实际操作；运行会使用并记录这里发布的算法配置。" />
       </div>
-      <div v-else class="content-empty-state"><div><strong>算法定义不可用</strong><p>请检查数据库迁移是否完成。</p></div></div>
+      <div v-else class="content-empty-state">
+        <div><strong>算法定义不可用</strong>
+          <p>请检查数据库迁移是否完成。</p>
+        </div>
+      </div>
     </div>
 
     <UModal v-model:open="switchConfirmationOpen" title="放弃未保存的提示词修改？" description="切换算法或步骤会重置当前提示词编辑器，未保存内容无法找回。">
-      <template #footer><UButton variant="ghost" @click="switchConfirmationOpen = false">继续编辑</UButton><UButton color="warning" @click="confirmSelection">放弃并切换</UButton></template>
+      <template #footer>
+        <UButton variant="ghost" @click="switchConfirmationOpen = false">继续编辑</UButton>
+        <UButton color="warning" @click="confirmSelection">放弃并切换</UButton>
+      </template>
     </UModal>
   </div>
 </template>
@@ -334,7 +322,7 @@ async function saveAlgorithm(code: AiAlgorithmCode, input: PublishAiAlgorithmCon
   cursor: pointer;
 }
 
-.algorithm-subject-tab > span:first-child {
+.algorithm-subject-tab>span:first-child {
   font-family: var(--font-mono);
   font-size: 0.75rem;
 }
@@ -354,6 +342,7 @@ async function saveAlgorithm(code: AiAlgorithmCode, input: PublishAiAlgorithmCon
 }
 
 @media (max-width: 40rem) {
+
   .algorithm-category-tabs,
   .algorithm-subject-tabs {
     grid-template-columns: 1fr;

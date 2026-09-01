@@ -1,5 +1,6 @@
-import { getRouterParam } from 'h3'
+import { getQuery, getRouterParam } from 'h3'
 import { resourceIdSchema } from '#shared/schemas/content'
+import { imageAssetVariantSchema } from '#shared/schemas/generation'
 import { executePublicBinaryController } from '../../../../../presentation/http/publicController'
 
 /**
@@ -11,5 +12,6 @@ import { executePublicBinaryController } from '../../../../../presentation/http/
 export default defineEventHandler(async event => await executePublicBinaryController(event, 'generation:read', async () => {
   const runId = resourceIdSchema.parse(getRouterParam(event, 'runId'))
   const assetId = resourceIdSchema.parse(getRouterParam(event, 'assetId'))
-  return await event.context.applicationServices.generation.getImageAsset(runId, assetId)
+  const variant = imageAssetVariantSchema.parse(getQuery(event).variant)
+  return await event.context.applicationServices.generation.getImageAsset(runId, assetId, variant)
 }))

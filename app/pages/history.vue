@@ -136,6 +136,7 @@ function descriptionPreview(value: string): string {
 /** @param item 统一任务记录。 @returns 任务详情或所属对象详情地址。 */
 function detailsPath(item: HistoryItemView): string {
   if (item.sourceType === 'task') return '/system-records'
+  if (item.sourceType === 'interest_batch') return `/interest-batches/${item.id}`
   if (item.sourceType === 'run') return `/runs/${item.id}`
   return item.subjectType === 'world' ? `/worlds/${item.subjectId}` : `/personas/${item.subjectId}`
 }

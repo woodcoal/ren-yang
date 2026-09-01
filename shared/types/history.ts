@@ -3,7 +3,7 @@ import type { HistoryKind, HistoryStatus } from '../schemas/history'
 /** 任务记录页统一展示的一项生成运行、分析批次或 OpenViking 后台任务。 */
 export interface HistoryItemView {
   /** 三类任务记录的来源。 */
-  sourceType: 'run' | 'analysis' | 'task'
+  sourceType: 'run' | 'interest_batch' | 'analysis' | 'task'
   /** 生成运行、分析批次或后台任务 UUID。 */
   id: string
   /** 任务类型。 */

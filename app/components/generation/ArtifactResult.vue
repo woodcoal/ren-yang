@@ -29,9 +29,15 @@ const previewHtml = computed(() => {
   return html
 })
 
-/** @param assetId 图片资产 UUID。 @returns 当前运行内的图片读取地址。 */
-function assetUrl(assetId: string): string {
-  return `/api/v1/runs/${encodeURIComponent(props.runId)}/assets/${encodeURIComponent(assetId)}`
+/**
+ * 构建最终图片或裁剪前原图的受认证读取地址。
+ * @param assetId 图片资产 UUID。
+ * @param variant 最终裁剪结果或裁剪前原图。
+ * @returns 当前运行内的图片读取地址。
+ */
+function assetUrl(assetId: string, variant: 'result' | 'original' = 'result'): string {
+  const base = `/api/v1/runs/${encodeURIComponent(props.runId)}/assets/${encodeURIComponent(assetId)}`
+  return variant === 'original' ? `${base}?variant=original` : base
 }
 
 /** @returns 当前输出格式对应的下载地址。 */
@@ -68,7 +74,18 @@ function exportUrl(): string {
         <div class="grid gap-4 sm:grid-cols-2">
           <figure v-for="asset in result.assets" :key="asset.id" class="overflow-hidden rounded-md border border-default">
             <img :src="assetUrl(asset.id)" :alt="asset.altText" class="h-auto w-full" loading="lazy">
-            <figcaption class="p-3 text-sm text-muted">{{ asset.altText }}</figcaption>
+            <figcaption class="flex items-center justify-between gap-3 p-3 text-sm text-muted">
+              <span>{{ asset.altText }}</span>
+              <UButton
+                v-if="asset.original"
+                :to="assetUrl(asset.id, 'original')"
+                external
+                size="xs"
+                color="neutral"
+                variant="ghost"
+                :aria-label="`查看${asset.altText}的裁剪前原图`"
+              >查看原图</UButton>
+            </figcaption>
           </figure>
         </div>
       </section>

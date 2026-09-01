@@ -89,6 +89,10 @@ export interface CreatedInterestBatch {
   batchId: string
   /** 本批次唯一人物 UUID。 */
   personaId: string
+  /** 创建时锁定的人物名称。 */
+  personaName: string
+  /** 对整批生效的临时附加提示词。 */
+  additionalPrompt: string
   /** 新建批次固定处于排队状态。 */
   status: 'queued'
   /** 严格保持请求顺序的条目。 */
@@ -105,6 +109,8 @@ export interface InterestBatchItemView {
   itemId: string
   /** 独立兴趣运行 UUID。 */
   runId: string
+  /** 本条原始待判断文本。 */
+  text: string
   /** 当前条目状态。 */
   status: 'queued' | 'running' | 'succeeded' | 'failed'
   /** 成功时的三态兴趣结论。 */
@@ -125,6 +131,10 @@ export interface InterestBatchView {
   batchId: string
   /** 本批次唯一人物 UUID。 */
   personaId: string
+  /** 当前人物名称；人物已删除时返回稳定占位名称。 */
+  personaName: string
+  /** 对整批生效的临时附加提示词。 */
+  additionalPrompt: string
   /** 全部条目均终止时为 completed。 */
   status: 'queued' | 'running' | 'completed'
   /** 严格保持请求顺序的逐项结果。 */
@@ -143,7 +153,7 @@ export interface RunSummary {
   personaId: string
   personaName: string
   status: 'planning' | 'awaiting_confirmation' | 'queued' | 'running' | 'succeeded' | 'partial' | 'failed' | 'canceled'
-  input: { content: string } | { requirement: string, outputFormat: 'html' | 'text', imageCount: number }
+  input: { content: string, additionalPrompt?: string } | { requirement: string, outputFormat: 'html' | 'text', imageCount: number }
   scene: SceneContext | null
   parameters: TextModelParameters
   model: { provider: 'openai_compatible', model: string, endpointOrigin: string }
@@ -200,6 +210,13 @@ export interface BlockAttemptView {
     sizeBytes: number
     contentHash: string
     altText: string
+    /** 发生二次裁剪时保留的原图元数据。 */
+    original: {
+      relativePath: string
+      mediaType: 'image/png' | 'image/jpeg' | 'image/webp'
+      sizeBytes: number
+      contentHash: string
+    } | null
   } | null
   errorCode: string | null
   errorMessage: string | null
@@ -276,5 +293,12 @@ export interface RenderedArtifactView {
     sizeBytes: number
     contentHash: string
     altText: string
+    /** 发生二次裁剪时保留的原图元数据。 */
+    original: {
+      relativePath: string
+      mediaType: string
+      sizeBytes: number
+      contentHash: string
+    } | null
   }>
 }

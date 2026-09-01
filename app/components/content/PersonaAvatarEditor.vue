@@ -150,7 +150,7 @@ async function submitCustomGeneration(event: FormSubmitEvent<GeneratePersonaAvat
       <ContentPersonaAvatar :name="props.personaName" :url="displayedAvatarUrl" size="large" />
       <div class="persona-avatar-copy">
         <h2 class="font-semibold text-highlighted">人物头像</h2>
-        <p class="mt-1 text-sm text-muted">上传现有图片，或根据人物当前名称和灵魂提示词生成头像；系统会自动居中裁切并统一保存为 512×512。</p>
+        <p class="mt-1 text-sm text-muted">上传现有图片，或根据人物当前名称和灵魂提示词生成头像；系统校验图片类型和大小后按原始尺寸保存。</p>
         <div class="mt-4 flex flex-wrap gap-2">
           <input ref="fileInput" data-persona-avatar-input class="sr-only" type="file"
             accept="image/png,image/jpeg,image/webp" @change="uploadAvatar">
@@ -161,7 +161,7 @@ async function submitCustomGeneration(event: FormSubmitEvent<GeneratePersonaAvat
           <UButton color="neutral" variant="soft" icon="i-lucide-wand-sparkles" :disabled="activeAction !== null"
             @click="openCustomGeneration">自定义生成</UButton>
         </div>
-        <p class="mt-3 text-xs text-muted">支持 PNG、JPEG、WebP，上传文件最大 2 MB；非正方形图片会从中心裁切，不会拉伸。</p>
+        <p class="mt-3 text-xs text-muted">支持 PNG、JPEG、WebP，上传文件最大 2 MB；图片将按原始尺寸保存，不裁剪、不缩放。</p>
       </div>
     </div>
   </UCard>

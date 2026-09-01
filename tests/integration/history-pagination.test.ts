@@ -116,6 +116,32 @@ describe('统一任务记录分页', () => {
     ]))
   })
 
+  it('同一兴趣批次在历史中只显示一条聚合记录', async () => {
+    const client = database.getClient()
+    const batchId = '60000000-0000-4000-8000-000000000001'
+    client.prepare(`
+      INSERT INTO interest_batches (id, persona_id, usage_json, created_at, updated_at)
+      VALUES (?, '10000000-0000-4000-8000-000000000001', NULL, 300, 500)
+    `).run(batchId)
+    const runIds = [300, 500].map(timestamp => `30000000-0000-4000-8000-${String(timestamp).padStart(12, '0')}`)
+    const insertItem = client.prepare(`
+      INSERT INTO interest_batch_items (batch_id, item_id, ordinal, run_id) VALUES (?, ?, ?, ?)
+    `)
+    insertItem.run(batchId, 'first', 0, runIds[0])
+    insertItem.run(batchId, 'second', 1, runIds[1])
+
+    const result = await repository.listPage({ page: 1, pageSize: 20, kind: 'interest_assessment' })
+
+    expect(result).toMatchObject({ total: 3 })
+    expect(result.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        sourceType: 'interest_batch', id: batchId, status: 'succeeded',
+        description: '2 条文本', secondary: '成功 2 / 失败 0',
+      }),
+    ]))
+    expect(result.items.map(item => item.id)).not.toEqual(expect.arrayContaining(runIds))
+  })
+
   it('把三类 OpenViking 后台任务合并到可筛选的任务记录', async () => {
     const client = database.getClient()
     const insert = client.prepare(`

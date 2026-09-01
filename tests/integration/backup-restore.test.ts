@@ -30,6 +30,7 @@ const IDS = {
   block: '00000000-0000-4000-8000-000000000008',
   attempt: '00000000-0000-4000-8000-000000000009',
   asset: '00000000-0000-4000-8000-000000000010',
+  originalAsset: '00000000-0000-4000-8000-000000000012',
   sync: '00000000-0000-4000-8000-000000000011',
 } as const
 
@@ -37,6 +38,8 @@ const IDS = {
 const SOURCE_BYTES = Buffer.from('# 魔法学院\n档案保存于北塔。', 'utf8')
 /** 最小 PNG 文件头和测试正文。 */
 const IMAGE_BYTES = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 1])
+/** 裁剪前原图的最小 PNG 文件头和测试正文。 */
+const ORIGINAL_IMAGE_BYTES = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 1, 2])
 
 let rootDirectory: string
 let dataDirectory: string
@@ -73,12 +76,13 @@ describe('SQLite 与引用文件备份恢复', () => {
     expect(paths).toEqual([
       'app.sqlite',
       `artifacts/${IDS.run}/assets/${IDS.asset}.png`,
+      `artifacts/${IDS.run}/assets/${IDS.originalAsset}.png`,
       `sources/${IDS.source}.md`,
     ])
-    expect(validation.fileCount).toBe(3)
+    expect(validation.fileCount).toBe(4)
     expect(validation.manifest.version).toBe(2)
     if (validation.manifest.version !== 2) throw new Error('新建备份应使用第二版清单')
-    expect(validation.manifest.migrationVersion).toBe(1789632000000)
+    expect(validation.manifest.migrationVersion).toBe(1789891200000)
     expect(existsSync(resolve(backupDirectory, 'app.sqlite-wal'))).toBe(false)
     expect(existsSync(resolve(backupDirectory, 'app.sqlite-shm'))).toBe(false)
     for (const file of validation.manifest.files) {
@@ -314,6 +318,7 @@ function seedReferencedData(): void {
   mkdirSync(resolve(dataDirectory, 'artifacts', IDS.run, 'assets'), { recursive: true })
   writeFileSync(resolve(dataDirectory, `sources/${IDS.source}.md`), SOURCE_BYTES)
   writeFileSync(resolve(dataDirectory, `artifacts/${IDS.run}/assets/${IDS.asset}.png`), IMAGE_BYTES)
+  writeFileSync(resolve(dataDirectory, `artifacts/${IDS.run}/assets/${IDS.originalAsset}.png`), ORIGINAL_IMAGE_BYTES)
 
   client.prepare(`
     INSERT INTO administrators (id, username, password_hash, credential_version, created_at, updated_at)
@@ -364,9 +369,20 @@ function seedReferencedData(): void {
     VALUES (?, ?, 1, 'succeeded', '{}', 1000, 1000)
   `).run(IDS.attempt, IDS.block)
   client.prepare(`
-    INSERT INTO image_assets (id, attempt_id, relative_path, media_type, size_bytes, content_hash, alt_text, created_at)
-    VALUES (?, ?, ?, 'image/png', ?, ?, '学院主图', 1000)
-  `).run(IDS.asset, IDS.attempt, `assets/${IDS.asset}.png`, IMAGE_BYTES.byteLength, hash(IMAGE_BYTES))
+    INSERT INTO image_assets (
+      id, attempt_id, relative_path, media_type, size_bytes, content_hash, alt_text,
+      original_relative_path, original_media_type, original_size_bytes, original_content_hash, created_at
+    ) VALUES (?, ?, ?, 'image/png', ?, ?, '学院主图', ?, 'image/png', ?, ?, 1000)
+  `).run(
+    IDS.asset,
+    IDS.attempt,
+    `assets/${IDS.asset}.png`,
+    IMAGE_BYTES.byteLength,
+    hash(IMAGE_BYTES),
+    `assets/${IDS.originalAsset}.png`,
+    ORIGINAL_IMAGE_BYTES.byteLength,
+    hash(ORIGINAL_IMAGE_BYTES),
+  )
   client.prepare(`
     INSERT INTO context_sync_records (
       id, entity_type, source_id, scope_type, scope_id, user_id, peer_id,

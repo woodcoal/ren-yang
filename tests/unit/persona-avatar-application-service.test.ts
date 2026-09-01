@@ -20,7 +20,7 @@ import type { SoulRepository } from '../../server/ports/SoulRepository'
 const PERSONA_ID = '00000000-0000-4000-8000-000000000001'
 /** 测试人物当前版本 UUID。 */
 const VERSION_ID = '00000000-0000-4000-8000-000000000002'
-/** 用于验证应用服务统一头像尺寸的 640×320 测试 PNG。 */
+/** 用于验证应用服务原样保存头像的 640×320 测试 PNG。 */
 const PNG_BYTES = new Uint8Array(await sharp({
   create: { width: 640, height: 320, channels: 4, background: '#32658f' },
 }).png().toBuffer())
@@ -151,10 +151,10 @@ describe('人物头像应用服务', () => {
 
     expect(summary.avatarUrl).toBe(`/api/v1/personas/${PERSONA_ID}/avatar`)
     expect(avatar.mediaType).toBe('image/png')
-    expect(metadata).toMatchObject({ width: 512, height: 512 })
+    expect(metadata).toMatchObject({ width: 640, height: 320 })
   })
 
-  it('使用人物名称和当前灵魂生成固定 1:1 头像', async () => {
+  it('使用人物名称和当前灵魂请求 1:1 图片并原样保存模型结果', async () => {
     const summary = await service.generatePersonaAvatar(PERSONA_ID, { additionalPrompt: '' })
 
     expect(summary.avatarUrl).toBe(`/api/v1/personas/${PERSONA_ID}/avatar`)
@@ -164,7 +164,7 @@ describe('人物头像应用服务', () => {
     expect(imageModel.requests[0]?.prompt).toContain(VERSION.snapshot.promptText)
     expect(imageModel.requests[0]?.prompt).toContain('不得出现文字')
     const avatar = await service.getPersonaAvatar(PERSONA_ID)
-    await expect(sharp(avatar.bytes).metadata()).resolves.toMatchObject({ width: 512, height: 512 })
+    await expect(sharp(avatar.bytes).metadata()).resolves.toMatchObject({ width: 640, height: 320 })
   })
 
   it('把自定义视觉要求追加到人物设定后并保留头像安全约束', async () => {

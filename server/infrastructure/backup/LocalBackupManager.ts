@@ -263,13 +263,25 @@ function inspectDatabase(databasePath: string, expectedMigration: MigrationIdent
     `).all() as Array<{ path: string }>
     for (const row of sourceRows) references.set(row.path, row.path.endsWith('.md') ? 'text/markdown' : 'text/plain')
     const assetRows = database.prepare(`
-      SELECT artifact_documents.run_id, image_assets.relative_path, image_assets.media_type
+      SELECT artifact_documents.run_id, image_assets.relative_path, image_assets.media_type,
+        image_assets.original_relative_path, image_assets.original_media_type
       FROM image_assets
       INNER JOIN block_attempts ON block_attempts.id = image_assets.attempt_id
       INNER JOIN artifact_blocks ON artifact_blocks.id = block_attempts.block_id
       INNER JOIN artifact_documents ON artifact_documents.id = artifact_blocks.document_id
-    `).all() as Array<{ run_id: string, relative_path: string, media_type: string }>
-    for (const row of assetRows) references.set(`artifacts/${row.run_id}/${row.relative_path}`, row.media_type)
+    `).all() as Array<{
+      run_id: string
+      relative_path: string
+      media_type: string
+      original_relative_path: string | null
+      original_media_type: string | null
+    }>
+    for (const row of assetRows) {
+      references.set(`artifacts/${row.run_id}/${row.relative_path}`, row.media_type)
+      if (row.original_relative_path && row.original_media_type) {
+        references.set(`artifacts/${row.run_id}/${row.original_relative_path}`, row.original_media_type)
+      }
+    }
     for (const path of references.keys()) assertManifestPath(path)
     return new Map([...references.entries()].sort(([left], [right]) => left.localeCompare(right)))
   }

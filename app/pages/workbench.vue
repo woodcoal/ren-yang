@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, reactive, shallowRef } from 'vue'
-import type { CreateGenerationRunInput } from '#shared/schemas/generation'
+import { computed, shallowRef } from 'vue'
+import type { CreateGenerationRunInput, CreateInterestBatchInput } from '#shared/schemas/generation'
 import type { ApiResponse } from '#shared/types/api'
 import type { PersonaSummary } from '#shared/types/content'
-import type { CreatedRun, ImageModelCapability, TextModelCapability } from '#shared/types/generation'
+import type { CreatedInterestBatch, CreatedRun, ImageModelCapability, TextModelCapability } from '#shared/types/generation'
 import { getApiErrorMessage } from '../utils/apiError'
 
 /** 系统能力接口中创作工作台需要的字段。 */
@@ -35,11 +35,6 @@ const algorithmCapabilities = computed(() => capabilityData.value?.data.algorith
 })
 const task = shallowRef<'generation' | 'interest'>('generation')
 const loading = shallowRef(false)
-const interestForm = reactive({
-  personaId: '',
-  content: '',
-  scene: { ageStage: '', location: '', currentGoal: '', emotion: '', event: '' },
-})
 
 /**
  * 创建一次直接生成文章的异步运行并进入详情页。
@@ -52,22 +47,31 @@ async function submitGeneration(input: CreateGenerationRunInput): Promise<void> 
   })
 }
 
-/** @returns 创建一次兴趣判断运行并进入详情页。 */
-async function submitInterest(): Promise<void> {
-  if (!interestForm.personaId || !interestForm.content.trim()) {
-    notifyError('必须选择人物并填写待判断内容', '无法创建运行')
-    return
+/**
+ * 创建一次批量兴趣判定，并按条目数量进入单项详情或筛选后的历史列表。
+ * @param input 同一人物、顺序文本和可选整批附加提示词。
+ * @returns 批次创建、通知和页面跳转完成时结束。
+ */
+async function submitInterest(input: CreateInterestBatchInput): Promise<void> {
+  if (loading.value) return
+  loading.value = true
+  try {
+    const response = await runWithAiLoading({
+      title: 'AI 正在准备批量兴趣判断',
+      description: '系统正在锁定人物版本、附加要求和参考资料，并建立一次批量模型任务。',
+      completionHint: '同一人物的全部文本会一次提交，结果按输入顺序独立保存。',
+    }, async () => await $fetch<ApiResponse<CreatedInterestBatch>>('/api/v1/interest-batches', {
+      method: 'POST', body: input,
+    }))
+    notifySuccess(`已创建 ${response.data.items.length} 条兴趣判断。`, '批量任务创建完成')
+    await navigateTo(`/interest-batches/${response.data.batchId}`)
   }
-  await createRun('AI 正在准备人物判断', '系统正在锁定人物版本、场景与参考资料，并创建判断任务。', async () => {
-    return await $fetch<ApiResponse<CreatedRun>>('/api/v1/interest-runs', {
-      method: 'POST',
-      body: {
-        personaId: interestForm.personaId,
-        content: interestForm.content.trim(),
-        scene: { ...interestForm.scene },
-      },
-    })
-  })
+  catch (error: unknown) {
+    notifyError(getApiErrorMessage(error, '创建批量兴趣判断失败'), '无法创建批量任务')
+  }
+  finally {
+    loading.value = false
+  }
 }
 
 /**
@@ -114,8 +118,8 @@ async function createRun(title: string, description: string, request: () => Prom
       </button>
       <button class="workflow-panel text-left" :aria-pressed="task === 'interest'" @click="task = 'interest'">
         <p class="eyebrow">人物判断</p>
-        <h2 class="mt-1 font-semibold text-highlighted">判断人物是否感兴趣</h2>
-        <p class="mt-2 text-sm text-muted">保留独立的兴趣判断和可选临时场景。</p>
+        <h2 class="mt-1 font-semibold text-highlighted">批量判断人物是否感兴趣</h2>
+        <p class="mt-2 text-sm text-muted">一次提交一条或多条文本，可选添加整批附加提示词。</p>
       </button>
     </div>
 
@@ -128,36 +132,12 @@ async function createRun(title: string, description: string, request: () => Prom
       @submit="submitGeneration"
     />
 
-    <form v-else class="space-y-6" @submit.prevent="submitInterest">
-      <section class="workflow-panel" aria-labelledby="interest-heading">
-        <div class="section-heading">
-          <div class="section-heading-copy">
-            <p class="eyebrow">兴趣判断</p>
-            <h2 id="interest-heading">说明要判断的内容</h2>
-            <p>临时场景只属于本次运行，不会写回人物灵魂、成长或记忆。</p>
-          </div>
-        </div>
-        <div class="grid gap-4 md:grid-cols-2">
-          <UFormField label="人物" required>
-            <select v-model="interestForm.personaId" class="native-control" aria-label="使用的人物" required>
-              <option value="" disabled>请选择人物</option>
-              <option v-for="persona in personas" :key="persona.id" :value="persona.id">{{ persona.name }}</option>
-            </select>
-          </UFormField>
-          <UFormField label="待判断内容" required class="md:col-span-2">
-            <UTextarea v-model="interestForm.content" :rows="7" class="w-full" required placeholder="输入希望人物判断是否感兴趣的内容" />
-          </UFormField>
-          <UFormField label="年龄阶段"><UInput v-model="interestForm.scene.ageStage" class="w-full" /></UFormField>
-          <UFormField label="地点"><UInput v-model="interestForm.scene.location" class="w-full" /></UFormField>
-          <UFormField label="当前目标"><UInput v-model="interestForm.scene.currentGoal" class="w-full" /></UFormField>
-          <UFormField label="情绪"><UInput v-model="interestForm.scene.emotion" class="w-full" /></UFormField>
-          <UFormField label="当前事件" class="md:col-span-2"><UTextarea v-model="interestForm.scene.event" :rows="3" class="w-full" /></UFormField>
-        </div>
-      </section>
-      <div class="sticky-action-bar">
-        <p class="text-sm text-muted">提交后进入运行详情，系统会自动完成判断。</p>
-        <UButton type="submit" size="lg" :disabled="!algorithmCapabilities.interestAssessment || personas.length === 0" :loading="loading">开始判断</UButton>
-      </div>
-    </form>
+    <GenerationInterestBatchForm
+      v-else
+      :personas="personas"
+      :configured="algorithmCapabilities.interestAssessment"
+      :loading="loading"
+      @submit="submitInterest"
+    />
   </div>
 </template>

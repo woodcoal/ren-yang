@@ -77,6 +77,8 @@ export const createFormatTemplateSchema = z.object({
 export const createInterestRunSchema = z.object({
   personaId: z.string().uuid('人物标识无效'),
   content: z.string().trim().min(1, '待判断内容不能为空').max(50_000),
+  additionalPrompt: z.string().trim().max(4_000, '附加提示词不能超过 4000 个字符').default(''),
+  /** 仅兼容历史网页请求；新后台不再提供结构化场景输入。 */
   scene: sceneContextSchema.optional(),
 })
 
@@ -89,6 +91,7 @@ export const interestBatchInputItemSchema = z.object({
 /** 创建同一人物的一次批量兴趣判定。 */
 export const createInterestBatchSchema = z.object({
   personaId: z.string().uuid('人物标识无效'),
+  additionalPrompt: z.string().trim().max(4_000, '附加提示词不能超过 4000 个字符').default(''),
   items: z.array(interestBatchInputItemSchema).min(1, '至少需要一条待判断文本').max(20, '单批次最多包含 20 条文本'),
 }).superRefine((value, context) => {
   const seen = new Set<string>()
@@ -105,6 +108,9 @@ export const createInterestBatchSchema = z.object({
 
 /** 图文创作最终输出格式。 */
 export const artifactOutputFormatSchema = z.enum(['html', 'text'], { error: '输出格式无效' })
+
+/** 图片资产接口允许读取最终裁剪结果或裁剪前原图。 */
+export const imageAssetVariantSchema = z.enum(['result', 'original'], { error: '图片资产版本无效' }).default('result')
 
 /** 一次直出图文创作输入。 */
 export const createGenerationRunSchema = z.object({
@@ -260,8 +266,8 @@ export type SceneContext = z.infer<typeof sceneContextSchema>
 export type TextModelParameters = z.infer<typeof textModelParametersSchema>
 export type CreateParameterProfileInput = z.infer<typeof createParameterProfileSchema>
 export type CreateFormatTemplateInput = z.infer<typeof createFormatTemplateSchema>
-export type CreateInterestRunInput = z.infer<typeof createInterestRunSchema>
-export type CreateInterestBatchInput = z.infer<typeof createInterestBatchSchema>
+export type CreateInterestRunInput = z.input<typeof createInterestRunSchema>
+export type CreateInterestBatchInput = z.input<typeof createInterestBatchSchema>
 export type InterestBatchInputItem = z.infer<typeof interestBatchInputItemSchema>
 export type CreateGenerationRunInput = z.input<typeof createGenerationRunSchema>
 export type ArtifactOutputFormat = z.infer<typeof artifactOutputFormatSchema>

@@ -181,7 +181,7 @@ export class ContentApplicationService {
   }
 
   /**
-   * 保存用户上传并由存储层统一为 512×512 的人物头像。
+   * 校验并原样保存用户上传的人物头像。
    * @param personaId 人物 UUID。
    * @param bytes 浏览器上传的图片字节。
    * @param mediaType 浏览器声明的图片媒体类型。
@@ -202,7 +202,7 @@ export class ContentApplicationService {
   }
 
   /**
-   * 根据人物当前名称、灵魂提示词和可选视觉要求生成并保存 512×512 头像。
+   * 根据人物当前名称、灵魂提示词和可选视觉要求生成并原样保存头像。
    * @param personaId 人物 UUID。
    * @param input 用户可选补充的视觉提示词；不会替代人物名称或当前灵魂。
    * @returns 更新头像后的人物摘要。

@@ -731,7 +731,7 @@ export const aiAlgorithmStepConfigurations = sqliteTable(
     configurationVersionId: text('configuration_version_id').notNull().references(() => aiAlgorithmConfigurationVersions.id, { onDelete: 'cascade' }),
     stepKey: text('step_key').notNull(),
     ordinal: integer('ordinal').notNull(),
-    modelDeploymentId: text('model_deployment_id').notNull().references(() => aiModelDeployments.id, { onDelete: 'restrict' }),
+    modelDeploymentId: text('model_deployment_id').references(() => aiModelDeployments.id, { onDelete: 'restrict' }),
     promptCode: text('prompt_code').notNull().references(() => aiPrompts.code, { onDelete: 'restrict' }),
     parametersJson: text('parameters_json').notNull(),
   },
@@ -1235,16 +1235,32 @@ export const imageAssets = sqliteTable(
     sizeBytes: integer('size_bytes').notNull(),
     contentHash: text('content_hash').notNull(),
     altText: text('alt_text').notNull(),
+    originalRelativePath: text('original_relative_path'),
+    originalMediaType: text('original_media_type'),
+    originalSizeBytes: integer('original_size_bytes'),
+    originalContentHash: text('original_content_hash'),
     createdAt: integer('created_at').notNull(),
   },
   table => [
     uniqueIndex('image_assets_attempt_unique').on(table.attemptId),
     uniqueIndex('image_assets_relative_path_unique').on(table.relativePath),
+    uniqueIndex('image_assets_original_relative_path_unique').on(table.originalRelativePath),
     check('image_assets_path_check', sql`${table.relativePath} GLOB 'assets/*' AND instr(${table.relativePath}, '..') = 0`),
     check('image_assets_media_type_check', sql`${table.mediaType} IN ('image/png', 'image/jpeg', 'image/webp')`),
     check('image_assets_size_check', sql`${table.sizeBytes} > 0 AND ${table.sizeBytes} <= 10485760`),
     check('image_assets_hash_check', sql`length(${table.contentHash}) = 64`),
     check('image_assets_alt_text_check', sql`length(trim(${table.altText})) > 0`),
+    check('image_assets_original_fields_check', sql`(
+      ${table.originalRelativePath} IS NULL AND ${table.originalMediaType} IS NULL
+        AND ${table.originalSizeBytes} IS NULL AND ${table.originalContentHash} IS NULL
+    ) OR (
+      ${table.originalRelativePath} IS NOT NULL AND ${table.originalMediaType} IS NOT NULL
+        AND ${table.originalSizeBytes} IS NOT NULL AND ${table.originalContentHash} IS NOT NULL
+    )`),
+    check('image_assets_original_path_check', sql`${table.originalRelativePath} IS NULL OR (${table.originalRelativePath} GLOB 'assets/*' AND instr(${table.originalRelativePath}, '..') = 0)`),
+    check('image_assets_original_media_type_check', sql`${table.originalMediaType} IS NULL OR ${table.originalMediaType} IN ('image/png', 'image/jpeg', 'image/webp')`),
+    check('image_assets_original_size_check', sql`${table.originalSizeBytes} IS NULL OR (${table.originalSizeBytes} > 0 AND ${table.originalSizeBytes} <= 10485760)`),
+    check('image_assets_original_hash_check', sql`${table.originalContentHash} IS NULL OR length(${table.originalContentHash}) = 64`),
   ],
 )
 

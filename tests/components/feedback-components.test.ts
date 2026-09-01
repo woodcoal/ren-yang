@@ -33,6 +33,18 @@ describe('反馈组件', () => {
     expect(wrapper.text()).toContain('反馈内容不能为空')
   })
 
+  it('就近解释反馈用途并提供全宽文本编辑区', async () => {
+    const wrapper = await mountSuspended(FeedbackForm)
+    const textareas = wrapper.findAll('textarea')
+
+    expect(wrapper.text()).toContain('提交后由 AI 建议用途，最终仍由你确认')
+    expect(wrapper.text()).toContain('正向表示认可并希望保留')
+    expect(wrapper.text()).toContain('当前只作为人工标签保存')
+    expect(wrapper.text()).toContain('不会自动替换当前结果，也不会直接成为成长素材')
+    expect(textareas).toHaveLength(2)
+    expect(textareas.every(textarea => textarea.classes().includes('w-full'))).toBe(true)
+  })
+
   it('人物反馈确认只创建成长素材意图，不提交灵魂字段补丁', async () => {
     const wrapper = await mountSuspended(FeedbackClassificationReview, {
       props: { feedback: createFeedback('persona') },

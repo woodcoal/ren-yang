@@ -7,7 +7,7 @@ import { LocalPersonaAvatarStorage } from '../../server/infrastructure/content/L
 
 /** 测试人物 UUID。 */
 const PERSONA_ID = '00000000-0000-4000-8000-000000000001'
-/** 用于验证中心裁切和缩放的 640×320 测试 PNG。 */
+/** 用于验证头像保持原始尺寸的 640×320 测试 PNG。 */
 const PNG_BYTES = new Uint8Array(await sharp({
   create: { width: 640, height: 320, channels: 4, background: '#32658f' },
 }).png().toBuffer())
@@ -36,7 +36,8 @@ describe('LocalPersonaAvatarStorage', () => {
     const saved = await storage.saveAvatar(PERSONA_ID, PNG_BYTES, 'image/png')
     const metadata = await sharp(saved.bytes).metadata()
     expect(saved.mediaType).toBe('image/png')
-    expect(metadata).toMatchObject({ width: 512, height: 512, format: 'png' })
+    expect(metadata).toMatchObject({ width: 640, height: 320, format: 'png' })
+    expect(saved.bytes).toEqual(PNG_BYTES)
     await expect(storage.hasAvatar(PERSONA_ID)).resolves.toBe(true)
     await expect(storage.readAvatar(PERSONA_ID)).resolves.toEqual(saved)
   })

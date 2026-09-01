@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { FormSubmitEvent } from '@nuxt/ui'
-import { reactive, watch } from 'vue'
+import { parseDate, type DateValue } from '@internationalized/date'
+import { reactive, shallowRef, watch } from 'vue'
 import { saveExternalRecordSchema, type SaveExternalRecordInput } from '#shared/schemas/learning'
 import type { PersonaExternalRecordView } from '#shared/types/learning'
 
@@ -24,6 +25,7 @@ const emit = defineEmits<{
 const state = reactive<SaveExternalRecordInput>({
   occurredOn: '', content: '', references: [], importance: 3,
 })
+const occurredOnDate = shallowRef<DateValue | undefined>()
 
 /**
  * 新增一项空白参考来源，等待用户填写名称和地址。
@@ -48,9 +50,20 @@ function removeReference(index: number): void {
  */
 function resetState(): void {
   state.occurredOn = props.initialValue?.occurredOn ?? ''
+  occurredOnDate.value = state.occurredOn ? parseDate(state.occurredOn) : undefined
   state.content = props.initialValue?.content ?? ''
   state.references = props.initialValue?.references.map(item => ({ ...item })) ?? []
   state.importance = props.initialValue?.importance ?? 3
+}
+
+/**
+ * 把 Nuxt UI 日期值同步为共享 Schema 使用的 ISO 日期字符串。
+ * @param value 当前选择的无时区日期；清空时为 undefined。
+ * @returns 无返回值。
+ */
+function updateOccurredOn(value: DateValue | null | undefined): void {
+  occurredOnDate.value = value ?? undefined
+  state.occurredOn = value?.toString() ?? ''
 }
 
 /**
@@ -79,7 +92,12 @@ watch(() => props.open, (open) => {
       <UForm :schema="saveExternalRecordSchema" :state="state" class="space-y-4" data-external-record-form @submit="handleSubmit">
         <div class="grid gap-4 md:grid-cols-[12rem_minmax(0,1fr)]">
           <UFormField name="occurredOn" label="发生日期" required>
-            <UInput v-model="state.occurredOn" type="date" class="w-full" :disabled="loading" />
+            <CommonDatePicker
+              :model-value="occurredOnDate"
+              label="发生日期"
+              :disabled="loading"
+              @update:model-value="updateOccurredOn"
+            />
           </UFormField>
           <UFormField name="importance" label="记忆提炼评分" description="1 为弱参考，5 为最高优先级。" required>
             <UInput v-model.number="state.importance" type="number" min="1" max="5" class="w-full" :disabled="loading" />

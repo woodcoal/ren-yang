@@ -106,6 +106,39 @@ describe('API Key 管理', () => {
     await expect(service.authenticate(active.secret)).rejects.toMatchObject({ code: 'API_KEY_INVALID', statusCode: 401 })
     expect((await service.list()).find(item => item.id === active.key.id)?.status).toBe('revoked')
   })
+
+  it('只允许永久删除已吊销 Key，并同步清理该 Key 的公共调用记录', async () => {
+    const service = createService()
+    const active = await service.create({ name: '待删除 Key', scopes: ['persona:read'], expiresAt: null })
+
+    await expect(service.delete(active.key.id)).rejects.toMatchObject({
+      code: 'API_KEY_DELETE_FORBIDDEN',
+      statusCode: 409,
+    })
+
+    database.getClient().prepare(`
+      INSERT INTO public_api_audit_events (
+        id, api_key_id, request_id, method, path, target_type, target_id,
+        result, status_code, error_code, created_at
+      ) VALUES (?, ?, ?, 'GET', '/api/v2/personas', 'persona', NULL, 'succeeded', 200, NULL, ?)
+    `).run('00000000-0000-4000-8000-000000000901', active.key.id, 'request-delete-test', timestamp)
+    database.getClient().prepare(`
+      INSERT INTO public_api_idempotency_records (
+        id, api_key_id, method, path, idempotency_key, request_hash,
+        response_json, created_at, updated_at
+      ) VALUES (?, ?, 'POST', '/api/v2/personas', 'delete-test', ?, '{}', ?, ?)
+    `).run('00000000-0000-4000-8000-000000000902', active.key.id, 'a'.repeat(64), timestamp, timestamp)
+
+    await service.revoke(active.key.id)
+    await expect(service.delete(active.key.id)).resolves.toBeUndefined()
+
+    expect(await service.list()).toEqual([])
+    expect(database.getClient().prepare(`SELECT COUNT(*) AS count FROM public_api_audit_events`).get()).toEqual({ count: 0 })
+    expect(database.getClient().prepare(`SELECT COUNT(*) AS count FROM public_api_idempotency_records`).get()).toEqual({ count: 0 })
+    expect(database.getClient().prepare(`
+      SELECT action, target_id FROM audit_events WHERE action = 'api_key_deleted'
+    `).get()).toEqual({ action: 'api_key_deleted', target_id: active.key.id })
+  })
 })
 
 describe('公共 API 幂等与审计', () => {

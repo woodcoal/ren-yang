@@ -14,6 +14,7 @@ import type { AiConfigurationApplicationService } from './aiConfiguration/AiConf
 import type { AiAlgorithmTestApplicationService } from './aiConfiguration/AiAlgorithmTestApplicationService'
 import type { ApiKeyApplicationService } from './authentication/ApiKeyApplicationService'
 import type { PublicApiApplicationService } from './publicApi/PublicApiApplicationService'
+import type { SystemAiSettingsApplicationService } from './systemAi/SystemAiSettingsApplicationService'
 
 /** 每个 HTTP 请求能够访问的应用服务集合。 */
 export interface RequestApplicationServices {
@@ -23,6 +24,8 @@ export interface RequestApplicationServices {
   publicApi: PublicApiApplicationService
   /** 加密 AI 接口、模型部署和固定算法配置用例。 */
   aiConfiguration: AiConfigurationApplicationService
+  /** 全站默认文本与图片模型设置用例。 */
+  systemAiSettings: SystemAiSettingsApplicationService
   /** 固定 AI 算法的真实调用、草稿优先且不落库测试用例。 */
   aiAlgorithmTesting: AiAlgorithmTestApplicationService
   /** 全站 AI 提示词草稿、发布、历史和运行时目录。 */

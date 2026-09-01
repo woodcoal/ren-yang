@@ -37,7 +37,7 @@ export interface PromptContext {
   personaGrowthPrompt: string | null
   /** 创建运行时固定的当前人物记忆提示词。 */
   personaMemoryPrompt: string | null
-  /** 只影响当前运行的场景。 */
+  /** 只影响当前运行的历史场景对象或整批附加提示词。 */
   scene: unknown
   /** 经过范围与预算筛选的证据。 */
   evidence: EvidenceSnapshotRecord[]

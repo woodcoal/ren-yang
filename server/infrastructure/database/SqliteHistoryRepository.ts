@@ -59,6 +59,8 @@ export class SqliteHistoryRepository implements HistoryRepository {
 function buildHistoryQuery(input: ListHistoryPageInput): HistoryQuery {
   const runClauses: string[] = []
   const runParameters: unknown[] = []
+  const batchClauses: string[] = []
+  const batchParameters: unknown[] = []
   const analysisClauses: string[] = []
   const analysisParameters: unknown[] = []
   const taskClauses: string[] = [
@@ -70,9 +72,20 @@ function buildHistoryQuery(input: ListHistoryPageInput): HistoryQuery {
     WHEN 'sync_openviking_session' THEN 'openviking_session_sync'
     ELSE 'openviking_user_sync'
   END`
+  const batchStatusExpression = `CASE
+    WHEN SUM(CASE WHEN generation_runs.status = 'running' THEN 1 ELSE 0 END) > 0 THEN 'running'
+    WHEN SUM(CASE WHEN generation_runs.status IN ('planning', 'awaiting_confirmation', 'queued') THEN 1 ELSE 0 END) > 0 THEN 'queued'
+    WHEN SUM(CASE WHEN generation_runs.status = 'succeeded' THEN 1 ELSE 0 END) = COUNT(*) THEN 'succeeded'
+    WHEN SUM(CASE WHEN generation_runs.status = 'canceled' THEN 1 ELSE 0 END) = COUNT(*) THEN 'canceled'
+    WHEN SUM(CASE WHEN generation_runs.status = 'succeeded' THEN 1 ELSE 0 END) > 0 THEN 'partial'
+    ELSE 'failed'
+  END`
+  runClauses.push('NOT EXISTS (SELECT 1 FROM interest_batch_items WHERE interest_batch_items.run_id = generation_runs.id)')
   if (input.personaId) {
     runClauses.push('soul_versions.persona_id = ?')
     runParameters.push(input.personaId)
+    batchClauses.push('interest_batch_history.subject_id = ?')
+    batchParameters.push(input.personaId)
     analysisClauses.push('analysis_batches.persona_id = ?')
     analysisParameters.push(input.personaId)
     taskClauses.push('1 = 0')
@@ -80,6 +93,7 @@ function buildHistoryQuery(input: ListHistoryPageInput): HistoryQuery {
   if (input.kind) {
     runClauses.push('generation_runs.kind = ?')
     runParameters.push(input.kind)
+    if (input.kind !== 'interest_assessment') batchClauses.push('1 = 0')
     analysisClauses.push('analysis_batches.analysis_type = ?')
     analysisParameters.push(input.kind)
     taskClauses.push(`${taskKindExpression} = ?`)
@@ -88,12 +102,15 @@ function buildHistoryQuery(input: ListHistoryPageInput): HistoryQuery {
   if (input.status) {
     runClauses.push('generation_runs.status = ?')
     runParameters.push(input.status)
+    batchClauses.push('interest_batch_history.status = ?')
+    batchParameters.push(input.status)
     analysisClauses.push('analysis_batches.status = ?')
     analysisParameters.push(input.status)
     taskClauses.push('task_jobs.status = ?')
     taskParameters.push(input.status)
   }
   const runWhere = runClauses.length ? `WHERE ${runClauses.join(' AND ')}` : ''
+  const batchWhere = batchClauses.length ? `WHERE ${batchClauses.join(' AND ')}` : ''
   const analysisWhere = analysisClauses.length ? `WHERE ${analysisClauses.join(' AND ')}` : ''
   const taskWhere = `WHERE ${taskClauses.join(' AND ')}`
 
@@ -123,6 +140,30 @@ function buildHistoryQuery(input: ListHistoryPageInput): HistoryQuery {
       INNER JOIN soul_versions ON soul_versions.id = generation_runs.persona_version_id
       LEFT JOIN personas ON personas.id = soul_versions.persona_id
       ${runWhere}
+      UNION ALL
+      SELECT * FROM (
+        SELECT
+          'interest_batch' AS source_type,
+          interest_batches.id AS id,
+          'interest_assessment' AS kind,
+          'persona' AS subject_type,
+          interest_batches.persona_id AS subject_id,
+          COALESCE(personas.name, '已删除人物') AS subject_name,
+          CASE WHEN personas.id IS NULL THEN 0 ELSE 1 END AS subject_exists,
+          ${batchStatusExpression} AS status,
+          COUNT(*) || ' 条文本' AS description,
+          '成功 ' || SUM(CASE WHEN generation_runs.status = 'succeeded' THEN 1 ELSE 0 END)
+            || ' / 失败 ' || SUM(CASE WHEN generation_runs.status IN ('failed', 'canceled') THEN 1 ELSE 0 END) AS secondary,
+          MAX(generation_runs.error_code) AS error_code,
+          MAX(generation_runs.error_message) AS error_message,
+          interest_batches.created_at AS created_at
+        FROM interest_batches
+        INNER JOIN interest_batch_items ON interest_batch_items.batch_id = interest_batches.id
+        INNER JOIN generation_runs ON generation_runs.id = interest_batch_items.run_id
+        LEFT JOIN personas ON personas.id = interest_batches.persona_id
+        GROUP BY interest_batches.id, interest_batches.persona_id, personas.id, personas.name, interest_batches.created_at
+      ) AS interest_batch_history
+      ${batchWhere}
       UNION ALL
       SELECT
         'analysis' AS source_type,
@@ -179,7 +220,7 @@ function buildHistoryQuery(input: ListHistoryPageInput): HistoryQuery {
       FROM task_jobs
       ${taskWhere}
     `,
-    parameters: [...runParameters, ...analysisParameters, ...taskParameters],
+    parameters: [...runParameters, ...batchParameters, ...analysisParameters, ...taskParameters],
   }
 }
 

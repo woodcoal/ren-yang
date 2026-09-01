@@ -50,6 +50,27 @@
       "when": 1789632000000,
       "tag": "0006_unified_ai_algorithms",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1789718400000,
+      "tag": "0007_interest_additional_prompt",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1789804800000,
+      "tag": "0008_default_model_fallback",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1789891200000,
+      "tag": "0009_retain_cropped_image_original",
+      "breakpoints": true
     }
   ]
 }

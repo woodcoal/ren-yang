@@ -56,7 +56,7 @@ describe('SqliteDatabase', () => {
     ])
     expect(current.getClient().prepare(`
       SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations
-    `).get()).toEqual({ count: 7, version: 1789632000000 })
+    `).get()).toEqual({ count: 10, version: 1789891200000 })
     expect(current.getClient().prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name IN (
       'api_keys', 'public_api_idempotency_records', 'public_api_audit_events'
     ) ORDER BY name`).all()).toEqual([
@@ -67,7 +67,7 @@ describe('SqliteDatabase', () => {
     expect(current.getClient().prepare(`
       SELECT COUNT(*) AS count FROM ai_prompts WHERE active_version_id IS NOT NULL
     `).get()).toEqual({ count: 22 })
-    expect(current.getClient().prepare(`SELECT COUNT(*) AS count FROM ai_prompt_versions`).get()).toEqual({ count: 23 })
+    expect(current.getClient().prepare(`SELECT COUNT(*) AS count FROM ai_prompt_versions`).get()).toEqual({ count: 24 })
     expect(current.getClient().prepare(`SELECT COUNT(*) AS count FROM ai_algorithms`).get()).toEqual({ count: 14 })
     expect(current.getClient().prepare(`SELECT code FROM ai_algorithms WHERE code = 'persona_memory'`).get()).toEqual({ code: 'persona_memory' })
     expect(current.getClient().prepare(`SELECT code FROM ai_algorithms WHERE code IN (
@@ -85,6 +85,15 @@ describe('SqliteDatabase', () => {
       .toEqual(expect.objectContaining({ sql: expect.stringContaining('json_valid(`algorithm_snapshot_json`)') }))
     expect(current.getClient().prepare(`PRAGMA table_info(ai_connections)`).all()).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'user_agent', notnull: 1, dflt_value: "''" }),
+    ]))
+    expect(current.getClient().prepare(`PRAGMA table_info(ai_algorithm_step_configurations)`).all()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'model_deployment_id', notnull: 0 }),
+    ]))
+    expect(current.getClient().prepare(`PRAGMA table_info(image_assets)`).all()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'original_relative_path', notnull: 0 }),
+      expect.objectContaining({ name: 'original_media_type', notnull: 0 }),
+      expect.objectContaining({ name: 'original_size_bytes', notnull: 0 }),
+      expect.objectContaining({ name: 'original_content_hash', notnull: 0 }),
     ]))
     expect(current.getClient().prepare(`PRAGMA table_info(openviking_settings)`).all()).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'api_key_ciphertext', notnull: 1, dflt_value: "''" }),
@@ -234,7 +243,7 @@ describe('SqliteDatabase', () => {
     database = new SqliteDatabase({ dataDirectory, migrationsDirectory: resolve(process.cwd(), 'drizzle') })
     expect(database.getClient().prepare(`
       SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations
-    `).get()).toEqual({ count: 7, version: 1789632000000 })
+    `).get()).toEqual({ count: 10, version: 1789891200000 })
     expect(database.getClient().prepare(`SELECT COUNT(*) AS count FROM ai_algorithms`).get()).toEqual({ count: 14 })
     expect(database.getClient().prepare('PRAGMA foreign_key_check').all()).toEqual([])
     expect(database.getClient().prepare('PRAGMA integrity_check').get()).toEqual({ integrity_check: 'ok' })
@@ -310,11 +319,14 @@ describe('SqliteDatabase', () => {
     `).get()).toEqual({ name: '旧资料', content_text: '压平前正文。', is_enabled: 1 })
     expect(database.getClient().prepare(`
       SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations
-    `).get()).toEqual({ count: 22, version: 1789632000000 })
+    `).get()).toEqual({ count: 25, version: 1789891200000 })
     expect(database.getClient().prepare(`SELECT COUNT(*) AS count FROM ai_algorithms`).get()).toEqual({ count: 14 })
     expect(database.getClient().prepare(`PRAGMA table_info(generation_runs)`).all()).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'algorithm_snapshot_json', notnull: 0 }),
       expect.objectContaining({ name: 'interest_algorithm_snapshot_json', notnull: 0 }),
+    ]))
+    expect(database.getClient().prepare(`PRAGMA table_info(ai_algorithm_step_configurations)`).all()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'model_deployment_id', notnull: 0 }),
     ]))
     expect(database.getClient().prepare(`SELECT name FROM sqlite_master
       WHERE type = 'table' AND name = 'openviking_sync_runtime'`).get()).toEqual({ name: 'openviking_sync_runtime' })

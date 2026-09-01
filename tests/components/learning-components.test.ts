@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { DOMWrapper, flushPromises } from '@vue/test-utils'
+import { CalendarDate } from '@internationalized/date'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
 import GrowthMaterialPanel from '../../app/components/learning/GrowthMaterialPanel.vue'
 import LearningPromptPanel from '../../app/components/learning/LearningPromptPanel.vue'
@@ -235,7 +236,11 @@ describe('成长与记忆管理组件', () => {
     await flushPromises()
     const form = document.querySelector<HTMLElement>('[data-external-record-form]')
     expect(form).toBeDefined()
-    await new DOMWrapper(form!.querySelector<HTMLInputElement>('input[type="date"]')!).setValue('2026-08-31')
+    const datePicker = wrapper.findComponent({ name: 'CommonDatePicker' })
+    expect(datePicker.exists()).toBe(true)
+    expect(wrapper.findComponent({ name: 'UInputDate' }).exists()).toBe(false)
+    expect(form!.querySelector('input[type="date"]')).toBeNull()
+    datePicker.vm.$emit('update:modelValue', new CalendarDate(2026, 8, 31))
     await new DOMWrapper(form!.querySelector<HTMLTextAreaElement>('textarea')!).setValue('完成小说人物关系校对。')
     const addReferenceButton = [...form!.querySelectorAll<HTMLButtonElement>('button')]
       .find(button => button.textContent?.includes('添加参考'))

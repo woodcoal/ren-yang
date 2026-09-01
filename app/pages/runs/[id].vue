@@ -212,8 +212,12 @@ function skippedReasonLabel(reason: string | null): string {
         <UCard>
           <template #header><h2 class="font-semibold text-highlighted">生成条件</h2></template>
           <pre class="content-pre">{{ 'content' in details.run.input ? details.run.input.content : details.run.input.requirement }}</pre>
+          <div v-if="'content' in details.run.input && details.run.input.additionalPrompt" class="mt-4 rounded-md bg-elevated p-3 text-sm">
+            <p class="font-medium text-highlighted">附加提示词</p>
+            <pre class="content-pre mt-2">{{ details.run.input.additionalPrompt }}</pre>
+          </div>
           <div v-if="details.run.scene" class="mt-4 rounded-md bg-elevated p-3 text-sm">
-            <p class="font-medium text-highlighted">临时场景</p>
+            <p class="font-medium text-highlighted">历史临时场景</p>
             <pre class="content-pre mt-2">{{ JSON.stringify(details.run.scene, null, 2) }}</pre>
           </div>
         </UCard>

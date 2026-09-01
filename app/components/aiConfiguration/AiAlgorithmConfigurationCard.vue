@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, shallowRef } from 'vue'
+import { reactive, shallowRef } from 'vue'
 import {
   publishAiAlgorithmConfigurationSchema,
   type PublishAiAlgorithmConfigurationInput,
@@ -22,17 +22,25 @@ const emit = defineEmits<{
   editPrompt: [code: string]
 }>()
 
+/** Nuxt UI 下拉框使用的非空“继承默认模型”界面值。 */
+const DEFAULT_MODEL_OPTION = '__default_model__'
+/** 新发布图片步骤默认使用的单边最大像素，旧配置未保存该值时继续不裁剪。 */
+const DEFAULT_IMAGE_MAX_DIMENSION = 2_048
 const validationError = shallowRef<string | null>(null)
-const missingModelTypes = computed(() => [...new Set(props.algorithm.stepDefinitions
-  .filter(definition => !props.deployments.some(item => item.modality === definition.modality))
-  .map(definition => definition.modality === 'text' ? '文本模型' : '图片模型'))])
 const form = reactive<PublishAiAlgorithmConfigurationInput>({
   steps: props.algorithm.stepDefinitions.map((definition) => {
     const active = props.algorithm.steps.find(step => step.key === definition.key)
+    const parameters = active?.parameters ?? { temperature: 0.2, maxOutputTokens: 4_096, timeoutMs: 60_000 }
     return {
       stepKey: definition.key,
       modelDeploymentId: active?.modelDeploymentId ?? '',
-      parameters: active?.parameters ?? { temperature: 0.2, maxOutputTokens: 4_096, timeoutMs: 60_000 },
+      parameters: definition.modality === 'image'
+        ? {
+            ...parameters,
+            maxImageWidth: parameters.maxImageWidth ?? DEFAULT_IMAGE_MAX_DIMENSION,
+            maxImageHeight: parameters.maxImageHeight ?? DEFAULT_IMAGE_MAX_DIMENSION,
+          }
+        : parameters,
     }
   }),
 })
@@ -43,9 +51,58 @@ const form = reactive<PublishAiAlgorithmConfigurationInput>({
  * @returns 保留未启用状态说明的下拉选项。
  */
 function deploymentItems(modality: 'text' | 'image'): Array<{ label: string, value: string }> {
-  return props.deployments
-    .filter(item => item.modality === modality)
-    .map(item => ({ label: item.isEnabled ? item.name : `${item.name}（未启用）`, value: item.id }))
+  return [
+    { label: `使用默认${modality === 'text' ? '文本' : '图片'}模型`, value: DEFAULT_MODEL_OPTION },
+    ...props.deployments
+      .filter(item => item.modality === modality)
+      .map(item => ({ label: item.isEnabled ? item.name : `${item.name}（未启用）`, value: item.id })),
+  ]
+}
+
+/**
+ * 把持久化空值转换为 Nuxt UI 下拉框要求的非空选项值。
+ * @param deploymentId 当前算法步骤显式部署 UUID 或空字符串。
+ * @returns 显式部署 UUID，或仅供界面使用的默认模型选项值。
+ */
+function deploymentSelectValue(deploymentId: string): string {
+  return deploymentId || DEFAULT_MODEL_OPTION
+}
+
+/**
+ * 把下拉框选择还原为算法配置契约中的部署 UUID 或空字符串。
+ * @param index 当前固定步骤在表单中的位置。
+ * @param value Nuxt UI 下拉框返回的非空选项值。
+ * @returns 无返回值；直接更新对应步骤模型选择。
+ */
+function updateDeployment(index: number, value: string): void {
+  form.steps[index]!.modelDeploymentId = value === DEFAULT_MODEL_OPTION ? '' : value
+}
+
+/**
+ * 返回图片步骤已初始化的最大裁剪尺寸，避免可选历史字段向数值输入传递空值。
+ * @param index 当前固定步骤在表单中的位置。
+ * @param field 最大宽度或最大高度字段。
+ * @returns 已保存尺寸，旧配置缺失时返回新配置默认上限。
+ */
+function imageDimension(index: number, field: 'maxImageWidth' | 'maxImageHeight'): number {
+  return form.steps[index]?.parameters[field] ?? DEFAULT_IMAGE_MAX_DIMENSION
+}
+
+/**
+ * 把 Nuxt UI 数值输入更新写回指定图片裁剪字段。
+ * @param index 当前固定步骤在表单中的位置。
+ * @param field 最大宽度或最大高度字段。
+ * @param value 数值输入组件返回的原始值。
+ * @returns 步骤存在时更新字段，否则不执行操作。
+ */
+function updateImageDimension(
+  index: number,
+  field: 'maxImageWidth' | 'maxImageHeight',
+  value: string | number | bigint | boolean | null,
+): void {
+  const step = form.steps[index]
+  if (!step) return
+  step.parameters[field] = Number(value)
 }
 
 /**
@@ -64,29 +121,56 @@ function submit(): void {
 </script>
 
 <template>
-  <article class="archive-panel" :aria-labelledby="`algorithm-${algorithm.code}-heading`" :data-algorithm-code="algorithm.code">
+  <article class="archive-panel" :aria-labelledby="`algorithm-${algorithm.code}-heading`"
+    :data-algorithm-code="algorithm.code">
     <div class="section-heading">
       <div class="section-heading-copy">
-        <p class="eyebrow">实现 v{{ algorithm.implementationVersion }} · 配置 {{ algorithm.activeConfigurationVersion ? `v${algorithm.activeConfigurationVersion}` : '未发布' }}</p>
+        <p class="eyebrow">实现 v{{ algorithm.implementationVersion }} · 配置 {{ algorithm.activeConfigurationVersion ?
+          `v${algorithm.activeConfigurationVersion}` : '未发布' }}</p>
         <h2 :id="`algorithm-${algorithm.code}-heading`">{{ algorithm.name }}</h2>
         <p>{{ algorithm.description }}</p>
       </div>
-      <UBadge :color="algorithm.activeConfigurationVersion ? 'success' : 'warning'" variant="subtle">{{ algorithm.activeConfigurationVersion ? '已配置' : '待配置' }}</UBadge>
+      <UBadge :color="algorithm.activeConfigurationVersion ? 'success' : 'warning'" variant="subtle">{{
+        algorithm.activeConfigurationVersion ? '已配置' : '待配置' }}</UBadge>
     </div>
     <UAlert v-if="validationError" class="mb-4" color="error" title="配置无效" :description="validationError" />
-    <UAlert v-if="missingModelTypes.length" color="warning" title="缺少算法所需模型" :description="`请先在接口与模型中创建：${missingModelTypes.join('、')}。`" />
-    <form v-else class="space-y-5" data-ai-algorithm-form @submit.prevent="submit">
-      <section v-for="(definition, index) in algorithm.stepDefinitions" :key="definition.key" class="rounded-lg border border-default p-4">
+    <form class="space-y-5" data-ai-algorithm-form @submit.prevent="submit">
+      <section v-for="(definition, index) in algorithm.stepDefinitions" :key="definition.key"
+        class="rounded-lg border border-default p-4">
         <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
-          <div><h3 class="font-medium text-highlighted">{{ index + 1 }}. {{ definition.name }}</h3><p class="mt-1 text-sm text-muted">{{ definition.description }}</p></div>
-          <UButton type="button" size="xs" color="neutral" variant="soft" icon="i-lucide-braces" @click="emit('editPrompt', definition.promptCode)">编辑该步骤提示词</UButton>
+          <div>
+            <h3 class="font-medium text-highlighted">{{ index + 1 }}. {{ definition.name }}</h3>
+            <p class="mt-1 text-sm text-muted">{{ definition.description }}</p>
+          </div>
+          <UButton type="button" size="xs" color="neutral" variant="soft" icon="i-lucide-braces"
+            @click="emit('editPrompt', definition.promptCode)">编辑该步骤提示词</UButton>
         </div>
         <p class="mb-4 break-all text-xs text-muted">固定编码：<code>{{ definition.promptCode }}</code></p>
-        <div class="grid gap-4" :class="definition.modality === 'text' ? 'md:grid-cols-4' : 'md:grid-cols-2'">
-          <UFormField :label="definition.modality === 'text' ? '文本模型' : '图片模型'" required><USelect v-model="form.steps[index]!.modelDeploymentId" class="w-full" :items="deploymentItems(definition.modality)" /></UFormField>
-          <UFormField v-if="definition.modality === 'text'" label="温度" required><UInput v-model.number="form.steps[index]!.parameters.temperature" class="w-full" type="number" min="0" max="2" step="0.1" /></UFormField>
-          <UFormField v-if="definition.modality === 'text'" label="输出 Token" required><UInput v-model.number="form.steps[index]!.parameters.maxOutputTokens" class="w-full" type="number" min="64" max="8192" step="64" /></UFormField>
-          <UFormField label="超时（毫秒）" required><UInput v-model.number="form.steps[index]!.parameters.timeoutMs" class="w-full" type="number" min="1000" max="120000" step="1000" /></UFormField>
+        <div class="grid gap-4 md:grid-cols-4">
+          <UFormField :label="definition.modality === 'text' ? '文本模型' : '图片模型'">
+            <USelect :model-value="deploymentSelectValue(form.steps[index]!.modelDeploymentId)" class="w-full"
+              :items="deploymentItems(definition.modality)" @update:model-value="updateDeployment(index, $event)" />
+          </UFormField>
+          <UFormField v-if="definition.modality === 'text'" label="温度" required>
+            <UInput v-model.number="form.steps[index]!.parameters.temperature" class="w-full" type="number" min="0"
+              max="2" step="0.1" />
+          </UFormField>
+          <UFormField v-if="definition.modality === 'text'" label="输出 Token" required>
+            <UInput v-model.number="form.steps[index]!.parameters.maxOutputTokens" class="w-full" type="number" min="64"
+              max="8192" step="64" />
+          </UFormField>
+          <UFormField v-if="definition.modality === 'image'" label="最大宽度（像素）" required>
+            <UInput :model-value="imageDimension(index, 'maxImageWidth')" class="w-full" type="number" min="64"
+              max="8192" step="64" @update:model-value="updateImageDimension(index, 'maxImageWidth', $event)" />
+          </UFormField>
+          <UFormField v-if="definition.modality === 'image'" label="最大高度（像素）" required>
+            <UInput :model-value="imageDimension(index, 'maxImageHeight')" class="w-full" type="number" min="64"
+              max="8192" step="64" @update:model-value="updateImageDimension(index, 'maxImageHeight', $event)" />
+          </UFormField>
+          <UFormField label="超时（毫秒）" required>
+            <UInput v-model.number="form.steps[index]!.parameters.timeoutMs" class="w-full" type="number" min="1000"
+              max="120000" step="1000" />
+          </UFormField>
         </div>
       </section>
       <div class="flex flex-wrap items-center justify-between gap-3">

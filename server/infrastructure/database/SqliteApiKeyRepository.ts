@@ -53,6 +53,29 @@ export class SqliteApiKeyRepository implements ApiKeyRepository {
     })()
   }
 
+  /**
+   * 永久删除已吊销 Key 及其受外键保护的公共调用记录。
+   * @param id 已吊销 API Key 标识。
+   * @param timestamp 管理员执行删除的时间。
+   * @returns 目标存在且已吊销时返回 true，否则返回 false。
+   * @remarks 删除动作保留在管理员审计中，但该 Key 的幂等和公共调用明细会被同步清理。
+   */
+  async deleteRevoked(id: string, timestamp: number): Promise<boolean> {
+    return this.client.transaction(() => {
+      const key = this.client.prepare(`SELECT id FROM api_keys WHERE id = ? AND revoked_at IS NOT NULL`).get(id)
+      if (!key) return false
+      this.client.prepare(`DELETE FROM public_api_idempotency_records WHERE api_key_id = ?`).run(id)
+      this.client.prepare(`DELETE FROM public_api_audit_events WHERE api_key_id = ?`).run(id)
+      const result = this.client.prepare(`DELETE FROM api_keys WHERE id = ? AND revoked_at IS NOT NULL`).run(id)
+      if (result.changes === 1) {
+        insertAuditEvent(this.client, {
+          actor: 'administrator', action: 'api_key_deleted', targetType: 'api_key', targetId: id, timestamp,
+        })
+      }
+      return result.changes === 1
+    })()
+  }
+
   /** @param id Key 标识。 @param timestamp 最近成功认证时间。 @returns 是否更新。 */
   async markUsed(id: string, timestamp: number): Promise<boolean> {
     return this.client.prepare(`UPDATE api_keys SET last_used_at = ? WHERE id = ?`).run(timestamp, id).changes === 1

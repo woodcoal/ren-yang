@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import sharp from 'sharp'
 import { OpenAiCompatibleImageModel } from '../../server/infrastructure/models/OpenAiCompatibleImageModel'
 
 /** 测试用 PNG 文件头及少量负载。 */
@@ -35,6 +36,25 @@ describe('OpenAiCompatibleImageModel', () => {
     })
     const requestBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as Record<string, unknown>
     expect(requestBody).toMatchObject({ model: 'fixed-image-model', size: '1536x1024', response_format: 'b64_json', n: 1 })
+  })
+
+  it('仅在生成图片超过算法尺寸上限时居中裁剪', async () => {
+    const oversized = new Uint8Array(await sharp({
+      create: { width: 120, height: 80, channels: 4, background: '#32658f' },
+    }).png().toBuffer())
+    const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify({
+      data: [{ b64_json: Buffer.from(oversized).toString('base64') }],
+    }), { status: 200 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const cropped = await createModel().generate({ ...createRequest(), maxWidth: 100, maxHeight: 100 })
+    await expect(sharp(cropped.bytes).metadata()).resolves.toMatchObject({ width: 100, height: 80 })
+    expect(cropped.original).toEqual({ bytes: oversized, declaredMediaType: null })
+
+    const unchanged = await createModel().generate({ ...createRequest(), maxWidth: 120, maxHeight: 100 })
+
+    expect(unchanged.bytes).toEqual(oversized)
+    expect(unchanged.original).toBeUndefined()
   })
 
   it('从 OpenAI-compatible API 根地址推导 Images Generations 地址', async () => {

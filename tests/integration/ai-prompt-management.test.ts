@@ -44,8 +44,12 @@ describe('全站 AI 提示词目录', () => {
       'generation.article_images',
     ]))
     const interestPrompt = prompts.find(prompt => prompt.code === 'generation.interest_assessment')
-    expect(interestPrompt?.activeVersion?.versionNo).toBe(2)
-    expect(interestPrompt?.versions.map(version => version.versionNo)).toEqual([2, 1])
+    expect(interestPrompt?.activeVersion?.versionNo).toBe(3)
+    expect(interestPrompt?.activeVersion?.userPromptTemplate).toContain('<附加提示词>{{sceneJson}}</附加提示词>')
+    expect(interestPrompt?.variables.find(variable => variable.name === 'sceneJson')).toMatchObject({
+      label: '附加提示词', description: 'JSON 字符串或 null',
+    })
+    expect(interestPrompt?.versions.map(version => version.versionNo)).toEqual([3, 2, 1])
     expect(prompts
       .filter(prompt => prompt.code !== 'generation.interest_assessment')
       .every(prompt => prompt.activeVersion?.versionNo === 1 && prompt.versions.length === 1)).toBe(true)

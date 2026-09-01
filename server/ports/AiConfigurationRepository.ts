@@ -51,8 +51,8 @@ export interface AiAlgorithmStepConfigurationRecord {
   stepKey: string
   /** 固定执行顺序。 */
   ordinal: number
-  /** 文本模型部署 UUID。 */
-  modelDeploymentId: string
+  /** 显式模型部署 UUID；为空时运行时使用同类型默认模型。 */
+  modelDeploymentId: string | null
   /** 固定提示词编码。 */
   promptCode: string
   /** 模型调用参数。 */

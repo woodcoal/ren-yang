@@ -73,6 +73,22 @@ export class ApiKeyApplicationService {
   }
 
   /**
+   * 永久删除一个已经吊销的 API Key。
+   * @param id API Key 稳定标识。
+   * @returns 删除完成时结束，不返回已删除记录。
+   * @remarks 有效或仅过期的 Key 必须先显式吊销，避免误删仍可恢复使用的凭据记录。
+   */
+  async delete(id: string): Promise<void> {
+    const existing = (await this.dependencies.repository.list()).find(record => record.id === id)
+    if (!existing) throw new ApplicationError('RESOURCE_NOT_FOUND', 'API Key 不存在', 404)
+    if (existing.revokedAt === null) {
+      throw new ApplicationError('API_KEY_DELETE_FORBIDDEN', '只能删除已吊销的 API Key', 409)
+    }
+    const deleted = await this.dependencies.repository.deleteRevoked(id, this.dependencies.clock.now())
+    if (!deleted) throw new ApplicationError('VERSION_CONFLICT', 'API Key 状态已变化，请刷新后重试', 409)
+  }
+
+  /**
    * 校验完整明文并更新最近使用时间。
    * @param secret Authorization Bearer 中的完整 Key。
    * @returns 已认证的最小主体。

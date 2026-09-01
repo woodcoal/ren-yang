@@ -208,6 +208,8 @@ class FixedImageModel implements ImageModelPort {
   public calls = 0
   /** 是否让后续调用稳定失败。 */
   public shouldFail = false
+  /** 是否模拟二次裁剪并同时返回原图。 */
+  public shouldRetainOriginal = false
   /** 最近一次视觉请求。 */
   public lastRequest: ImageModelRequest | null = null
 
@@ -221,7 +223,14 @@ class FixedImageModel implements ImageModelPort {
     this.calls += 1
     this.lastRequest = request
     if (this.shouldFail) throw new ImageModelError('IMAGE_OUTPUT_INVALID', '测试图片无效', false)
-    return { bytes: new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 1]), declaredMediaType: 'image/png' }
+    const bytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 1])
+    return {
+      bytes,
+      declaredMediaType: 'image/png',
+      ...(this.shouldRetainOriginal
+        ? { original: { bytes: new Uint8Array([...bytes, 2]), declaredMediaType: 'image/png' } }
+        : {}),
+    }
   }
 }
 
@@ -472,6 +481,7 @@ describe('阶段三纯文本运行', () => {
   it('同一人物多条文本只调用一次模型并按输入顺序独立保存结果', async () => {
     const created = await generation.createInterestBatch({
       personaId,
+      additionalPrompt: '只按人物长期兴趣判断，不考虑短期热点。',
       items: [
         { itemId: 'topic-3', text: '古代文献整理' },
         { itemId: 'topic-1', text: '学院课程安排' },
@@ -483,7 +493,11 @@ describe('阶段三纯文本运行', () => {
     const completed = await generation.getInterestBatch(created.batchId)
 
     expect(model.calls.get('interest_batch_assessment')).toBe(1)
+    expect(model.requests.get('interest_batch_assessment')?.userPrompt)
+      .toContain('<附加提示词>"只按人物长期兴趣判断，不考虑短期热点。"</附加提示词>')
     expect(completed.items.map(item => item.itemId)).toEqual(['topic-3', 'topic-1', 'topic-2'])
+    expect(completed.items.map(item => item.text)).toEqual(['古代文献整理', '学院课程安排', '无关娱乐新闻'])
+    expect(completed.additionalPrompt).toBe('只按人物长期兴趣判断，不考虑短期热点。')
     expect(completed.items.map(item => item.status)).toEqual(['succeeded', 'succeeded', 'succeeded'])
     expect(completed.items.every(item => item.runId.length > 0)).toBe(true)
     expect(new Set(completed.items.map(item => item.runId)).size).toBe(3)
@@ -497,6 +511,7 @@ describe('阶段三纯文本运行', () => {
     model.omittedInterestItemId = 'missing'
     const created = await generation.createInterestBatch({
       personaId,
+      additionalPrompt: '失败条目重试时继续使用这条附加要求。',
       items: [
         { itemId: 'first', text: '第一条文本' },
         { itemId: 'missing', text: '需要重试的文本' },
@@ -521,6 +536,8 @@ describe('阶段三纯文本运行', () => {
     expect(interestRequests).toHaveLength(2)
     expect(interestPromptPrefix(interestRequests[0]?.userPrompt ?? ''))
       .toBe(interestPromptPrefix(interestRequests[1]?.userPrompt ?? ''))
+    expect(interestRequests[1]?.userPrompt)
+      .toContain('<附加提示词>"失败条目重试时继续使用这条附加要求。"</附加提示词>')
   })
 
   it('批量兴趣输入拒绝重复编号、空文本和超过固定批量上限', async () => {
@@ -536,6 +553,11 @@ describe('阶段三纯文本运行', () => {
       personaId,
       items: Array.from({ length: 21 }, (_, index) => ({ itemId: String(index), text: '测试' })),
     })).rejects.toThrow('单批次最多包含 20 条文本')
+    await expect(generation.createInterestBatch({
+      personaId,
+      additionalPrompt: '附加要求'.repeat(1_001),
+      items: [{ itemId: 'prompt-too-long', text: '测试' }],
+    })).rejects.toThrow('附加提示词不能超过 4000 个字符')
   })
 
   it('批量主调用整体结构错误时完整重新排队并在下一次尝试恢复', async () => {
@@ -1029,6 +1051,7 @@ describe('直接图文生成与导出', () => {
   })
 
   it('生成固定 PNG 并从最终结果渲染及导出 HTML', async () => {
+    imageModel.shouldRetainOriginal = true
     const runId = await executeDirectRun()
     const details = await generation.getRun(runId)
     const imageBlock = details.blocks.find(block => block.type === 'image')!
@@ -1039,7 +1062,11 @@ describe('直接图文生成与导出', () => {
     expect(imageModel.lastRequest).toMatchObject({ aspectRatio: '16:9' })
     expect(imageModel.lastRequest?.prompt).toContain('古代文献图书馆')
     expect(existsSync(resolve(directory, 'artifacts', runId, asset.relativePath))).toBe(true)
+    expect(asset.original).not.toBeNull()
+    if (!asset.original) throw new Error('裁剪图片缺少原图资产')
+    expect(existsSync(resolve(directory, 'artifacts', runId, asset.original.relativePath))).toBe(true)
     await expect(generation.getImageAsset(runId, asset.id)).resolves.toMatchObject({ mediaType: 'image/png' })
+    await expect(generation.getImageAsset(runId, asset.id, 'original')).resolves.toMatchObject({ mediaType: 'image/png' })
 
     const rendered = await generation.renderRun(runId, ['html'])
     expect(rendered.assets).toEqual([expect.objectContaining({ id: asset.id, relativePath: asset.relativePath })])

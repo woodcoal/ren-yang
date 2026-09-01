@@ -7,14 +7,19 @@ const props = defineProps<{
   keys: ApiKeyView[]
   /** 当前正在吊销的 Key 标识。 */
   revokingId: string | null
+  /** 当前正在永久删除的 Key 标识。 */
+  deletingId: string | null
 }>()
 
 const emit = defineEmits<{
   /** 明确确认后请求吊销指定 Key。 */
   revoke: [id: string]
+  /** 明确确认后请求永久删除指定已吊销 Key。 */
+  delete: [id: string]
 }>()
 
 const confirmingId = shallowRef<string | null>(null)
+const deletingConfirmationId = shallowRef<string | null>(null)
 
 /** 权限值到管理员可读名称的固定映射。 */
 const scopeLabels: Record<ApiKeyView['scopes'][number], string> = {
@@ -24,8 +29,8 @@ const scopeLabels: Record<ApiKeyView['scopes'][number], string> = {
   'world:write': '世界写入',
   'library:read': '资料读取',
   'library:write': '资料写入',
-  'generation:read': '图文运行读取',
-  'generation:write': '图文运行创建与操作',
+  'generation:read': '兴趣与图文结果读取',
+  'generation:write': '兴趣与图文创建及操作',
 }
 
 /**
@@ -58,6 +63,16 @@ function confirmRevoke(id: string): void {
   confirmingId.value = null
   emit('revoke', id)
 }
+
+/**
+ * 确认永久删除并把目标 Key 交给上层组件执行。
+ * @param id 已吊销 API Key 的稳定 UUID。
+ * @returns 无返回值；发出删除事件并关闭确认状态。
+ */
+function confirmDelete(id: string): void {
+  deletingConfirmationId.value = null
+  emit('delete', id)
+}
 </script>
 
 <template>
@@ -85,6 +100,13 @@ function confirmRevoke(id: string): void {
             size="sm"
             @click="confirmingId = key.id"
           >吊销</UButton>
+          <UButton
+            v-if="key.status === 'revoked' && deletingConfirmationId !== key.id"
+            color="error"
+            variant="soft"
+            size="sm"
+            @click="deletingConfirmationId = key.id"
+          >删除</UButton>
         </div>
         <div class="mt-3 flex flex-wrap gap-2">
           <UBadge v-for="scope in key.scopes" :key="scope" color="neutral" variant="outline">{{ scopeLabels[scope] }}</UBadge>
@@ -99,6 +121,15 @@ function confirmRevoke(id: string): void {
             <div class="mt-2 flex gap-2">
               <UButton color="error" size="sm" :loading="props.revokingId === key.id" @click="confirmRevoke(key.id)">确认吊销</UButton>
               <UButton color="neutral" variant="soft" size="sm" @click="confirmingId = null">取消</UButton>
+            </div>
+          </template>
+        </UAlert>
+        <UAlert v-if="deletingConfirmationId === key.id" class="mt-4" color="error" variant="soft" title="永久删除后无法恢复">
+          <template #description>
+            <p>该 Key 的公共调用审计和幂等记录也会被删除。</p>
+            <div class="mt-2 flex gap-2">
+              <UButton color="error" size="sm" :loading="props.deletingId === key.id" @click="confirmDelete(key.id)">确认删除</UButton>
+              <UButton color="neutral" variant="soft" size="sm" @click="deletingConfirmationId = null">取消</UButton>
             </div>
           </template>
         </UAlert>

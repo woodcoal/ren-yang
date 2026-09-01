@@ -6,6 +6,10 @@ export interface ImageModelRequest {
   prompt: string
   /** 最终文章配图分析时固定的宽高比。 */
   aspectRatio: '1:1' | '4:3' | '3:4' | '16:9' | '9:16'
+  /** 生成后允许保留的最大宽度；省略时不限制。 */
+  maxWidth?: number
+  /** 生成后允许保留的最大高度；省略时不限制。 */
+  maxHeight?: number
   /** 单次网络调用超时毫秒数。 */
   timeoutMs: number
 }
@@ -16,6 +20,13 @@ export interface ImageModelResponse {
   bytes: Uint8Array
   /** 供应商或下载响应声明的媒体类型。 */
   declaredMediaType: string | null
+  /** 发生二次裁剪时保留的供应商原图；未裁剪时省略。 */
+  original?: {
+    /** 裁剪前的原始图片字节。 */
+    bytes: Uint8Array
+    /** 原始供应商或下载响应声明的媒体类型。 */
+    declaredMediaType: string | null
+  }
 }
 
 /** 与具体图片供应商隔离的模型端口。 */

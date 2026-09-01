@@ -3,6 +3,7 @@ import { mountSuspended } from '@nuxt/test-utils/runtime'
 import ArtifactGenerationForm from '../../app/components/generation/ArtifactGenerationForm.vue'
 import ArtifactResult from '../../app/components/generation/ArtifactResult.vue'
 import EvidenceList from '../../app/components/generation/EvidenceList.vue'
+import InterestBatchForm from '../../app/components/generation/InterestBatchForm.vue'
 import RunStatusPanel from '../../app/components/generation/RunStatusPanel.vue'
 import type { PersonaSummary } from '../../shared/types/content'
 import type { RenderedArtifactView, RunSummary } from '../../shared/types/generation'
@@ -63,6 +64,12 @@ const RESULT: RenderedArtifactView = {
     sizeBytes: 1024,
     contentHash: 'b'.repeat(64),
     altText: '学院主图',
+    original: {
+      relativePath: 'assets/00000000-0000-4000-8000-000000000014.png',
+      mediaType: 'image/png',
+      sizeBytes: 2048,
+      contentHash: 'c'.repeat(64),
+    },
   }],
 }
 
@@ -121,6 +128,37 @@ describe('直接图文生成组件', () => {
     })
     expect(wrapper.find('iframe').exists()).toBe(false)
     expect(wrapper.text()).toContain('配图')
+    expect(wrapper.get('a[aria-label="查看学院主图的裁剪前原图"]').attributes('href'))
+      .toBe(`/api/v1/runs/${RESULT.runId}/assets/00000000-0000-4000-8000-000000000013?variant=original`)
+  })
+})
+
+describe('批量兴趣判断组件', () => {
+  it('一次提交同一人物的多条文本和整批附加提示词', async () => {
+    const wrapper = await mountSuspended(InterestBatchForm, {
+      props: { personas: [PERSONA], configured: true },
+    })
+
+    await wrapper.get('select[aria-label="使用的人物"]').setValue(PERSONA.id)
+    await wrapper.get('textarea[aria-label="待判断文本 1"]').setValue('学院课程安排')
+    await wrapper.get('button[aria-label="添加待判断文本"]').trigger('click')
+    await wrapper.get('textarea[aria-label="待判断文本 2"]').setValue('无关娱乐新闻')
+    await wrapper.get('textarea[aria-label="附加提示词"]').setValue('只根据人物长期兴趣判断，不考虑短期热点。')
+    await wrapper.get('form').trigger('submit')
+
+    expect(wrapper.emitted('submit')).toEqual([[{
+      personaId: PERSONA.id,
+      additionalPrompt: '只根据人物长期兴趣判断，不考虑短期热点。',
+      items: [
+        { itemId: 'item-1', text: '学院课程安排' },
+        { itemId: 'item-2', text: '无关娱乐新闻' },
+      ],
+    }]])
+    expect(wrapper.text()).not.toContain('年龄阶段')
+    expect(wrapper.text()).not.toContain('地点')
+    expect(wrapper.text()).not.toContain('当前目标')
+    expect(wrapper.text()).not.toContain('情绪')
+    expect(wrapper.text()).not.toContain('当前事件')
   })
 })
 

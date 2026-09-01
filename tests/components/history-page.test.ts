@@ -29,6 +29,13 @@ registerEndpoint('/api/v1/history', (event) => {
   return { data: {
     items: [
       {
+        sourceType: 'interest_batch',
+        id: '70000000-0000-4000-8000-000000000005',
+        kind: 'interest_assessment', subjectType: 'persona', subjectId: '10000000-0000-4000-8000-000000000001',
+        subjectName: '林默', subjectExists: true, status: 'partial', description: '3 条文本',
+        secondary: '成功 2 / 失败 1', errorCode: null, errorMessage: null, createdAt: 2_500,
+      },
+      {
         sourceType: 'analysis',
         id: '70000000-0000-4000-8000-000000000001',
         kind: 'persona_memory', subjectType: 'persona', subjectId: '10000000-0000-4000-8000-000000000001',
@@ -79,6 +86,15 @@ describe('统一任务记录页', () => {
     expect(wrapper.text()).toContain('人物记忆提炼')
     expect(wrapper.text()).toContain('林默')
     expect(wrapper.text()).toContain('排队中')
+  })
+
+  it('兴趣批次只显示一条历史记录并进入批次详情', async () => {
+    const wrapper = await mountSuspended(HistoryPage, { route: '/history' })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('3 条文本')
+    expect(wrapper.text()).toContain('成功 2 / 失败 1')
+    expect(wrapper.get('a[href="/interest-batches/70000000-0000-4000-8000-000000000005"]').text()).toContain('兴趣判断')
   })
 
   it('根据 URL 展示第二页与准确的分页摘要', async () => {

@@ -86,7 +86,7 @@ describe('人物头像编辑器', () => {
 
     expect(uploadRequests).toBe(1)
     expect(wrapper.emitted('updated')).toHaveLength(1)
-    expect(wrapper.text()).toContain('统一保存为 512×512')
+    expect(wrapper.text()).toContain('按原始尺寸保存')
   })
 
   it('点击生成头像后调用生成接口并公开更新事件', async () => {

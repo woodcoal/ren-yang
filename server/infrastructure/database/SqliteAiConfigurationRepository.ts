@@ -186,7 +186,7 @@ export class SqliteAiConfigurationRepository implements AiConfigurationRepositor
     `).all(String(row.id)) as Array<Record<string, unknown>>).map(item => ({
       stepKey: String(item.step_key),
       ordinal: Number(item.ordinal),
-      modelDeploymentId: String(item.model_deployment_id),
+      modelDeploymentId: item.model_deployment_id === null ? null : String(item.model_deployment_id),
       promptCode: String(item.prompt_code),
       parameters: aiAlgorithmStepParametersSchema.parse(JSON.parse(String(item.parameters_json))),
     }))

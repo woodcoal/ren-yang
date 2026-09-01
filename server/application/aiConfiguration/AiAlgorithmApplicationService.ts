@@ -5,6 +5,7 @@ import { getAiAlgorithmDefinition } from '../../domain/ai/AiAlgorithmDefinitions
 import type { AiConfigurationRepository, AiConnectionSecretRecord } from '../../ports/AiConfigurationRepository'
 import type { AiModelFactory } from '../../ports/AiModelFactory'
 import type { SecretCipher } from '../../ports/SecretCipher'
+import type { SystemAiSettingsRepository } from '../../ports/SystemAiSettingsRepository'
 import type { TextModelResponse } from '../../ports/TextModelPort'
 import { TextModelError } from '../../ports/TextModelPort'
 import type { ImageModelResponse, ImageModelRequest } from '../../ports/ImageModelPort'
@@ -53,6 +54,8 @@ const ALGORITHM_PARAMETER_DEFAULTS = {
 export interface AiAlgorithmApplicationServiceDependencies {
   /** AI 连接、模型部署和算法配置事实源。 */
   repository: AiConfigurationRepository
+  /** 未显式绑定步骤模型时使用的全站默认模型事实源。 */
+  defaultModels: Pick<SystemAiSettingsRepository, 'find'>
   /** 版本化提示词渲染服务。 */
   prompts: Pick<AiPromptApplicationService, 'render' | 'renderDraftPreferred' | 'snapshotPublishedVersions'>
   /** 只在执行期间解密凭据的端口。 */
@@ -81,13 +84,25 @@ export class AiAlgorithmApplicationService {
     const promptVersions = await this.dependencies.prompts.snapshotPublishedVersions(
       definition.steps.map(step => step.promptCode),
     )
+    const defaultModels = await this.dependencies.defaultModels.find()
     const steps = await Promise.all(definition.steps.map(async (definitionStep) => {
       const configuredStep = configuration.steps.find(step => step.stepKey === definitionStep.key)
       if (!configuredStep || configuredStep.promptCode !== definitionStep.promptCode
         || configuredStep.ordinal !== definitionStep.ordinal) {
         throw new ApplicationError('AI_ALGORITHM_CONFIGURATION_INVALID', `算法步骤“${definitionStep.name}”配置与代码不一致`, 409)
       }
-      const deployment = await this.requireDeployment(configuredStep.modelDeploymentId, definitionStep.modality)
+      const defaultDeploymentId = definitionStep.modality === 'text'
+        ? defaultModels?.values.textModelDeploymentId
+        : defaultModels?.values.imageModelDeploymentId
+      const deploymentId = configuredStep.modelDeploymentId || defaultDeploymentId
+      if (!deploymentId) {
+        throw new ApplicationError(
+          'CAPABILITY_DISABLED',
+          `算法步骤“${definitionStep.name}”未绑定模型，且未配置默认${definitionStep.modality === 'text' ? '文本' : '图片'}模型`,
+          422,
+        )
+      }
+      const deployment = await this.requireDeployment(deploymentId, definitionStep.modality)
       const connection = await this.requireEnabledConnection(deployment.connectionId)
       return {
         stepKey: definitionStep.key,
@@ -162,6 +177,8 @@ export class AiAlgorithmApplicationService {
     return await model.generate({
       prompt: [prompt.systemPrompt, prompt.userPrompt].filter(Boolean).join('\n\n'),
       aspectRatio,
+      ...(step.parameters.maxImageWidth ? { maxWidth: step.parameters.maxImageWidth } : {}),
+      ...(step.parameters.maxImageHeight ? { maxHeight: step.parameters.maxImageHeight } : {}),
       timeoutMs: step.parameters.timeoutMs,
     })
   }

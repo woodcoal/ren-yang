@@ -7,6 +7,7 @@ import type { GrowthExtractAlgorithmTestInput, GrowthSynthesizeAlgorithmTestInpu
 import type { AiAlgorithmTestResult } from '../../shared/types/aiAlgorithmTest'
 import type { AiAlgorithmView, AiConnectionView, AiModelDeploymentView } from '../../shared/types/aiConfiguration'
 import type { AiPromptWorkspaceView } from '../../shared/types/aiPrompt'
+import type { SystemAiSettingsValues } from '../../shared/schemas/systemAi'
 import AiAlgorithmsPage from '../../app/pages/ai-algorithms.vue'
 import AiModelsPage from '../../app/pages/ai-models.vue'
 
@@ -90,6 +91,22 @@ const articleImageAlgorithm: AiAlgorithmView = {
   ],
 }
 
+/** AI 算法页使用的文章图片生成单步骤算法。 */
+const articleImageGenerationAlgorithm: AiAlgorithmView = {
+  code: 'article_image_generation', name: '文章图片生成', description: '生成文章配图。', implementationVersion: 1,
+  activeConfigurationVersion: 1, configurationVersionCount: 1, updatedAt: 1_000,
+  stepDefinitions: [
+    { key: 'generate', name: '生成图片', description: '生成一张文章图片。', promptCode: 'generation.image_block', modality: 'image', ordinal: 0 },
+  ],
+  steps: [
+    {
+      key: 'generate', name: '生成图片', description: '生成一张文章图片。', promptCode: 'generation.image_block', modality: 'image', ordinal: 0,
+      modelDeploymentId: imageDeployment.id,
+      parameters: { temperature: 0, maxOutputTokens: 64, timeoutMs: 60_000, maxImageWidth: 2_048, maxImageHeight: 2_048 },
+    },
+  ],
+}
+
 /** AI 算法页使用的批量兴趣判定算法。 */
 const interestAlgorithm: AiAlgorithmView = {
   code: 'interest_assessment', name: '兴趣判定', description: '同一人物批量判定多条文本。', implementationVersion: 1,
@@ -160,6 +177,8 @@ const memoryAlgorithmPrompts: AiPromptWorkspaceView[] = memoryAlgorithm.stepDefi
 
 /** 编辑接口最后提交的正文。 */
 let savedConnection: UpdateAiConnectionInput | null = null
+/** 默认模型页最后提交的模型部署选择。 */
+let savedDefaultModels: SystemAiSettingsValues | null = null
 /** 发布算法配置最后提交的正文。 */
 let savedAlgorithm: PublishAiAlgorithmConfigurationInput | null = null
 /** 算法测试按交互顺序提交的分步输入。 */
@@ -206,7 +225,18 @@ registerEndpoint(`/api/v1/ai/connections/${connection.id}`, {
   },
 })
 registerEndpoint('/api/v1/ai/model-deployments', () => ({ data: [deployment, imageDeployment] }))
-registerEndpoint('/api/v1/ai/algorithms', () => ({ data: [algorithm, memoryAlgorithm, interestAlgorithm, articleAlgorithm, articleImageAlgorithm] }))
+registerEndpoint('/api/v1/system/ai-settings', () => ({
+  data: { values: { textModelDeploymentId: deployment.id, imageModelDeploymentId: imageDeployment.id }, updatedAt: 1_000 },
+}))
+registerEndpoint('/api/v1/system/ai-settings', {
+  method: 'PUT',
+  /** @param event 测试请求事件。 @returns 模拟保存后的默认模型设置。 */
+  handler: async (event) => {
+    savedDefaultModels = await readBody<SystemAiSettingsValues>(event)
+    return { data: { values: savedDefaultModels, updatedAt: 2_000 } }
+  },
+})
+registerEndpoint('/api/v1/ai/algorithms', () => ({ data: [algorithm, memoryAlgorithm, interestAlgorithm, articleAlgorithm, articleImageAlgorithm, articleImageGenerationAlgorithm] }))
 registerEndpoint('/api/v1/ai-prompts', () => ({ data: [...algorithmPrompts, ...memoryAlgorithmPrompts, interestPrompt] }))
 registerEndpoint(`/api/v1/ai/algorithms/${algorithm.code}`, {
   method: 'PUT',
@@ -214,6 +244,14 @@ registerEndpoint(`/api/v1/ai/algorithms/${algorithm.code}`, {
   handler: async (event) => {
     savedAlgorithm = await readBody<PublishAiAlgorithmConfigurationInput>(event)
     return { data: algorithm }
+  },
+})
+registerEndpoint(`/api/v1/ai/algorithms/${articleImageGenerationAlgorithm.code}`, {
+  method: 'PUT',
+  /** @param event 测试请求事件。 @returns 模拟发布后的图片生成算法。 */
+  handler: async (event) => {
+    savedAlgorithm = await readBody<PublishAiAlgorithmConfigurationInput>(event)
+    return { data: articleImageGenerationAlgorithm }
   },
 })
 registerEndpoint(`/api/v1/ai/algorithms/${algorithm.code}/test`, {
@@ -230,11 +268,35 @@ registerEndpoint(`/api/v1/ai/algorithms/${algorithm.code}/test`, {
 
 beforeEach(() => {
   savedConnection = null
+  savedDefaultModels = null
   savedAlgorithm = null
   algorithmTestInputs.splice(0)
 })
 
 describe('AI 模型与算法配置页面', () => {
+  it('把默认文本和图片模型放在模型配置的最后一个选项卡', async () => {
+    const wrapper = await mountSuspended(AiModelsPage, { route: '/ai-models' })
+    await flushPromises()
+    const tabs = wrapper.find('.model-setup-path').findAll('button')
+
+    expect(tabs.map(tab => tab.find('strong').text())).toEqual(['接口连接', '模型部署', '默认模型'])
+    await tabs[2]!.trigger('click')
+    expect(wrapper.text()).toContain('默认文本模型')
+    expect(wrapper.text()).toContain('默认图片模型')
+    expect(wrapper.text()).toContain('成长模型 · growth-model')
+    expect(wrapper.text()).toContain('图片模型 · image-model')
+
+    wrapper.findComponent({ name: 'SystemAiDefaultModelsForm' }).vm.$emit('submit', {
+      textModelDeploymentId: deployment.id,
+      imageModelDeploymentId: imageDeployment.id,
+    })
+    await flushPromises()
+    expect(savedDefaultModels).toEqual({
+      textModelDeploymentId: deployment.id,
+      imageModelDeploymentId: imageDeployment.id,
+    })
+  })
+
   it('只显示密钥已配置，编辑接口时不会把现有密钥回填或重新提交', async () => {
     const wrapper = await mountSuspended(AiModelsPage, { route: '/ai-models' })
     await flushPromises()
@@ -262,14 +324,13 @@ describe('AI 模型与算法配置页面', () => {
     expect(wrapper.text()).toContain('按接口筛选')
   })
 
-  it('把接口和模型作为 AI 管理第一分区且不再暴露默认模型设置', async () => {
+  it('模型配置页面不再混入算法配置分区，并仅在末尾选项卡恢复默认模型', async () => {
     const wrapper = await mountSuspended(AiModelsPage, { route: '/ai-models' })
     await flushPromises()
 
-    expect(wrapper.text()).toContain('AI 管理')
-    expect(wrapper.text()).toContain('接口与模型')
-    expect(wrapper.text()).toContain('算法配置')
-    expect(wrapper.text()).not.toContain('默认模型')
+    expect(wrapper.text()).toContain('模型配置')
+    expect(wrapper.find('a[href="/ai-algorithms"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('默认模型')
     expect(wrapper.find('form[data-system-ai-settings-form]').exists()).toBe(false)
   })
 
@@ -281,6 +342,7 @@ describe('AI 模型与算法配置页面', () => {
     expect(wrapper.text()).toContain('综合编译')
     expect(wrapper.text()).toContain('analysis.persona_growth_extract')
     expect(wrapper.text()).toContain('同页校准提示词')
+    expect(wrapper.text().indexOf('同页校准提示词')).toBeLessThan(wrapper.text().indexOf('运行诊断'))
     expect(wrapper.get('[data-ai-prompt-editor]').attributes('data-prompt-code')).toBe('analysis.persona_growth_extract')
     await wrapper.findAll('button').filter(button => button.text() === '编辑该步骤提示词')[1]!.trigger('click')
     expect(wrapper.get('[data-ai-prompt-editor]').attributes('data-prompt-code')).toBe('analysis.persona_growth_synthesize')
@@ -373,5 +435,32 @@ describe('AI 模型与算法配置页面', () => {
     await wrapper.findAll('button').find(button => button.text().includes('文章配图分析'))!.trigger('click')
     await flushPromises()
     expect(wrapper.text()).toContain('generation.article_images')
+  })
+
+  it('仅为图片生成步骤展示二次裁剪上限并随配置发布', async () => {
+    const wrapper = await mountSuspended(AiAlgorithmsPage, { route: '/ai-algorithms' })
+    await flushPromises()
+
+    await wrapper.findAll('button').find(button => button.text().includes('判断兴趣、生成或修正文章'))!.trigger('click')
+    await wrapper.findAll('button').find(button => button.text().includes('文章图片生成'))!.trigger('click')
+    await flushPromises()
+
+    const form = wrapper.get('form[data-ai-algorithm-form]')
+    expect(form.text()).toContain('最大宽度（像素）')
+    expect(form.text()).toContain('最大高度（像素）')
+    const inputs = form.findAll('input[type="number"]')
+    expect(inputs).toHaveLength(3)
+    await inputs[0]!.setValue(1_280)
+    await inputs[1]!.setValue(720)
+    await form.trigger('submit')
+    await flushPromises()
+
+    expect(savedAlgorithm).toEqual({
+      steps: [{
+        stepKey: 'generate',
+        modelDeploymentId: imageDeployment.id,
+        parameters: { temperature: 0, maxOutputTokens: 64, timeoutMs: 60_000, maxImageWidth: 1_280, maxImageHeight: 720 },
+      }],
+    })
   })
 })

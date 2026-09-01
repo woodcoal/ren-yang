@@ -139,6 +139,10 @@ export function createPublicOpenApiDocument(): PublicOpenApiDocument {
   const batchId = idParameter('batchId', '兴趣批次')
   const itemId: OpenApiParameter = { name: 'itemId', in: 'path', required: true, description: '调用方在批次内提供的稳定条目标识。', schema: { type: 'string', minLength: 1, maxLength: 100 } }
   const assetId = idParameter('assetId', '图片资产')
+  const assetVariant: OpenApiParameter = {
+    name: 'variant', in: 'query', description: '读取最终裁剪结果或裁剪前原图。',
+    schema: { type: 'string', enum: ['result', 'original'], default: 'result' },
+  }
   const format: OpenApiParameter = { name: 'format', in: 'path', required: true, description: '导出格式。', schema: { type: 'string', enum: ['html', 'markdown', 'txt'] } }
   const linkId: OpenApiParameter = { name: 'linkId', in: 'path', required: true, description: '资料关系稳定标识。', schema: { type: 'string' } }
   return {
@@ -265,7 +269,7 @@ export function createPublicOpenApiDocument(): PublicOpenApiDocument {
         post: writeOperation('图文运行', 'renderRun', '即时渲染运行结果', 'generation:read', [runId], '#/components/schemas/RenderRun'),
       },
       '/api/v2/runs/{runId}/assets/{assetId}': {
-        get: binaryReadOperation('图文运行', 'getRunAsset', '读取运行图片资产', 'generation:read', [runId, assetId], 'image/png, image/jpeg 或 image/webp'),
+        get: binaryReadOperation('图文运行', 'getRunAsset', '读取运行图片资产', 'generation:read', [runId, assetId, assetVariant], 'image/png, image/jpeg 或 image/webp'),
       },
       '/api/v2/runs/{runId}/exports/{format}': {
         get: binaryReadOperation('图文运行', 'exportRun', '下载运行结果', 'generation:read', [runId, format], 'text/plain、text/html 或 application/zip'),
@@ -515,6 +519,7 @@ function createSchemas(): Record<string, Record<string, unknown>> {
       type: 'object', required: ['personaId', 'items'],
       properties: {
         personaId: uuid,
+        additionalPrompt: { type: 'string', maxLength: 4_000, default: '', description: '可选；对整批文本生效且不修改人物长期设定。' },
         items: {
           type: 'array', minItems: 1, maxItems: 20,
           items: {
@@ -626,9 +631,9 @@ function createSchemas(): Record<string, Record<string, unknown>> {
       properties: { runId: uuid, taskId: uuid, status: { type: 'string', enum: ['planning', 'queued'] } },
     },
     InterestBatchItem: {
-      type: 'object', required: ['itemId', 'runId', 'status', 'decision', 'probability', 'confidence', 'reason', 'error'],
+      type: 'object', required: ['itemId', 'runId', 'text', 'status', 'decision', 'probability', 'confidence', 'reason', 'error'],
       properties: {
-        itemId: { type: 'string' }, runId: uuid,
+        itemId: { type: 'string' }, runId: uuid, text: { type: 'string' },
         status: { type: 'string', enum: ['queued', 'running', 'succeeded', 'failed'] },
         decision: { type: ['string', 'null'], enum: ['interested', 'not_interested', 'insufficient_information', null] },
         probability: { type: ['number', 'null'], minimum: 0, maximum: 1 },
@@ -643,9 +648,9 @@ function createSchemas(): Record<string, Record<string, unknown>> {
       },
     },
     InterestBatch: {
-      type: 'object', required: ['batchId', 'personaId', 'status', 'items', 'createdAt', 'updatedAt'],
+      type: 'object', required: ['batchId', 'personaId', 'personaName', 'additionalPrompt', 'status', 'items', 'createdAt', 'updatedAt'],
       properties: {
-        batchId: uuid, personaId: uuid,
+        batchId: uuid, personaId: uuid, personaName: { type: 'string' }, additionalPrompt: { type: 'string' },
         status: { type: 'string', enum: ['queued', 'running', 'completed'] },
         items: { type: 'array', items: { $ref: '#/components/schemas/InterestBatchItem' } },
         createdAt: timestamp, updatedAt: timestamp,

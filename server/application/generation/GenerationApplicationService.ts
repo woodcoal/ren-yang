@@ -10,8 +10,9 @@ import type { PersonaDraftView, WorldDraftView } from '../../../shared/types/con
 import {
   articleImagesOutputSchema,
   articleOutputSchema,
-  createInterestBatchSchema,
   createGenerationRunSchema,
+  createInterestBatchSchema,
+  createInterestRunSchema,
   documentSpecSchema,
   interestAssessmentSchema,
   interestBatchModelOutputSchema,
@@ -317,10 +318,12 @@ export class GenerationApplicationService implements TaskHandler {
 
   /** @param input 兴趣判断输入。 @returns 已入队运行与任务标识。 */
   async createInterestRun(input: CreateInterestRunInput): Promise<CreatedRun> {
+    const normalized = createInterestRunSchema.parse(input)
     const batch = await this.createInterestBatch({
-      personaId: input.personaId,
-      items: [{ itemId: 'item-1', text: input.content }],
-    }, input.scene ?? null)
+      personaId: normalized.personaId,
+      additionalPrompt: normalized.additionalPrompt,
+      items: [{ itemId: 'item-1', text: normalized.content }],
+    }, normalized.scene ?? null)
     const item = batch.items[0]
     if (!item) throw new Error('单条兴趣批次缺少运行条目')
     const task = await this.dependencies.runs.listRunTasks(item.runId)
@@ -351,6 +354,7 @@ export class GenerationApplicationService implements TaskHandler {
     const items = batch.items.map(({ itemId, run }) => ({
       itemId,
       runId: run.id,
+      text: 'content' in run.input ? run.input.content : '',
       status: normalizeInterestItemStatus(run.status),
       decision: run.result?.decision ?? null,
       probability: run.result?.probability ?? null,
@@ -363,7 +367,19 @@ export class GenerationApplicationService implements TaskHandler {
     const status = items.every(item => item.status === 'succeeded' || item.status === 'failed')
       ? 'completed' as const
       : items.some(item => item.status === 'running') ? 'running' as const : 'queued' as const
-    return { batchId: batch.id, personaId: batch.personaId, status, items, createdAt: batch.createdAt, updatedAt: batch.updatedAt }
+    const persona = await this.dependencies.content.findPersona(batch.personaId)
+    const firstRun = batch.items[0]?.run
+    const additionalPrompt = firstRun && 'content' in firstRun.input ? firstRun.input.additionalPrompt ?? '' : ''
+    return {
+      batchId: batch.id,
+      personaId: batch.personaId,
+      personaName: persona?.name ?? '已删除人物',
+      additionalPrompt,
+      status,
+      items,
+      createdAt: batch.createdAt,
+      updatedAt: batch.updatedAt,
+    }
   }
 
   /**
@@ -416,7 +432,16 @@ export class GenerationApplicationService implements TaskHandler {
         status: block.status, selectedAttemptId: block.selectedAttemptId, isLocked: block.isLocked, selectedAt: block.selectedAt, lockedAt: block.lockedAt,
         attempts: (await this.dependencies.runs.listBlockAttempts(block.id)).map(({ blockId: _, inputSnapshot: __, ...attempt }) => {
           const asset = assetsByAttempt.get(attempt.id)
-          return { ...attempt, asset: asset ? { id: asset.id, relativePath: asset.relativePath, mediaType: asset.mediaType, sizeBytes: asset.sizeBytes, contentHash: asset.contentHash, altText: asset.altText } : null }
+          return {
+            ...attempt,
+            asset: asset
+              ? {
+                  id: asset.id, relativePath: asset.relativePath, mediaType: asset.mediaType,
+                  sizeBytes: asset.sizeBytes, contentHash: asset.contentHash, altText: asset.altText,
+                  original: asset.original,
+                }
+              : null,
+          }
         }),
       }))),
       tasks,
@@ -463,7 +488,11 @@ export class GenerationApplicationService implements TaskHandler {
       runId,
       documents: renderArtifact(selected.spec, selected.blocks, formats),
       assets: selected.blocks.flatMap(item => item.asset
-        ? [{ id: item.asset.id, relativePath: item.asset.relativePath, mediaType: item.asset.mediaType, sizeBytes: item.asset.sizeBytes, contentHash: item.asset.contentHash, altText: item.asset.altText }]
+        ? [{
+            id: item.asset.id, relativePath: item.asset.relativePath, mediaType: item.asset.mediaType,
+            sizeBytes: item.asset.sizeBytes, contentHash: item.asset.contentHash, altText: item.asset.altText,
+            original: item.asset.original,
+          }]
         : []),
     }
   }
@@ -484,13 +513,25 @@ export class GenerationApplicationService implements TaskHandler {
     return packageArtifact(run, selected.spec.title, format, document, images, this.dependencies.clock.now())
   }
 
-  /** @param runId 运行 UUID。 @param assetId 图片资产 UUID。 @returns 已授权运行内的图片字节与类型。 */
-  async getImageAsset(runId: string, assetId: string): Promise<{ bytes: Uint8Array, mediaType: string }> {
+  /**
+   * 读取最终图片或发生二次裁剪时保留的原图。
+   * @param runId 运行 UUID。
+   * @param assetId 图片资产 UUID。
+   * @param variant 最终裁剪结果或裁剪前原图。
+   * @returns 已授权运行内的图片字节与类型。
+   */
+  async getImageAsset(
+    runId: string,
+    assetId: string,
+    variant: 'result' | 'original' = 'result',
+  ): Promise<{ bytes: Uint8Array, mediaType: string }> {
     await this.requireRun(runId)
     const asset = await this.dependencies.runs.findImageAsset(runId, assetId)
     if (!asset) throw new ApplicationError('RESOURCE_NOT_FOUND', '图片资产不存在', 404)
+    const selected = variant === 'original' ? asset.original : asset
+    if (!selected) throw new ApplicationError('RESOURCE_NOT_FOUND', '当前图片未发生裁剪，没有独立原图资产', 404)
     try {
-      return { bytes: await this.dependencies.imageAssets.readImage(runId, asset.relativePath), mediaType: asset.mediaType }
+      return { bytes: await this.dependencies.imageAssets.readImage(runId, selected.relativePath), mediaType: selected.mediaType }
     }
     catch (error: unknown) {
       if (error instanceof ImageAssetError) throw new ApplicationError(error.code, error.message, error.code === 'ASSET_NOT_FOUND' ? 404 : 400)
@@ -560,7 +601,7 @@ export class GenerationApplicationService implements TaskHandler {
    * @returns 批次及全部排队运行标识。
    */
   private async createPreparedInterestBatch(
-    input: CreateInterestBatchInput,
+    input: ReturnType<typeof createInterestBatchSchema.parse>,
     scene: GenerationRunRecord['scene'],
   ): Promise<CreatedInterestBatch> {
     if (!this.dependencies.algorithms) throw new ApplicationError('AI_ALGORITHM_NOT_CONFIGURED', '兴趣判定算法服务未配置', 422)
@@ -617,7 +658,7 @@ export class GenerationApplicationService implements TaskHandler {
       worldGrowthPrompt: worldGrowthVersion?.promptText ?? null,
       personaGrowthPrompt: personaGrowthVersion?.promptText ?? null,
       personaMemoryPrompt: personaMemoryVersion?.promptText ?? null,
-      scene,
+      scene: input.additionalPrompt || scene,
       evidence: [],
     }
     const fixedPrompt = await this.dependencies.prompts.render(
@@ -758,7 +799,7 @@ export class GenerationApplicationService implements TaskHandler {
           formatTemplateId: null,
           parameterProfileId: null,
           status: 'queued' as const,
-          input: { content: item.text },
+          input: { content: item.text, additionalPrompt: input.additionalPrompt },
           scene,
           parameters,
           model,
@@ -777,10 +818,13 @@ export class GenerationApplicationService implements TaskHandler {
     return {
       batchId,
       personaId: input.personaId,
+      personaName: persona.name,
+      additionalPrompt: input.additionalPrompt,
       status: 'queued',
       items: runs.map(item => ({
         itemId: item.itemId,
         runId: item.run.runId,
+        text: item.run.input.content,
         status: 'queued',
         decision: null,
         probability: null,
@@ -1172,7 +1216,13 @@ export class GenerationApplicationService implements TaskHandler {
     const anchor = firstTarget.run
     const snapshot = anchor.interestAlgorithmSnapshot
     if (!snapshot) throw new ApplicationError('AI_ALGORITHM_CONFIGURATION_INVALID', '兴趣运行缺少算法快照', 409)
-    const context = await this.loadPromptContext(anchor)
+    const loadedContext = await this.loadPromptContext(anchor)
+    const context: PromptContext = {
+      ...loadedContext,
+      scene: 'content' in anchor.input && anchor.input.additionalPrompt
+        ? anchor.input.additionalPrompt
+        : loadedContext.scene,
+    }
     const inputItems = targets.map(item => ({ itemId: item.itemId, text: 'content' in item.run.input ? item.run.input.content : '' }))
     const generated = await this.executeConfiguredGenerationStep(
       snapshot,
@@ -1517,12 +1567,29 @@ export class GenerationApplicationService implements TaskHandler {
             : await this.generateLegacyImageBlock(run, variables, brief.aspectRatio)
           const assetId = this.dependencies.identifiers.create()
           const stored = await this.dependencies.imageAssets.saveImage(run.id, assetId, response.bytes, response.declaredMediaType)
+          let originalStored: Awaited<ReturnType<ImageAssetStorage['saveImage']>> | null = null
           try {
-            await this.dependencies.runs.completeImageBlockAttempt(block.id, attemptId, { id: assetId, ...stored, altText: brief.altText }, this.dependencies.clock.now())
+            if (response.original) {
+              originalStored = await this.dependencies.imageAssets.saveImage(
+                run.id,
+                this.dependencies.identifiers.create(),
+                response.original.bytes,
+                response.original.declaredMediaType,
+              )
+            }
+            await this.dependencies.runs.completeImageBlockAttempt(block.id, attemptId, {
+              id: assetId,
+              ...stored,
+              altText: brief.altText,
+              original: originalStored,
+            }, this.dependencies.clock.now())
           }
           catch (error: unknown) {
-            // 数据库事务失败时删除刚写入的文件，避免产生无法从业务事实定位的孤儿资产。
-            await this.dependencies.imageAssets.deleteImage(run.id, stored.relativePath)
+            // 原图保存或数据库事务失败时同时删除两份文件，避免产生无法从业务事实定位的孤儿资产。
+            await Promise.all([
+              this.dependencies.imageAssets.deleteImage(run.id, stored.relativePath),
+              ...(originalStored ? [this.dependencies.imageAssets.deleteImage(run.id, originalStored.relativePath)] : []),
+            ])
             throw error
           }
           return { succeeded: true, text: null }

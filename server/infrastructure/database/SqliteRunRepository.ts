@@ -767,9 +767,15 @@ export class SqliteRunRepository implements RunRepository {
       `).get(attemptId, blockId)
       if (!running) throw new Error('图片块或尝试状态已经变化')
       this.client.prepare(`
-        INSERT INTO image_assets (id, attempt_id, relative_path, media_type, size_bytes, content_hash, alt_text, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(asset.id, attemptId, asset.relativePath, asset.mediaType, asset.sizeBytes, asset.contentHash, asset.altText, timestamp)
+        INSERT INTO image_assets (
+          id, attempt_id, relative_path, media_type, size_bytes, content_hash, alt_text,
+          original_relative_path, original_media_type, original_size_bytes, original_content_hash, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        asset.id, attemptId, asset.relativePath, asset.mediaType, asset.sizeBytes, asset.contentHash, asset.altText,
+        asset.original?.relativePath ?? null, asset.original?.mediaType ?? null,
+        asset.original?.sizeBytes ?? null, asset.original?.contentHash ?? null, timestamp,
+      )
       const attempt = this.client.prepare(`
         UPDATE block_attempts SET status = 'succeeded', completed_at = ?
         WHERE id = ? AND block_id = ? AND status = 'running'
@@ -892,7 +898,16 @@ function toImageAsset(value: unknown): ImageAssetRecord {
   return {
     id: String(data.id), attemptId: String(data.attempt_id), relativePath: String(data.relative_path),
     mediaType: data.media_type as ImageAssetRecord['mediaType'], sizeBytes: Number(data.size_bytes),
-    contentHash: String(data.content_hash), altText: String(data.alt_text), createdAt: Number(data.created_at),
+    contentHash: String(data.content_hash), altText: String(data.alt_text),
+    original: data.original_relative_path === null || data.original_relative_path === undefined
+      ? null
+      : {
+          relativePath: String(data.original_relative_path),
+          mediaType: data.original_media_type as ImageAssetRecord['mediaType'],
+          sizeBytes: Number(data.original_size_bytes),
+          contentHash: String(data.original_content_hash),
+        },
+    createdAt: Number(data.created_at),
   }
 }
 

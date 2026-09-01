@@ -52,7 +52,7 @@ export interface GenerationRunRecord {
   formatTemplateId: string | null
   parameterProfileId: string | null
   status: RunStatus
-  input: { content: string } | { requirement: string, outputFormat: 'html' | 'text', imageCount: number }
+  input: { content: string, additionalPrompt?: string } | { requirement: string, outputFormat: 'html' | 'text', imageCount: number }
   scene: SceneContext | null
   parameterSnapshot: TextModelParameters
   modelSnapshot: TextModelSnapshot
@@ -185,6 +185,17 @@ export interface ImageAssetRecord {
   contentHash: string
   /** 可访问性替代文本。 */
   altText: string
+  /** 发生二次裁剪时保留的裁剪前原图；未裁剪时为空。 */
+  original: {
+    /** 原图相对于运行资产目录的安全路径。 */
+    relativePath: string
+    /** 原图经过魔数校验的媒体类型。 */
+    mediaType: 'image/png' | 'image/jpeg' | 'image/webp'
+    /** 原图文件字节数。 */
+    sizeBytes: number
+    /** 原图文件 SHA-256。 */
+    contentHash: string
+  } | null
   /** 创建时间。 */
   createdAt: number
 }

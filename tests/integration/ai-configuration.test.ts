@@ -6,8 +6,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AiAlgorithmApplicationService } from '../../server/application/aiConfiguration/AiAlgorithmApplicationService'
 import { AiAlgorithmTestApplicationService } from '../../server/application/aiConfiguration/AiAlgorithmTestApplicationService'
 import { AiConfigurationApplicationService } from '../../server/application/aiConfiguration/AiConfigurationApplicationService'
+import { SystemAiSettingsApplicationService } from '../../server/application/systemAi/SystemAiSettingsApplicationService'
 import { SqliteAiConfigurationRepository } from '../../server/infrastructure/database/SqliteAiConfigurationRepository'
 import { SqliteDatabase } from '../../server/infrastructure/database/SqliteDatabase'
+import { SqliteSystemAiSettingsRepository } from '../../server/infrastructure/database/SqliteSystemAiSettingsRepository'
 import { AesGcmSecretCipher } from '../../server/infrastructure/security/AesGcmSecretCipher'
 import type { AiModelFactory, AiTextModelOptions } from '../../server/ports/AiModelFactory'
 import type { TextModelPort, TextModelRequest, TextModelResponse } from '../../server/ports/TextModelPort'
@@ -222,6 +224,56 @@ describe('AI 接口、模型部署与算法配置', () => {
     })
   })
 
+  it('算法步骤未选择模型时使用同类型默认模型，显式绑定始终优先', async () => {
+    const { service, algorithms, defaultModels } = createServices()
+    const connection = await service.createConnection({
+      name: '默认模型接口', protocol: 'openai_compatible', endpoint: 'https://defaults.example/v1',
+      apiKey: 'default-secret', isEnabled: true,
+    })
+    const defaultDeployment = await service.createModelDeployment({
+      connectionId: connection.id, name: '默认文本模型', model: 'default-text', modality: 'text', isEnabled: true,
+    })
+    const explicitDeployment = await service.createModelDeployment({
+      connectionId: connection.id, name: '专用文本模型', model: 'explicit-text', modality: 'text', isEnabled: true,
+    })
+    await defaultModels.updateSettings({ textModelDeploymentId: defaultDeployment.id, imageModelDeploymentId: '' })
+
+    await service.publishAlgorithmConfiguration('article_generation', {
+      steps: [{
+        stepKey: 'generate', modelDeploymentId: '',
+        parameters: { temperature: 0.6, maxOutputTokens: 4_096, timeoutMs: 60_000 },
+      }],
+    })
+    await expect(algorithms.prepare('article_generation')).resolves.toMatchObject({
+      steps: [{ modelDeploymentId: defaultDeployment.id, model: 'default-text' }],
+    })
+
+    await service.publishAlgorithmConfiguration('article_generation', {
+      steps: [{
+        stepKey: 'generate', modelDeploymentId: explicitDeployment.id,
+        parameters: { temperature: 0.6, maxOutputTokens: 4_096, timeoutMs: 60_000 },
+      }],
+    })
+    await expect(algorithms.prepare('article_generation')).resolves.toMatchObject({
+      steps: [{ modelDeploymentId: explicitDeployment.id, model: 'explicit-text' }],
+    })
+  })
+
+  it('算法步骤和默认设置都没有模型时返回明确的能力错误', async () => {
+    const { service, algorithms } = createServices()
+    await service.publishAlgorithmConfiguration('article_generation', {
+      steps: [{
+        stepKey: 'generate', modelDeploymentId: '',
+        parameters: { temperature: 0.6, maxOutputTokens: 4_096, timeoutMs: 60_000 },
+      }],
+    })
+
+    await expect(algorithms.prepare('article_generation')).rejects.toMatchObject({
+      code: 'CAPABILITY_DISABLED',
+      statusCode: 422,
+    })
+  })
+
   it('成长测试分步执行并把第一步已校验事实显式传给第二步', async () => {
     const { service, testing, prompts, modelFactory } = createServices()
     const deploymentId = await configureAlgorithm(service, 'persona_growth')
@@ -332,7 +384,7 @@ describe('AI 接口、模型部署与算法配置', () => {
     const imageDeployment = await service.createModelDeployment({
       connectionId: connection.id, name: '头像图片', model: 'database-image-model', modality: 'image', isEnabled: true,
     })
-    const parameters = { temperature: 0, maxOutputTokens: 64, timeoutMs: 30_000 }
+    const parameters = { temperature: 0, maxOutputTokens: 64, timeoutMs: 30_000, maxImageWidth: 1_024, maxImageHeight: 768 }
     await expect(service.publishAlgorithmConfiguration('persona_avatar', {
       steps: [{ stepKey: 'generate', modelDeploymentId: textDeployment.id, parameters }],
     })).rejects.toMatchObject({ code: 'CAPABILITY_DISABLED' })
@@ -345,13 +397,15 @@ describe('AI 接口、模型部署与算法配置', () => {
       nameJson: '"林默"', soulPromptJson: '"谨慎、冷静"', additionalPromptJson: '"暖色背景"',
     }, '1:1')
 
-    expect(snapshot.steps[0]).toMatchObject({ modality: 'image', model: 'database-image-model' })
+    expect(snapshot.steps[0]).toMatchObject({
+      modality: 'image', model: 'database-image-model', parameters: { maxImageWidth: 1_024, maxImageHeight: 768 },
+    })
     expect(modelFactory.options.at(-1)).toMatchObject({
       endpoint: 'https://image-algorithm.test/v1', apiKey: 'database-model-key', model: 'database-image-model',
       userAgent: 'RenYang-Configured/1.0',
     })
     expect(modelFactory.imageRequests).toEqual([
-      expect.objectContaining({ aspectRatio: '1:1', timeoutMs: 30_000, prompt: expect.stringContaining('林默') }),
+      expect.objectContaining({ aspectRatio: '1:1', maxWidth: 1_024, maxHeight: 768, timeoutMs: 30_000, prompt: expect.stringContaining('林默') }),
     ])
   })
 })
@@ -413,6 +467,7 @@ function createServices(): {
   testing: AiAlgorithmTestApplicationService
   prompts: AiPromptApplicationService
   modelFactory: RecordingModelFactory
+  defaultModels: SystemAiSettingsApplicationService
   repository: SqliteAiConfigurationRepository
   secretCipher: AesGcmSecretCipher
 } {
@@ -422,13 +477,22 @@ function createServices(): {
   const identifiers = { create: () => randomUUID() }
   const clock = { now: () => 9_000 }
   const prompts = createTestAiPromptService(database, identifiers, clock)
-  const algorithms = new AiAlgorithmApplicationService({ repository, secretCipher, modelFactory, prompts })
+  const defaultModelsRepository = new SqliteSystemAiSettingsRepository(database.getClient())
+  const defaultModels = new SystemAiSettingsApplicationService({
+    repository: defaultModelsRepository,
+    aiConfiguration: repository,
+    clock,
+  })
+  const algorithms = new AiAlgorithmApplicationService({
+    repository, defaultModels: defaultModelsRepository, secretCipher, modelFactory, prompts,
+  })
   return {
     service: new AiConfigurationApplicationService({ repository, secretCipher, modelFactory, prompts, identifiers, clock }),
     algorithms,
     testing: new AiAlgorithmTestApplicationService({ algorithms }),
     prompts,
     modelFactory,
+    defaultModels,
     repository,
     secretCipher,
   }

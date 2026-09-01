@@ -1,7 +1,6 @@
 import { access, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { isAbsolute, resolve, sep } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import sharp from 'sharp'
 import { ImageAssetError } from '../../domain/generation/ImageAssetError'
 import type { PersonaAvatarFile, PersonaAvatarStorage } from '../../ports/PersonaAvatarStorage'
 import type { StorageCapacityGuard } from '../../ports/StorageCapacity'
@@ -14,10 +13,6 @@ const MAX_AVATAR_BYTES = 10 * 1024 * 1024
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 /** 每个人物目录内唯一且不带用户文件名的头像文件名。 */
 const AVATAR_FILE_NAME = 'avatar'
-/** 所有人物头像统一保存的正方形边长。 */
-const AVATAR_SIZE = 512
-/** 限制解码像素总量，避免高压缩图片耗尽内存。 */
-const MAX_AVATAR_INPUT_PIXELS = 40_000_000
 
 /** 在受控 avatars 目录中保存人物头像。 */
 export class LocalPersonaAvatarStorage implements PersonaAvatarStorage {
@@ -54,7 +49,7 @@ export class LocalPersonaAvatarStorage implements PersonaAvatarStorage {
   }
 
   /**
-   * 校验大小、魔数和声明类型，统一缩放为 512×512 后原子替换人物头像。
+   * 校验大小、魔数和声明类型后原样替换人物头像。
    * @param personaId 人物 UUID。
    * @param bytes 图片字节。
    * @param declaredMediaType 浏览器或图片模型声明的媒体类型。
@@ -71,14 +66,12 @@ export class LocalPersonaAvatarStorage implements PersonaAvatarStorage {
     if (declared && declared !== mediaType) {
       throw new ImageAssetError('IMAGE_OUTPUT_INVALID', '头像声明类型与文件内容不一致')
     }
-    const normalized = await normalizeAvatarImage(bytes)
-
     await mkdir(directory, { recursive: true })
     const target = resolve(directory, AVATAR_FILE_NAME)
     const temporary = resolve(directory, `.${AVATAR_FILE_NAME}.${randomUUID()}.tmp`)
     try {
-      await this.capacity.assertCanWrite(directory, normalized.bytes.byteLength)
-      await writeFile(temporary, normalized.bytes, { flag: 'wx' })
+      await this.capacity.assertCanWrite(directory, bytes.byteLength)
+      await writeFile(temporary, bytes, { flag: 'wx' })
       await rename(temporary, target)
     }
     catch (error: unknown) {
@@ -86,7 +79,7 @@ export class LocalPersonaAvatarStorage implements PersonaAvatarStorage {
       if (isNoSpaceError(error)) throw new StorageCapacityError()
       throw error
     }
-    return normalized
+    return { bytes, mediaType }
   }
 
   /**
@@ -191,26 +184,4 @@ function normalizeMediaType(value: string | null): PersonaAvatarFile['mediaType'
   if (normalized === 'image/jpg') return 'image/jpeg'
   if (normalized === 'image/png' || normalized === 'image/jpeg' || normalized === 'image/webp') return normalized
   throw new ImageAssetError('IMAGE_OUTPUT_INVALID', '头像声明了不受支持的媒体类型')
-}
-
-/**
- * 按中心覆盖规则裁切并缩放头像，同时自动应用 EXIF 方向且移除元数据。
- * @param bytes 已通过魔数校验的 PNG、JPEG 或 WebP 原始字节。
- * @returns 保持原图片编码格式的 512×512 头像文件。
- * @remarks 使用 cover 防止人物头像被拉伸；超出正方形的边缘内容会从中心等量裁切。
- */
-async function normalizeAvatarImage(bytes: Uint8Array): Promise<PersonaAvatarFile> {
-  try {
-    const normalizedBytes = new Uint8Array(await sharp(bytes, { limitInputPixels: MAX_AVATAR_INPUT_PIXELS })
-      .rotate()
-      .resize(AVATAR_SIZE, AVATAR_SIZE, { fit: 'cover', position: 'centre' })
-      .toBuffer())
-    const mediaType = detectImageMediaType(normalizedBytes)
-    if (!mediaType) throw new ImageAssetError('IMAGE_OUTPUT_INVALID', '头像缩放后的图片类型无效')
-    return { bytes: normalizedBytes, mediaType }
-  }
-  catch (error: unknown) {
-    if (error instanceof ImageAssetError) throw error
-    throw new ImageAssetError('IMAGE_OUTPUT_INVALID', '头像图片损坏或无法调整为 512×512')
-  }
 }

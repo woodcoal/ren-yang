@@ -57,6 +57,8 @@ import { SqliteApiKeyRepository } from '../database/SqliteApiKeyRepository'
 import { SqlitePublicApiRepository } from '../database/SqlitePublicApiRepository'
 import { SqliteOpenVikingSettingsRepository } from '../database/SqliteOpenVikingSettingsRepository'
 import { OpenAiCompatibleModelFactory } from '../models/OpenAiCompatibleModelFactory'
+import { SystemAiSettingsApplicationService } from '../../application/systemAi/SystemAiSettingsApplicationService'
+import { SqliteSystemAiSettingsRepository } from '../database/SqliteSystemAiSettingsRepository'
 
 /** 应用运行时组合配置。 */
 export interface ApplicationRuntimeOptions {
@@ -114,6 +116,8 @@ export class ApplicationRuntime {
   private readonly systemService: SystemApplicationService
   /** 请求间共享的 AI 接口、模型部署和算法配置管理服务。 */
   private readonly aiConfigurationService: AiConfigurationApplicationService
+  /** 请求间共享的默认文本与图片模型设置服务。 */
+  private readonly systemAiSettingsService: SystemAiSettingsApplicationService
   /** 请求间共享且不保存结果的固定算法测试服务。 */
   private readonly aiAlgorithmTestService: AiAlgorithmTestApplicationService
   /** 请求间共享的 API Key 管理与认证服务。 */
@@ -164,6 +168,7 @@ export class ApplicationRuntime {
     const personaAvatars = new LocalPersonaAvatarStorage(options.dataDirectory, storageCapacity)
     const secretCipher = new AesGcmSecretCipher(options.credentialEncryptionSecret)
     const aiConfigurationRepository = new SqliteAiConfigurationRepository(this.sqlite.getClient())
+    const systemAiSettingsRepository = new SqliteSystemAiSettingsRepository(this.sqlite.getClient())
     const textModel = new SqliteConfiguredTextModel(this.sqlite.getClient(), secretCipher)
     const imageModel = new SqliteConfiguredImageModel(this.sqlite.getClient(), secretCipher)
     const dynamicModelFactory = new OpenAiCompatibleModelFactory()
@@ -175,8 +180,14 @@ export class ApplicationRuntime {
       identifiers,
       clock: this.clock,
     })
+    this.systemAiSettingsService = new SystemAiSettingsApplicationService({
+      repository: systemAiSettingsRepository,
+      aiConfiguration: aiConfigurationRepository,
+      clock: this.clock,
+    })
     const aiAlgorithms = new AiAlgorithmApplicationService({
       repository: aiConfigurationRepository,
+      defaultModels: systemAiSettingsRepository,
       prompts: this.aiPromptService,
       secretCipher,
       modelFactory: dynamicModelFactory,
@@ -346,6 +357,7 @@ export class ApplicationRuntime {
       apiKeys: this.apiKeyService,
       publicApi: this.publicApiService,
       aiConfiguration: this.aiConfigurationService,
+      systemAiSettings: this.systemAiSettingsService,
       aiAlgorithmTesting: this.aiAlgorithmTestService,
       aiPrompts: this.aiPromptService,
       authentication: new AuthenticationApplicationService({
