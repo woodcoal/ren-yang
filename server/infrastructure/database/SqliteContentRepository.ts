@@ -254,9 +254,17 @@ export class SqliteContentRepository implements ContentRepository, SoulRepositor
     `).all(personaId) as Array<{ id: string }>).map(item => item.id)
   }
 
-  /** @param personaId 人物 UUID。 @param timestamp 删除时间。 @returns 删除的人物行数；运行和私有产物先在同一事务中删除。 */
+  /** @param personaId 人物 UUID。 @param timestamp 删除时间。 @returns 删除的人物行数；分析、记忆证据、运行和私有产物先在同一事务中删除。 */
   async deletePersona(personaId: string, timestamp: number): Promise<number> {
     return this.client.transaction(() => {
+      // 分析批次即时限制其基线灵魂版本，必须先于人物灵魂版本清理。
+      this.client.prepare('DELETE FROM analysis_batches WHERE persona_id = ?').run(personaId)
+      // 记忆证据即时限制处理记录，必须先于运行级联删除处理记录清理。
+      this.client.prepare(`
+        DELETE FROM memory_revision_evidence WHERE operation_record_id IN (
+          SELECT id FROM persona_operation_records WHERE persona_id = ?
+        )
+      `).run(personaId)
       this.client.prepare(`
         DELETE FROM artifact_documents WHERE run_id IN (
           SELECT generation_runs.id FROM generation_runs

@@ -492,6 +492,96 @@ describe('人物、世界与资料管理闭环', () => {
       .toEqual({ count: 0 })
   })
 
+  it('永久删除已有成长分析历史的人物', async () => {
+    const persona = await service.createPersona({
+      name: '分析历史人物',
+      worldId: null,
+      sourceIds: [],
+      snapshot: BASE_PERSONA_SNAPSHOT,
+      changeSummary: '建立人物',
+    })
+    database.getClient().prepare(`
+      INSERT INTO analysis_batches (
+        id, analysis_type, persona_id, mode, baseline_soul_version_id,
+        baseline_json, model_snapshot_json, parameter_snapshot_json,
+        prompt_version, status, created_at, updated_at
+      ) VALUES (?, 'persona_growth', ?, 'incremental', ?, '{}', '{}', '{}', 'test', 'completed', ?, ?)
+    `).run(
+      '00000000-0000-4000-8000-999999999998',
+      persona.persona.id,
+      persona.persona.activeVersionId,
+      clock.now(),
+      clock.now(),
+    )
+
+    await expect(service.deletePersona(persona.persona.id)).resolves.toBeUndefined()
+    expect(database.getClient().prepare('SELECT COUNT(*) AS count FROM analysis_batches WHERE persona_id = ?').get(persona.persona.id))
+      .toEqual({ count: 0 })
+  })
+
+  it('永久删除已有记忆证据的人物', async () => {
+    const persona = await service.createPersona({
+      name: '记忆证据人物',
+      worldId: null,
+      sourceIds: [],
+      snapshot: BASE_PERSONA_SNAPSHOT,
+      changeSummary: '建立人物',
+    })
+    const client = database.getClient()
+    client.prepare(`
+      INSERT INTO generation_runs (
+        id, kind, persona_version_id, status, input_json, parameter_snapshot_json,
+        model_snapshot_json, prompt_version, context_provider, created_at, updated_at
+      ) VALUES (?, 'interest_assessment', ?, 'succeeded', '{}', '{}', '{}', 'test', 'sqlite_fts5', ?, ?)
+    `).run('00000000-0000-4000-8000-999999999997', persona.persona.activeVersionId, clock.now(), clock.now())
+    client.prepare(`
+      INSERT INTO persona_operation_records (
+        id, persona_id, run_id, operation_type, result_summary,
+        context_snapshot_json, importance, created_at, updated_at
+      ) VALUES (?, ?, ?, 'interest_assessment', '测试结论', '{}', 3, ?, ?)
+    `).run(
+      '00000000-0000-4000-8000-999999999996',
+      persona.persona.id,
+      '00000000-0000-4000-8000-999999999997',
+      clock.now(),
+      clock.now(),
+    )
+    client.prepare(`
+      INSERT INTO memory_records (
+        id, persona_id, current_revision_id, memory_type, status, created_at, updated_at
+      ) VALUES (?, ?, ?, 'interest', 'active', ?, ?)
+    `).run(
+      '00000000-0000-4000-8000-999999999995',
+      persona.persona.id,
+      '00000000-0000-4000-8000-999999999994',
+      clock.now(),
+      clock.now(),
+    )
+    client.prepare(`
+      INSERT INTO memory_revisions (
+        id, memory_id, revision_no, content, content_hash, scope,
+        importance, independent_evidence_count, created_by, created_at
+      ) VALUES (?, ?, 1, '测试记忆', ?, '人物', 3, 1, 'analysis', ?)
+    `).run(
+      '00000000-0000-4000-8000-999999999994',
+      '00000000-0000-4000-8000-999999999995',
+      'a'.repeat(64),
+      clock.now(),
+    )
+    client.prepare(`
+      INSERT INTO memory_revision_evidence (
+        id, memory_revision_id, operation_record_id, run_id, relationship
+      ) VALUES (?, ?, ?, ?, 'supporting')
+    `).run(
+      '00000000-0000-4000-8000-999999999993',
+      '00000000-0000-4000-8000-999999999994',
+      '00000000-0000-4000-8000-999999999996',
+      '00000000-0000-4000-8000-999999999997',
+    )
+
+    await expect(service.deletePersona(persona.persona.id)).resolves.toBeUndefined()
+  })
+
   it('只允许删除非当前、无后续修改且未被历史任务使用的世界版本', async () => {
     const world = await service.createWorld({
       name: '浮岛纪元',
