@@ -60,10 +60,20 @@ export class SqliteTaskJobRepository implements TaskJobRepository, TaskQueueStat
         WHERE status = 'cancel_requested' AND lease_until IS NOT NULL AND lease_until <= ? AND run_id IS NOT NULL
       `).all(timestamp) as Array<{ run_id: string }>
       for (const item of canceled) {
-        this.client.prepare(`
-          UPDATE generation_runs SET status = 'canceled', completed_at = ?, updated_at = ?
-          WHERE id = ? AND status IN ('planning', 'queued', 'running')
-        `).run(timestamp, timestamp, item.run_id)
+        const batch = this.findInterestBatchId(item.run_id)
+        if (batch) {
+          this.client.prepare(`
+            UPDATE generation_runs SET status = 'canceled', completed_at = ?, updated_at = ?
+            WHERE id IN (SELECT run_id FROM interest_batch_items WHERE batch_id = ?)
+              AND status IN ('planning', 'queued', 'running')
+          `).run(timestamp, timestamp, batch)
+        }
+        else {
+          this.client.prepare(`
+            UPDATE generation_runs SET status = 'canceled', completed_at = ?, updated_at = ?
+            WHERE id = ? AND status IN ('planning', 'queued', 'running')
+          `).run(timestamp, timestamp, item.run_id)
+        }
       }
       const canceledJobs = this.client.prepare(`
         UPDATE task_jobs SET status = 'canceled', lease_until = NULL, heartbeat_at = NULL,
@@ -75,17 +85,35 @@ export class SqliteTaskJobRepository implements TaskJobRepository, TaskQueueStat
         WHERE status = 'running' AND lease_until IS NOT NULL AND lease_until <= ? AND run_id IS NOT NULL
       `).all(timestamp) as Array<{ run_id: string, type: string, attempt_count: number, max_attempts: number }>
       for (const item of expired) {
+        const batch = item.type === 'assess_interest' ? this.findInterestBatchId(item.run_id) : null
         if (item.attempt_count < item.max_attempts) {
-          this.client.prepare(`
-            UPDATE generation_runs SET status = ?, updated_at = ? WHERE id = ? AND status = 'running'
-          `).run(item.type === 'plan_document' ? 'planning' : 'queued', timestamp, item.run_id)
+          if (batch) {
+            this.client.prepare(`
+              UPDATE generation_runs SET status = 'queued', updated_at = ?
+              WHERE id IN (SELECT run_id FROM interest_batch_items WHERE batch_id = ?) AND status = 'running'
+            `).run(timestamp, batch)
+          }
+          else {
+            this.client.prepare(`
+              UPDATE generation_runs SET status = ?, updated_at = ? WHERE id = ? AND status = 'running'
+            `).run(item.type === 'plan_document' ? 'planning' : 'queued', timestamp, item.run_id)
+          }
         }
         else {
-          this.client.prepare(`
-            UPDATE generation_runs SET status = 'failed', error_code = 'TASK_LEASE_EXHAUSTED',
-              error_message = '任务执行中断且已达到最大尝试次数', completed_at = ?, updated_at = ?
-            WHERE id = ? AND status = 'running'
-          `).run(timestamp, timestamp, item.run_id)
+          if (batch) {
+            this.client.prepare(`
+              UPDATE generation_runs SET status = 'failed', error_code = 'TASK_LEASE_EXHAUSTED',
+                error_message = '任务执行中断且已达到最大尝试次数', completed_at = ?, updated_at = ?
+              WHERE id IN (SELECT run_id FROM interest_batch_items WHERE batch_id = ?) AND status = 'running'
+            `).run(timestamp, timestamp, batch)
+          }
+          else {
+            this.client.prepare(`
+              UPDATE generation_runs SET status = 'failed', error_code = 'TASK_LEASE_EXHAUSTED',
+                error_message = '任务执行中断且已达到最大尝试次数', completed_at = ?, updated_at = ?
+              WHERE id = ? AND status = 'running'
+            `).run(timestamp, timestamp, item.run_id)
+          }
         }
       }
       const recoveredJobs = this.client.prepare(`
@@ -102,6 +130,16 @@ export class SqliteTaskJobRepository implements TaskJobRepository, TaskQueueStat
       `).run(timestamp, timestamp)
       return canceledJobs.changes + recoveredJobs.changes
     }).immediate()
+  }
+
+  /**
+   * 查找任务锚定运行所属的兴趣批次。
+   * @param runId 任务锚定运行 UUID。
+   * @returns 所属兴趣批次 UUID；普通运行返回 null。
+   */
+  private findInterestBatchId(runId: string): string | null {
+    const value = this.client.prepare('SELECT batch_id FROM interest_batch_items WHERE run_id = ?').get(runId) as { batch_id: string } | undefined
+    return value?.batch_id ?? null
   }
 
   /**

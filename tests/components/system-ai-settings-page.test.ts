@@ -10,7 +10,6 @@ import WorkbenchPage from '../../app/pages/workbench.vue'
 const settings: SystemAiSettingsValues = {
   textModelDeploymentId: '',
   imageModelDeploymentId: '',
-  interestAnalysis: { temperature: 0.4, maxOutputTokens: 2_048, timeoutMs: 60_000, maxEvidenceChunks: 8 },
   draftGeneration: { temperature: 0.4, maxOutputTokens: 2_048, timeoutMs: 60_000 },
   feedbackClassification: { temperature: 0, maxOutputTokens: 4_096, timeoutMs: 60_000 },
 }
@@ -53,11 +52,11 @@ beforeEach(() => {
 })
 
 describe('AI 设置页面', () => {
-  it('只展示仍有实际调用者的三类参数并提交完整设置', async () => {
+  it('只展示仍有实际调用者的两类参数并提交完整设置', async () => {
     const wrapper = await mountSuspended(AiSettingsPage, { route: '/ai-settings' })
     await flushPromises()
 
-    expect(wrapper.text()).toContain('兴趣分析')
+    expect(wrapper.text()).not.toContain('兴趣分析')
     expect(wrapper.text()).not.toContain('人物记忆')
     expect(wrapper.text()).not.toContain('记忆提炼')
     expect(wrapper.text()).not.toContain('内容分析')

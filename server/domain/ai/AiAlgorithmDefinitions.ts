@@ -50,6 +50,13 @@ export const AI_ALGORITHM_DEFINITIONS: Record<AiAlgorithmCode, AiAlgorithmDefini
       { key: 'synthesize', name: '记忆编译', description: '把通过独立证据门槛的事实编译为完整人物记忆提示词草稿。', promptCode: 'analysis.persona_memory_synthesize', ordinal: 1 },
     ],
   },
+  interest_assessment: {
+    code: 'interest_assessment', name: '兴趣判定', implementationVersion: 1,
+    description: '以固定人物快照一次判定一条或多条文本，并逐项返回三态结论与证据。',
+    steps: [
+      { key: 'assess', name: '批量判定', description: '按客户端稳定编号逐项输出兴趣结论。', promptCode: 'generation.interest_assessment', ordinal: 0 },
+    ],
+  },
   article_generation: {
     code: 'article_generation', name: '文章生成', implementationVersion: 1,
     description: '结合人物个性、创作条件和有效资料一次生成完整文章。',

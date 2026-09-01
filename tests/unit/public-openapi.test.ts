@@ -27,6 +27,9 @@ const EXPECTED_PATHS = [
   '/api/v2/sources/{sourceId}/links/{linkId}',
   '/api/v2/sources/{sourceId}/global',
   '/api/v2/generation-runs',
+  '/api/v2/interest-batches',
+  '/api/v2/interest-batches/{batchId}',
+  '/api/v2/interest-batches/{batchId}/items/{itemId}/retry',
   '/api/v2/runs',
   '/api/v2/runs/{runId}',
   '/api/v2/runs/{runId}/cancel',
@@ -76,6 +79,10 @@ describe('公共 OpenAPI 契约', () => {
       .toMatchObject({ properties: { data: { $ref: '#/components/schemas/SourceDetails' } } })
     expect(document.paths['/api/v2/generation-runs']?.post?.responses['202']?.content?.['application/json']?.schema)
       .toMatchObject({ properties: { data: { $ref: '#/components/schemas/CreatedRun' } } })
+    expect(document.paths['/api/v2/interest-batches']?.post?.responses['202']?.content?.['application/json']?.schema)
+      .toMatchObject({ properties: { data: { $ref: '#/components/schemas/InterestBatch' } } })
+    expect(document.paths['/api/v2/interest-batches/{batchId}']?.get?.['x-required-scope']).toBe('generation:read')
+    expect(document.paths['/api/v2/interest-batches/{batchId}/items/{itemId}/retry']?.post?.['x-required-scope']).toBe('generation:write')
     expect(document.paths['/api/v2/runs/{runId}']?.get?.['x-required-scope']).toBe('generation:read')
     expect(document.paths['/api/v2/runs/{runId}/retry']?.post?.['x-required-scope']).toBe('generation:write')
   })

@@ -30,7 +30,6 @@ describe('系统 AI 设置', () => {
       values: {
         textModelDeploymentId: '',
         imageModelDeploymentId: '',
-        interestAnalysis: { temperature: 0.4, maxOutputTokens: 2_048, timeoutMs: 60_000, maxEvidenceChunks: 8 },
         draftGeneration: { temperature: 0.4, maxOutputTokens: 2_048, timeoutMs: 60_000 },
         feedbackClassification: { temperature: 0, maxOutputTokens: 4_096, timeoutMs: 60_000 },
       },
@@ -38,7 +37,7 @@ describe('系统 AI 设置', () => {
     })
   })
 
-  it('读取旧记录时丢弃已经由固定算法接管的内容分析参数', async () => {
+  it('读取旧记录时丢弃已经由固定算法接管的兴趣和内容分析参数', async () => {
     database.getClient().prepare(`
       INSERT INTO system_ai_settings (id, values_json, updated_at) VALUES ('system_ai_settings', ?, 7000)
     `).run(JSON.stringify({
@@ -54,7 +53,6 @@ describe('系统 AI 设置', () => {
       values: {
         textModelDeploymentId: '',
         imageModelDeploymentId: '',
-        interestAnalysis: { temperature: 0.4, maxOutputTokens: 2_048, timeoutMs: 60_000, maxEvidenceChunks: 8 },
         draftGeneration: { temperature: 0.4, maxOutputTokens: 2_048, timeoutMs: 60_000 },
         feedbackClassification: { temperature: 0, maxOutputTokens: 4_096, timeoutMs: 60_000 },
       },
@@ -65,13 +63,12 @@ describe('系统 AI 设置', () => {
   it('保存后持久化完整设置、写入审计并只覆盖目标场景参数', async () => {
     const service = createService()
     const values = (await service.getSettings()).values
-    values.interestAnalysis.temperature = 0.1
-    values.interestAnalysis.maxEvidenceChunks = 12
+    values.draftGeneration.temperature = 0.1
     values.feedbackClassification.timeoutMs = 30_000
 
     await expect(service.updateSettings(values)).resolves.toMatchObject({ values, updatedAt: 8_000 })
     await expect(createService().getSettings()).resolves.toMatchObject({ values, updatedAt: 8_000 })
-    await expect(service.resolveParameters('interestAnalysis', {
+    await expect(service.resolveParameters('draftGeneration', {
       temperature: 1, maxOutputTokens: 64, timeoutMs: 1_000, maxEvidenceChunks: 1,
       maxTextBlocks: 7, maxImageBlocks: 3, maxPromptCharacters: 10_000, maxTotalTokens: 5_000,
       maxBlockAttempts: 2, contextWindowTokens: 32_768, reservedOutputTokens: 4_096,
@@ -79,7 +76,7 @@ describe('系统 AI 设置', () => {
       worldGrowthBudgetTokens: 2_500, personaBudgetTokens: 9_000, personaSoulBudgetTokens: 3_500,
       personaGrowthBudgetTokens: 2_500, personaMemoryBudgetTokens: 3_000, sourceBudgetTokens: 5_000,
     })).resolves.toMatchObject({
-      temperature: 0.1, maxOutputTokens: 2_048, timeoutMs: 60_000, maxEvidenceChunks: 12,
+      temperature: 0.1, maxOutputTokens: 2_048, timeoutMs: 60_000, maxEvidenceChunks: 1,
       maxTextBlocks: 7, maxImageBlocks: 3,
     })
     expect(database.getClient().prepare(`

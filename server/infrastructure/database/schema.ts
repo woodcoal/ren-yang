@@ -1,4 +1,4 @@
-import { check, index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
+import { check, index, integer, primaryKey, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
 import { sql } from 'drizzle-orm'
 
 /** 唯一管理员表；固定主键约束从数据库层阻止多管理员。 */
@@ -702,7 +702,7 @@ export const aiAlgorithms = sqliteTable(
     updatedAt: integer('updated_at').notNull(),
   },
   table => [
-    check('ai_algorithms_code_check', sql`${table.code} IN ('persona_soul', 'world_soul', 'persona_growth', 'world_growth', 'persona_memory', 'article_generation', 'article_image_analysis')`),
+    check('ai_algorithms_code_check', sql`${table.code} IN ('persona_soul', 'world_soul', 'persona_growth', 'world_growth', 'persona_memory', 'interest_assessment', 'article_generation', 'article_image_analysis')`),
     check('ai_algorithms_name_check', sql`length(trim(${table.name})) > 0`),
     check('ai_algorithms_implementation_version_check', sql`${table.implementationVersion} > 0`),
   ],
@@ -763,6 +763,7 @@ export const generationRuns = sqliteTable(
     contextProvider: text('context_provider').notNull(),
     promptContextSnapshotJson: text('prompt_context_snapshot_json'),
     algorithmSnapshotJson: text('algorithm_snapshot_json'),
+    interestAlgorithmSnapshotJson: text('interest_algorithm_snapshot_json'),
     resultJson: text('result_json'),
     usageJson: text('usage_json'),
     errorCode: text('error_code'),
@@ -782,6 +783,41 @@ export const generationRuns = sqliteTable(
     check('generation_runs_context_provider_check', sql`${table.contextProvider} IN ('sqlite_fts5', 'openviking')`),
     check('generation_runs_prompt_context_json_check', sql`${table.promptContextSnapshotJson} IS NULL OR json_valid(${table.promptContextSnapshotJson})`),
     check('generation_runs_algorithm_json_check', sql`${table.algorithmSnapshotJson} IS NULL OR json_valid(${table.algorithmSnapshotJson})`),
+    check('generation_runs_interest_algorithm_json_check', sql`${table.interestAlgorithmSnapshotJson} IS NULL OR json_valid(${table.interestAlgorithmSnapshotJson})`),
+  ],
+)
+
+/** 同一人物一次模型调用处理的兴趣判定批次。 */
+export const interestBatches = sqliteTable(
+  'interest_batches',
+  {
+    id: text('id').primaryKey(),
+    personaId: text('persona_id').notNull().references(() => personas.id, { onDelete: 'cascade' }),
+    usageJson: text('usage_json'),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  table => [
+    index('interest_batches_persona_created_at_index').on(table.personaId, table.createdAt),
+    check('interest_batches_usage_json_check', sql`${table.usageJson} IS NULL OR json_valid(${table.usageJson})`),
+  ],
+)
+
+/** 兴趣批次内客户端编号、输入顺序与独立运行的稳定关联。 */
+export const interestBatchItems = sqliteTable(
+  'interest_batch_items',
+  {
+    batchId: text('batch_id').notNull().references(() => interestBatches.id, { onDelete: 'cascade' }),
+    itemId: text('item_id').notNull(),
+    ordinal: integer('ordinal').notNull(),
+    runId: text('run_id').notNull().references(() => generationRuns.id, { onDelete: 'cascade' }),
+  },
+  table => [
+    primaryKey({ columns: [table.batchId, table.itemId] }),
+    uniqueIndex('interest_batch_items_ordinal_unique').on(table.batchId, table.ordinal),
+    uniqueIndex('interest_batch_items_run_unique').on(table.runId),
+    check('interest_batch_items_id_check', sql`length(trim(${table.itemId})) > 0`),
+    check('interest_batch_items_ordinal_check', sql`${table.ordinal} >= 0`),
   ],
 )
 

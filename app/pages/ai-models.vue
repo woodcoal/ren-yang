@@ -21,7 +21,6 @@ const { notifySuccess, notifyError } = useOperationNotifications()
 const systemAiSettings = reactive<SystemAiSettingsValues>(systemAiSettingsValuesSchema.parse(systemAiSettingsRequest.data.value?.data.values ?? {
   textModelDeploymentId: '',
   imageModelDeploymentId: '',
-  interestAnalysis: { temperature: 0.4, maxOutputTokens: 2_048, timeoutMs: 60_000, maxEvidenceChunks: 8 },
   draftGeneration: { temperature: 0.4, maxOutputTokens: 2_048, timeoutMs: 60_000 },
   feedbackClassification: { temperature: 0, maxOutputTokens: 4_096, timeoutMs: 60_000 },
 }))

@@ -107,6 +107,9 @@ const RESPONSE_SCHEMA_BY_OPERATION: Record<string, string> = {
   linkGlobalSource: 'GlobalSources',
   unlinkGlobalSource: 'GlobalSources',
   createGenerationRun: 'CreatedRun',
+  createInterestBatch: 'InterestBatch',
+  getInterestBatch: 'InterestBatch',
+  retryInterestBatchItem: 'InterestBatch',
   listRuns: 'RunList',
   getRun: 'RunDetails',
   cancelRun: 'RunDetails',
@@ -133,6 +136,8 @@ export function createPublicOpenApiDocument(): PublicOpenApiDocument {
   const worldId = idParameter('worldId', '世界')
   const sourceId = idParameter('sourceId', '资料')
   const runId = idParameter('runId', '运行')
+  const batchId = idParameter('batchId', '兴趣批次')
+  const itemId: OpenApiParameter = { name: 'itemId', in: 'path', required: true, description: '调用方在批次内提供的稳定条目标识。', schema: { type: 'string', minLength: 1, maxLength: 100 } }
   const assetId = idParameter('assetId', '图片资产')
   const format: OpenApiParameter = { name: 'format', in: 'path', required: true, description: '导出格式。', schema: { type: 'string', enum: ['html', 'markdown', 'txt'] } }
   const linkId: OpenApiParameter = { name: 'linkId', in: 'path', required: true, description: '资料关系稳定标识。', schema: { type: 'string' } }
@@ -149,6 +154,7 @@ export function createPublicOpenApiDocument(): PublicOpenApiDocument {
       { name: '世界', description: '世界元数据、启停和灵魂发布。' },
       { name: '资料库', description: '文本/文件资料、启停以及人物、世界、全局关系。' },
       { name: '图文运行', description: '创建直接图文任务、查询状态、取消、整体重试、渲染与下载结果。' },
+      { name: '兴趣判定', description: '同一人物批量判定多条文本，并逐项查询或重试失败结果。' },
     ],
     paths: {
       '/api/v2/personas': {
@@ -233,6 +239,15 @@ export function createPublicOpenApiDocument(): PublicOpenApiDocument {
       },
       '/api/v2/generation-runs': {
         post: writeOperation('图文运行', 'createGenerationRun', '创建直接图文生成运行', 'generation:write', [], '#/components/schemas/CreateGenerationRun', 202),
+      },
+      '/api/v2/interest-batches': {
+        post: writeOperation('兴趣判定', 'createInterestBatch', '创建批量兴趣判定', 'generation:write', [], '#/components/schemas/CreateInterestBatch', 202),
+      },
+      '/api/v2/interest-batches/{batchId}': {
+        get: readOperation('兴趣判定', 'getInterestBatch', '查询批量兴趣判定', 'generation:read', [batchId]),
+      },
+      '/api/v2/interest-batches/{batchId}/items/{itemId}/retry': {
+        post: writeOperation('兴趣判定', 'retryInterestBatchItem', '仅重试一个失败兴趣条目', 'generation:write', [batchId, itemId], undefined, 202),
       },
       '/api/v2/runs': {
         get: readOperation('图文运行', 'listRuns', '查询运行历史', 'generation:read', RUN_LIST_PARAMETERS),
@@ -496,6 +511,22 @@ function createSchemas(): Record<string, Record<string, unknown>> {
         imageCount: { type: 'integer', minimum: 0, maximum: 4, default: 0 },
       },
     },
+    CreateInterestBatch: {
+      type: 'object', required: ['personaId', 'items'],
+      properties: {
+        personaId: uuid,
+        items: {
+          type: 'array', minItems: 1, maxItems: 20,
+          items: {
+            type: 'object', required: ['itemId', 'text'],
+            properties: {
+              itemId: { type: 'string', minLength: 1, maxLength: 100 },
+              text: { type: 'string', minLength: 1, maxLength: 50_000 },
+            },
+          },
+        },
+      },
+    },
     RenderRun: {
       type: 'object', required: ['formats'],
       properties: { formats: { type: 'array', minItems: 1, maxItems: 3, uniqueItems: true, items: { type: 'string', enum: ['html', 'markdown', 'txt'] } } },
@@ -593,6 +624,32 @@ function createSchemas(): Record<string, Record<string, unknown>> {
     CreatedRun: {
       type: 'object', required: ['runId', 'taskId', 'status'],
       properties: { runId: uuid, taskId: uuid, status: { type: 'string', enum: ['planning', 'queued'] } },
+    },
+    InterestBatchItem: {
+      type: 'object', required: ['itemId', 'runId', 'status', 'decision', 'probability', 'confidence', 'reason', 'error'],
+      properties: {
+        itemId: { type: 'string' }, runId: uuid,
+        status: { type: 'string', enum: ['queued', 'running', 'succeeded', 'failed'] },
+        decision: { type: ['string', 'null'], enum: ['interested', 'not_interested', 'insufficient_information', null] },
+        probability: { type: ['number', 'null'], minimum: 0, maximum: 1 },
+        confidence: { type: ['number', 'null'], minimum: 0, maximum: 1 },
+        reason: nullableString,
+        error: {
+          oneOf: [
+            { type: 'object', required: ['code', 'message'], properties: { code: { type: 'string' }, message: { type: 'string' } } },
+            { type: 'null' },
+          ],
+        },
+      },
+    },
+    InterestBatch: {
+      type: 'object', required: ['batchId', 'personaId', 'status', 'items', 'createdAt', 'updatedAt'],
+      properties: {
+        batchId: uuid, personaId: uuid,
+        status: { type: 'string', enum: ['queued', 'running', 'completed'] },
+        items: { type: 'array', items: { $ref: '#/components/schemas/InterestBatchItem' } },
+        createdAt: timestamp, updatedAt: timestamp,
+      },
     },
     RunSummary: {
       type: 'object', required: ['id', 'kind', 'personaId', 'personaName', 'status', 'input', 'parameters', 'model', 'contextProvider', 'createdAt', 'updatedAt'],

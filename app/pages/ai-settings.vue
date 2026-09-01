@@ -10,7 +10,7 @@ import { getApiErrorMessage } from '../utils/apiError'
 /** AI 设置页一个业务分类的展示契约。 */
 interface AiSettingsSection {
   /** 选项卡稳定编码。 */
-  code: 'interest' | 'draft' | 'feedback' | 'creation'
+  code: 'draft' | 'feedback' | 'creation'
   /** 页面显示名称。 */
   label: string
   /** 分类用途说明。 */
@@ -20,7 +20,6 @@ interface AiSettingsSection {
 }
 
 const sections: AiSettingsSection[] = [
-  { code: 'interest', label: '兴趣判断', description: '判断人物对指定内容的兴趣与信心。', operation: 'interestAnalysis' },
   { code: 'draft', label: '草稿生成', description: '根据自然语言快速建立人物或世界草稿。', operation: 'draftGeneration' },
   { code: 'feedback', label: '反馈分类', description: '判断反馈应归属于产物、参数、资料或成长。', operation: 'feedbackClassification' },
   { code: 'creation', label: '内容与视觉', description: '管理文档规划、图文生成及其他非算法提示词。', operation: null },
@@ -36,7 +35,6 @@ const [settingsRequest, promptRequest, algorithmRequest, deploymentRequest] = aw
 const values = reactive<SystemAiSettingsValues>(systemAiSettingsValuesSchema.parse(settingsRequest.data.value?.data.values ?? {
   textModelDeploymentId: '',
   imageModelDeploymentId: '',
-  interestAnalysis: { temperature: 0.4, maxOutputTokens: 2_048, timeoutMs: 60_000, maxEvidenceChunks: 8 },
   draftGeneration: { temperature: 0.4, maxOutputTokens: 2_048, timeoutMs: 60_000 },
   feedbackClassification: { temperature: 0, maxOutputTokens: 4_096, timeoutMs: 60_000 },
 }))
@@ -77,7 +75,6 @@ const requestFailed = computed(() => Boolean(settingsRequest.error.value || prom
  * @returns 对应选项卡编码；未单独列出的提示词统一归入内容与视觉。
  */
 function settingsSectionForPrompt(code: string): AiSettingsSection['code'] {
-  if (code === 'generation.interest_assessment') return 'interest'
   if (code === 'generation.persona_draft' || code === 'generation.world_draft') return 'draft'
   if (code === 'feedback.classification') return 'feedback'
   return 'creation'
@@ -89,7 +86,7 @@ function settingsSectionForPrompt(code: string): AiSettingsSection['code'] {
  * @returns 首次展示的选项卡编码。
  */
 function findSettingsSectionCode(code: string): AiSettingsSection['code'] {
-  return code ? settingsSectionForPrompt(code) : 'interest'
+  return code ? settingsSectionForPrompt(code) : 'draft'
 }
 
 /**
@@ -128,7 +125,7 @@ function confirmSectionSwitch(): void {
 }
 
 /**
- * 保存默认模型和三类完整系统 AI 参数，避免局部更新产生隐式继承。
+ * 保存默认模型和两类完整系统 AI 参数，避免局部更新产生隐式继承。
  * @param submittedValues 已通过共享 Schema 校验的完整设置。
  * @returns 保存与本地状态同步完成时结束。
  */

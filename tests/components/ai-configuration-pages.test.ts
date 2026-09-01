@@ -38,7 +38,6 @@ const imageDeployment: AiModelDeploymentView = {
 const systemAiSettings: SystemAiSettingsValues = {
   textModelDeploymentId: '',
   imageModelDeploymentId: '',
-  interestAnalysis: { temperature: 0.4, maxOutputTokens: 2_048, timeoutMs: 60_000, maxEvidenceChunks: 8 },
   draftGeneration: { temperature: 0.4, maxOutputTokens: 2_048, timeoutMs: 60_000 },
   feedbackClassification: { temperature: 0, maxOutputTokens: 4_096, timeoutMs: 60_000 },
 }
@@ -99,6 +98,30 @@ const articleImageAlgorithm: AiAlgorithmView = {
       modelDeploymentId: deployment.id, parameters: { temperature: 0.2, maxOutputTokens: 2_048, timeoutMs: 30_000 },
     },
   ],
+}
+
+/** AI 算法页使用的批量兴趣判定算法。 */
+const interestAlgorithm: AiAlgorithmView = {
+  code: 'interest_assessment', name: '兴趣判定', description: '同一人物批量判定多条文本。', implementationVersion: 1,
+  activeConfigurationVersion: 1, configurationVersionCount: 1, updatedAt: 1_000,
+  stepDefinitions: [
+    { key: 'assess', name: '批量判定', description: '逐项输出三态兴趣结论。', promptCode: 'generation.interest_assessment', ordinal: 0 },
+  ],
+  steps: [{
+    key: 'assess', name: '批量判定', description: '逐项输出三态兴趣结论。', promptCode: 'generation.interest_assessment', ordinal: 0,
+    modelDeploymentId: deployment.id, parameters: { temperature: 0.4, maxOutputTokens: 2_048, timeoutMs: 60_000 },
+  }],
+}
+
+/** AI 算法页使用的批量兴趣提示词。 */
+const interestPrompt: AiPromptWorkspaceView = {
+  code: 'generation.interest_assessment', name: '兴趣判定', category: '算法步骤', description: '批量兴趣判定。', kind: 'text', variables: [],
+  activeVersion: {
+    id: '30000000-0000-4000-8000-000000000001', promptCode: 'generation.interest_assessment', versionNo: 2,
+    systemPromptTemplate: '批量兴趣规则', userPromptTemplate: '<待判断文本列表>{{contentJson}}</待判断文本列表>',
+    changeSummary: '批量契约', publishedAt: 1_000,
+  },
+  draft: null, versions: [], updatedAt: 1_000,
 }
 
 /** 页面测试使用的两个成长算法步骤提示词。 */
@@ -208,8 +231,8 @@ registerEndpoint('/api/v1/system/ai-settings', {
     return { data: { values: savedSystemAiSettings, updatedAt: 2_000 } }
   },
 })
-registerEndpoint('/api/v1/ai/algorithms', () => ({ data: [algorithm, memoryAlgorithm, articleAlgorithm, articleImageAlgorithm] }))
-registerEndpoint('/api/v1/ai-prompts', () => ({ data: [...algorithmPrompts, ...memoryAlgorithmPrompts] }))
+registerEndpoint('/api/v1/ai/algorithms', () => ({ data: [algorithm, memoryAlgorithm, interestAlgorithm, articleAlgorithm, articleImageAlgorithm] }))
+registerEndpoint('/api/v1/ai-prompts', () => ({ data: [...algorithmPrompts, ...memoryAlgorithmPrompts, interestPrompt] }))
 registerEndpoint(`/api/v1/ai/algorithms/${algorithm.code}`, {
   method: 'PUT',
   /** @param event 测试请求事件。 @returns 模拟发布后的算法。 */
@@ -368,19 +391,25 @@ describe('AI 模型与算法配置页面', () => {
     expect(panel.findAll('textarea')[1]!.attributes('placeholder')).toContain('---')
   })
 
-  it('把文章生成与文章配图分析放入独立文章创作分类', async () => {
+  it('把兴趣判定、文章生成与配图分析集中到兴趣与创作分类', async () => {
     const wrapper = await mountSuspended(AiAlgorithmsPage, { route: '/ai-algorithms' })
     await flushPromises()
 
-    const categoryButton = wrapper.findAll('button').find(button => button.text().includes('直接生成完整文章'))!
+    const categoryButton = wrapper.findAll('button').find(button => button.text().includes('批量判断人物兴趣'))!
     await categoryButton.trigger('click')
     await flushPromises()
 
+    expect(wrapper.text()).toContain('兴趣判定')
+    expect(wrapper.text()).toContain('generation.interest_assessment')
     expect(wrapper.text()).toContain('文章生成')
     expect(wrapper.text()).toContain('文章配图分析')
-    expect(wrapper.text()).toContain('generation.article')
-    expect(wrapper.text()).toContain('文章算法使用创作闭环验证')
+    expect(wrapper.text()).toContain('兴趣与文章算法使用业务闭环验证')
     expect(wrapper.find('[data-ai-algorithm-test-panel]').exists()).toBe(false)
+    const articleButton = wrapper.findAll('button').find(button => button.text().includes('文章生成'))
+    expect(articleButton).toBeDefined()
+    await articleButton?.trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).toContain('generation.article')
     await wrapper.findAll('button').find(button => button.text().includes('文章配图分析'))!.trigger('click')
     await flushPromises()
     expect(wrapper.text()).toContain('generation.article_images')

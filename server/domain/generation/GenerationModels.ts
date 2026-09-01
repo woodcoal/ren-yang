@@ -59,6 +59,8 @@ export interface GenerationRunRecord {
   promptContextSnapshot: PromptContextSnapshot | null
   /** 新图文运行使用的固定算法配置；迁移前历史运行为空。 */
   algorithmSnapshot: GenerationAlgorithmSnapshot | null
+  /** 新兴趣运行使用的固定批量判定算法；迁移前历史运行为空。 */
+  interestAlgorithmSnapshot: AiAlgorithmSnapshot | null
   result: InterestAssessment | null
   usage: TextModelUsage | null
   errorCode: string | null
@@ -66,6 +68,22 @@ export interface GenerationRunRecord {
   createdAt: number
   updatedAt: number
   completedAt: number | null
+}
+
+/** 兴趣批次及其按输入顺序排列的独立运行。 */
+export interface InterestBatchRecord {
+  /** 批次 UUID。 */
+  id: string
+  /** 本批次唯一人物 UUID。 */
+  personaId: string
+  /** 主调用及后续单项重试累计供应商用量。 */
+  usage: TextModelUsage | null
+  /** 创建时间。 */
+  createdAt: number
+  /** 最后更新时间。 */
+  updatedAt: number
+  /** 按 ordinal 升序排列的批次条目。 */
+  items: Array<{ itemId: string, ordinal: number, run: GenerationRunRecord }>
 }
 
 /** 运行中复制保存的证据快照。 */

@@ -10,9 +10,13 @@ import type { PersonaDraftView, WorldDraftView } from '../../../shared/types/con
 import {
   articleImagesOutputSchema,
   articleOutputSchema,
+  createInterestBatchSchema,
   createGenerationRunSchema,
   documentSpecSchema,
   interestAssessmentSchema,
+  interestBatchModelOutputSchema,
+  interestBatchResultItemSchema,
+  textModelParametersSchema,
   textBlockOutputSchema,
   type ArtifactFormat,
   type ArticleImagesOutput,
@@ -21,13 +25,16 @@ import {
   type CreateFormatTemplateInput,
   type CreateGenerationRunInput,
   type CreateInterestRunInput,
+  type CreateInterestBatchInput,
   type CreateParameterProfileInput,
   type DocumentSpec,
   type TextModelParameters,
 } from '../../../shared/schemas/generation'
 import type {
   CreatedRun,
+  CreatedInterestBatch,
   FormatTemplateView,
+  InterestBatchView,
   ParameterProfileView,
   PromptContextCategory,
   PromptContextItemSnapshot,
@@ -70,6 +77,7 @@ import {
   buildArticleImagesPromptVariables,
   buildArticlePromptVariables,
   buildImagePromptVariables,
+  buildInterestBatchPromptVariables,
   buildInterestPromptVariables,
   buildPersonaDraftPromptVariables,
   buildTextBlockPromptVariables,
@@ -275,7 +283,66 @@ export class GenerationApplicationService implements TaskHandler {
 
   /** @param input 兴趣判断输入。 @returns 已入队运行与任务标识。 */
   async createInterestRun(input: CreateInterestRunInput): Promise<CreatedRun> {
-    return await this.createRun('interest_assessment', input.personaId, { content: input.content }, input.scene ?? null)
+    const batch = await this.createInterestBatch({
+      personaId: input.personaId,
+      items: [{ itemId: 'item-1', text: input.content }],
+    }, input.scene ?? null)
+    const item = batch.items[0]
+    if (!item) throw new Error('单条兴趣批次缺少运行条目')
+    const task = await this.dependencies.runs.listRunTasks(item.runId)
+    const firstTask = task[0]
+    if (!firstTask) throw new Error('单条兴趣批次缺少主任务')
+    return { runId: item.runId, taskId: firstTask.id, status: 'queued' }
+  }
+
+  /**
+   * 创建同一人物的一次批量兴趣判定，并只排入一个主模型任务。
+   * @param input 已校验或待规范化的人物及顺序文本列表。
+   * @param scene 仅供兼容 v1 单条接口使用的临时场景。
+   * @returns 批次 UUID 与严格保持输入顺序的独立运行 UUID。
+   */
+  async createInterestBatch(input: CreateInterestBatchInput, scene: GenerationRunRecord['scene'] = null): Promise<CreatedInterestBatch> {
+    const normalized = createInterestBatchSchema.parse(input)
+    return await this.createPreparedInterestBatch(normalized, scene)
+  }
+
+  /**
+   * 查询兴趣批次，并由各独立运行的当前状态派生批次状态。
+   * @param batchId 兴趣批次 UUID。
+   * @returns 按输入顺序排列的当前批次视图。
+   */
+  async getInterestBatch(batchId: string): Promise<InterestBatchView> {
+    const batch = await this.dependencies.runs.findInterestBatch(batchId)
+    if (!batch) throw new ApplicationError('RESOURCE_NOT_FOUND', '兴趣批次不存在', 404)
+    const items = batch.items.map(({ itemId, run }) => ({
+      itemId,
+      runId: run.id,
+      status: normalizeInterestItemStatus(run.status),
+      decision: run.result?.decision ?? null,
+      probability: run.result?.probability ?? null,
+      confidence: run.result?.confidence ?? null,
+      reason: run.result?.reasoningSummary ?? null,
+      error: run.errorCode
+        ? { code: run.errorCode, message: run.errorMessage ?? '兴趣判定失败' }
+        : run.status === 'canceled' ? { code: 'RUN_CANCELED', message: '兴趣判定已取消' } : null,
+    }))
+    const status = items.every(item => item.status === 'succeeded' || item.status === 'failed')
+      ? 'completed' as const
+      : items.some(item => item.status === 'running') ? 'running' as const : 'queued' as const
+    return { batchId: batch.id, personaId: batch.personaId, status, items, createdAt: batch.createdAt, updatedAt: batch.updatedAt }
+  }
+
+  /**
+   * 仅重试兴趣批次中一个失败条目，不携带上次模型回答。
+   * @param batchId 兴趣批次 UUID。
+   * @param itemId 客户端稳定条目标识。
+   * @returns 已重新排队后的完整批次视图。
+   */
+  async retryInterestBatchItem(batchId: string, itemId: string): Promise<InterestBatchView> {
+    if (!await this.dependencies.runs.retryInterestBatchItem(
+      batchId, itemId, this.dependencies.identifiers.create(), this.dependencies.clock.now(),
+    )) throw new ApplicationError('RUN_NOT_RETRYABLE', '兴趣条目不存在或当前状态不能重试', 409)
+    return await this.getInterestBatch(batchId)
   }
 
   /** @param input 一次直出文章输入。 @returns 处于文章生成状态的运行与任务标识。 */
@@ -337,6 +404,15 @@ export class GenerationApplicationService implements TaskHandler {
     if (!['failed', 'partial'].includes(run.status)) {
       throw new ApplicationError('RUN_NOT_RETRYABLE', '只有失败或部分成功的运行可以重试', 409)
     }
+    if (run.interestAlgorithmSnapshot) {
+      const batchItem = await this.dependencies.runs.findInterestBatchItemByRun(runId)
+      if (!batchItem) throw new ApplicationError('RESOURCE_NOT_FOUND', '兴趣运行所属批次不存在', 404)
+      const taskId = this.dependencies.identifiers.create()
+      if (!await this.dependencies.runs.retryInterestBatchItem(
+        batchItem.batchId, batchItem.itemId, taskId, this.dependencies.clock.now(),
+      )) throw new ApplicationError('VERSION_CONFLICT', '运行状态已经变化，请刷新后重试', 409)
+      return { runId, taskId, status: 'queued' }
+    }
     this.requireMatchingModel(run)
     this.requireMatchingImageModel(run)
     const taskId = this.dependencies.identifiers.create()
@@ -391,28 +467,40 @@ export class GenerationApplicationService implements TaskHandler {
   /** @param job Worker 已领取任务。 @returns 业务执行结束时完成。 */
   async execute(job: TaskJob): Promise<void> {
     const runId = readRunId(job.payloadJson)
+    const batchId = readOptionalPayloadString(job.payloadJson, 'batchId')
+    const itemId = readOptionalPayloadString(job.payloadJson, 'itemId')
     try {
-      if (job.type === 'assess_interest') await this.executeInterest(runId)
+      if (job.type === 'assess_interest' && batchId) await this.executeInterestBatch(batchId, itemId)
+      else if (job.type === 'assess_interest') await this.executeInterest(runId)
       else if (job.type === 'plan_document') await this.executeDocumentPlan(runId)
       else if (job.type === 'execute_document') await this.executeDocument(runId)
       else if (job.type === 'execute_block') {
         await this.executeSingleBlock(runId, readBlockId(job.payloadJson), readCorrectionInstruction(job.payloadJson))
       }
       else throw new Error(`未注册任务类型：${job.type}`)
-      await this.enqueueRunSessionIfTerminal(runId)
+      if (!batchId) await this.enqueueRunSessionIfTerminal(runId)
     }
     catch (error: unknown) {
       const responseUsage = error instanceof TextResponseUsageError ? error.usage : null
       if (await this.finishCancellationIfRequested(runId, responseUsage)) return
-      if (responseUsage) await this.saveCumulativeRunUsage(runId, responseUsage)
+      if (responseUsage) {
+        await this.saveCumulativeRunUsage(runId, responseUsage)
+        if (batchId) await this.dependencies.runs.saveInterestBatchUsage(batchId, responseUsage, this.dependencies.clock.now())
+      }
       const normalized = normalizeExecutionError(error)
       const willRetry = normalized.retryable && job.attemptCount < job.maxAttempts
       if (willRetry) {
-        await this.dependencies.runs.prepareAutomaticRetry(runId, job.type, this.dependencies.clock.now())
+        if (batchId) await this.dependencies.runs.prepareInterestBatchRetry(batchId, itemId, this.dependencies.clock.now())
+        else await this.dependencies.runs.prepareAutomaticRetry(runId, job.type, this.dependencies.clock.now())
       }
       else {
-        await this.dependencies.runs.failRun(runId, normalized.code, normalized.message, this.dependencies.clock.now())
-        await this.enqueueRunSessionIfTerminal(runId)
+        if (batchId) {
+          await this.dependencies.runs.failPendingInterestBatch(batchId, normalized.code, normalized.message, this.dependencies.clock.now())
+        }
+        else {
+          await this.dependencies.runs.failRun(runId, normalized.code, normalized.message, this.dependencies.clock.now())
+          await this.enqueueRunSessionIfTerminal(runId)
+        }
       }
       throw new TaskExecutionError(`${normalized.code}：${normalized.message}`, normalized.retryable)
     }
@@ -429,6 +517,246 @@ export class GenerationApplicationService implements TaskHandler {
       this.dependencies.identifiers.create(),
       this.dependencies.clock.now(),
     )
+  }
+
+  /**
+   * 固定批量兴趣算法、人物心智、统一证据和全部独立运行后原子入队。
+   * @param input 已规范化且编号唯一的顺序文本列表。
+   * @param scene 兼容 v1 单条兴趣接口的本次场景。
+   * @returns 批次及全部排队运行标识。
+   */
+  private async createPreparedInterestBatch(
+    input: CreateInterestBatchInput,
+    scene: GenerationRunRecord['scene'],
+  ): Promise<CreatedInterestBatch> {
+    if (!this.dependencies.algorithms) throw new ApplicationError('AI_ALGORITHM_NOT_CONFIGURED', '兴趣判定算法服务未配置', 422)
+    const interestAlgorithm = await this.dependencies.algorithms.prepare('interest_assessment')
+    const step = interestAlgorithm.steps.find(item => item.stepKey === 'assess')
+    if (!step) throw new ApplicationError('AI_ALGORITHM_CONFIGURATION_INVALID', '兴趣判定算法步骤不存在', 409)
+    const parameters = textModelParametersSchema.parse({
+      ...DEFAULT_TEXT_PARAMETERS,
+      ...step.parameters,
+      reservedOutputTokens: Math.max(DEFAULT_TEXT_PARAMETERS.reservedOutputTokens, step.parameters.maxOutputTokens),
+    })
+    const model = {
+      provider: 'openai_compatible' as const,
+      model: step.model,
+      endpointOrigin: new URL(step.endpoint).origin,
+    }
+    const persona = await this.requirePersona(input.personaId)
+    if (!persona.isEnabled) throw new ApplicationError('RESOURCE_DISABLED', '人物已禁用，不能创建新任务', 409)
+    if (!persona.activeVersionId) throw new ApplicationError('PERSONA_VERSION_NOT_ACTIVE', '人物当前灵魂版本缺失，请重新保存灵魂提示词', 409)
+    const version = await this.requirePublishedPersonaVersion(persona.activeVersionId, persona.id)
+    const linkedWorld = persona.worldId ? await this.dependencies.content.findWorld(persona.worldId) : null
+    const world = linkedWorld?.isEnabled ? linkedWorld : null
+    const effectivePersona = world ? persona : { ...persona, worldId: null }
+    const worldVersion = world?.activeVersionId ? await this.dependencies.content.findWorldVersion(world.activeVersionId) : null
+    const activeWorldVersion = worldVersion?.status === 'published' ? worldVersion : null
+    const [worldGrowthWorkspace, personaGrowthWorkspace, personaMemoryWorkspace] = await Promise.all([
+      world ? this.dependencies.learning.findLearningPromptWorkspace('world_growth', world.id) : Promise.resolve(null),
+      this.dependencies.learning.findLearningPromptWorkspace('persona_growth', persona.id),
+      this.dependencies.learning.findLearningPromptWorkspace('persona_memory', persona.id),
+    ])
+    const worldGrowthVersion = worldGrowthWorkspace?.activeVersion ?? null
+    const personaGrowthVersion = personaGrowthWorkspace?.activeVersion ?? null
+    const personaMemoryVersion = personaMemoryWorkspace?.activeVersion ?? null
+    let contextSearch
+    try {
+      contextSearch = await this.dependencies.context.search({
+        personaId: input.personaId,
+        worldId: effectivePersona.worldId,
+        query: input.items.map(item => item.text).join('\n'),
+        limit: parameters.maxEvidenceChunks,
+      })
+    }
+    catch (error: unknown) {
+      if (error instanceof ContextProviderError) throw new ApplicationError('PROVIDER_UNAVAILABLE', error.message, 503)
+      throw error
+    }
+    const batchId = this.dependencies.identifiers.create()
+    const taskId = this.dependencies.identifiers.create()
+    const timestamp = this.dependencies.clock.now()
+    const promptVersions = { [GENERATION_PROMPT_CODES.interestAssessment]: step.promptVersionId }
+    const emptyContext: PromptContext = {
+      persona: version.snapshot,
+      world: activeWorldVersion?.snapshot ?? null,
+      worldGrowthPrompt: worldGrowthVersion?.promptText ?? null,
+      personaGrowthPrompt: personaGrowthVersion?.promptText ?? null,
+      personaMemoryPrompt: personaMemoryVersion?.promptText ?? null,
+      scene,
+      evidence: [],
+    }
+    const fixedPrompt = await this.dependencies.prompts.render(
+      GENERATION_PROMPT_CODES.interestAssessment,
+      buildInterestBatchPromptVariables(emptyContext, input.items),
+      step.promptVersionId,
+    )
+    const fixedInputTokens = this.countPromptTokens(step.model, fixedPrompt)
+    const worldSoulCount = activeWorldVersion
+      ? this.dependencies.tokenCounter.count(step.model, activeWorldVersion.snapshot.promptText)
+      : { tokens: 0, mode: 'estimated' as const, counter: 'none' }
+    const personaSoulCount = this.dependencies.tokenCounter.count(step.model, version.snapshot.promptText)
+    const worldGrowthCount = countOptionalPrompt(this.dependencies.tokenCounter, step.model, worldGrowthVersion?.promptText)
+    const personaGrowthCount = countOptionalPrompt(this.dependencies.tokenCounter, step.model, personaGrowthVersion?.promptText)
+    const personaMemoryCount = countOptionalPrompt(this.dependencies.tokenCounter, step.model, personaMemoryVersion?.promptText)
+    const prepared = await this.preparePromptBudgetCandidates(effectivePersona, contextSearch.candidates, step.model)
+    let selection
+    try {
+      selection = selectPromptContextByBudget({
+        parameters,
+        fixedInputTokens,
+        worldSoulTokens: worldSoulCount.tokens,
+        personaSoulTokens: personaSoulCount.tokens,
+        worldGrowthTokens: worldGrowthCount.tokens,
+        personaGrowthTokens: personaGrowthCount.tokens,
+        personaMemoryTokens: personaMemoryCount.tokens,
+        candidates: prepared.valid.map(item => item.budget),
+      })
+    }
+    catch (error: unknown) {
+      throw new ApplicationError('PROMPT_BUDGET_EXCEEDED', error instanceof Error ? error.message : '提示词预算不足', 422)
+    }
+    const preparedByKey = new Map(prepared.valid.map(item => [promptBudgetCandidateKey(item.budget), item]))
+    const selectedEvidence = selection.selected
+      .map(candidate => preparedByKey.get(promptBudgetCandidateKey(candidate)))
+      .filter((item): item is PreparedPromptCandidates['valid'][number] => Boolean(item))
+      .map((item, index): NewEvidenceSnapshot => ({
+        id: item.evidenceId,
+        sourceId: item.sourceId,
+        chunkId: item.chunkId,
+        role: item.budget.role,
+        content: item.budget.content,
+        contentHash: item.budget.contentHash,
+        rank: index,
+        metadata: {
+          heading: item.heading,
+          priority: item.priority,
+          category: item.budget.category,
+          entityId: item.budget.entityId,
+          promptEvidenceId: item.evidenceId,
+        },
+      }))
+    const firstInput = input.items[0]
+    if (!firstInput) throw new ApplicationError('VALIDATION_FAILED', '至少需要一条待判断文本', 422)
+    const promptContext: PromptContext = {
+      ...emptyContext,
+      evidence: selectedEvidence.map(item => ({ ...item, runId: firstInput.itemId, createdAt: timestamp })),
+    }
+    const initialPrompt = await this.dependencies.prompts.render(
+      GENERATION_PROMPT_CODES.interestAssessment,
+      buildInterestBatchPromptVariables(promptContext, input.items),
+      step.promptVersionId,
+    )
+    const estimatedInputTokens = this.countPromptTokens(step.model, initialPrompt)
+    if (estimatedInputTokens > selection.availableInputTokens) {
+      throw new ApplicationError('PROMPT_BUDGET_EXCEEDED', '最终提示词超过可用输入 Token，请减少批次文本或上下文预算', 422)
+    }
+    const userSettingContent = JSON.stringify(version.snapshot)
+    const userSettings: NewEvidenceSnapshot[] = [{
+      id: this.dependencies.identifiers.create(), sourceId: null, chunkId: null, role: 'user_setting',
+      content: userSettingContent, contentHash: this.dependencies.sourceProcessor.hash(userSettingContent),
+      rank: 0, metadata: { personaVersionId: version.id },
+    }]
+    if (activeWorldVersion) {
+      const content = JSON.stringify(activeWorldVersion.snapshot)
+      userSettings.push({
+        id: this.dependencies.identifiers.create(), sourceId: null, chunkId: null, role: 'user_setting',
+        content, contentHash: this.dependencies.sourceProcessor.hash(content), rank: 1,
+        metadata: { worldVersionId: activeWorldVersion.id },
+      })
+    }
+    const fixedLearningPrompts = [
+      toFixedLearningPromptEvidence(this.dependencies.identifiers.create(), worldGrowthVersion, 'world_growth', 'growth', worldGrowthCount.tokens, this.dependencies.sourceProcessor),
+      toFixedLearningPromptEvidence(this.dependencies.identifiers.create(), personaGrowthVersion, 'persona_growth', 'growth', personaGrowthCount.tokens, this.dependencies.sourceProcessor),
+      toFixedLearningPromptEvidence(this.dependencies.identifiers.create(), personaMemoryVersion, 'persona_memory', 'memory', personaMemoryCount.tokens, this.dependencies.sourceProcessor),
+    ].filter((item): item is { evidence: NewEvidenceSnapshot, snapshot: PromptContextItemSnapshot } => item !== null)
+    const evidence = [
+      ...userSettings,
+      ...fixedLearningPrompts.map((item, index) => ({ ...item.evidence, rank: userSettings.length + index })),
+      ...selectedEvidence.map(item => ({ ...item, rank: item.rank + userSettings.length + fixedLearningPrompts.length })),
+    ]
+    const promptContextSnapshot: PromptContextSnapshot = {
+      aiPromptVersions: promptVersions,
+      tokenCounter: personaSoulCount.counter,
+      tokenCountExact: [personaSoulCount, worldSoulCount, worldGrowthCount, personaGrowthCount, personaMemoryCount]
+        .every(item => item.mode === 'exact' || item.tokens === 0),
+      availableInputTokens: selection.availableInputTokens,
+      estimatedInputTokens,
+      budgets: {
+        world: {
+          limit: parameters.worldBudgetTokens, used: selection.used.world,
+          soulLimit: parameters.worldSoulBudgetTokens, soulUsed: worldSoulCount.tokens,
+          growthLimit: parameters.worldGrowthBudgetTokens, growthUsed: selection.used.worldGrowth,
+        },
+        persona: {
+          limit: parameters.personaBudgetTokens, used: selection.used.persona,
+          soulLimit: parameters.personaSoulBudgetTokens, soulUsed: personaSoulCount.tokens,
+          growthLimit: parameters.personaGrowthBudgetTokens, growthUsed: selection.used.personaGrowth,
+          memoryLimit: parameters.personaMemoryBudgetTokens, memoryUsed: selection.used.personaMemory,
+        },
+        sources: { limit: parameters.sourceBudgetTokens, used: selection.used.sources },
+      },
+      worldSoulVersionId: activeWorldVersion?.id ?? null,
+      personaSoulVersionId: version.id,
+      selected: [
+        ...fixedLearningPrompts.map(item => item.snapshot),
+        ...selection.selected.map(candidate => toPromptContextItemSnapshot(candidate, null)),
+      ],
+      skipped: [
+        ...selection.skipped.map(candidate => toPromptContextItemSnapshot(candidate, candidate.skippedReason)),
+        ...prepared.invalid,
+      ],
+      systemPromptHash: this.dependencies.sourceProcessor.hash(initialPrompt.systemPrompt),
+      userPromptHash: this.dependencies.sourceProcessor.hash(initialPrompt.userPrompt),
+    }
+    const runs = input.items.map((item, ordinal) => {
+      const runId = this.dependencies.identifiers.create()
+      const runEvidence = ordinal === 0
+        ? evidence
+        : evidence.map(value => ({ ...value, id: this.dependencies.identifiers.create() }))
+      return {
+        itemId: item.itemId,
+        ordinal,
+        run: {
+          runId,
+          kind: 'interest_assessment' as const,
+          personaVersionId: version.id,
+          formatTemplateId: null,
+          parameterProfileId: null,
+          status: 'queued' as const,
+          input: { content: item.text },
+          scene,
+          parameters,
+          model,
+          imageModel: null,
+          promptVersion: `algorithm:interest_assessment:v${interestAlgorithm.configurationVersion}`,
+          contextProvider: contextSearch.provider,
+          promptContextSnapshot,
+          algorithmSnapshot: null,
+          interestAlgorithmSnapshot: interestAlgorithm,
+          evidence: runEvidence,
+          timestamp,
+        },
+      }
+    })
+    await this.dependencies.runs.createInterestBatch({ batchId, personaId: input.personaId, taskId, items: runs, timestamp })
+    return {
+      batchId,
+      personaId: input.personaId,
+      status: 'queued',
+      items: runs.map(item => ({
+        itemId: item.itemId,
+        runId: item.run.runId,
+        status: 'queued',
+        decision: null,
+        probability: null,
+        confidence: null,
+        reason: null,
+        error: null,
+      })),
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    }
   }
 
   /** @param kind 运行类型。 @param personaId 人物 UUID。 @param input 固定输入。 @param scene 仅兴趣判断可用的临时场景。 @returns 已创建运行。 */
@@ -458,9 +786,7 @@ export class GenerationApplicationService implements TaskHandler {
     if (!persona.isEnabled) throw new ApplicationError('RESOURCE_DISABLED', '人物已禁用，不能创建新任务', 409)
     if (!persona.activeVersionId) throw new ApplicationError('PERSONA_VERSION_NOT_ACTIVE', '人物当前灵魂版本缺失，请重新保存灵魂提示词', 409)
     const version = await this.requirePublishedPersonaVersion(persona.activeVersionId, persona.id)
-    const parameters = kind === 'interest_assessment'
-      ? await this.resolveSystemParameters('interestAnalysis', DEFAULT_TEXT_PARAMETERS)
-      : { ...DEFAULT_TEXT_PARAMETERS }
+    const parameters = { ...DEFAULT_TEXT_PARAMETERS }
     const linkedWorld = persona.worldId ? await this.dependencies.content.findWorld(persona.worldId) : null
     const world = linkedWorld?.isEnabled ? linkedWorld : null
     const effectivePersona = world ? persona : { ...persona, worldId: null }
@@ -626,6 +952,7 @@ export class GenerationApplicationService implements TaskHandler {
       contextProvider: contextSearch.provider,
       promptContextSnapshot,
       algorithmSnapshot,
+      interestAlgorithmSnapshot: null,
       evidence: [
         ...userSettings,
         ...fixedLearningPrompts.map((item, index) => ({ ...item.evidence, rank: userSettings.length + index })),
@@ -778,6 +1105,81 @@ export class GenerationApplicationService implements TaskHandler {
     await this.recordPersonaOperation(run, output.reasoningSummary, output as Record<string, unknown>, timestamp)
   }
 
+  /**
+   * 一次调用判定批次全部排队条目，逐项校验并隔离格式或证据错误。
+   * @param batchId 兴趣批次 UUID。
+   * @param itemId 单项重试时的客户端编号；主调用为空。
+   * @returns 本轮全部目标条目写入终态时结束。
+   */
+  private async executeInterestBatch(batchId: string, itemId: string | null): Promise<void> {
+    const batch = await this.dependencies.runs.findInterestBatch(batchId)
+    if (!batch) throw new ApplicationError('RESOURCE_NOT_FOUND', '兴趣批次不存在', 404)
+    const targets = batch.items.filter(item => itemId === null || item.itemId === itemId)
+    if (targets.length !== 1 && itemId !== null) throw new ApplicationError('RESOURCE_NOT_FOUND', '兴趣批次条目不存在', 404)
+    if (targets.length === 0) throw new ApplicationError('RESOURCE_NOT_FOUND', '兴趣批次没有可执行条目', 404)
+    const started = await this.dependencies.runs.startInterestBatch(batchId, itemId, this.dependencies.clock.now())
+    if (started !== targets.length) throw new Error('兴趣批次状态不允许执行当前任务')
+    const firstTarget = targets[0]
+    if (!firstTarget) throw new ApplicationError('RESOURCE_NOT_FOUND', '兴趣批次没有可执行条目', 404)
+    const anchor = firstTarget.run
+    const snapshot = anchor.interestAlgorithmSnapshot
+    if (!snapshot) throw new ApplicationError('AI_ALGORITHM_CONFIGURATION_INVALID', '兴趣运行缺少算法快照', 409)
+    const context = await this.loadPromptContext(anchor)
+    const inputItems = targets.map(item => ({ itemId: item.itemId, text: 'content' in item.run.input ? item.run.input.content : '' }))
+    const generated = await this.executeConfiguredGenerationStep(
+      snapshot,
+      'assess',
+      buildInterestBatchPromptVariables(context, inputItems),
+      'interest_batch_assessment',
+      value => interestBatchModelOutputSchema.parse(value),
+      anchor.parameterSnapshot,
+      batch.usage,
+    )
+    if (await this.finishCancellationIfRequested(anchor.id, generated.usage)) return
+    const rawById = new Map<string, unknown>()
+    const duplicateIds = new Set<string>()
+    for (const value of generated.output.results) {
+      if (typeof value !== 'object' || value === null || typeof (value as Record<string, unknown>).itemId !== 'string') continue
+      const responseItemId = String((value as Record<string, unknown>).itemId)
+      if (rawById.has(responseItemId)) duplicateIds.add(responseItemId)
+      else rawById.set(responseItemId, value)
+    }
+    const completed = await Promise.all(targets.map(async (target) => {
+      const raw = rawById.get(target.itemId)
+      if (raw === undefined) return invalidInterestBatchItem(target.run.id, '模型未返回该条目的判定结果')
+      if (duplicateIds.has(target.itemId)) return invalidInterestBatchItem(target.run.id, '模型重复返回了该条目的判定结果')
+      try {
+        const parsed = interestBatchResultItemSchema.parse(raw)
+        const targetEvidence = await this.dependencies.runs.listEvidence(target.run.id)
+        const evidenceIdMap = new Map(targetEvidence.map(evidence => [
+          typeof evidence.metadata.promptEvidenceId === 'string' ? evidence.metadata.promptEvidenceId : evidence.id,
+          evidence.id,
+        ]))
+        const referencedIds = [...parsed.supportingEvidenceIds, ...parsed.opposingEvidenceIds]
+        if (referencedIds.some(id => !evidenceIdMap.get(id))) throw new Error('兴趣判定引用了不存在的证据标识')
+        const result = interestAssessmentSchema.parse({
+          ...parsed,
+          supportingEvidenceIds: parsed.supportingEvidenceIds.map(id => requireMappedEvidenceId(evidenceIdMap, id)),
+          opposingEvidenceIds: parsed.opposingEvidenceIds.map(id => requireMappedEvidenceId(evidenceIdMap, id)),
+        })
+        return { runId: target.run.id, result, errorCode: null, errorMessage: null }
+      }
+      catch (error: unknown) {
+        const reason = error instanceof Error ? error.message : '模型返回的条目格式无效'
+        return invalidInterestBatchItem(target.run.id, reason)
+      }
+    }))
+    const timestamp = this.dependencies.clock.now()
+    await this.dependencies.runs.completeInterestBatch(batchId, completed, generated.usage, timestamp)
+    for (const item of completed) {
+      if (!item.result) continue
+      const target = targets.find(value => value.run.id === item.runId)
+      if (!target) throw new Error('兴趣批次完成项没有对应运行')
+      await this.recordPersonaOperation(target.run, item.result.reasoningSummary, item.result as Record<string, unknown>, timestamp)
+      await this.enqueueRunSessionIfTerminal(target.run.id)
+    }
+  }
+
   /** @param runId 图文创作运行 UUID。 @returns 最终文章、可选配图计划和自动确认文档保存完成时结束。 */
   private async executeDocumentPlan(runId: string): Promise<void> {
     const run = await this.requireRun(runId)
@@ -858,7 +1260,7 @@ export class GenerationApplicationService implements TaskHandler {
   }
 
   /**
-   * 使用运行创建时固定的算法快照执行文章类单步骤并保留结构错误用量。
+   * 使用运行创建时固定的算法快照执行兴趣或文章单步骤，并保留结构错误用量。
    * @param snapshot 固定算法实现、模型、提示词和参数。
    * @param stepKey 代码定义的唯一步骤键。
    * @param variables 已由代码组装的完整提示词变量。
@@ -877,7 +1279,7 @@ export class GenerationApplicationService implements TaskHandler {
     limits: TextModelParameters,
     priorUsage: TextModelUsage | null,
   ): Promise<{ output: T, usage: TextModelUsage }> {
-    if (!this.dependencies.algorithms) throw new ApplicationError('AI_ALGORITHM_NOT_CONFIGURED', '图文算法服务未配置', 422)
+    if (!this.dependencies.algorithms) throw new ApplicationError('AI_ALGORITHM_NOT_CONFIGURED', 'AI 算法服务未配置', 422)
     const response = await this.dependencies.algorithms.executeStep(snapshot, stepKey, variables, schemaName, 'json_object')
     const cumulativeUsage = aggregateTextModelUsage(priorUsage ? [priorUsage, response.usage] : [response.usage])
     const totalTokens = usageTotalTokens(cumulativeUsage)
@@ -1322,12 +1724,12 @@ export class GenerationApplicationService implements TaskHandler {
 
   /**
    * 合并指定系统 AI 场景的可配置供应商参数与业务固定安全参数。
-   * @param operation 草稿生成或兴趣分析场景。
+   * @param operation 草稿生成场景。
    * @param defaults 调用方定义的完整默认与安全参数。
    * @returns 解析后的完整文本模型参数；未注入设置服务时返回默认值副本。
    */
   private async resolveSystemParameters(
-    operation: 'draftGeneration' | 'interestAnalysis',
+    operation: 'draftGeneration',
     defaults: TextModelParameters,
   ): Promise<TextModelParameters> {
     return this.dependencies.systemAiSettings
@@ -1451,6 +1853,7 @@ function toFixedLearningPromptEvidence(
         learningPromptVersionId: version.id,
         category,
         entityId: version.id,
+        promptEvidenceId: evidenceId,
       },
     },
     snapshot: {
@@ -1494,6 +1897,51 @@ function readRunId(payloadJson: string): string {
   const value = JSON.parse(payloadJson) as Record<string, unknown>
   if (typeof value.runId !== 'string') throw new Error('任务载荷缺少运行标识')
   return value.runId
+}
+
+/**
+ * 从任务载荷读取一个可选字符串字段。
+ * @param payloadJson 任务载荷 JSON。
+ * @param field 目标字段名称。
+ * @returns 非空字符串字段；缺失时返回 null。
+ */
+function readOptionalPayloadString(payloadJson: string, field: string): string | null {
+  const value = JSON.parse(payloadJson) as Record<string, unknown>
+  return typeof value[field] === 'string' && value[field].trim() ? value[field] : null
+}
+
+/**
+ * 把兴趣运行内部状态收敛为批次公开的四态条目状态。
+ * @param status 当前运行状态。
+ * @returns 批次条目状态；取消及其他终态统一视为失败。
+ */
+function normalizeInterestItemStatus(status: GenerationRunRecord['status']): InterestBatchView['items'][number]['status'] {
+  if (status === 'queued') return 'queued'
+  if (status === 'running') return 'running'
+  if (status === 'succeeded') return 'succeeded'
+  return 'failed'
+}
+
+/**
+ * 构造一个不会影响其他条目的模型输出失败结果。
+ * @param runId 目标独立运行 UUID。
+ * @param message 可审计但不包含敏感输入的失败原因。
+ * @returns 批次仓储可直接写入的失败项。
+ */
+function invalidInterestBatchItem(runId: string, message: string) {
+  return { runId, result: null, errorCode: 'MODEL_OUTPUT_INVALID', errorMessage: message.slice(0, 500) }
+}
+
+/**
+ * 读取已经验证存在的证据标识映射。
+ * @param mapping 主调用证据 UUID 到目标运行证据 UUID 的映射。
+ * @param sourceId 模型返回的主调用证据 UUID。
+ * @returns 目标运行对应证据 UUID。
+ */
+function requireMappedEvidenceId(mapping: Map<string, string | undefined>, sourceId: string): string {
+  const targetId = mapping.get(sourceId)
+  if (!targetId) throw new Error('兴趣判定引用了不存在的证据标识')
+  return targetId
 }
 
 /** @param payloadJson 任务载荷 JSON。 @returns 单块任务 UUID。 */
@@ -1642,10 +2090,14 @@ function sourceRoleRank(role: 'canon_fact' | 'reference' | 'style_sample'): numb
 
 /** @param usages 一次或多次供应商响应的用量。 @returns 各字段严格合计，任一响应缺字段时该合计为 null。 */
 function aggregateTextModelUsage(usages: TextModelUsage[]): TextModelUsage {
+  const cachedValues = usages.map(usage => usage.cachedInputTokens)
   return {
     inputTokens: sumUsageField(usages.map(usage => usage.inputTokens)),
     outputTokens: sumUsageField(usages.map(usage => usage.outputTokens)),
     totalTokens: sumUsageField(usages.map(usage => usage.totalTokens)),
+    ...(cachedValues.some(value => value !== undefined)
+      ? { cachedInputTokens: sumUsageField(cachedValues.map(value => value ?? null)) }
+      : {}),
   }
 }
 

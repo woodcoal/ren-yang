@@ -5,6 +5,8 @@ export interface TextModelUsage {
   inputTokens: number | null
   outputTokens: number | null
   totalTokens: number | null
+  /** 供应商明确返回的提示词缓存命中 Token；不支持时省略。 */
+  cachedInputTokens?: number | null
 }
 
 /** 运行提示词中可独立限额的上下文分类。 */
@@ -79,6 +81,58 @@ export interface CreatedRun {
   runId: string
   taskId: string
   status: 'planning' | 'queued'
+}
+
+/** 创建兴趣批次后立即返回的排队视图。 */
+export interface CreatedInterestBatch {
+  /** 批次 UUID。 */
+  batchId: string
+  /** 本批次唯一人物 UUID。 */
+  personaId: string
+  /** 新建批次固定处于排队状态。 */
+  status: 'queued'
+  /** 严格保持请求顺序的条目。 */
+  items: Array<InterestBatchItemView & { status: 'queued' }>
+  /** 创建时间。 */
+  createdAt: number
+  /** 新建时与创建时间相同。 */
+  updatedAt: number
+}
+
+/** 兴趣批次中一个独立运行的公开结果。 */
+export interface InterestBatchItemView {
+  /** 客户端提供且批次内唯一的稳定编号。 */
+  itemId: string
+  /** 独立兴趣运行 UUID。 */
+  runId: string
+  /** 当前条目状态。 */
+  status: 'queued' | 'running' | 'succeeded' | 'failed'
+  /** 成功时的三态兴趣结论。 */
+  decision: InterestAssessment['decision'] | null
+  /** 成功时的兴趣概率。 */
+  probability: number | null
+  /** 成功时的模型置信度。 */
+  confidence: number | null
+  /** 成功时的简短理由。 */
+  reason: string | null
+  /** 失败时的稳定错误。 */
+  error: { code: string, message: string } | null
+}
+
+/** 按输入顺序返回的完整兴趣批次。 */
+export interface InterestBatchView {
+  /** 批次 UUID。 */
+  batchId: string
+  /** 本批次唯一人物 UUID。 */
+  personaId: string
+  /** 全部条目均终止时为 completed。 */
+  status: 'queued' | 'running' | 'completed'
+  /** 严格保持请求顺序的逐项结果。 */
+  items: InterestBatchItemView[]
+  /** 创建时间。 */
+  createdAt: number
+  /** 最后更新时间。 */
+  updatedAt: number
 }
 
 /** 运行列表及详情共用摘要。 */

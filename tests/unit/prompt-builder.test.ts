@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { buildSoulPromptAnalysisVariables, soulAnalysisPromptCode } from '../../server/application/content/SoulPromptBuilder'
 import {
   buildDocumentPlanPromptVariables,
-  buildInterestPromptVariables,
+  buildInterestBatchPromptVariables,
   buildWorldDraftPromptVariables,
   GENERATION_PROMPT_CODES,
 } from '../../server/application/generation/PromptBuilder'
@@ -20,7 +20,9 @@ const PROMPT_CONTEXT = {
 
 describe('提示词变量契约', () => {
   it('兴趣判断只输出目录定义需要的固定 JSON 变量', () => {
-    const variables = buildInterestPromptVariables(PROMPT_CONTEXT, '测试内容')
+    const variables = buildInterestBatchPromptVariables(PROMPT_CONTEXT, [
+      { itemId: 'item-2', text: '测试内容' },
+    ])
 
     expect(GENERATION_PROMPT_CODES.interestAssessment).toBe('generation.interest_assessment')
     expect(variables).toMatchObject({
@@ -29,7 +31,7 @@ describe('提示词变量契约', () => {
       worldGrowthPromptJson: '"遵循世界成长经验。"',
       personaGrowthPromptJson: '"回答先给结论。"',
       personaMemoryPromptJson: '"曾经成功处理事实型文章。"',
-      contentJson: '"测试内容"',
+      contentJson: '[{"itemId":"item-2","text":"测试内容"}]',
     })
   })
 

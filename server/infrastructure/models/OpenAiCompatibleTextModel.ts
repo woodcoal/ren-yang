@@ -127,6 +127,8 @@ function parseResponse(value: unknown, responseFormat: 'json_object' | 'text'): 
   }
   const structuredOutput = responseFormat === 'text' ? message.content : parseStructuredContent(message.content)
   const usage = response.usage as Record<string, unknown> | undefined
+  const promptTokenDetails = usage?.prompt_tokens_details as Record<string, unknown> | undefined
+  const cachedInputTokens = toOptionalNumber(promptTokenDetails?.cached_tokens)
   return {
     rawOutput: message.content,
     structuredOutput,
@@ -134,6 +136,7 @@ function parseResponse(value: unknown, responseFormat: 'json_object' | 'text'): 
       inputTokens: toOptionalNumber(usage?.prompt_tokens),
       outputTokens: toOptionalNumber(usage?.completion_tokens),
       totalTokens: toOptionalNumber(usage?.total_tokens),
+      ...(promptTokenDetails ? { cachedInputTokens } : {}),
     },
   }
 }

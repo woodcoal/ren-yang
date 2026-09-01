@@ -45,7 +45,7 @@ function handleSubmit(event: FormSubmitEvent<SystemAiSettingsValues>): void {
         <div class="section-heading-copy">
           <p class="eyebrow">运行模型</p>
           <h2 id="default-models-heading">默认文本与图片模型</h2>
-          <p>供兴趣判断、人物记忆、草稿、反馈分类和图文生成使用；灵魂与成长算法仍使用各步骤自己的模型。</p>
+          <p>供人物草稿、世界草稿、反馈分类、头像和图片生成使用；兴趣、灵魂、成长、记忆与文章算法使用各步骤自己的模型。</p>
         </div>
       </div>
       <div class="grid gap-4 lg:grid-cols-2">
@@ -57,26 +57,6 @@ function handleSubmit(event: FormSubmitEvent<SystemAiSettingsValues>): void {
         </UFormField>
       </div>
       <UAlert v-if="!textModelItems.length" class="mt-4" color="warning" title="没有可用文本模型" description="请先在 AI 模型管理中新增并启用文本模型部署。" />
-    </section>
-
-    <section v-else-if="operation === 'interestAnalysis'" class="archive-panel" aria-labelledby="interest-ai-heading">
-      <div class="section-heading">
-        <div class="section-heading-copy">
-          <p class="eyebrow">人物判断</p>
-          <h2 id="interest-ai-heading">兴趣分析</h2>
-          <p>用于工作台“判断人物兴趣”，独立于结构化图文创作的生成设置。</p>
-        </div>
-      </div>
-      <OperationParameterFields :model-value="values.interestAnalysis" name-prefix="interestAnalysis" />
-      <UFormField
-        name="interestAnalysis.maxEvidenceChunks"
-        label="最多参考资料段落"
-        description="控制兴趣判断最多检索多少段人物、成长、记忆和参考资料。"
-        class="mt-4 max-w-md"
-        required
-      >
-        <UInput v-model.number="values.interestAnalysis.maxEvidenceChunks" type="number" min="0" max="50" class="w-full" />
-      </UFormField>
     </section>
 
     <section v-else-if="operation === 'draftGeneration'" class="archive-panel" aria-labelledby="draft-ai-heading">

@@ -49,14 +49,14 @@ describe('OpenAiCompatibleTextModel', () => {
   it('发送 Chat Completions JSON 请求并解析结构与用量', async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       choices: [{ message: { content: '{"answer":"ok"}' } }],
-      usage: { prompt_tokens: 9, completion_tokens: 3, total_tokens: 12 },
+      usage: { prompt_tokens: 9, completion_tokens: 3, total_tokens: 12, prompt_tokens_details: { cached_tokens: 5 } },
     }), { status: 200, headers: { 'content-type': 'application/json' } }))
     vi.stubGlobal('fetch', fetchMock)
 
     await expect(createModel().generateStructured(REQUEST)).resolves.toEqual({
       rawOutput: '{"answer":"ok"}',
       structuredOutput: { answer: 'ok' },
-      usage: { inputTokens: 9, outputTokens: 3, totalTokens: 12 },
+      usage: { inputTokens: 9, outputTokens: 3, totalTokens: 12, cachedInputTokens: 5 },
     })
     const [, init] = fetchMock.mock.calls[0]!
     const body = JSON.parse(String(init?.body)) as Record<string, unknown>

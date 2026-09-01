@@ -43,7 +43,12 @@ describe('全站 AI 提示词目录', () => {
       'generation.article',
       'generation.article_images',
     ]))
-    expect(prompts.every(prompt => prompt.activeVersion?.versionNo === 1 && prompt.versions.length === 1)).toBe(true)
+    const interestPrompt = prompts.find(prompt => prompt.code === 'generation.interest_assessment')
+    expect(interestPrompt?.activeVersion?.versionNo).toBe(2)
+    expect(interestPrompt?.versions.map(version => version.versionNo)).toEqual([2, 1])
+    expect(prompts
+      .filter(prompt => prompt.code !== 'generation.interest_assessment')
+      .every(prompt => prompt.activeVersion?.versionNo === 1 && prompt.versions.length === 1)).toBe(true)
     for (const prompt of prompts) {
       const variables = Object.fromEntries(prompt.variables.map(variable => [variable.name, `测试-${variable.name}`]))
       const rendered = await service.render(prompt.code, variables)

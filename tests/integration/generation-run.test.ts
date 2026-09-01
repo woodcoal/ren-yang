@@ -49,10 +49,14 @@ class FixedTextModel implements TextModelPort {
   public readonly calls = new Map<string, number>()
   /** 最近一次各类结构请求，供提示边界断言。 */
   public readonly requests = new Map<string, TextModelRequest>()
+  /** 全部模型请求历史，供批次主调用与单项重试对比固定前缀。 */
+  public readonly requestHistory: TextModelRequest[] = []
   /** 是否让第一次兴趣输出故意无效。 */
   public invalidInterestOnce = false
   /** 是否持续返回无效兴趣结构。 */
   public invalidInterestAlways = false
+  /** 批量兴趣响应中需要故意遗漏的客户端条目标识。 */
+  public omittedInterestItemId: string | null = null
   /** 是否让第一次人物草稿错误地包含创建流程元话术。 */
   public invalidPersonaMetaOnce = false
   /** 是否让第一次世界草稿错误地包含创建流程元话术。 */
@@ -80,6 +84,7 @@ class FixedTextModel implements TextModelPort {
     const call = (this.calls.get(request.responseSchemaName) ?? 0) + 1
     this.calls.set(request.responseSchemaName, call)
     this.requests.set(request.responseSchemaName, request)
+    this.requestHistory.push(request)
     if (request.responseSchemaName === 'persona_draft') {
       const result = {
         name: '林默',
@@ -118,6 +123,33 @@ class FixedTextModel implements TextModelPort {
         opposingEvidenceIds: [],
         unknowns: [],
         reasoningSummary: '人物偏好与内容主题一致。',
+      }, this.usage)
+      if (this.afterInterestResponse) await this.afterInterestResponse()
+      return result
+    }
+    if (request.responseSchemaName === 'interest_batch_assessment') {
+      if (this.interestRateLimitsRemaining > 0) {
+        this.interestRateLimitsRemaining -= 1
+        throw new TextModelError('PROVIDER_RATE_LIMITED', '测试限流', true)
+      }
+      if (this.invalidInterestAlways || (this.invalidInterestOnce && call === 1)) return response({ decision: 'invalid' }, this.usage)
+      const items = readInterestItems(request.userPrompt)
+      const evidence = readEvidence(request.userPrompt)
+      const fact = evidence.find(item => item.role === 'canon_fact')
+      const result = response({
+        results: items
+          .filter(item => item.itemId !== this.omittedInterestItemId)
+          .map(item => ({
+            itemId: item.itemId,
+            probability: 0.88,
+            confidence: 0.82,
+            decision: 'interested',
+            factors: [{ dimension: 'topic', score: 0.9, explanation: `符合人物对“${item.text}”的兴趣。` }],
+            supportingEvidenceIds: fact ? [fact.id] : [],
+            opposingEvidenceIds: [],
+            unknowns: [],
+            reasoningSummary: `人物会关注：${item.text}`,
+          })),
       }, this.usage)
       if (this.afterInterestResponse) await this.afterInterestResponse()
       return result
@@ -210,6 +242,22 @@ function response(structuredOutput: unknown, usage: TextModelResponse['usage']):
 function readEvidence(prompt: string): Array<{ id: string, role: string }> {
   const match = /<不可信参考资料>(.*?)<\/不可信参考资料>/s.exec(prompt)
   return match ? JSON.parse(match[1]!) as Array<{ id: string, role: string }> : []
+}
+
+/**
+ * 读取批量兴趣提示词末尾的稳定条目列表。
+ * @param prompt 已渲染的批量兴趣用户提示词。
+ * @returns 保持输入顺序的条目标识与文本。
+ */
+function readInterestItems(prompt: string): Array<{ itemId: string, text: string }> {
+  const match = /<待判断文本列表>(.*?)<\/待判断文本列表>/s.exec(prompt)
+  const serialized = match?.[1]
+  return serialized ? JSON.parse(serialized) as Array<{ itemId: string, text: string }> : []
+}
+
+/** @param prompt 批量兴趣用户提示词。 @returns 不包含变化文本列表的固定缓存前缀。 */
+function interestPromptPrefix(prompt: string): string {
+  return prompt.split('<待判断文本列表>')[0] ?? prompt
 }
 
 const PERSONA_SNAPSHOT: PersonaSnapshot = {
@@ -362,7 +410,6 @@ describe('阶段三纯文本运行', () => {
       promptText: '过去处理事实内容时会优先核验依据。', baseVersionId: null,
     })
     await learningService.publishLearningPromptDraft('persona_memory', personaId, { changeSummary: '建立记忆提示词' })
-    model.invalidInterestOnce = true
     const created = await generation.createInterestRun({
       personaId,
       content: '魔法学院课程是否值得参加？',
@@ -375,12 +422,11 @@ describe('阶段三纯文本运行', () => {
       status: 'succeeded',
       result: { decision: 'interested', probability: 0.88, confidence: 0.82 },
       scene: { location: '图书馆' },
-      promptVersion: expect.stringMatching(/^ai-catalog:[0-9a-f]{16}$/),
+      promptVersion: 'algorithm:interest_assessment:v1',
       contextProvider: 'sqlite_fts5',
       promptContext: {
         aiPromptVersions: {
           'generation.interest_assessment': expect.any(String),
-          'generation.json_retry': expect.any(String),
         },
         tokenCountExact: false,
         personaSoulVersionId: details.run.personaVersionId,
@@ -395,16 +441,117 @@ describe('阶段三纯文本运行', () => {
     expect(details.evidence.map(item => item.role)).toEqual(['user_setting', 'growth', 'memory', 'canon_fact'])
     expect(details.evidence[1]?.metadata).toMatchObject({ fixedLearningPrompt: true, learningPromptType: 'persona_growth' })
     expect(details.evidence[2]?.metadata).toMatchObject({ fixedLearningPrompt: true, learningPromptType: 'persona_memory' })
-    expect(details.run.result?.supportingEvidenceIds).toEqual([details.evidence[3]!.id])
-    expect(model.requests.get('interest_assessment')?.userPrompt).toContain('<当前人物成长提示词>"回答时先给简洁结论。"</当前人物成长提示词>')
-    expect(model.requests.get('interest_assessment')?.userPrompt).toContain('<当前人物记忆提示词>"过去处理事实内容时会优先核验依据。"</当前人物记忆提示词>')
-    expect(model.calls.get('interest_assessment')).toBe(2)
-    expect(details.run.usage).toEqual({ inputTokens: 20, outputTokens: 10, totalTokens: 30 })
+    expect(details.run.result?.supportingEvidenceIds).toEqual(details.evidence[3] ? [details.evidence[3].id] : [])
+    expect(model.requests.get('interest_batch_assessment')?.userPrompt).toContain('<当前人物成长提示词>"回答时先给简洁结论。"</当前人物成长提示词>')
+    expect(model.requests.get('interest_batch_assessment')?.userPrompt).toContain('<当前人物记忆提示词>"过去处理事实内容时会优先核验依据。"</当前人物记忆提示词>')
+    expect(model.calls.get('interest_batch_assessment')).toBe(1)
+    expect(database.getClient().prepare('SELECT usage_json FROM interest_batches WHERE id = (SELECT batch_id FROM interest_batch_items WHERE run_id = ?)').get(created.runId))
+      .toEqual({ usage_json: JSON.stringify({ inputTokens: 10, outputTokens: 5, totalTokens: 15 }) })
     expect(database.getClient().prepare(`
       SELECT persona_id, run_id, operation_type, is_enabled FROM persona_operation_records WHERE run_id = ?
     `).get(created.runId)).toEqual({
       persona_id: personaId, run_id: created.runId, operation_type: 'interest_assessment', is_enabled: 1,
     })
+  })
+
+  it('同一人物多条文本只调用一次模型并按输入顺序独立保存结果', async () => {
+    const created = await generation.createInterestBatch({
+      personaId,
+      items: [
+        { itemId: 'topic-3', text: '古代文献整理' },
+        { itemId: 'topic-1', text: '学院课程安排' },
+        { itemId: 'topic-2', text: '无关娱乐新闻' },
+      ],
+    })
+
+    await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: true })
+    const completed = await generation.getInterestBatch(created.batchId)
+
+    expect(model.calls.get('interest_batch_assessment')).toBe(1)
+    expect(completed.items.map(item => item.itemId)).toEqual(['topic-3', 'topic-1', 'topic-2'])
+    expect(completed.items.map(item => item.status)).toEqual(['succeeded', 'succeeded', 'succeeded'])
+    expect(completed.items.every(item => item.runId.length > 0)).toBe(true)
+    expect(new Set(completed.items.map(item => item.runId)).size).toBe(3)
+  })
+
+  it('批量结果缺项只失败对应条目且单项重试不重跑全批', async () => {
+    await learningService.saveLearningPromptDraft('persona_growth', personaId, {
+      promptText: '批量判断时优先核验事实依据。', baseVersionId: null,
+    })
+    await learningService.publishLearningPromptDraft('persona_growth', personaId, { changeSummary: '建立批量判断成长提示词' })
+    model.omittedInterestItemId = 'missing'
+    const created = await generation.createInterestBatch({
+      personaId,
+      items: [
+        { itemId: 'first', text: '第一条文本' },
+        { itemId: 'missing', text: '需要重试的文本' },
+        { itemId: 'last', text: '最后一条文本' },
+      ],
+    })
+
+    await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: true })
+    const partial = await generation.getInterestBatch(created.batchId)
+    expect(partial.items.map(item => item.status)).toEqual(['succeeded', 'failed', 'succeeded'])
+    expect(partial.items[1]?.error).toMatchObject({ code: 'MODEL_OUTPUT_INVALID' })
+
+    model.omittedInterestItemId = null
+    await generation.retryInterestBatchItem(created.batchId, 'missing')
+    await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: true })
+    const retried = await generation.getInterestBatch(created.batchId)
+    expect(retried.items.map(item => item.status)).toEqual(['succeeded', 'succeeded', 'succeeded'])
+    expect(model.calls.get('interest_batch_assessment')).toBe(2)
+    expect(readInterestItems(model.requests.get('interest_batch_assessment')?.userPrompt ?? ''))
+      .toEqual([{ itemId: 'missing', text: '需要重试的文本' }])
+    const interestRequests = model.requestHistory.filter(request => request.responseSchemaName === 'interest_batch_assessment')
+    expect(interestRequests).toHaveLength(2)
+    expect(interestPromptPrefix(interestRequests[0]?.userPrompt ?? ''))
+      .toBe(interestPromptPrefix(interestRequests[1]?.userPrompt ?? ''))
+  })
+
+  it('批量兴趣输入拒绝重复编号、空文本和超过固定批量上限', async () => {
+    await expect(generation.createInterestBatch({
+      personaId,
+      items: [{ itemId: 'same', text: '有效文本' }, { itemId: 'same', text: '重复编号' }],
+    })).rejects.toThrow('同一批次的条目标识不能重复')
+    await expect(generation.createInterestBatch({
+      personaId,
+      items: [{ itemId: 'empty', text: '   ' }],
+    })).rejects.toThrow('待判断文本不能为空')
+    await expect(generation.createInterestBatch({
+      personaId,
+      items: Array.from({ length: 21 }, (_, index) => ({ itemId: String(index), text: '测试' })),
+    })).rejects.toThrow('单批次最多包含 20 条文本')
+  })
+
+  it('批量主调用整体结构错误时完整重新排队并在下一次尝试恢复', async () => {
+    model.invalidInterestOnce = true
+    const created = await generation.createInterestBatch({
+      personaId,
+      items: [{ itemId: 'a', text: '第一条' }, { itemId: 'b', text: '第二条' }],
+    })
+
+    await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: false })
+    expect((await generation.getInterestBatch(created.batchId)).items.map(item => item.status)).toEqual(['queued', 'queued'])
+    await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: true })
+    expect((await generation.getInterestBatch(created.batchId)).items.map(item => item.status)).toEqual(['succeeded', 'succeeded'])
+    expect(model.calls.get('interest_batch_assessment')).toBe(2)
+  })
+
+  it('批量任务租约过期时恢复全部运行而不是只恢复任务锚点', async () => {
+    const created = await generation.createInterestBatch({
+      personaId,
+      items: [{ itemId: 'a', text: '第一条' }, { itemId: 'b', text: '第二条' }],
+    })
+    const runIds = created.items.map(item => item.runId)
+    const placeholders = runIds.map(() => '?').join(', ')
+    database.getClient().prepare(`UPDATE generation_runs SET status = 'running' WHERE id IN (${placeholders})`).run(...runIds)
+    database.getClient().prepare(`
+      UPDATE task_jobs SET status = 'running', attempt_count = 1, lease_until = 2000
+      WHERE run_id = ?
+    `).run(runIds[0])
+
+    await expect(new SqliteTaskJobRepository(database.getClient()).recoverExpired(2_001)).resolves.toBe(1)
+    expect((await generation.getInterestBatch(created.batchId)).items.map(item => item.status)).toEqual(['queued', 'queued'])
   })
 
   it('禁用人物后拒绝创建新任务且不影响既有人物数据', async () => {
@@ -447,19 +594,21 @@ describe('阶段三纯文本运行', () => {
     expect(details.evidence.some(item => typeof item.metadata.worldVersionId === 'string')).toBe(false)
   })
 
-  it('兴趣分析忽略图文生成设置并保存独立系统参数快照', async () => {
+  it('兴趣算法参数独立于旧系统 AI 设置并保存运行快照', async () => {
     const profile = await generation.createParameterProfile({
       name: '极小提示上限',
       values: { ...DEFAULT_TEXT_PARAMETERS, maxPromptCharacters: 1_000 },
     })
-    const settings = await systemAiSettings.getSettings()
-    settings.values.interestAnalysis.temperature = 0.1
-    await systemAiSettings.updateSettings(settings.values)
     const created = await generation.createInterestRun({ personaId, content: '长内容'.repeat(500) })
 
     const details = await generation.getRun(created.runId)
     expect(profile.values.maxPromptCharacters).toBe(1_000)
-    expect(details.run.parameters).toMatchObject({ temperature: 0.1, maxPromptCharacters: 120_000 })
+    expect(details.run.parameters).toMatchObject({ temperature: 0.4, maxPromptCharacters: 120_000 })
+    const snapshot = database.getClient().prepare('SELECT interest_algorithm_snapshot_json FROM generation_runs WHERE id = ?')
+      .get(created.runId) as { interest_algorithm_snapshot_json: string }
+    expect(JSON.parse(snapshot.interest_algorithm_snapshot_json)).toMatchObject({
+      algorithmCode: 'interest_assessment', steps: [{ parameters: { temperature: 0.4 } }],
+    })
     expect(database.getClient().prepare('SELECT parameter_profile_id FROM generation_runs WHERE id = ?').get(created.runId))
       .toEqual({ parameter_profile_id: null })
   })
@@ -518,6 +667,21 @@ describe('阶段三纯文本运行', () => {
     await expect(worker.executeNext()).resolves.toMatchObject({ handled: false })
   })
 
+  it('取消批次任意条目时会终止全批次且不再执行主任务', async () => {
+    const created = await generation.createInterestBatch({
+      personaId,
+      items: [{ itemId: 'a', text: '第一条' }, { itemId: 'b', text: '第二条' }],
+    })
+
+    await generation.cancelRun(created.items[1]?.runId ?? '')
+
+    const canceled = await generation.getInterestBatch(created.batchId)
+    expect(canceled.items.map(item => item.status)).toEqual(['failed', 'failed'])
+    expect(canceled.items.map(item => item.error?.code)).toEqual(['RUN_CANCELED', 'RUN_CANCELED'])
+    await expect(worker.executeNext()).resolves.toMatchObject({ handled: false })
+    expect(model.calls.get('interest_batch_assessment')).toBeUndefined()
+  })
+
   it('供应商响应后收到取消请求时保留已经产生的用量', async () => {
     const created = await generation.createInterestRun({ personaId, content: '魔法学院课程' })
     model.afterInterestResponse = async () => { await generation.cancelRun(created.runId) }
@@ -573,7 +737,7 @@ describe('阶段三纯文本运行', () => {
       tokenCounter: new ConservativeTokenCounter(),
       learning: new SqliteLearningRepository(database.getClient()),
     })
-    await expect(disabled.createInterestRun({ personaId, content: '测试' })).rejects.toMatchObject({ code: 'CAPABILITY_DISABLED' })
+    await expect(disabled.createInterestRun({ personaId, content: '测试' })).rejects.toMatchObject({ code: 'AI_ALGORITHM_NOT_CONFIGURED' })
     await expect(disabled.generatePersonaDraft({ prompt: '测试人物', sourceIds: [] }))
       .rejects.toMatchObject({ code: 'CAPABILITY_DISABLED' })
     await expect(disabled.generateWorldDraft({ prompt: '测试世界' }))
@@ -582,7 +746,7 @@ describe('阶段三纯文本运行', () => {
   })
 
   it('临时限流先自动重新排队并在第二次任务尝试成功', async () => {
-    model.interestRateLimitsRemaining = 2
+    model.interestRateLimitsRemaining = 1
     const created = await generation.createInterestRun({ personaId, content: '魔法学院课程' })
 
     await expect(worker.executeNext()).resolves.toMatchObject({ succeeded: false })
@@ -606,7 +770,7 @@ describe('阶段三纯文本运行', () => {
     const failed = await generation.getRun(created.runId)
     expect(failed.run).toMatchObject({
       status: 'failed', errorCode: 'MODEL_OUTPUT_INVALID',
-      usage: { inputTokens: 40, outputTokens: 20, totalTokens: 60 },
+      usage: { inputTokens: 20, outputTokens: 10, totalTokens: 30 },
     })
     expect(failed.tasks[0]).toMatchObject({ status: 'failed', attemptCount: 2 })
 
@@ -615,7 +779,7 @@ describe('阶段三纯文本运行', () => {
     expect(retried.taskId).not.toBe(created.taskId)
     await worker.executeNext()
     const completed = await generation.getRun(created.runId)
-    expect(completed.run.usage).toEqual({ inputTokens: 50, outputTokens: 25, totalTokens: 75 })
+    expect(completed.run.usage).toEqual({ inputTokens: 30, outputTokens: 15, totalTokens: 45 })
     expect(completed.run.status).toBe('succeeded')
     expect(completed.tasks.map(task => task.status).sort()).toEqual(['failed', 'succeeded'])
   })
@@ -676,22 +840,25 @@ function createGenerationAlgorithms(
   return {
     /** @param code 文章生成或配图分析算法编码。 @returns 固定单步骤快照。 */
     async prepare(code: AiAlgorithmCode): Promise<AiAlgorithmSnapshot> {
+      const isInterest = code === 'interest_assessment'
       const isArticle = code === 'article_generation'
-      const promptCode = isArticle ? 'generation.article' : 'generation.article_images'
+      const promptCode = isInterest ? 'generation.interest_assessment' : isArticle ? 'generation.article' : 'generation.article_images'
       const versions = await prompts.snapshotPublishedVersions([promptCode])
       return {
         algorithmCode: code,
         implementationVersion: 1,
-        configurationVersionId: isArticle ? '00000000-0000-4000-8000-000000000701' : '00000000-0000-4000-8000-000000000702',
+        configurationVersionId: isInterest
+          ? '00000000-0000-4000-8000-000000000700'
+          : isArticle ? '00000000-0000-4000-8000-000000000701' : '00000000-0000-4000-8000-000000000702',
         configurationVersion: 1,
         steps: [{
-          stepKey: isArticle ? 'generate' : 'analyze', ordinal: 0,
+          stepKey: isInterest ? 'assess' : isArticle ? 'generate' : 'analyze', ordinal: 0,
           modelDeploymentId: '00000000-0000-4000-8000-000000000703',
           connectionId: '00000000-0000-4000-8000-000000000704',
           protocol: 'openai_compatible', endpoint: 'https://model.test/v1', userAgent: '',
           model: 'fixed-test-model', promptCode, promptVersionId: versions[promptCode]!,
           parameters: {
-            temperature: isArticle ? 0.65 : 0.15,
+            temperature: isInterest ? 0.4 : isArticle ? 0.65 : 0.15,
             maxOutputTokens: isArticle ? 4_096 : 2_048,
             timeoutMs: 60_000,
           },

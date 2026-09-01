@@ -14,11 +14,14 @@ import type {
   FormatTemplateRecord,
   GenerationRunRecord,
   ImageAssetRecord,
+  InterestBatchRecord,
   ParameterProfileRecord,
   TextModelSnapshot,
   TextModelUsage,
 } from '../../domain/generation/GenerationModels'
 import type {
+  CompleteInterestBatchItem,
+  CreateInterestBatchCommand,
   CreateRunCommand,
   RunListFilter,
   RunPersonaIdentity,
@@ -101,48 +104,245 @@ export class SqliteRunRepository implements RunRepository {
    */
   async createRun(command: CreateRunCommand): Promise<void> {
     this.client.transaction(() => {
-      this.client.prepare(`
-        INSERT INTO generation_runs (
-          id, kind, persona_version_id, format_template_id, parameter_profile_id, status,
-          input_json, scene_json, parameter_snapshot_json, model_snapshot_json, image_model_snapshot_json,
-          prompt_version, context_provider, prompt_context_snapshot_json, algorithm_snapshot_json, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        command.runId,
-        command.kind,
-        command.personaVersionId,
-        command.formatTemplateId,
-        command.parameterProfileId,
-        command.status,
-        JSON.stringify(command.input),
-        command.scene ? JSON.stringify(command.scene) : null,
-        JSON.stringify(command.parameters),
-        JSON.stringify(command.model),
-        command.imageModel ? JSON.stringify(command.imageModel) : null,
-        command.promptVersion,
-        command.contextProvider,
-        JSON.stringify(command.promptContextSnapshot),
-        command.algorithmSnapshot ? JSON.stringify(command.algorithmSnapshot) : null,
-        command.timestamp,
-        command.timestamp,
-      )
-      const insertEvidence = this.client.prepare(`
-        INSERT INTO evidence_snapshots (
-          id, run_id, source_id, chunk_id, role, content, content_hash, rank, metadata_json, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `)
-      for (const evidence of command.evidence) {
-        insertEvidence.run(
-          evidence.id, command.runId, evidence.sourceId, evidence.chunkId, evidence.role,
-          evidence.content, evidence.contentHash, evidence.rank, JSON.stringify(evidence.metadata), command.timestamp,
-        )
-      }
+      this.insertRunFacts(command)
       this.client.prepare(`
         INSERT INTO task_jobs (
           id, run_id, type, payload_json, status, attempt_count, max_attempts, created_at, updated_at
         ) VALUES (?, ?, ?, ?, 'queued', 0, 2, ?, ?)
       `).run(command.taskId, command.runId, command.taskType, JSON.stringify({ runId: command.runId }), command.timestamp, command.timestamp)
     }).immediate()
+  }
+
+  /**
+   * 原子创建兴趣批次、全部独立运行与唯一批量任务。
+   * @param command 已固定人物、算法、上下文和输入顺序的创建命令。
+   * @returns 无返回值。
+   */
+  async createInterestBatch(command: CreateInterestBatchCommand): Promise<void> {
+    this.client.transaction(() => {
+      this.client.prepare(`
+        INSERT INTO interest_batches (id, persona_id, usage_json, created_at, updated_at)
+        VALUES (?, ?, NULL, ?, ?)
+      `).run(command.batchId, command.personaId, command.timestamp, command.timestamp)
+      const insertItem = this.client.prepare(`
+        INSERT INTO interest_batch_items (batch_id, item_id, ordinal, run_id) VALUES (?, ?, ?, ?)
+      `)
+      for (const item of command.items) {
+        this.insertRunFacts(item.run)
+        insertItem.run(command.batchId, item.itemId, item.ordinal, item.run.runId)
+      }
+      const firstItem = command.items[0]
+      if (!firstItem) throw new Error('兴趣批次至少需要一个条目')
+      const anchorRunId = firstItem.run.runId
+      this.client.prepare(`
+        INSERT INTO task_jobs (
+          id, run_id, type, payload_json, status, attempt_count, max_attempts, created_at, updated_at
+        ) VALUES (?, ?, 'assess_interest', ?, 'queued', 0, 2, ?, ?)
+      `).run(command.taskId, anchorRunId, JSON.stringify({ runId: anchorRunId, batchId: command.batchId }), command.timestamp, command.timestamp)
+    }).immediate()
+  }
+
+  /**
+   * 读取兴趣批次及其全部独立运行。
+   * @param batchId 批次 UUID。
+   * @returns 按输入序号排列的批次记录；不存在时返回 null。
+   */
+  async findInterestBatch(batchId: string): Promise<InterestBatchRecord | null> {
+    const batch = this.client.prepare('SELECT * FROM interest_batches WHERE id = ?').get(batchId) as Record<string, unknown> | undefined
+    if (!batch) return null
+    const rows = this.client.prepare(`
+      SELECT generation_runs.*, interest_batch_items.item_id, interest_batch_items.ordinal
+      FROM interest_batch_items
+      INNER JOIN generation_runs ON generation_runs.id = interest_batch_items.run_id
+      WHERE interest_batch_items.batch_id = ?
+      ORDER BY interest_batch_items.ordinal
+    `).all(batchId) as Array<Record<string, unknown>>
+    return {
+      id: String(batch.id), personaId: String(batch.persona_id),
+      usage: batch.usage_json === null ? null : JSON.parse(String(batch.usage_json)) as TextModelUsage,
+      createdAt: Number(batch.created_at), updatedAt: Number(batch.updated_at),
+      items: rows.map(value => ({ itemId: String(value.item_id), ordinal: Number(value.ordinal), run: toRun(value) })),
+    }
+  }
+
+  /**
+   * 查找独立兴趣运行在批次中的定位。
+   * @param runId 独立兴趣运行 UUID。
+   * @returns 所属批次和条目标识；不属于批次时返回 null。
+   */
+  async findInterestBatchItemByRun(runId: string): Promise<{ batchId: string, itemId: string } | null> {
+    const value = this.client.prepare(`
+      SELECT batch_id, item_id FROM interest_batch_items WHERE run_id = ?
+    `).get(runId) as { batch_id: string, item_id: string } | undefined
+    return value ? { batchId: value.batch_id, itemId: value.item_id } : null
+  }
+
+  /**
+   * 将主调用的全部条目或手工重试的单个条目切换为运行中。
+   * @param batchId 批次 UUID。
+   * @param itemId 单项重试编号；主调用时为 null。
+   * @param timestamp 更新时间。
+   * @returns 实际开始的运行数量。
+   */
+  async startInterestBatch(batchId: string, itemId: string | null, timestamp: number): Promise<number> {
+    const itemClause = itemId === null ? '' : 'AND interest_batch_items.item_id = ?'
+    const parameters = itemId === null ? [timestamp, batchId] : [timestamp, batchId, itemId]
+    return this.client.prepare(`
+      UPDATE generation_runs SET status = 'running', error_code = NULL, error_message = NULL, updated_at = ?
+      WHERE status = 'queued' AND id IN (
+        SELECT run_id FROM interest_batch_items WHERE batch_id = ? ${itemClause}
+      )
+    `).run(...parameters).changes
+  }
+
+  /**
+   * 在一个短事务中逐项保存成功或失败，并累计批次供应商用量。
+   * @param batchId 批次 UUID。
+   * @param items 本轮目标项的独立终态。
+   * @param usage 本轮供应商用量。
+   * @param timestamp 完成时间。
+   * @returns 无返回值。
+   */
+  async completeInterestBatch(batchId: string, items: CompleteInterestBatchItem[], usage: TextModelUsage, timestamp: number): Promise<void> {
+    this.client.transaction(() => {
+      const updateSuccess = this.client.prepare(`
+        UPDATE generation_runs SET status = 'succeeded', result_json = ?, usage_json = ?,
+          error_code = NULL, error_message = NULL, completed_at = ?, updated_at = ?
+        WHERE id = ? AND status = 'running'
+      `)
+      const updateFailure = this.client.prepare(`
+        UPDATE generation_runs SET status = 'failed', result_json = NULL, usage_json = ?,
+          error_code = ?, error_message = ?, completed_at = ?, updated_at = ?
+        WHERE id = ? AND status = 'running'
+      `)
+      items.forEach((item, index) => {
+        const currentRun = this.client.prepare('SELECT usage_json FROM generation_runs WHERE id = ?').get(item.runId) as { usage_json: string | null }
+        const previousRunUsage = currentRun.usage_json === null ? null : JSON.parse(currentRun.usage_json) as TextModelUsage
+        const itemUsage = index === 0 ? JSON.stringify(mergeUsage(previousRunUsage, usage)) : null
+        if (item.result) updateSuccess.run(JSON.stringify(item.result), itemUsage, timestamp, timestamp, item.runId)
+        else updateFailure.run(itemUsage, item.errorCode, item.errorMessage?.slice(0, 1000) ?? '模型没有返回该条目的有效结果', timestamp, timestamp, item.runId)
+      })
+      const current = this.client.prepare('SELECT usage_json FROM interest_batches WHERE id = ?').get(batchId) as { usage_json: string | null }
+      const previous = current.usage_json === null ? null : JSON.parse(current.usage_json) as TextModelUsage
+      const cumulative = mergeUsage(previous, usage)
+      this.client.prepare('UPDATE interest_batches SET usage_json = ?, updated_at = ? WHERE id = ?')
+        .run(JSON.stringify(cumulative), timestamp, batchId)
+    }).immediate()
+  }
+
+  /**
+   * 累加批次本轮已产生但未形成有效结果的供应商用量。
+   * @param batchId 批次 UUID。
+   * @param usage 本轮新增供应商用量。
+   * @param timestamp 更新时间。
+   * @returns 无返回值。
+   */
+  async saveInterestBatchUsage(batchId: string, usage: TextModelUsage, timestamp: number): Promise<void> {
+    const current = this.client.prepare('SELECT usage_json FROM interest_batches WHERE id = ?').get(batchId) as { usage_json: string | null } | undefined
+    if (!current) return
+    const previous = current.usage_json === null ? null : JSON.parse(current.usage_json) as TextModelUsage
+    this.client.prepare('UPDATE interest_batches SET usage_json = ?, updated_at = ? WHERE id = ?')
+      .run(JSON.stringify(mergeUsage(previous, usage)), timestamp, batchId)
+  }
+
+  /**
+   * 供应商临时失败后，将本轮运行条目恢复为同一任务可重试的排队状态。
+   * @param batchId 批次 UUID。
+   * @param itemId 单项重试编号；主调用时为 null。
+   * @param timestamp 更新时间。
+   * @returns 无返回值。
+   */
+  async prepareInterestBatchRetry(batchId: string, itemId: string | null, timestamp: number): Promise<void> {
+    const itemClause = itemId === null ? '' : 'AND interest_batch_items.item_id = ?'
+    const parameters = itemId === null ? [timestamp, batchId] : [timestamp, batchId, itemId]
+    this.client.prepare(`
+      UPDATE generation_runs SET status = 'queued', error_code = NULL, error_message = NULL,
+        completed_at = NULL, updated_at = ?
+      WHERE status = 'running' AND id IN (
+        SELECT run_id FROM interest_batch_items WHERE batch_id = ? ${itemClause}
+      )
+    `).run(...parameters)
+  }
+
+  /**
+   * 当批次外层结构或供应商调用最终失败时，终止全部待完成条目。
+   * @param batchId 批次 UUID。
+   * @param code 稳定错误码。
+   * @param message 已脱敏错误原因。
+   * @param timestamp 完成时间。
+   * @returns 无返回值。
+   */
+  async failPendingInterestBatch(batchId: string, code: string, message: string, timestamp: number): Promise<void> {
+    this.client.prepare(`
+      UPDATE generation_runs SET status = 'failed', error_code = ?, error_message = ?, completed_at = ?, updated_at = ?
+      WHERE status IN ('queued', 'running') AND id IN (
+        SELECT run_id FROM interest_batch_items WHERE batch_id = ?
+      )
+    `).run(code, message.slice(0, 1000), timestamp, timestamp, batchId)
+  }
+
+  /**
+   * 为一个失败条目原子建立新任务，不改变其他条目。
+   * @param batchId 批次 UUID。
+   * @param itemId 客户端稳定编号。
+   * @param taskId 新任务 UUID。
+   * @param timestamp 创建时间。
+   * @returns 条目确实从失败状态进入重试时返回 true。
+   */
+  async retryInterestBatchItem(batchId: string, itemId: string, taskId: string, timestamp: number): Promise<boolean> {
+    return this.client.transaction(() => {
+      const target = this.client.prepare(`
+        SELECT generation_runs.id FROM interest_batch_items
+        INNER JOIN generation_runs ON generation_runs.id = interest_batch_items.run_id
+        WHERE interest_batch_items.batch_id = ? AND interest_batch_items.item_id = ? AND generation_runs.status = 'failed'
+      `).get(batchId, itemId) as { id: string } | undefined
+      if (!target) return false
+      this.client.prepare(`
+        UPDATE generation_runs SET status = 'queued', result_json = NULL, error_code = NULL,
+          error_message = NULL, completed_at = NULL, updated_at = ? WHERE id = ?
+      `).run(timestamp, target.id)
+      this.client.prepare(`
+        INSERT INTO task_jobs (id, run_id, type, payload_json, status, attempt_count, max_attempts, created_at, updated_at)
+        VALUES (?, ?, 'assess_interest', ?, 'queued', 0, 2, ?, ?)
+      `).run(taskId, target.id, JSON.stringify({ runId: target.id, batchId, itemId }), timestamp, timestamp)
+      this.client.prepare('UPDATE interest_batches SET updated_at = ? WHERE id = ?').run(timestamp, batchId)
+      return true
+    }).immediate()
+  }
+
+  /**
+   * 插入一个运行及其证据事实，不创建任务；调用方必须位于事务中。
+   * @param command 已固定的运行事实。
+   * @returns 无返回值。
+   */
+  private insertRunFacts(command: Omit<CreateRunCommand, 'taskId' | 'taskType'> | CreateRunCommand): void {
+    this.client.prepare(`
+      INSERT INTO generation_runs (
+        id, kind, persona_version_id, format_template_id, parameter_profile_id, status,
+        input_json, scene_json, parameter_snapshot_json, model_snapshot_json, image_model_snapshot_json,
+        prompt_version, context_provider, prompt_context_snapshot_json, algorithm_snapshot_json,
+        interest_algorithm_snapshot_json, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      command.runId, command.kind, command.personaVersionId, command.formatTemplateId, command.parameterProfileId,
+      command.status, JSON.stringify(command.input), command.scene ? JSON.stringify(command.scene) : null,
+      JSON.stringify(command.parameters), JSON.stringify(command.model), command.imageModel ? JSON.stringify(command.imageModel) : null,
+      command.promptVersion, command.contextProvider, JSON.stringify(command.promptContextSnapshot),
+      command.algorithmSnapshot ? JSON.stringify(command.algorithmSnapshot) : null,
+      command.interestAlgorithmSnapshot ? JSON.stringify(command.interestAlgorithmSnapshot) : null,
+      command.timestamp, command.timestamp,
+    )
+    const insertEvidence = this.client.prepare(`
+      INSERT INTO evidence_snapshots (
+        id, run_id, source_id, chunk_id, role, content, content_hash, rank, metadata_json, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `)
+    for (const evidence of command.evidence) {
+      insertEvidence.run(
+        evidence.id, command.runId, evidence.sourceId, evidence.chunkId, evidence.role,
+        evidence.content, evidence.contentHash, evidence.rank, JSON.stringify(evidence.metadata), command.timestamp,
+      )
+    }
   }
 
   /** @param filter 可选人物、类型、状态和上限。 @returns 新运行在前的记录。 */
@@ -409,6 +609,37 @@ export class SqliteRunRepository implements RunRepository {
     return this.client.transaction(() => {
       const run = this.client.prepare('SELECT status FROM generation_runs WHERE id = ?').get(runId) as { status: string } | undefined
       if (!run || !['planning', 'awaiting_confirmation', 'queued', 'running'].includes(run.status)) return false
+      const batch = this.client.prepare('SELECT batch_id FROM interest_batch_items WHERE run_id = ?').get(runId) as { batch_id: string } | undefined
+      if (batch) {
+        const runningTask = this.client.prepare(`
+          SELECT 1 FROM task_jobs WHERE status = 'running' AND run_id IN (
+            SELECT run_id FROM interest_batch_items WHERE batch_id = ?
+          ) LIMIT 1
+        `).get(batch.batch_id) !== undefined
+        if (runningTask) {
+          this.client.prepare(`
+            UPDATE task_jobs SET status = 'cancel_requested', cancel_requested_at = ?, updated_at = ?
+            WHERE status = 'running' AND run_id IN (
+              SELECT run_id FROM interest_batch_items WHERE batch_id = ?
+            )
+          `).run(timestamp, timestamp, batch.batch_id)
+        }
+        else {
+          this.client.prepare(`
+            UPDATE task_jobs SET status = 'canceled', cancel_requested_at = ?, updated_at = ?
+            WHERE status = 'queued' AND run_id IN (
+              SELECT run_id FROM interest_batch_items WHERE batch_id = ?
+            )
+          `).run(timestamp, timestamp, batch.batch_id)
+          this.client.prepare(`
+            UPDATE generation_runs SET status = 'canceled', completed_at = ?, updated_at = ?
+            WHERE status IN ('planning', 'queued', 'running') AND id IN (
+              SELECT run_id FROM interest_batch_items WHERE batch_id = ?
+            )
+          `).run(timestamp, timestamp, batch.batch_id)
+        }
+        return true
+      }
       if (run.status === 'running') {
         this.client.prepare(`
           UPDATE task_jobs SET status = 'cancel_requested', cancel_requested_at = ?, updated_at = ?
@@ -436,6 +667,21 @@ export class SqliteRunRepository implements RunRepository {
   /** @param runId 运行 UUID。 @param timestamp 完成时间。 @returns 无返回值。 */
   async markRunCanceled(runId: string, timestamp: number): Promise<void> {
     this.client.transaction(() => {
+      const batch = this.client.prepare('SELECT batch_id FROM interest_batch_items WHERE run_id = ?').get(runId) as { batch_id: string } | undefined
+      if (batch) {
+        this.client.prepare(`
+          UPDATE generation_runs SET status = 'canceled', completed_at = ?, updated_at = ?
+          WHERE id IN (SELECT run_id FROM interest_batch_items WHERE batch_id = ?)
+            AND status IN ('planning', 'queued', 'running')
+        `).run(timestamp, timestamp, batch.batch_id)
+        this.client.prepare(`
+          UPDATE task_jobs SET status = 'canceled', lease_until = NULL, updated_at = ?
+          WHERE status = 'cancel_requested' AND run_id IN (
+            SELECT run_id FROM interest_batch_items WHERE batch_id = ?
+          )
+        `).run(timestamp, batch.batch_id)
+        return
+      }
       this.client.prepare(`
         UPDATE block_attempts SET status = 'failed', error_code = 'RUN_CANCELED',
           error_message = '运行已取消', completed_at = ?
@@ -600,6 +846,9 @@ function toRun(value: unknown): GenerationRunRecord {
     algorithmSnapshot: data.algorithm_snapshot_json === null || data.algorithm_snapshot_json === undefined
       ? null
       : JSON.parse(String(data.algorithm_snapshot_json)),
+    interestAlgorithmSnapshot: data.interest_algorithm_snapshot_json === null || data.interest_algorithm_snapshot_json === undefined
+      ? null
+      : JSON.parse(String(data.interest_algorithm_snapshot_json)),
     result: data.result_json === null ? null : interestAssessmentSchema.parse(JSON.parse(String(data.result_json))),
     usage: data.usage_json === null ? null : JSON.parse(String(data.usage_json)) as TextModelUsage,
     errorCode: nullableString(data.error_code), errorMessage: nullableString(data.error_message),
@@ -651,3 +900,25 @@ function toImageAsset(value: unknown): ImageAssetRecord {
 function nullableString(value: unknown): string | null { return value === null || value === undefined ? null : String(value) }
 /** @param value 未知可空字段。 @returns 数字或 null。 */
 function nullableNumber(value: unknown): number | null { return value === null || value === undefined ? null : Number(value) }
+
+/**
+ * 合并批次先前用量与本轮用量；任一供应商缺失的字段保持未知。
+ * @param previous 批次此前累计用量。
+ * @param current 本轮新增用量。
+ * @returns 合并后的供应商用量。
+ */
+function mergeUsage(previous: TextModelUsage | null, current: TextModelUsage): TextModelUsage {
+  if (!previous) return current
+  const cachedInputTokens = previous.cachedInputTokens === undefined && current.cachedInputTokens === undefined
+    ? undefined
+    : previous.cachedInputTokens === null || previous.cachedInputTokens === undefined
+      || current.cachedInputTokens === null || current.cachedInputTokens === undefined
+      ? null
+      : previous.cachedInputTokens + current.cachedInputTokens
+  return {
+    inputTokens: previous.inputTokens === null || current.inputTokens === null ? null : previous.inputTokens + current.inputTokens,
+    outputTokens: previous.outputTokens === null || current.outputTokens === null ? null : previous.outputTokens + current.outputTokens,
+    totalTokens: previous.totalTokens === null || current.totalTokens === null ? null : previous.totalTokens + current.totalTokens,
+    ...(cachedInputTokens === undefined ? {} : { cachedInputTokens }),
+  }
+}

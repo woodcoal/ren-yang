@@ -82,6 +82,19 @@ export function buildInterestPromptVariables(context: PromptContext, content: st
 }
 
 /**
+ * 构建批量兴趣判定模板变量，并把变化文本固定放在公共人物前缀之后。
+ * @param context 固定人物、世界和证据快照。
+ * @param items 保持客户端输入顺序的稳定编号与文本。
+ * @returns 与兴趣算法提示词变量契约一致的字符串映射。
+ */
+export function buildInterestBatchPromptVariables(
+  context: PromptContext,
+  items: Array<{ itemId: string, text: string }>,
+): Record<string, string> {
+  return { ...buildContextVariables(context), contentJson: JSON.stringify(items) }
+}
+
+/**
  * 构建一次直出文章模板变量。
  * @param context 固定人物、世界、场景和证据快照。
  * @param requirement 用户明确的创作条件。
@@ -242,7 +255,7 @@ function groupEvidence(evidence: EvidenceSnapshotRecord[]): GroupedEvidence {
  */
 function serializeEvidenceItems(items: EvidenceSnapshotRecord[]): string {
   return JSON.stringify(items.map(item => ({
-    id: item.id,
+    id: typeof item.metadata.promptEvidenceId === 'string' ? item.metadata.promptEvidenceId : item.id,
     entityId: typeof item.metadata.entityId === 'string' ? item.metadata.entityId : item.sourceId,
     role: item.role,
     content: item.content,

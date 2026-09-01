@@ -1,5 +1,6 @@
 import type { DocumentSpec, TextModelParameters } from '../../shared/schemas/generation'
 import type { PromptContextSnapshot } from '../../shared/types/generation'
+import type { AiAlgorithmSnapshot } from '../domain/ai/AiAlgorithmModels'
 import type {
   ArtifactBlockRecord,
   BlockAttemptRecord,
@@ -8,6 +9,7 @@ import type {
   FormatTemplateRecord,
   GenerationAlgorithmSnapshot,
   GenerationRunRecord,
+  InterestBatchRecord,
   ImageAssetRecord,
   ImageModelSnapshot,
   ParameterProfileRecord,
@@ -50,8 +52,36 @@ export interface CreateRunCommand {
   promptContextSnapshot: PromptContextSnapshot
   /** 图文运行固定的文章与配图分析算法；兴趣运行为空。 */
   algorithmSnapshot: GenerationAlgorithmSnapshot | null
+  /** 兴趣运行固定的批量判定算法；图文运行为空。 */
+  interestAlgorithmSnapshot: AiAlgorithmSnapshot | null
   evidence: NewEvidenceSnapshot[]
   timestamp: number
+}
+
+/** 原子创建一个兴趣批次、全部独立运行和唯一主任务。 */
+export interface CreateInterestBatchCommand {
+  /** 批次 UUID。 */
+  batchId: string
+  /** 本批次唯一人物 UUID。 */
+  personaId: string
+  /** 唯一主任务 UUID。 */
+  taskId: string
+  /** 按输入顺序保存的独立运行命令。 */
+  items: Array<{ itemId: string, ordinal: number, run: Omit<CreateRunCommand, 'taskId' | 'taskType'> }>
+  /** 创建时间。 */
+  timestamp: number
+}
+
+/** 一次批量模型响应中某个条目的终态写入。 */
+export interface CompleteInterestBatchItem {
+  /** 目标独立运行 UUID。 */
+  runId: string
+  /** 校验成功的兴趣结果；失败时为空。 */
+  result: GenerationRunRecord['result']
+  /** 失败错误码；成功时为空。 */
+  errorCode: string | null
+  /** 失败原因；成功时为空。 */
+  errorMessage: string | null
 }
 
 /** 运行列表过滤条件。 */
@@ -98,6 +128,24 @@ export interface RunRepository {
 
   /** @param command 完整原子创建命令。 @returns 无返回值。 */
   createRun(command: CreateRunCommand): Promise<void>
+  /** @param command 完整兴趣批次原子创建命令。 @returns 无返回值。 */
+  createInterestBatch(command: CreateInterestBatchCommand): Promise<void>
+  /** @param batchId 批次 UUID。 @returns 批次及顺序条目；不存在时为空。 */
+  findInterestBatch(batchId: string): Promise<InterestBatchRecord | null>
+  /** @param runId 独立兴趣运行 UUID。 @returns 所属批次及条目标识；不是批次运行时为空。 */
+  findInterestBatchItemByRun(runId: string): Promise<{ batchId: string, itemId: string } | null>
+  /** @param batchId 批次 UUID。 @param itemId 单项重试时的客户端编号；主调用为空。 @param timestamp 更新时间。 @returns 实际开始的运行数量。 */
+  startInterestBatch(batchId: string, itemId: string | null, timestamp: number): Promise<number>
+  /** @param batchId 批次 UUID。 @param items 全部目标项终态。 @param usage 本次模型调用用量。 @param timestamp 完成时间。 @returns 无返回值。 */
+  completeInterestBatch(batchId: string, items: CompleteInterestBatchItem[], usage: TextModelUsage, timestamp: number): Promise<void>
+  /** @param batchId 批次 UUID。 @param usage 本轮已产生用量。 @param timestamp 更新时间。 @returns 无返回值。 */
+  saveInterestBatchUsage(batchId: string, usage: TextModelUsage, timestamp: number): Promise<void>
+  /** @param batchId 批次 UUID。 @param itemId 单项重试编号；主调用为空。 @param timestamp 更新时间。 @returns 无返回值。 */
+  prepareInterestBatchRetry(batchId: string, itemId: string | null, timestamp: number): Promise<void>
+  /** @param batchId 批次 UUID。 @param code 稳定错误码。 @param message 脱敏原因。 @param timestamp 完成时间。 @returns 无返回值。 */
+  failPendingInterestBatch(batchId: string, code: string, message: string, timestamp: number): Promise<void>
+  /** @param batchId 批次 UUID。 @param itemId 客户端稳定编号。 @param taskId 新任务 UUID。 @param timestamp 创建时间。 @returns 是否成功进入单项重试。 */
+  retryInterestBatchItem(batchId: string, itemId: string, taskId: string, timestamp: number): Promise<boolean>
   /** @param filter 列表过滤。 @returns 新运行在前的记录。 */
   listRuns(filter: RunListFilter): Promise<GenerationRunRecord[]>
   /** @param id 运行 UUID。 @returns 运行或 null。 */

@@ -80,6 +80,29 @@ export const createInterestRunSchema = z.object({
   scene: sceneContextSchema.optional(),
 })
 
+/** 批量兴趣判定中的稳定客户端条目。 */
+export const interestBatchInputItemSchema = z.object({
+  itemId: z.string().trim().min(1, '条目标识不能为空').max(100, '条目标识不能超过 100 个字符'),
+  text: z.string().trim().min(1, '待判断文本不能为空').max(50_000, '单条文本不能超过 50000 个字符'),
+})
+
+/** 创建同一人物的一次批量兴趣判定。 */
+export const createInterestBatchSchema = z.object({
+  personaId: z.string().uuid('人物标识无效'),
+  items: z.array(interestBatchInputItemSchema).min(1, '至少需要一条待判断文本').max(20, '单批次最多包含 20 条文本'),
+}).superRefine((value, context) => {
+  const seen = new Set<string>()
+  value.items.forEach((item, index) => {
+    if (seen.has(item.itemId)) {
+      context.addIssue({ code: 'custom', path: ['items', index, 'itemId'], message: '同一批次的条目标识不能重复' })
+    }
+    seen.add(item.itemId)
+  })
+  if (value.items.reduce((total, item) => total + item.text.length, 0) > 100_000) {
+    context.addIssue({ code: 'custom', path: ['items'], message: '单批次文本总长度不能超过 100000 个字符' })
+  }
+})
+
 /** 图文创作最终输出格式。 */
 export const artifactOutputFormatSchema = z.enum(['html', 'text'], { error: '输出格式无效' })
 
@@ -108,6 +131,16 @@ export const interestAssessmentSchema = z.object({
   opposingEvidenceIds: z.array(z.string().uuid()).max(50),
   unknowns: z.array(z.string().trim().min(1).max(1_000)).max(20),
   reasoningSummary: z.string().trim().min(1).max(4_000),
+})
+
+/** 模型批量兴趣响应中的单项结果。 */
+export const interestBatchResultItemSchema = interestAssessmentSchema.extend({
+  itemId: z.string().trim().min(1).max(100),
+})
+
+/** 模型批量兴趣响应外层；分项内容由应用层独立校验。 */
+export const interestBatchModelOutputSchema = z.object({
+  results: z.array(z.unknown()),
 })
 
 /** 图片模型使用且会写入尝试快照的完整视觉简报。 */
@@ -228,9 +261,12 @@ export type TextModelParameters = z.infer<typeof textModelParametersSchema>
 export type CreateParameterProfileInput = z.infer<typeof createParameterProfileSchema>
 export type CreateFormatTemplateInput = z.infer<typeof createFormatTemplateSchema>
 export type CreateInterestRunInput = z.infer<typeof createInterestRunSchema>
+export type CreateInterestBatchInput = z.infer<typeof createInterestBatchSchema>
+export type InterestBatchInputItem = z.infer<typeof interestBatchInputItemSchema>
 export type CreateGenerationRunInput = z.input<typeof createGenerationRunSchema>
 export type ArtifactOutputFormat = z.infer<typeof artifactOutputFormatSchema>
 export type InterestAssessment = z.infer<typeof interestAssessmentSchema>
+export type InterestBatchResultItem = z.infer<typeof interestBatchResultItemSchema>
 export type ArticleOutput = z.infer<typeof articleOutputSchema>
 export type ArticleImagesOutput = z.infer<typeof articleImagesOutputSchema>
 export type DocumentSpec = z.infer<typeof documentSpecSchema>
