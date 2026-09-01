@@ -1,8 +1,10 @@
 import type { AiAlgorithmStepParameters } from '../schemas/aiConfiguration'
 
-/** 首批由代码固定流程的算法编码。 */
+/** 由代码固定流程的全部算法编码。 */
 export type AiAlgorithmCode = 'persona_soul' | 'world_soul' | 'persona_growth' | 'world_growth' | 'persona_memory'
+  | 'persona_draft' | 'world_draft' | 'feedback_classification' | 'persona_avatar'
   | 'interest_assessment' | 'article_generation' | 'article_image_analysis'
+  | 'article_text_revision' | 'article_image_generation'
 
 /** 不暴露密文和明文密钥的 AI 接口连接视图。 */
 export interface AiConnectionView {
@@ -56,6 +58,8 @@ export interface AiAlgorithmStepDefinitionView {
   description: string
   /** 固定提示词编码。 */
   promptCode: string
+  /** 当前步骤必须绑定的模型类型。 */
+  modality: 'text' | 'image'
   /** 固定执行顺序。 */
   ordinal: number
 }

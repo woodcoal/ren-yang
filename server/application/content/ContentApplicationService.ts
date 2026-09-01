@@ -67,6 +67,7 @@ import type { DecodedSourceFile, SourceContentProcessor, SourceFileStorage } fro
 import { StorageCapacityError } from '../../ports/StorageCapacity'
 import { ApplicationError } from '../errors/ApplicationError'
 import type { AiPromptApplicationService } from '../aiPrompts/AiPromptApplicationService'
+import type { AiAlgorithmApplicationService } from '../aiConfiguration/AiAlgorithmApplicationService'
 
 /** 文件资料导入命令。 */
 export interface ImportSourceFileInput {
@@ -116,6 +117,8 @@ export interface ContentApplicationServiceDependencies {
   imageModel?: ImageModelPort
   /** 全站已发布 AI 提示词目录。 */
   prompts: Pick<AiPromptApplicationService, 'render'>
+  /** 人物头像固定算法；未提供时仅供迁移前独立测试。 */
+  algorithms?: Pick<AiAlgorithmApplicationService, 'prepare' | 'executeImageStep'>
   /** OpenViking 启用时提供的持久资料同步与删除队列；关闭时不注入。 */
   contextSyncQueue?: ContextSyncTaskQueue
   /** 可取回人物第三方密码使用的服务端认证加密器。 */
@@ -207,8 +210,8 @@ export class ContentApplicationService {
   async generatePersonaAvatar(personaId: string, input: GeneratePersonaAvatarInput): Promise<PersonaSummary> {
     const persona = await this.requirePersona(personaId)
     const imageModel = this.dependencies.imageModel
-    if (!imageModel?.getConfiguredModel()) {
-      throw new ApplicationError('CAPABILITY_DISABLED', '图片模型尚未配置，不能生成人物头像', 422)
+    if (!this.dependencies.algorithms && !imageModel?.getConfiguredModel()) {
+      throw new ApplicationError('CAPABILITY_DISABLED', '人物头像算法尚未配置，不能生成人物头像', 422)
     }
     if (!persona.activeVersionId) {
       throw new ApplicationError('PERSONA_VERSION_NOT_ACTIVE', '人物当前灵魂版本缺失，不能生成头像', 409)
@@ -219,16 +222,23 @@ export class ContentApplicationService {
     }
 
     try {
-      const prompt = await this.dependencies.prompts.render('content.persona_avatar', {
+      const variables = {
         nameJson: JSON.stringify(persona.name),
         soulPromptJson: JSON.stringify(version.snapshot.promptText.slice(0, 6_000)),
         additionalPromptJson: JSON.stringify(input.additionalPrompt.trim().slice(0, 2_000)),
-      })
-      const response = await imageModel.generate({
-        prompt: prompt.userPrompt,
-        aspectRatio: '1:1',
-        timeoutMs: 120_000,
-      })
+      }
+      const response = this.dependencies.algorithms
+        ? await this.dependencies.algorithms.executeImageStep(
+            await this.dependencies.algorithms.prepare('persona_avatar'),
+            'generate',
+            variables,
+            '1:1',
+          )
+        : await this.requireLegacyImageModel().generate({
+            prompt: (await this.dependencies.prompts.render('content.persona_avatar', variables)).userPrompt,
+            aspectRatio: '1:1',
+            timeoutMs: 120_000,
+          })
       await this.requirePersonaAvatarStorage().saveAvatar(
         personaId,
         response.bytes,
@@ -1117,6 +1127,18 @@ export class ContentApplicationService {
   private requirePersonaAvatarStorage(): PersonaAvatarStorage {
     if (!this.dependencies.personaAvatars) throw new ApplicationError('CAPABILITY_DISABLED', '人物头像存储尚未启用', 503)
     return this.dependencies.personaAvatars
+  }
+
+  /**
+   * 返回只供迁移前独立测试使用的默认图片模型。
+   * @returns 已注入且当前可用的图片模型端口。
+   */
+  private requireLegacyImageModel(): ImageModelPort {
+    const model = this.dependencies.imageModel
+    if (!model?.getConfiguredModel()) {
+      throw new ApplicationError('CAPABILITY_DISABLED', '人物头像算法尚未配置，不能生成人物头像', 422)
+    }
+    return model
   }
 
   /**

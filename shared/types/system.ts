@@ -4,15 +4,24 @@ import type { TextModelParameters } from '../schemas/generation'
 
 /** 管理界面可见的外部能力与默认运行参数。 */
 export interface SystemCapabilitiesResult {
-  /** 文本模型非敏感配置状态。 */
+  /** 当前可用文本算法使用的代表性非敏感模型快照。 */
   textModel: TextModelCapability
-  /** 图片模型非敏感配置状态。 */
+  /** 当前可用图文算法使用的非敏感图片模型快照。 */
   imageModel: ImageModelCapability
+  /** 工作台按真实固定算法链判定的可用能力。 */
+  algorithmCapabilities: {
+    /** 完整文章生成与正文保存链是否可用。 */
+    articleGeneration: boolean
+    /** 配图分析与图片生成链是否可用。 */
+    articleImageGeneration: boolean
+    /** 批量兴趣判定算法是否可用。 */
+    interestAssessment: boolean
+  }
   /** OpenViking 非敏感配置状态。 */
   openViking: OpenVikingCapabilityView
   /** 新运行实际使用的上下文提供器。 */
   contextProvider: 'sqlite_fts5' | 'openviking'
-  /** 未选择参数方案时固定到运行快照的默认参数。 */
+  /** 由代码固定并写入新运行快照的安全参数。 */
   defaultParameters: TextModelParameters
 }
 

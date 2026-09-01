@@ -72,7 +72,6 @@ import { TextModelError } from '../../ports/TextModelPort'
 import { ApplicationError } from '../errors/ApplicationError'
 import type { AiPromptApplicationService } from '../aiPrompts/AiPromptApplicationService'
 import type { AiAlgorithmApplicationService } from '../aiConfiguration/AiAlgorithmApplicationService'
-import type { SystemAiSettingsApplicationService } from '../systemAi/SystemAiSettingsApplicationService'
 import {
   buildArticleImagesPromptVariables,
   buildArticlePromptVariables,
@@ -88,7 +87,7 @@ import {
 import { renderArtifact, type SelectedArtifactBlock } from './ArtifactRenderer'
 import { packageArtifact, type ExportedArtifact } from './ArtifactPackager'
 
-/** 未选择参数方案时使用并保存到运行快照的默认参数。 */
+/** 新运行使用并保存到快照的代码固定安全参数。 */
 export const DEFAULT_TEXT_PARAMETERS: TextModelParameters = {
   temperature: 0.4,
   maxOutputTokens: 2_048,
@@ -137,10 +136,8 @@ export interface GenerationApplicationServiceDependencies {
   learning: Pick<LearningRepository, 'findLearningPromptWorkspace' | 'createPersonaOperationRecord'>
   /** OpenViking 启用时使用的 Session 异步队列。 */
   contextSyncQueue?: ContextSyncTaskQueue
-  /** 系统内部 AI 操作的分场景参数；未提供时保持原固定参数，便于独立测试。 */
-  systemAiSettings?: Pick<SystemAiSettingsApplicationService, 'resolveParameters'>
-  /** 文章生成与配图分析固定算法；未提供时仅供独立旧路径测试。 */
-  algorithms?: Pick<AiAlgorithmApplicationService, 'prepare' | 'executeStep'>
+  /** 新 AI 操作使用的固定算法；未提供时仅供迁移前独立测试和历史运行兼容。 */
+  algorithms?: Pick<AiAlgorithmApplicationService, 'prepare' | 'executeStep' | 'executeImageStep'>
 }
 
 /** 编排运行创建、查询、文章直出、内部结果保存和 Worker 模型执行。 */
@@ -148,26 +145,64 @@ export class GenerationApplicationService implements TaskHandler {
   /** @param dependencies 运行、内容、检索、模型、标识、时间和哈希端口。 */
   constructor(private readonly dependencies: GenerationApplicationServiceDependencies) { }
 
-  /** @returns 文本模型非敏感能力状态。 */
-  getTextModelCapability() {
-    const configured = this.dependencies.model.getConfiguredModel()
-    return configured
-      ? { configured: true, ...configured }
-      : { configured: false, provider: 'openai_compatible' as const, model: null, endpointOrigin: null }
-  }
-
-  /** @returns 当前阶段全部非敏感外部能力和实际上下文提供器。 */
-  getCapabilities(): SystemCapabilitiesResult {
-    const imageModel = this.dependencies.imageModel.getConfiguredModel()
+  /**
+   * 按当前固定算法配置返回非敏感外部能力和实际上下文提供器。
+   * @returns 创作、配图和兴趣算法的真实可用状态；迁移前测试使用旧模型能力。
+   */
+  async getCapabilities(): Promise<SystemCapabilitiesResult> {
+    const [articleAlgorithm, revisionAlgorithm, imageAnalysisAlgorithm, imageGenerationAlgorithm, interestAlgorithm] = this.dependencies.algorithms
+      ? await Promise.all([
+          this.prepareCapabilityAlgorithm('article_generation'),
+          this.prepareCapabilityAlgorithm('article_text_revision'),
+          this.prepareCapabilityAlgorithm('article_image_analysis'),
+          this.prepareCapabilityAlgorithm('article_image_generation'),
+          this.prepareCapabilityAlgorithm('interest_assessment'),
+        ])
+      : [null, null, null, null, null]
+    const legacyTextModel = this.dependencies.algorithms ? null : this.dependencies.model.getConfiguredModel()
+    const legacyImageModel = this.dependencies.algorithms ? null : this.dependencies.imageModel.getConfiguredModel()
+    const articleGeneration = Boolean(articleAlgorithm && revisionAlgorithm) || Boolean(legacyTextModel)
+    const articleImageGeneration = Boolean(imageAnalysisAlgorithm && imageGenerationAlgorithm) || Boolean(legacyImageModel)
+    const interestAssessment = Boolean(interestAlgorithm) || Boolean(legacyTextModel)
+    const textStep = articleGeneration
+      ? articleAlgorithm?.steps.find(step => step.modality === 'text') ?? null
+      : interestAlgorithm?.steps.find(step => step.modality === 'text') ?? null
+    const imageStep = articleImageGeneration
+      ? imageGenerationAlgorithm?.steps.find(step => step.modality === 'image') ?? null
+      : null
+    const textModel = textStep
+      ? { configured: true as const, provider: 'openai_compatible' as const, model: textStep.model, endpointOrigin: new URL(textStep.endpoint).origin }
+      : legacyTextModel
+        ? { configured: true as const, ...legacyTextModel }
+        : { configured: false as const, provider: 'openai_compatible' as const, model: null, endpointOrigin: null }
+    const imageModel = imageStep
+      ? { configured: true as const, provider: 'openai_compatible_images' as const, model: imageStep.model, endpointOrigin: new URL(imageStep.endpoint).origin }
+      : legacyImageModel
+        ? { configured: true as const, ...legacyImageModel }
+        : { configured: false as const, provider: 'openai_compatible_images' as const, model: null, endpointOrigin: null }
     const openViking = this.dependencies.context.getOpenVikingCapability()
     return {
-      textModel: this.getTextModelCapability(),
-      imageModel: imageModel
-        ? { configured: true, ...imageModel }
-        : { configured: false, provider: 'openai_compatible_images' as const, model: null, endpointOrigin: null },
+      textModel,
+      imageModel,
+      algorithmCapabilities: { articleGeneration, articleImageGeneration, interestAssessment },
       openViking,
       contextProvider: this.dependencies.context.getProvider(),
       defaultParameters: { ...DEFAULT_TEXT_PARAMETERS },
+    }
+  }
+
+  /**
+   * 尝试准备一个用于能力展示的固定算法，不把未配置或配置失效提升为系统接口错误。
+   * @param code 当前工作台实际依赖的固定算法编码。
+   * @returns 可执行算法快照；算法尚未配置或当前依赖失效时返回 null。
+   */
+  private async prepareCapabilityAlgorithm(code: AiAlgorithmSnapshot['algorithmCode']): Promise<AiAlgorithmSnapshot | null> {
+    try {
+      return await this.dependencies.algorithms!.prepare(code)
+    }
+    catch (error: unknown) {
+      if (error instanceof ApplicationError) return null
+      throw error
     }
   }
 
@@ -177,7 +212,7 @@ export class GenerationApplicationService implements TaskHandler {
    * @returns 不写入数据库的结构化草稿及非阻断截断提示。
    */
   async generatePersonaDraft(input: GeneratePersonaDraftInput): Promise<PersonaDraftView> {
-    if (!this.dependencies.model.getConfiguredModel()) {
+    if (!this.dependencies.algorithms && !this.dependencies.model.getConfiguredModel()) {
       throw new ApplicationError('CAPABILITY_DISABLED', '文本模型尚未配置，不能生成人物草稿', 422)
     }
     const sourceIds = [...new Set(input.sourceIds)]
@@ -210,20 +245,20 @@ export class GenerationApplicationService implements TaskHandler {
     }))
     sources.sort((left, right) => sourceRoleRank(left.role) - sourceRoleRank(right.role) || left.name.localeCompare(right.name, 'zh-CN'))
 
-    const prompt = await this.dependencies.prompts.render(
-      GENERATION_PROMPT_CODES.personaDraft,
-      buildPersonaDraftPromptVariables(input.prompt, world, sources),
-    )
-    const retryVersions = await this.dependencies.prompts.snapshotPublishedVersions([GENERATION_PROMPT_CODES.jsonRetry])
-    const parameters = await this.resolveSystemParameters('draftGeneration', DEFAULT_TEXT_PARAMETERS)
+    const variables = buildPersonaDraftPromptVariables(input.prompt, world, sources)
     try {
-      const { output } = await this.generateValidated(
-        prompt,
-        retryVersions[GENERATION_PROMPT_CODES.jsonRetry]!,
-        parameters,
-        'persona_draft',
-        value => personaDraftSchema.parse(value),
-      )
+      const output = this.dependencies.algorithms
+        ? personaDraftSchema.parse((await this.dependencies.algorithms.executeStep(
+            await this.dependencies.algorithms.prepare('persona_draft'),
+            'generate', variables, 'persona_draft', 'json_object',
+          )).structuredOutput)
+        : (await this.generateValidated(
+            await this.dependencies.prompts.render(GENERATION_PROMPT_CODES.personaDraft, variables),
+            (await this.dependencies.prompts.snapshotPublishedVersions([GENERATION_PROMPT_CODES.jsonRetry]))[GENERATION_PROMPT_CODES.jsonRetry]!,
+            { ...DEFAULT_TEXT_PARAMETERS },
+            'persona_draft',
+            value => personaDraftSchema.parse(value),
+          )).output
       return { ...output, warnings }
     }
     catch (error: unknown) {
@@ -239,24 +274,23 @@ export class GenerationApplicationService implements TaskHandler {
    * @returns 不写入数据库的结构化世界草稿。
    */
   async generateWorldDraft(input: GenerateWorldDraftInput): Promise<WorldDraftView> {
-    if (!this.dependencies.model.getConfiguredModel()) {
+    if (!this.dependencies.algorithms && !this.dependencies.model.getConfiguredModel()) {
       throw new ApplicationError('CAPABILITY_DISABLED', '文本模型尚未配置，不能生成世界草稿', 422)
     }
     try {
-      const prompt = await this.dependencies.prompts.render(
-        GENERATION_PROMPT_CODES.worldDraft,
-        buildWorldDraftPromptVariables(input.prompt),
-      )
-      const retryVersions = await this.dependencies.prompts.snapshotPublishedVersions([GENERATION_PROMPT_CODES.jsonRetry])
-      const parameters = await this.resolveSystemParameters('draftGeneration', DEFAULT_TEXT_PARAMETERS)
-      const { output } = await this.generateValidated(
-        prompt,
-        retryVersions[GENERATION_PROMPT_CODES.jsonRetry]!,
-        parameters,
-        'world_draft',
-        value => worldDraftSchema.parse(value),
-      )
-      return output
+      const variables = buildWorldDraftPromptVariables(input.prompt)
+      return this.dependencies.algorithms
+        ? worldDraftSchema.parse((await this.dependencies.algorithms.executeStep(
+            await this.dependencies.algorithms.prepare('world_draft'),
+            'generate', variables, 'world_draft', 'json_object',
+          )).structuredOutput)
+        : (await this.generateValidated(
+            await this.dependencies.prompts.render(GENERATION_PROMPT_CODES.worldDraft, variables),
+            (await this.dependencies.prompts.snapshotPublishedVersions([GENERATION_PROMPT_CODES.jsonRetry]))[GENERATION_PROMPT_CODES.jsonRetry]!,
+            { ...DEFAULT_TEXT_PARAMETERS },
+            'world_draft',
+            value => worldDraftSchema.parse(value),
+          )).output
     }
     catch (error: unknown) {
       const normalized = normalizeExecutionError(error)
@@ -413,8 +447,8 @@ export class GenerationApplicationService implements TaskHandler {
       )) throw new ApplicationError('VERSION_CONFLICT', '运行状态已经变化，请刷新后重试', 409)
       return { runId, taskId, status: 'queued' }
     }
-    this.requireMatchingModel(run)
-    this.requireMatchingImageModel(run)
+    if (!run.algorithmSnapshot?.articleTextRevision) this.requireMatchingModel(run)
+    if (!run.algorithmSnapshot?.articleImageGeneration) this.requireMatchingImageModel(run)
     const taskId = this.dependencies.identifiers.create()
     const retried = await this.dependencies.runs.retryRun(runId, taskId, this.dependencies.clock.now())
     if (!retried) throw new ApplicationError('VERSION_CONFLICT', '运行状态已经变化，请刷新后重试', 409)
@@ -761,17 +795,23 @@ export class GenerationApplicationService implements TaskHandler {
 
   /** @param kind 运行类型。 @param personaId 人物 UUID。 @param input 固定输入。 @param scene 仅兴趣判断可用的临时场景。 @returns 已创建运行。 */
   private async createRun(kind: GenerationRunRecord['kind'], personaId: string, input: GenerationRunRecord['input'], scene: GenerationRunRecord['scene']): Promise<CreatedRun> {
-    const model = this.dependencies.model.getConfiguredModel()
-    if (!model) throw new ApplicationError('CAPABILITY_DISABLED', '文本模型尚未配置', 422)
-    const imageModel = 'imageCount' in input && input.imageCount > 0
-      ? this.dependencies.imageModel.getConfiguredModel()
-      : null
-    if ('imageCount' in input && input.imageCount > 0 && !imageModel) {
-      throw new ApplicationError('CAPABILITY_DISABLED', '图片模型尚未配置，不能创建包含图片的运行', 422)
-    }
     const algorithmSnapshot = kind === 'artifact_generation' && this.dependencies.algorithms
       ? await this.prepareGenerationAlgorithms('imageCount' in input ? input.imageCount : 0)
       : null
+    const articleStep = algorithmSnapshot?.articleGeneration.steps.find(step => step.stepKey === 'generate')
+    const imageStep = algorithmSnapshot?.articleImageGeneration?.steps.find(step => step.stepKey === 'generate')
+    const model = articleStep
+      ? { provider: 'openai_compatible' as const, model: articleStep.model, endpointOrigin: new URL(articleStep.endpoint).origin }
+      : this.dependencies.model.getConfiguredModel()
+    if (!model) throw new ApplicationError('CAPABILITY_DISABLED', '文本模型尚未配置', 422)
+    const imageModel = 'imageCount' in input && input.imageCount > 0
+      ? imageStep
+        ? { provider: 'openai_compatible_images' as const, model: imageStep.model, endpointOrigin: new URL(imageStep.endpoint).origin }
+        : this.dependencies.imageModel.getConfiguredModel()
+      : null
+    if ('imageCount' in input && input.imageCount > 0 && !imageModel) {
+      throw new ApplicationError('CAPABILITY_DISABLED', '图片生成算法尚未配置，不能创建包含图片的运行', 422)
+    }
     const promptCodes = kind === 'interest_assessment'
       ? [GENERATION_PROMPT_CODES.interestAssessment, GENERATION_PROMPT_CODES.jsonRetry]
       : [
@@ -786,7 +826,13 @@ export class GenerationApplicationService implements TaskHandler {
     if (!persona.isEnabled) throw new ApplicationError('RESOURCE_DISABLED', '人物已禁用，不能创建新任务', 409)
     if (!persona.activeVersionId) throw new ApplicationError('PERSONA_VERSION_NOT_ACTIVE', '人物当前灵魂版本缺失，请重新保存灵魂提示词', 409)
     const version = await this.requirePublishedPersonaVersion(persona.activeVersionId, persona.id)
-    const parameters = { ...DEFAULT_TEXT_PARAMETERS }
+    const parameters = articleStep
+      ? textModelParametersSchema.parse({
+          ...DEFAULT_TEXT_PARAMETERS,
+          ...articleStep.parameters,
+          reservedOutputTokens: Math.max(DEFAULT_TEXT_PARAMETERS.reservedOutputTokens, articleStep.parameters.maxOutputTokens),
+        })
+      : { ...DEFAULT_TEXT_PARAMETERS }
     const linkedWorld = persona.worldId ? await this.dependencies.content.findWorld(persona.worldId) : null
     const world = linkedWorld?.isEnabled ? linkedWorld : null
     const effectivePersona = world ? persona : { ...persona, worldId: null }
@@ -964,17 +1010,19 @@ export class GenerationApplicationService implements TaskHandler {
   }
 
   /**
-   * 固定新图文运行使用的文章生成和可选配图分析算法。
+   * 固定新图文运行使用的文章生成、正文修正和可选图片算法。
    * @param imageCount 用户明确要求的图片数量。
    * @returns 不含访问密钥的完整算法配置快照。
    */
   private async prepareGenerationAlgorithms(imageCount: number): Promise<GenerationAlgorithmSnapshot> {
     if (!this.dependencies.algorithms) throw new Error('图文算法服务未配置')
-    const [articleGeneration, articleImageAnalysis] = await Promise.all([
+    const [articleGeneration, articleImageAnalysis, articleTextRevision, articleImageGeneration] = await Promise.all([
       this.dependencies.algorithms.prepare('article_generation'),
       imageCount > 0 ? this.dependencies.algorithms.prepare('article_image_analysis') : Promise.resolve(null),
+      this.dependencies.algorithms.prepare('article_text_revision'),
+      imageCount > 0 ? this.dependencies.algorithms.prepare('article_image_generation') : Promise.resolve(null),
     ])
-    return { articleGeneration, articleImageAnalysis }
+    return { articleGeneration, articleImageAnalysis, articleTextRevision, articleImageGeneration }
   }
 
   /**
@@ -1213,7 +1261,7 @@ export class GenerationApplicationService implements TaskHandler {
     let imagePlan: ArticleImagesOutput = { images: [] }
     let operationUsage = articleResult.usage
     if (run.input.imageCount > 0) {
-      this.requireMatchingImageModel(run)
+      if (!run.algorithmSnapshot?.articleImageGeneration) this.requireMatchingImageModel(run)
       const imageVariables = buildArticleImagesPromptVariables(articleResult.output, run.input.imageCount)
       const priorUsage = aggregateTextModelUsage(run.usage ? [run.usage, articleResult.usage] : [articleResult.usage])
       const imageResult = run.algorithmSnapshot?.articleImageAnalysis
@@ -1296,12 +1344,14 @@ export class GenerationApplicationService implements TaskHandler {
   /** @param runId 已确认文档运行 UUID。 @returns 所有图文块串行执行结束时完成。 */
   private async executeDocument(runId: string): Promise<void> {
     const run = await this.requireRun(runId)
-    this.requireMatchingModel(run)
+    if (!run.algorithmSnapshot?.articleTextRevision) this.requireMatchingModel(run)
     await this.requireRunStarted(run, ['queued', 'running'])
     const context = await this.loadPromptContext(run)
     const spec = (await this.dependencies.runs.listDocumentSpecs(runId)).find(item => item.status === 'confirmed')
     if (!spec) throw new ApplicationError('DOCUMENT_SPEC_NOT_CONFIRMED', '文档规格尚未确认', 409)
-    if (spec.spec.blocks.some(block => block.type === 'image')) this.requireMatchingImageModel(run)
+    if (spec.spec.blocks.some(block => block.type === 'image') && !run.algorithmSnapshot?.articleImageGeneration) {
+      this.requireMatchingImageModel(run)
+    }
     await this.dependencies.runs.recoverInterruptedDocumentBlocks(runId, this.dependencies.clock.now())
     const blocks = await this.dependencies.runs.listBlocks(runId)
     const previousOutputs: Array<{ key: string, text: string }> = []
@@ -1346,7 +1396,7 @@ export class GenerationApplicationService implements TaskHandler {
    */
   private async executeSingleBlock(runId: string, blockId: string, correctionInstruction: string | null): Promise<void> {
     const run = await this.requireRun(runId)
-    this.requireMatchingModel(run)
+    if (!run.algorithmSnapshot?.articleTextRevision) this.requireMatchingModel(run)
     await this.requireRunStarted(run, ['queued', 'running'])
     const context = await this.loadPromptContext(run)
     const spec = (await this.dependencies.runs.listDocumentSpecs(runId)).find(item => item.status === 'confirmed')
@@ -1356,7 +1406,7 @@ export class GenerationApplicationService implements TaskHandler {
     const target = blocks.find(block => block.id === blockId)
     if (!target) throw new ApplicationError('RESOURCE_NOT_FOUND', '产物块不存在', 404)
     if (target.isLocked) throw new ApplicationError('BLOCK_LOCKED', '锁定块不能重试', 409)
-    if (target.type === 'image') this.requireMatchingImageModel(run)
+    if (target.type === 'image' && !run.algorithmSnapshot?.articleImageGeneration) this.requireMatchingImageModel(run)
     const previousOutputs: Array<{ key: string, text: string }> = []
     for (const block of blocks.slice(0, target.ordinal)) {
       if (block.status === 'succeeded') await this.appendSelectedText(block, previousOutputs)
@@ -1456,17 +1506,15 @@ export class GenerationApplicationService implements TaskHandler {
           const brief = correctionInstruction === null
             ? block.spec.visualBrief
             : { ...block.spec.visualBrief, theme: appendCorrectionInstruction(block.spec.visualBrief.theme, correctionInstruction) }
-          const imagePrompt = await this.dependencies.prompts.render(
-            GENERATION_PROMPT_CODES.imageBlock,
-            buildImagePromptVariables(context, brief, previousOutputs),
-            requireRunPromptVersion(run, GENERATION_PROMPT_CODES.imageBlock),
-          )
-          this.assertPromptCharacterLimit(imagePrompt, run.parameterSnapshot)
-          const response = await this.dependencies.imageModel.generate({
-            prompt: imagePrompt.userPrompt,
-            aspectRatio: brief.aspectRatio,
-            timeoutMs: run.parameterSnapshot.timeoutMs,
-          })
+          const variables = buildImagePromptVariables(context, brief, previousOutputs)
+          const response = run.algorithmSnapshot?.articleImageGeneration && this.dependencies.algorithms
+            ? await this.dependencies.algorithms.executeImageStep(
+                run.algorithmSnapshot.articleImageGeneration,
+                'generate',
+                variables,
+                brief.aspectRatio,
+              )
+            : await this.generateLegacyImageBlock(run, variables, brief.aspectRatio)
           const assetId = this.dependencies.identifiers.create()
           const stored = await this.dependencies.imageAssets.saveImage(run.id, assetId, response.bytes, response.declaredMediaType)
           try {
@@ -1482,15 +1530,17 @@ export class GenerationApplicationService implements TaskHandler {
         const correctedBlock = correctionInstruction === null
           ? block.spec
           : { ...block.spec, instruction: appendCorrectionInstruction(block.spec.instruction, correctionInstruction) }
-        const prompt = await this.dependencies.prompts.render(
-          GENERATION_PROMPT_CODES.textBlock,
-          buildTextBlockPromptVariables(context, documentSpec, correctedBlock, previousOutputs),
-          requireRunPromptVersion(run, GENERATION_PROMPT_CODES.textBlock),
-        )
-        this.assertPromptCharacterLimit(prompt, run.parameterSnapshot)
-        this.assertPromptInputBudget(prompt, run.parameterSnapshot, run.modelSnapshot.model)
+        const variables = buildTextBlockPromptVariables(context, documentSpec, correctedBlock, previousOutputs)
         await this.assertRunTokenBudget(run, null)
-        const response = await this.dependencies.model.generateStructured({ ...prompt, parameters: run.parameterSnapshot, responseSchemaName: 'text_block' })
+        const response = run.algorithmSnapshot?.articleTextRevision && this.dependencies.algorithms
+          ? await this.dependencies.algorithms.executeStep(
+              run.algorithmSnapshot.articleTextRevision,
+              'revise',
+              variables,
+              'text_block',
+              'json_object',
+            )
+          : await this.generateLegacyTextBlock(run, variables)
         responseUsage = response.usage
         await this.assertRunTokenBudget(run, response.usage)
         const output = textBlockOutputSchema.parse(response.structuredOutput)
@@ -1504,6 +1554,52 @@ export class GenerationApplicationService implements TaskHandler {
       }
     }
     return { succeeded: false, text: null }
+  }
+
+  /**
+   * 使用迁移前运行固定的提示词和默认图片模型生成图片块。
+   * @param run 不含图片生成算法快照的历史运行。
+   * @param variables 已由业务代码组装的图片提示词变量。
+   * @param aspectRatio 历史运行文档规格固定的宽高比。
+   * @returns 尚未写入本地资产目录的图片响应。
+   */
+  private async generateLegacyImageBlock(
+    run: GenerationRunRecord,
+    variables: Record<string, string>,
+    aspectRatio: '1:1' | '4:3' | '3:4' | '16:9' | '9:16',
+  ) {
+    const prompt = await this.dependencies.prompts.render(
+      GENERATION_PROMPT_CODES.imageBlock,
+      variables,
+      requireRunPromptVersion(run, GENERATION_PROMPT_CODES.imageBlock),
+    )
+    this.assertPromptCharacterLimit(prompt, run.parameterSnapshot)
+    return await this.dependencies.imageModel.generate({
+      prompt: prompt.userPrompt,
+      aspectRatio,
+      timeoutMs: run.parameterSnapshot.timeoutMs,
+    })
+  }
+
+  /**
+   * 使用迁移前运行固定的提示词和默认文本模型生成修正段落。
+   * @param run 不含正文修正算法快照的历史运行。
+   * @param variables 已由业务代码组装的正文修正提示词变量。
+   * @returns 供应商结构化文本响应及用量。
+   */
+  private async generateLegacyTextBlock(run: GenerationRunRecord, variables: Record<string, string>) {
+    const prompt = await this.dependencies.prompts.render(
+      GENERATION_PROMPT_CODES.textBlock,
+      variables,
+      requireRunPromptVersion(run, GENERATION_PROMPT_CODES.textBlock),
+    )
+    this.assertPromptCharacterLimit(prompt, run.parameterSnapshot)
+    this.assertPromptInputBudget(prompt, run.parameterSnapshot, run.modelSnapshot.model)
+    return await this.dependencies.model.generateStructured({
+      ...prompt,
+      parameters: run.parameterSnapshot,
+      responseSchemaName: 'text_block',
+    })
   }
 
   /** @param block 已成功块。 @param outputs 可变前序文字集合。 @returns 选中文字存在时追加。 */
@@ -1722,21 +1818,6 @@ export class GenerationApplicationService implements TaskHandler {
     )
   }
 
-  /**
-   * 合并指定系统 AI 场景的可配置供应商参数与业务固定安全参数。
-   * @param operation 草稿生成场景。
-   * @param defaults 调用方定义的完整默认与安全参数。
-   * @returns 解析后的完整文本模型参数；未注入设置服务时返回默认值副本。
-   */
-  private async resolveSystemParameters(
-    operation: 'draftGeneration',
-    defaults: TextModelParameters,
-  ): Promise<TextModelParameters> {
-    return this.dependencies.systemAiSettings
-      ? await this.dependencies.systemAiSettings.resolveParameters(operation, defaults)
-      : { ...defaults }
-  }
-
   /** @param run 运行。 @param expected 可执行起始状态。 @returns 状态切换完成时结束。 */
   private async requireRunStarted(run: GenerationRunRecord, expected: GenerationRunRecord['status'][]): Promise<void> {
     if (!await this.dependencies.runs.markRunRunning(run.id, expected, this.dependencies.clock.now())) throw new Error('运行状态不允许执行当前任务')
@@ -1753,7 +1834,7 @@ export class GenerationApplicationService implements TaskHandler {
       if (!('imageCount' in run.input) || run.input.imageCount === 0 || !run.imageModelSnapshot) {
         throw new ApplicationError('CAPABILITY_DISABLED', '当前运行没有启用图片能力，不能加入图片块', 422)
       }
-      this.requireMatchingImageModel(run)
+      if (!run.algorithmSnapshot?.articleImageGeneration) this.requireMatchingImageModel(run)
     }
   }
 

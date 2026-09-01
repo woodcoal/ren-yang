@@ -17,7 +17,7 @@ async function waitForHydration(page: Page): Promise<void> {
 }
 
 /**
- * 通过已认证后台接口写入浏览器测试专用文本模型，并绑定默认模型和四个固定算法。
+ * 通过已认证后台接口写入浏览器测试专用文本模型，并绑定全部文本算法。
  * @param page 已完成管理员设置且持有会话 Cookie 的页面。
  * @returns 数据库 AI 配置全部发布完成时结束。
  */
@@ -53,15 +53,9 @@ async function configureTestAi(page: Page): Promise<void> {
     model: 'e2e-text-model', modality: 'text', isEnabled: true,
   })
 
-  const settings = await request<{ values: Record<string, unknown> }>('/api/v1/system/ai-settings', 'GET')
-  await request('/api/v1/system/ai-settings', 'PUT', {
-    ...settings.values,
-    textModelDeploymentId: deployment.id,
-    imageModelDeploymentId: '',
-  })
-
-  const algorithms = await request<Array<{ code: string, stepDefinitions: Array<{ key: string }> }>>('/api/v1/ai/algorithms', 'GET')
+  const algorithms = await request<Array<{ code: string, stepDefinitions: Array<{ key: string, modality: 'text' | 'image' }> }>>('/api/v1/ai/algorithms', 'GET')
   for (const algorithm of algorithms) {
+    if (algorithm.stepDefinitions.some(step => step.modality !== 'text')) continue
     await request(`/api/v1/ai/algorithms/${algorithm.code}`, 'PUT', {
       steps: algorithm.stepDefinitions.map(step => ({
         stepKey: step.key,

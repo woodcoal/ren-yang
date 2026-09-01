@@ -60,8 +60,8 @@ export class AiAlgorithmTestApplicationService {
    * @remarks 成长算法由前端显式推进步骤；提示词草稿优先且不写入任何业务数据。
    */
   async run(code: AiAlgorithmCode, input: AiAlgorithmTestInput): Promise<AiAlgorithmTestResult> {
-    if (code === 'interest_assessment' || code.startsWith('article_')) {
-      throw new ApplicationError('OPERATION_NOT_SUPPORTED', '兴趣与文章算法请通过工作台业务闭环测试', 409)
+    if (!['persona_soul', 'world_soul', 'persona_growth', 'world_growth', 'persona_memory'].includes(code)) {
+      throw new ApplicationError('OPERATION_NOT_SUPPORTED', '当前算法请通过对应业务入口完成闭环测试', 409)
     }
     const snapshot = await this.dependencies.algorithms.prepare(code)
     if (code.endsWith('_soul')) return await this.runSoul(snapshot, input)

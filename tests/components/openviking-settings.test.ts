@@ -15,6 +15,7 @@ let permissionCheckCount = 0
 registerEndpoint('/api/v1/system/capabilities', () => ({ data: {
   textModel: { configured: true, provider: 'openai_compatible', model: 'text', endpointOrigin: 'https://model.test' },
   imageModel: { configured: false, provider: 'openai_compatible_images', model: null, endpointOrigin: null },
+  algorithmCapabilities: { articleGeneration: true, articleImageGeneration: false, interestAssessment: true },
   openViking: { configured: false, enabled: false, provider: 'openviking', endpointOrigin: null },
   contextProvider: 'sqlite_fts5',
 } }))

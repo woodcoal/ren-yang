@@ -18,10 +18,10 @@ interface PendingAlgorithmSelection {
 }
 
 const categories: Array<{ code: AiAlgorithmCategory, label: string, description: string }> = [
-  { code: 'soul', label: '灵魂整理', description: '整理管理员手工设定的人物或世界初始灵魂。' },
+  { code: 'soul', label: '初始化与灵魂', description: '创建人物、世界与头像，并整理初始灵魂。' },
   { code: 'growth', label: '成长提炼', description: '先提取带证据结论，再综合为待审核的成长提示词。' },
   { code: 'memory', label: '记忆提炼', description: '按来源与独立证据门槛提炼人物长期记忆。' },
-  { code: 'generation', label: '兴趣与创作', description: '批量判断人物兴趣，或直接生成完整文章并分析配图位置。' },
+  { code: 'generation', label: '兴趣与创作', description: '判断兴趣、生成或修正文章、分析并生成配图，以及分类反馈。' },
 ]
 
 const route = useRoute()
@@ -69,7 +69,7 @@ function findInitialAlgorithm(): AiAlgorithmView | null {
  * @returns 算法所属顶层分类。
  */
 function algorithmCategory(code: AiAlgorithmCode): AiAlgorithmCategory {
-  if (code === 'interest_assessment' || code.startsWith('article_')) return 'generation'
+  if (code === 'interest_assessment' || code === 'feedback_classification' || code.startsWith('article_')) return 'generation'
   if (code === 'persona_memory') return 'memory'
   return code.endsWith('_growth') ? 'growth' : 'soul'
 }
@@ -81,8 +81,24 @@ function algorithmCategory(code: AiAlgorithmCode): AiAlgorithmCategory {
  */
 function algorithmScopeLabel(code: AiAlgorithmCode): string {
   if (code === 'interest_assessment') return '兴趣'
-  if (code.startsWith('article_')) return '文章'
+  if (code === 'feedback_classification') return '反馈'
+  if (code === 'persona_avatar') return '头像'
+  if (code === 'persona_draft') return '人物草稿'
+  if (code === 'world_draft') return '世界草稿'
+  if (code === 'article_image_analysis') return '配图分析'
+  if (code === 'article_image_generation') return '图片生成'
+  if (code === 'article_text_revision') return '正文修正'
+  if (code === 'article_generation') return '文章生成'
   return code.startsWith('persona_') ? '人物' : '世界'
+}
+
+/**
+ * 判断算法是否具备不写业务数据的专用测试输入契约。
+ * @param code 固定算法编码。
+ * @returns 灵魂、成长和记忆算法返回 true，其余通过实际业务入口验收。
+ */
+function supportsDedicatedTest(code: AiAlgorithmCode): boolean {
+  return ['persona_soul', 'world_soul', 'persona_growth', 'world_growth', 'persona_memory'].includes(code)
 }
 
 /**
@@ -175,7 +191,8 @@ async function saveAlgorithm(code: AiAlgorithmCode, input: PublishAiAlgorithmCon
 
 <template>
   <div>
-    <ContentPageHeader title="AI 算法" description="按灵魂、成长、记忆与文章创作分类维护固定流程；模型、参数和步骤提示词在同一处调整。" />
+    <ContentPageHeader title="AI 管理" description="统一维护接口连接、模型部署和固定算法；每项 AI 操作直接绑定对应算法。" />
+    <AiConfigurationAiManagementTabs />
     <div class="status-strip page-status-strip" aria-label="AI 算法状态摘要">
       <div class="status-cell"><span class="status-kicker">固定算法</span><strong class="status-value">{{ algorithms.length }}</strong></div>
       <div class="status-cell"><span class="status-kicker">已配置</span><strong class="status-value">{{ configuredCount }}</strong></div>
@@ -227,8 +244,8 @@ async function saveAlgorithm(code: AiAlgorithmCode, input: PublishAiAlgorithmCon
           @edit-prompt="requestPrompt"
         />
 
-        <AiConfigurationAiAlgorithmTestPanel v-if="selectedAlgorithm.code !== 'interest_assessment' && !selectedAlgorithm.code.startsWith('article_')" :key="selectedAlgorithm.code" :algorithm="selectedAlgorithm" />
-        <UAlert v-else color="neutral" variant="subtle" title="兴趣与文章算法使用业务闭环验证" description="请在工作台判断人物兴趣，或创建文本与图文任务；测试会保留完整运行快照。" />
+        <AiConfigurationAiAlgorithmTestPanel v-if="supportsDedicatedTest(selectedAlgorithm.code)" :key="selectedAlgorithm.code" :algorithm="selectedAlgorithm" />
+        <UAlert v-else color="neutral" variant="subtle" title="当前算法使用业务闭环验证" description="请从人物、世界、工作台或反馈入口执行实际操作；运行会使用并记录这里发布的算法配置。" />
 
         <section class="content-section" aria-labelledby="algorithm-prompt-heading">
           <div class="section-heading">

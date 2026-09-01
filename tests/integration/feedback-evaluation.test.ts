@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
-import { FeedbackApplicationService } from '../../server/application/feedback/FeedbackApplicationService'
+import { FEEDBACK_MODEL_PARAMETERS, FeedbackApplicationService } from '../../server/application/feedback/FeedbackApplicationService'
+import type { AiAlgorithmApplicationService } from '../../server/application/aiConfiguration/AiAlgorithmApplicationService'
 import { SqliteDatabase } from '../../server/infrastructure/database/SqliteDatabase'
 import { SqliteFeedbackRepository } from '../../server/infrastructure/database/SqliteFeedbackRepository'
 import type { Clock } from '../../server/ports/Clock'
@@ -271,17 +272,47 @@ describe('反馈分类与人物成长素材闭环', () => {
 function createService(model: TextModelPort, contextSyncQueue?: ContextSyncTaskQueue): FeedbackApplicationService {
   const identifiers = new SequentialIdentifierGenerator()
   const clock = new MutableClock()
+  const prompts = createTestAiPromptService(database, identifiers, clock)
+  const algorithms: Pick<AiAlgorithmApplicationService, 'prepare' | 'executeStep'> = {
+    /** @returns 固定反馈分类算法快照。 */
+    async prepare() {
+      const versions = await prompts.snapshotPublishedVersions(['feedback.classification'])
+      const promptVersionId = versions['feedback.classification']
+      if (!promptVersionId) throw new Error('反馈分类测试提示词版本不存在')
+      return {
+        algorithmCode: 'feedback_classification', implementationVersion: 1,
+        configurationVersionId: '00000000-0000-4000-8000-000000000901', configurationVersion: 1,
+        steps: [{
+          stepKey: 'classify', ordinal: 0,
+          modelDeploymentId: '00000000-0000-4000-8000-000000000902',
+          connectionId: '00000000-0000-4000-8000-000000000903',
+          protocol: 'openai_compatible', endpoint: 'https://model.test/v1', model: 'feedback-test-model', modality: 'text',
+          promptCode: 'feedback.classification', promptVersionId,
+          parameters: { temperature: 0.9, maxOutputTokens: 4_096, timeoutMs: 60_000 },
+        }],
+      }
+    },
+    /** @param snapshot 固定算法快照。 @param stepKey 分类步骤。 @param variables 反馈变量。 @param responseSchemaName 结构名称。 @param responseFormat 输出格式。 @returns 固定模型响应。 */
+    async executeStep(snapshot, stepKey, variables, responseSchemaName, responseFormat) {
+      const step = snapshot.steps.find(item => item.stepKey === stepKey)
+      if (!step) throw new Error('反馈分类测试步骤不存在')
+      const prompt = await prompts.render(step.promptCode, variables, step.promptVersionId)
+      return await model.generateStructured({
+        ...prompt,
+        parameters: { ...FEEDBACK_MODEL_PARAMETERS, ...step.parameters },
+        responseSchemaName,
+        responseFormat,
+      })
+    },
+  }
   return new FeedbackApplicationService({
     repository,
     model,
-    prompts: createTestAiPromptService(database, identifiers, clock),
+    prompts,
     identifiers,
     clock,
     contextSyncQueue,
-    systemAiSettings: {
-      /** @param _operation 固定反馈分类场景。 @param defaults 业务安全参数。 @returns 覆盖温度后的完整参数。 */
-      resolveParameters: async (_operation, defaults) => ({ ...defaults, temperature: 0.9 }),
-    },
+    algorithms,
   })
 }
 

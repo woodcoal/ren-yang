@@ -7,6 +7,7 @@ import type { AiModelFactory } from '../../ports/AiModelFactory'
 import type { SecretCipher } from '../../ports/SecretCipher'
 import type { TextModelResponse } from '../../ports/TextModelPort'
 import { TextModelError } from '../../ports/TextModelPort'
+import type { ImageModelResponse, ImageModelRequest } from '../../ports/ImageModelPort'
 import type { AiPromptApplicationService } from '../aiPrompts/AiPromptApplicationService'
 import { ApplicationError } from '../errors/ApplicationError'
 import { connectionSecretContext } from './AiConfigurationApplicationService'
@@ -86,7 +87,7 @@ export class AiAlgorithmApplicationService {
         || configuredStep.ordinal !== definitionStep.ordinal) {
         throw new ApplicationError('AI_ALGORITHM_CONFIGURATION_INVALID', `算法步骤“${definitionStep.name}”配置与代码不一致`, 409)
       }
-      const deployment = await this.requireTextDeployment(configuredStep.modelDeploymentId)
+      const deployment = await this.requireDeployment(configuredStep.modelDeploymentId, definitionStep.modality)
       const connection = await this.requireEnabledConnection(deployment.connectionId)
       return {
         stepKey: definitionStep.key,
@@ -97,6 +98,7 @@ export class AiAlgorithmApplicationService {
         endpoint: connection.endpoint,
         userAgent: connection.userAgent,
         model: deployment.model,
+        modality: definitionStep.modality,
         promptCode: definitionStep.promptCode,
         promptVersionId: promptVersions[definitionStep.promptCode]!,
         parameters: configuredStep.parameters,
@@ -127,10 +129,41 @@ export class AiAlgorithmApplicationService {
     responseSchemaName: string,
     responseFormat: 'json_object' | 'text',
   ): Promise<TextModelResponse> {
-    const { step, connection } = await this.resolveStep(snapshot, stepKey)
+    const { step, connection } = await this.resolveStep(snapshot, stepKey, 'text')
     const prompt = await this.dependencies.prompts.render(step.promptCode, variables, step.promptVersionId)
     this.validatePromptLength(prompt.systemPrompt, prompt.userPrompt)
     return await this.generate(step, connection, prompt, responseSchemaName, responseFormat)
+  }
+
+
+  /**
+   * 使用已固定的图片算法步骤生成一张图片，并拒绝接口或模型配置漂移。
+   * @param snapshot 调用开始前固定的非敏感算法快照。
+   * @param stepKey 待执行的固定图片步骤标识。
+   * @param variables 由业务代码组装的完整提示词变量。
+   * @param aspectRatio 业务确定的最终图片宽高比。
+   * @returns 供应商返回、尚未写入本地存储的图片字节。
+   */
+  async executeImageStep(
+    snapshot: AiAlgorithmSnapshot,
+    stepKey: string,
+    variables: Record<string, string>,
+    aspectRatio: ImageModelRequest['aspectRatio'],
+  ): Promise<ImageModelResponse> {
+    const { step, connection } = await this.resolveStep(snapshot, stepKey, 'image')
+    const prompt = await this.dependencies.prompts.render(step.promptCode, variables, step.promptVersionId)
+    this.validatePromptLength(prompt.systemPrompt, prompt.userPrompt)
+    const model = this.dependencies.modelFactory.createImageModel({
+      endpoint: connection.endpoint,
+      apiKey: this.dependencies.secretCipher.decrypt(connection.apiKeyCiphertext, connectionSecretContext(connection.id)),
+      model: step.model,
+      userAgent: step.userAgent ?? '',
+    })
+    return await model.generate({
+      prompt: [prompt.systemPrompt, prompt.userPrompt].filter(Boolean).join('\n\n'),
+      aspectRatio,
+      timeoutMs: step.parameters.timeoutMs,
+    })
   }
 
   /**
@@ -150,7 +183,7 @@ export class AiAlgorithmApplicationService {
     responseSchemaName: string,
     responseFormat: 'json_object' | 'text',
   ): Promise<AiAlgorithmTestStepExecution> {
-    const { step, connection } = await this.resolveStep(snapshot, stepKey)
+    const { step, connection } = await this.resolveStep(snapshot, stepKey, 'text')
     const prompt = await this.dependencies.prompts.renderDraftPreferred(step.promptCode, variables)
     this.validatePromptLength(prompt.systemPrompt, prompt.userPrompt)
     const startedAt = performance.now()
@@ -183,7 +216,7 @@ export class AiAlgorithmApplicationService {
    * @param stepKey 待解析的固定步骤标识。
    * @returns 已校验步骤和当前启用连接。
    */
-  private async resolveStep(snapshot: AiAlgorithmSnapshot, stepKey: string) {
+  private async resolveStep(snapshot: AiAlgorithmSnapshot, stepKey: string, modality: 'text' | 'image') {
     const definition = getAiAlgorithmDefinition(snapshot.algorithmCode)
     if (snapshot.implementationVersion !== definition.implementationVersion) {
       throw new ApplicationError('AI_ALGORITHM_VERSION_MISMATCH', '算法实现版本已变化，不能继续执行旧任务', 409)
@@ -194,7 +227,10 @@ export class AiAlgorithmApplicationService {
     if (!stepDefinition || step.promptCode !== stepDefinition.promptCode || step.ordinal !== stepDefinition.ordinal) {
       throw new ApplicationError('AI_ALGORITHM_CONFIGURATION_INVALID', '算法步骤快照与代码定义不一致', 409)
     }
-    const deployment = await this.requireTextDeployment(step.modelDeploymentId)
+    if (stepDefinition.modality !== modality || (step.modality ?? 'text') !== modality) {
+      throw new ApplicationError('AI_ALGORITHM_CONFIGURATION_INVALID', '算法步骤的模型类型与调用方式不一致', 409)
+    }
+    const deployment = await this.requireDeployment(step.modelDeploymentId, modality)
     const connection = await this.requireEnabledConnection(step.connectionId)
     if (deployment.connectionId !== step.connectionId || deployment.model !== step.model
       || connection.endpoint !== step.endpoint || connection.protocol !== step.protocol
@@ -247,11 +283,16 @@ export class AiAlgorithmApplicationService {
     }
   }
 
-  /** @param id 模型部署 UUID。 @returns 已启用的文本模型部署。 */
-  private async requireTextDeployment(id: string) {
+  /**
+   * 读取类型匹配且已启用的模型部署。
+   * @param id 模型部署 UUID。
+   * @param modality 算法步骤固定要求的文本或图片类型。
+   * @returns 已启用且类型一致的模型部署。
+   */
+  private async requireDeployment(id: string, modality: 'text' | 'image') {
     const deployment = await this.dependencies.repository.findModelDeployment(id)
-    if (!deployment || !deployment.isEnabled || deployment.modality !== 'text') {
-      throw new ApplicationError('CAPABILITY_DISABLED', '算法绑定的文本模型部署不存在或未启用', 422)
+    if (!deployment || !deployment.isEnabled || deployment.modality !== modality) {
+      throw new ApplicationError('CAPABILITY_DISABLED', `算法绑定的${modality === 'text' ? '文本' : '图片'}模型部署不存在或未启用`, 422)
     }
     return deployment
   }

@@ -119,12 +119,12 @@ describe('后台品牌与主题组件', () => {
     expect(wrapper.get('.page-heading-identity').text()).toContain('林默')
   })
 
-  it('系统菜单只保留三个集中 AI 管理入口', () => {
+  it('系统菜单只保留一个统一 AI 管理入口', () => {
     const systemGroup = appNavigationGroups.find(group => group.label === '系统')
 
-    expect(systemGroup?.items).toContainEqual({ label: 'AI 模型', to: '/ai-models', icon: 'i-lucide-server-cog' })
-    expect(systemGroup?.items).toContainEqual({ label: 'AI 算法', to: '/ai-algorithms', icon: 'i-lucide-workflow' })
-    expect(systemGroup?.items).toContainEqual({ label: 'AI 设置', to: '/ai-settings', icon: 'i-lucide-sliders-horizontal' })
+    expect(systemGroup?.items).toContainEqual({ label: 'AI 管理', to: '/ai-models', icon: 'i-lucide-server-cog' })
+    expect(systemGroup?.items).not.toContainEqual(expect.objectContaining({ to: '/ai-algorithms' }))
+    expect(systemGroup?.items).not.toContainEqual(expect.objectContaining({ to: '/ai-settings' }))
     expect(systemGroup?.items).not.toContainEqual(expect.objectContaining({ to: '/prompts' }))
     expect(systemGroup?.items).not.toContainEqual(expect.objectContaining({ to: '/system-ai-settings' }))
     expect(systemGroup?.items).not.toContainEqual(expect.objectContaining({ to: '/parameter-profiles' }))
@@ -134,8 +134,8 @@ describe('后台品牌与主题组件', () => {
     const pagePaths = [
       '/', '/workbench', '/history', '/personas', '/personas/new', '/personas/persona-1',
       '/worlds', '/worlds/world-1', '/sources', '/sources/search', '/sources/source-1',
-      '/runs/run-1', '/templates', '/ai-models', '/ai-algorithms', '/ai-settings', '/settings',
-      '/system-records', '/login', '/setup', '/parameter-profiles', '/prompts', '/system-ai-settings',
+      '/runs/run-1', '/ai-models', '/ai-algorithms', '/ai-settings', '/settings',
+      '/system-records', '/login', '/setup', '/prompts', '/system-ai-settings',
     ]
 
     expect(pagePaths.map(getPageDocumentTitle)).not.toContain('页面')

@@ -8,7 +8,7 @@ Agents, with a human touch.
 
 - 管理世界、人物、参考资料及其启停和关联关系。
 - 版本化管理世界与人物灵魂，分别提炼世界成长、人物成长和人物记忆。
-- 配置多个 OpenAI-compatible 接口、文本或图片模型，以及代码内固定的 AI 算法步骤。
+- 在统一 AI 管理中配置多个 OpenAI-compatible 接口、文本或图片模型，以及代码内固定的 AI 算法步骤。
 - 执行结构化兴趣判断和图文生成，按块确认、重试、锁定并导出 HTML、Markdown、Txt。
 - 将反馈、成长素材和处理记录纳入可审计的人工发布闭环。
 - 使用 SQLite FTS5 检索；可选接入 OpenViking，提供隔离的语义检索和异步上下文投影。
@@ -43,7 +43,7 @@ SQLite 始终是唯一业务事实源。OpenViking 不可用时，管理与生�
    ```
 
 5. 访问 `http://127.0.0.1:3001/setup`，创建唯一管理员。
-6. 登录后依次配置“AI 模型”“AI 算法”和“AI 设置”。如需语义检索，再到系统中心配置 OpenViking 服务地址和 ADMIN API Key。
+6. 登录后进入“AI 管理”，先配置接口与模型，再为对应固定算法发布配置。如需语义检索，再到系统中心配置 OpenViking 服务地址和 ADMIN API Key。
 
 默认运行数据位于 `./data`，不会进入 Git。可通过 `NUXT_DATA_DIRECTORY` 指向其他目录。
 

@@ -1,11 +1,9 @@
 import { readBody } from 'h3'
-import { useToast } from '#imports'
 import { flushPromises } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
 import type { PublishAiAlgorithmConfigurationInput, UpdateAiConnectionInput } from '../../shared/schemas/aiConfiguration'
 import type { GrowthExtractAlgorithmTestInput, GrowthSynthesizeAlgorithmTestInput } from '../../shared/schemas/aiAlgorithmTest'
-import type { SystemAiSettingsValues } from '../../shared/schemas/systemAi'
 import type { AiAlgorithmTestResult } from '../../shared/types/aiAlgorithmTest'
 import type { AiAlgorithmView, AiConnectionView, AiModelDeploymentView } from '../../shared/types/aiConfiguration'
 import type { AiPromptWorkspaceView } from '../../shared/types/aiPrompt'
@@ -34,25 +32,17 @@ const imageDeployment: AiModelDeploymentView = {
   createdAt: 1_000, updatedAt: 1_000,
 }
 
-/** AI 模型页读取的完整系统 AI 设置。 */
-const systemAiSettings: SystemAiSettingsValues = {
-  textModelDeploymentId: '',
-  imageModelDeploymentId: '',
-  draftGeneration: { temperature: 0.4, maxOutputTokens: 2_048, timeoutMs: 60_000 },
-  feedbackClassification: { temperature: 0, maxOutputTokens: 4_096, timeoutMs: 60_000 },
-}
-
 /** 页面测试使用的已配置成长算法。 */
 const algorithm: AiAlgorithmView = {
   code: 'persona_growth', name: '人物成长提炼', description: '两阶段成长算法。', implementationVersion: 1,
   activeConfigurationVersion: 1, configurationVersionCount: 1, updatedAt: 1_000,
   stepDefinitions: [
-    { key: 'extract', name: '原子提取', description: '提取结论。', promptCode: 'analysis.persona_growth_extract', ordinal: 0 },
-    { key: 'synthesize', name: '综合编译', description: '编译草稿。', promptCode: 'analysis.persona_growth_synthesize', ordinal: 1 },
+    { key: 'extract', name: '原子提取', description: '提取结论。', promptCode: 'analysis.persona_growth_extract', modality: 'text', ordinal: 0 },
+    { key: 'synthesize', name: '综合编译', description: '编译草稿。', promptCode: 'analysis.persona_growth_synthesize', modality: 'text', ordinal: 1 },
   ],
   steps: [
-    { key: 'extract', name: '原子提取', description: '提取结论。', promptCode: 'analysis.persona_growth_extract', ordinal: 0, modelDeploymentId: deployment.id, parameters: { temperature: 0, maxOutputTokens: 2_048, timeoutMs: 30_000 } },
-    { key: 'synthesize', name: '综合编译', description: '编译草稿。', promptCode: 'analysis.persona_growth_synthesize', ordinal: 1, modelDeploymentId: deployment.id, parameters: { temperature: 0.2, maxOutputTokens: 4_096, timeoutMs: 60_000 } },
+    { key: 'extract', name: '原子提取', description: '提取结论。', promptCode: 'analysis.persona_growth_extract', modality: 'text', ordinal: 0, modelDeploymentId: deployment.id, parameters: { temperature: 0, maxOutputTokens: 2_048, timeoutMs: 30_000 } },
+    { key: 'synthesize', name: '综合编译', description: '编译草稿。', promptCode: 'analysis.persona_growth_synthesize', modality: 'text', ordinal: 1, modelDeploymentId: deployment.id, parameters: { temperature: 0.2, maxOutputTokens: 4_096, timeoutMs: 60_000 } },
   ],
 }
 
@@ -61,12 +51,12 @@ const memoryAlgorithm: AiAlgorithmView = {
   code: 'persona_memory', name: '人物记忆提炼', description: '两阶段证据门槛算法。', implementationVersion: 1,
   activeConfigurationVersion: 1, configurationVersionCount: 1, updatedAt: 1_000,
   stepDefinitions: [
-    { key: 'extract', name: '证据提取', description: '提取带来源信号的候选。', promptCode: 'analysis.persona_memory_extract', ordinal: 0 },
-    { key: 'synthesize', name: '记忆编译', description: '编译完整记忆草稿。', promptCode: 'analysis.persona_memory_synthesize', ordinal: 1 },
+    { key: 'extract', name: '证据提取', description: '提取带来源信号的候选。', promptCode: 'analysis.persona_memory_extract', modality: 'text', ordinal: 0 },
+    { key: 'synthesize', name: '记忆编译', description: '编译完整记忆草稿。', promptCode: 'analysis.persona_memory_synthesize', modality: 'text', ordinal: 1 },
   ],
   steps: [
-    { key: 'extract', name: '证据提取', description: '提取带来源信号的候选。', promptCode: 'analysis.persona_memory_extract', ordinal: 0, modelDeploymentId: deployment.id, parameters: { temperature: 0, maxOutputTokens: 2_048, timeoutMs: 30_000 } },
-    { key: 'synthesize', name: '记忆编译', description: '编译完整记忆草稿。', promptCode: 'analysis.persona_memory_synthesize', ordinal: 1, modelDeploymentId: deployment.id, parameters: { temperature: 0.2, maxOutputTokens: 4_096, timeoutMs: 60_000 } },
+    { key: 'extract', name: '证据提取', description: '提取带来源信号的候选。', promptCode: 'analysis.persona_memory_extract', modality: 'text', ordinal: 0, modelDeploymentId: deployment.id, parameters: { temperature: 0, maxOutputTokens: 2_048, timeoutMs: 30_000 } },
+    { key: 'synthesize', name: '记忆编译', description: '编译完整记忆草稿。', promptCode: 'analysis.persona_memory_synthesize', modality: 'text', ordinal: 1, modelDeploymentId: deployment.id, parameters: { temperature: 0.2, maxOutputTokens: 4_096, timeoutMs: 60_000 } },
   ],
 }
 
@@ -75,11 +65,11 @@ const articleAlgorithm: AiAlgorithmView = {
   code: 'article_generation', name: '文章生成', description: '一次生成完整文章。', implementationVersion: 1,
   activeConfigurationVersion: 1, configurationVersionCount: 1, updatedAt: 1_000,
   stepDefinitions: [
-    { key: 'generate', name: '生成文章', description: '生成完整文章。', promptCode: 'generation.article', ordinal: 0 },
+    { key: 'generate', name: '生成文章', description: '生成完整文章。', promptCode: 'generation.article', modality: 'text', ordinal: 0 },
   ],
   steps: [
     {
-      key: 'generate', name: '生成文章', description: '生成完整文章。', promptCode: 'generation.article', ordinal: 0,
+      key: 'generate', name: '生成文章', description: '生成完整文章。', promptCode: 'generation.article', modality: 'text', ordinal: 0,
       modelDeploymentId: deployment.id, parameters: { temperature: 0.6, maxOutputTokens: 4_096, timeoutMs: 60_000 },
     },
   ],
@@ -90,11 +80,11 @@ const articleImageAlgorithm: AiAlgorithmView = {
   code: 'article_image_analysis', name: '文章配图分析', description: '分析配图位置。', implementationVersion: 1,
   activeConfigurationVersion: 1, configurationVersionCount: 1, updatedAt: 1_000,
   stepDefinitions: [
-    { key: 'analyze', name: '分析配图', description: '分析配图位置。', promptCode: 'generation.article_images', ordinal: 0 },
+    { key: 'analyze', name: '分析配图', description: '分析配图位置。', promptCode: 'generation.article_images', modality: 'text', ordinal: 0 },
   ],
   steps: [
     {
-      key: 'analyze', name: '分析配图', description: '分析配图位置。', promptCode: 'generation.article_images', ordinal: 0,
+      key: 'analyze', name: '分析配图', description: '分析配图位置。', promptCode: 'generation.article_images', modality: 'text', ordinal: 0,
       modelDeploymentId: deployment.id, parameters: { temperature: 0.2, maxOutputTokens: 2_048, timeoutMs: 30_000 },
     },
   ],
@@ -105,10 +95,10 @@ const interestAlgorithm: AiAlgorithmView = {
   code: 'interest_assessment', name: '兴趣判定', description: '同一人物批量判定多条文本。', implementationVersion: 1,
   activeConfigurationVersion: 1, configurationVersionCount: 1, updatedAt: 1_000,
   stepDefinitions: [
-    { key: 'assess', name: '批量判定', description: '逐项输出三态兴趣结论。', promptCode: 'generation.interest_assessment', ordinal: 0 },
+    { key: 'assess', name: '批量判定', description: '逐项输出三态兴趣结论。', promptCode: 'generation.interest_assessment', modality: 'text', ordinal: 0 },
   ],
   steps: [{
-    key: 'assess', name: '批量判定', description: '逐项输出三态兴趣结论。', promptCode: 'generation.interest_assessment', ordinal: 0,
+    key: 'assess', name: '批量判定', description: '逐项输出三态兴趣结论。', promptCode: 'generation.interest_assessment', modality: 'text', ordinal: 0,
     modelDeploymentId: deployment.id, parameters: { temperature: 0.4, maxOutputTokens: 2_048, timeoutMs: 60_000 },
   }],
 }
@@ -172,8 +162,6 @@ const memoryAlgorithmPrompts: AiPromptWorkspaceView[] = memoryAlgorithm.stepDefi
 let savedConnection: UpdateAiConnectionInput | null = null
 /** 发布算法配置最后提交的正文。 */
 let savedAlgorithm: PublishAiAlgorithmConfigurationInput | null = null
-/** 默认模型表单最后提交的完整系统 AI 设置。 */
-let savedSystemAiSettings: SystemAiSettingsValues | null = null
 /** 算法测试按交互顺序提交的分步输入。 */
 const algorithmTestInputs: Array<GrowthExtractAlgorithmTestInput | GrowthSynthesizeAlgorithmTestInput> = []
 
@@ -218,19 +206,6 @@ registerEndpoint(`/api/v1/ai/connections/${connection.id}`, {
   },
 })
 registerEndpoint('/api/v1/ai/model-deployments', () => ({ data: [deployment, imageDeployment] }))
-registerEndpoint('/api/v1/system/ai-settings', () => ({ data: { values: systemAiSettings, updatedAt: null } }))
-registerEndpoint('/api/v1/system/ai-settings', {
-  method: 'PUT',
-  /**
-   * 记录默认模型选项卡提交的完整设置。
-   * @param event Nuxt 测试服务器收到的设置保存请求。
-   * @returns 模拟数据库保存后的设置视图。
-   */
-  handler: async (event) => {
-    savedSystemAiSettings = await readBody<SystemAiSettingsValues>(event)
-    return { data: { values: savedSystemAiSettings, updatedAt: 2_000 } }
-  },
-})
 registerEndpoint('/api/v1/ai/algorithms', () => ({ data: [algorithm, memoryAlgorithm, interestAlgorithm, articleAlgorithm, articleImageAlgorithm] }))
 registerEndpoint('/api/v1/ai-prompts', () => ({ data: [...algorithmPrompts, ...memoryAlgorithmPrompts, interestPrompt] }))
 registerEndpoint(`/api/v1/ai/algorithms/${algorithm.code}`, {
@@ -256,7 +231,6 @@ registerEndpoint(`/api/v1/ai/algorithms/${algorithm.code}/test`, {
 beforeEach(() => {
   savedConnection = null
   savedAlgorithm = null
-  savedSystemAiSettings = null
   algorithmTestInputs.splice(0)
 })
 
@@ -288,29 +262,15 @@ describe('AI 模型与算法配置页面', () => {
     expect(wrapper.text()).toContain('按接口筛选')
   })
 
-  it('在 AI 模型页直接选择并保存平台默认文本与图片模型', async () => {
+  it('把接口和模型作为 AI 管理第一分区且不再暴露默认模型设置', async () => {
     const wrapper = await mountSuspended(AiModelsPage, { route: '/ai-models' })
     await flushPromises()
-    wrapper.vm.$nuxt.runWithContext(() => useToast().clear())
 
-    await wrapper.findAll('button').find(button => button.text().includes('默认模型'))!.trigger('click')
-    await flushPromises()
-    expect(wrapper.text()).toContain('默认文本与图片模型')
-    const modelSelectors = wrapper.findAllComponents({ name: 'USelect' })
-    expect(modelSelectors).toHaveLength(2)
-    await modelSelectors[0]!.setValue(deployment.id)
-    await modelSelectors[1]!.setValue(imageDeployment.id)
-    await wrapper.get('form[data-system-ai-settings-form]').trigger('submit')
-    await flushPromises()
-
-    expect(savedSystemAiSettings).toEqual({
-      ...systemAiSettings,
-      textModelDeploymentId: deployment.id,
-      imageModelDeploymentId: imageDeployment.id,
-    })
-    await vi.waitFor(() => expect(wrapper.vm.$nuxt.runWithContext(() => useToast().toasts.value)
-      .some(notification => notification.description === '默认文本与图片模型已保存。')).toBe(true))
-    expect(wrapper.text()).not.toContain('操作完成')
+    expect(wrapper.text()).toContain('AI 管理')
+    expect(wrapper.text()).toContain('接口与模型')
+    expect(wrapper.text()).toContain('算法配置')
+    expect(wrapper.text()).not.toContain('默认模型')
+    expect(wrapper.find('form[data-system-ai-settings-form]').exists()).toBe(false)
   })
 
   it('展示固定步骤和提示词绑定，并提交全部模型与参数作为新版本', async () => {
@@ -395,7 +355,7 @@ describe('AI 模型与算法配置页面', () => {
     const wrapper = await mountSuspended(AiAlgorithmsPage, { route: '/ai-algorithms' })
     await flushPromises()
 
-    const categoryButton = wrapper.findAll('button').find(button => button.text().includes('批量判断人物兴趣'))!
+    const categoryButton = wrapper.findAll('button').find(button => button.text().includes('判断兴趣、生成或修正文章'))!
     await categoryButton.trigger('click')
     await flushPromises()
 
@@ -403,7 +363,7 @@ describe('AI 模型与算法配置页面', () => {
     expect(wrapper.text()).toContain('generation.interest_assessment')
     expect(wrapper.text()).toContain('文章生成')
     expect(wrapper.text()).toContain('文章配图分析')
-    expect(wrapper.text()).toContain('兴趣与文章算法使用业务闭环验证')
+    expect(wrapper.text()).toContain('当前算法使用业务闭环验证')
     expect(wrapper.find('[data-ai-algorithm-test-panel]').exists()).toBe(false)
     const articleButton = wrapper.findAll('button').find(button => button.text().includes('文章生成'))
     expect(articleButton).toBeDefined()

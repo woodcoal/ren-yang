@@ -23,9 +23,9 @@ const emit = defineEmits<{
 }>()
 
 const validationError = shallowRef<string | null>(null)
-const deploymentItems = computed(() => props.deployments
-  .filter(item => item.modality === 'text')
-  .map(item => ({ label: item.isEnabled ? item.name : `${item.name}（未启用）`, value: item.id })))
+const missingModelTypes = computed(() => [...new Set(props.algorithm.stepDefinitions
+  .filter(definition => !props.deployments.some(item => item.modality === definition.modality))
+  .map(definition => definition.modality === 'text' ? '文本模型' : '图片模型'))])
 const form = reactive<PublishAiAlgorithmConfigurationInput>({
   steps: props.algorithm.stepDefinitions.map((definition) => {
     const active = props.algorithm.steps.find(step => step.key === definition.key)
@@ -36,6 +36,17 @@ const form = reactive<PublishAiAlgorithmConfigurationInput>({
     }
   }),
 })
+
+/**
+ * 返回一个固定算法步骤可选择的同类型模型部署。
+ * @param modality 步骤在代码中固定的文本或图片模型类型。
+ * @returns 保留未启用状态说明的下拉选项。
+ */
+function deploymentItems(modality: 'text' | 'image'): Array<{ label: string, value: string }> {
+  return props.deployments
+    .filter(item => item.modality === modality)
+    .map(item => ({ label: item.isEnabled ? item.name : `${item.name}（未启用）`, value: item.id }))
+}
 
 /**
  * 校验完整固定步骤集合并请求发布不可变配置版本。
@@ -63,7 +74,7 @@ function submit(): void {
       <UBadge :color="algorithm.activeConfigurationVersion ? 'success' : 'warning'" variant="subtle">{{ algorithm.activeConfigurationVersion ? '已配置' : '待配置' }}</UBadge>
     </div>
     <UAlert v-if="validationError" class="mb-4" color="error" title="配置无效" :description="validationError" />
-    <UAlert v-if="deploymentItems.length === 0" color="warning" title="没有文本模型部署" description="请先在 AI 模型页面创建并启用文本模型。" />
+    <UAlert v-if="missingModelTypes.length" color="warning" title="缺少算法所需模型" :description="`请先在接口与模型中创建：${missingModelTypes.join('、')}。`" />
     <form v-else class="space-y-5" data-ai-algorithm-form @submit.prevent="submit">
       <section v-for="(definition, index) in algorithm.stepDefinitions" :key="definition.key" class="rounded-lg border border-default p-4">
         <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
@@ -71,10 +82,10 @@ function submit(): void {
           <UButton type="button" size="xs" color="neutral" variant="soft" icon="i-lucide-braces" @click="emit('editPrompt', definition.promptCode)">编辑该步骤提示词</UButton>
         </div>
         <p class="mb-4 break-all text-xs text-muted">固定编码：<code>{{ definition.promptCode }}</code></p>
-        <div class="grid gap-4 md:grid-cols-4">
-          <UFormField label="文本模型" required><USelect v-model="form.steps[index]!.modelDeploymentId" class="w-full" :items="deploymentItems" /></UFormField>
-          <UFormField label="温度" required><UInput v-model.number="form.steps[index]!.parameters.temperature" class="w-full" type="number" min="0" max="2" step="0.1" /></UFormField>
-          <UFormField label="输出 Token" required><UInput v-model.number="form.steps[index]!.parameters.maxOutputTokens" class="w-full" type="number" min="64" max="8192" step="64" /></UFormField>
+        <div class="grid gap-4" :class="definition.modality === 'text' ? 'md:grid-cols-4' : 'md:grid-cols-2'">
+          <UFormField :label="definition.modality === 'text' ? '文本模型' : '图片模型'" required><USelect v-model="form.steps[index]!.modelDeploymentId" class="w-full" :items="deploymentItems(definition.modality)" /></UFormField>
+          <UFormField v-if="definition.modality === 'text'" label="温度" required><UInput v-model.number="form.steps[index]!.parameters.temperature" class="w-full" type="number" min="0" max="2" step="0.1" /></UFormField>
+          <UFormField v-if="definition.modality === 'text'" label="输出 Token" required><UInput v-model.number="form.steps[index]!.parameters.maxOutputTokens" class="w-full" type="number" min="64" max="8192" step="64" /></UFormField>
           <UFormField label="超时（毫秒）" required><UInput v-model.number="form.steps[index]!.parameters.timeoutMs" class="w-full" type="number" min="1000" max="120000" step="1000" /></UFormField>
         </div>
       </section>

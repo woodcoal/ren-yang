@@ -28,8 +28,6 @@ import { TextModelError } from '../../server/ports/TextModelPort'
 import type { PersonaSnapshot } from '../../shared/types/content'
 import type { AiPromptApplicationService } from '../../server/application/aiPrompts/AiPromptApplicationService'
 import { createTestAiPromptService } from '../support/createTestAiPromptService'
-import { SystemAiSettingsApplicationService } from '../../server/application/systemAi/SystemAiSettingsApplicationService'
-import { SqliteSystemAiSettingsRepository } from '../../server/infrastructure/database/SqliteSystemAiSettingsRepository'
 import type { AiAlgorithmApplicationService } from '../../server/application/aiConfiguration/AiAlgorithmApplicationService'
 import type { AiAlgorithmSnapshot } from '../../server/domain/ai/AiAlgorithmModels'
 import type { AiAlgorithmCode } from '../../shared/types/aiConfiguration'
@@ -278,8 +276,6 @@ let sourceId: string
 let testClock: TestClock
 /** 使用真实迁移模板的测试提示词目录。 */
 let aiPrompts: AiPromptApplicationService
-/** 测试运行实际读取的系统 AI 分场景参数。 */
-let systemAiSettings: SystemAiSettingsApplicationService
 
 beforeEach(async () => {
   directory = mkdtempSync(resolve(tmpdir(), 'ren-yang-generation-test-'))
@@ -327,17 +323,12 @@ beforeEach(async () => {
   })
   model = new FixedTextModel()
   imageModel = new FixedImageModel()
-  systemAiSettings = new SystemAiSettingsApplicationService({
-    repository: new SqliteSystemAiSettingsRepository(database.getClient()),
-    clock: testClock,
-  })
   generation = new GenerationApplicationService({
     runs: new SqliteRunRepository(database.getClient()), content: contentRepository,
     context: new SqliteContextProvider(database.getClient()), model, prompts: aiPrompts, imageModel, imageAssets,
     identifiers, clock: testClock, sourceProcessor: processor,
     tokenCounter: new ConservativeTokenCounter(), learning: learningRepository,
-    systemAiSettings,
-    algorithms: createGenerationAlgorithms(aiPrompts, model),
+    algorithms: createGenerationAlgorithms(aiPrompts, model, imageModel),
   })
   worker = new WorkerApplicationService({
     taskJobRepository: new SqliteTaskJobRepository(database.getClient()), taskHandler: generation,
@@ -351,9 +342,37 @@ afterEach(() => {
 })
 
 describe('阶段三纯文本运行', () => {
+  it('系统能力由固定算法链判定，不再依赖迁移前默认模型', async () => {
+    const identifiers = new SystemIdentifierGenerator()
+    const algorithmOnly = new GenerationApplicationService({
+      runs: new SqliteRunRepository(database.getClient()),
+      content: new SqliteContentRepository(database.getClient()),
+      context: new SqliteContextProvider(database.getClient()),
+      model: new DisabledTextModel(),
+      prompts: aiPrompts,
+      imageModel: new DisabledImageModel(),
+      imageAssets,
+      identifiers,
+      clock: testClock,
+      sourceProcessor: new NodeSourceContentProcessor(identifiers),
+      tokenCounter: new ConservativeTokenCounter(),
+      learning: new SqliteLearningRepository(database.getClient()),
+      algorithms: createGenerationAlgorithms(aiPrompts, model, imageModel),
+    })
+
+    await expect(algorithmOnly.getCapabilities()).resolves.toMatchObject({
+      textModel: { configured: true, model: 'fixed-test-model' },
+      imageModel: { configured: true, model: 'fixed-image-model' },
+      algorithmCapabilities: {
+        articleGeneration: true,
+        articleImageGeneration: true,
+        interestAssessment: true,
+      },
+    })
+  })
+
   it('从自然语言和选定资料生成不落库的结构化人物候选草稿', async () => {
     const before = database.getClient().prepare('SELECT COUNT(*) AS count FROM personas').get()
-    model.invalidPersonaMetaOnce = true
     const draft = await generation.generatePersonaDraft({
       prompt: '创建一名谨慎的学院档案员，回答必须简短。',
       worldId: null,
@@ -372,17 +391,13 @@ describe('阶段三纯文本运行', () => {
     expect(request.userPrompt.match(/学院原著事实/g)).toHaveLength(1)
     expect(request.systemPrompt).toContain('原著事实只能来自 role=canon_fact')
     expect(request.systemPrompt).toContain('禁止写入返回内容')
-    expect(model.calls.get('persona_draft')).toBe(2)
+    expect(model.calls.get('persona_draft')).toBe(1)
     expect(JSON.stringify(draft)).not.toContain('候选草稿')
     expect(database.getClient().prepare('SELECT COUNT(*) AS count FROM personas').get()).toEqual(before)
   })
 
   it('从自然语言生成不落库的结构化世界候选草稿', async () => {
     const before = database.getClient().prepare('SELECT COUNT(*) AS count FROM worlds').get()
-    const settings = await systemAiSettings.getSettings()
-    settings.values.draftGeneration.temperature = 0.8
-    await systemAiSettings.updateSettings(settings.values)
-    model.invalidWorldMetaOnce = true
     const draft = await generation.generateWorldDraft({ prompt: '创建一个人类生活在浮空岛屿、依靠风帆船往来的世界。' })
 
     expect(draft).toMatchObject({
@@ -395,8 +410,8 @@ describe('阶段三纯文本运行', () => {
     expect(request.systemPrompt).toContain('字段必须为 name、summary 和 snapshot')
     expect(request.systemPrompt).toContain('promptText 是实际进入人物任务提示词')
     expect(request.systemPrompt).toContain('禁止写入返回内容')
-    expect(model.calls.get('world_draft')).toBe(2)
-    expect(model.requests.get('world_draft')?.parameters.temperature).toBe(0.8)
+    expect(model.calls.get('world_draft')).toBe(1)
+    expect(model.requests.get('world_draft')?.parameters.temperature).toBe(0.4)
     expect(JSON.stringify(draft)).not.toContain('候选草稿')
     expect(database.getClient().prepare('SELECT COUNT(*) AS count FROM worlds').get()).toEqual(before)
   })
@@ -831,35 +846,36 @@ describe('阶段三纯文本运行', () => {
  * 使用现有固定模型模拟数据库算法执行接缝，验证生成服务确实读取运行算法快照。
  * @param prompts 真实迁移提示词目录。
  * @param textModel 可观察的免费测试文本模型。
+ * @param imageModel 可观察的免费测试图片模型。
  * @returns 只实现生成服务所需准备与执行方法的算法服务。
  */
 function createGenerationAlgorithms(
   prompts: AiPromptApplicationService,
   textModel: FixedTextModel,
-): Pick<AiAlgorithmApplicationService, 'prepare' | 'executeStep'> {
+  imageModel: FixedImageModel,
+): Pick<AiAlgorithmApplicationService, 'prepare' | 'executeStep' | 'executeImageStep'> {
   return {
-    /** @param code 文章生成或配图分析算法编码。 @returns 固定单步骤快照。 */
+    /** @param code 当前生成服务请求的算法编码。 @returns 固定单步骤快照。 */
     async prepare(code: AiAlgorithmCode): Promise<AiAlgorithmSnapshot> {
-      const isInterest = code === 'interest_assessment'
-      const isArticle = code === 'article_generation'
-      const promptCode = isInterest ? 'generation.interest_assessment' : isArticle ? 'generation.article' : 'generation.article_images'
+      const definition = generationTestAlgorithmDefinition(code)
+      const promptCode = definition.promptCode
       const versions = await prompts.snapshotPublishedVersions([promptCode])
       return {
         algorithmCode: code,
         implementationVersion: 1,
-        configurationVersionId: isInterest
-          ? '00000000-0000-4000-8000-000000000700'
-          : isArticle ? '00000000-0000-4000-8000-000000000701' : '00000000-0000-4000-8000-000000000702',
+        configurationVersionId: '00000000-0000-4000-8000-000000000700',
         configurationVersion: 1,
         steps: [{
-          stepKey: isInterest ? 'assess' : isArticle ? 'generate' : 'analyze', ordinal: 0,
+          stepKey: definition.stepKey, ordinal: 0,
           modelDeploymentId: '00000000-0000-4000-8000-000000000703',
           connectionId: '00000000-0000-4000-8000-000000000704',
           protocol: 'openai_compatible', endpoint: 'https://model.test/v1', userAgent: '',
-          model: 'fixed-test-model', promptCode, promptVersionId: versions[promptCode]!,
+          model: definition.modality === 'text' ? 'fixed-test-model' : 'fixed-image-model',
+          modality: definition.modality,
+          promptCode, promptVersionId: versions[promptCode]!,
           parameters: {
-            temperature: isInterest ? 0.4 : isArticle ? 0.65 : 0.15,
-            maxOutputTokens: isArticle ? 4_096 : 2_048,
+            temperature: code === 'article_generation' ? 0.65 : code === 'article_image_analysis' ? 0.15 : 0.4,
+            maxOutputTokens: code === 'article_generation' ? 4_096 : 2_048,
             timeoutMs: 60_000,
           },
         }],
@@ -877,7 +893,34 @@ function createGenerationAlgorithms(
         responseFormat,
       })
     },
+    /** @param snapshot 固定图片算法快照。 @param stepKey 图片步骤键。 @param variables 模板变量。 @param aspectRatio 固定宽高比。 @returns 测试图片响应。 */
+    async executeImageStep(snapshot, stepKey, variables, aspectRatio) {
+      const step = snapshot.steps.find(item => item.stepKey === stepKey)
+      if (!step) throw new Error('测试图片算法步骤不存在')
+      const prompt = await prompts.render(step.promptCode, variables, step.promptVersionId)
+      return await imageModel.generate({ prompt: prompt.userPrompt, aspectRatio, timeoutMs: step.parameters.timeoutMs })
+    },
   }
+}
+
+/**
+ * 返回生成服务测试覆盖到的固定单步骤算法定义。
+ * @param code 生成服务可能请求的算法编码。
+ * @returns 步骤键、提示词编码和模型类型。
+ */
+function generationTestAlgorithmDefinition(code: AiAlgorithmCode): {
+  stepKey: string
+  promptCode: string
+  modality: 'text' | 'image'
+} {
+  if (code === 'persona_draft') return { stepKey: 'generate', promptCode: 'generation.persona_draft', modality: 'text' }
+  if (code === 'world_draft') return { stepKey: 'generate', promptCode: 'generation.world_draft', modality: 'text' }
+  if (code === 'interest_assessment') return { stepKey: 'assess', promptCode: 'generation.interest_assessment', modality: 'text' }
+  if (code === 'article_generation') return { stepKey: 'generate', promptCode: 'generation.article', modality: 'text' }
+  if (code === 'article_image_analysis') return { stepKey: 'analyze', promptCode: 'generation.article_images', modality: 'text' }
+  if (code === 'article_text_revision') return { stepKey: 'revise', promptCode: 'generation.text_block', modality: 'text' }
+  if (code === 'article_image_generation') return { stepKey: 'generate', promptCode: 'generation.image_block', modality: 'image' }
+  throw new Error(`测试未配置算法：${code}`)
 }
 
 /**

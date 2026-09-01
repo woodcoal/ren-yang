@@ -10,6 +10,7 @@ import type { RunSummary } from '../../shared/types/generation'
 const CAPABILITIES = {
   textModel: { configured: true as const, provider: 'openai_compatible' as const, model: 'text-model', endpointOrigin: 'https://text.test' },
   imageModel: { configured: false as const, provider: 'openai_compatible_images' as const, model: null, endpointOrigin: null },
+  algorithmCapabilities: { articleGeneration: true, articleImageGeneration: false, interestAssessment: true },
   openViking: { configured: false, enabled: false, provider: 'openviking' as const, endpointOrigin: null },
   contextProvider: 'sqlite_fts5' as const,
   defaultParameters: {

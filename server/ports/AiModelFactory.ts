@@ -1,4 +1,5 @@
 import type { TextModelPort } from './TextModelPort'
+import type { ImageModelPort } from './ImageModelPort'
 
 /** 动态创建 OpenAI-compatible 模型适配器所需的非持久化参数。 */
 export interface AiTextModelOptions {
@@ -20,4 +21,11 @@ export interface AiModelFactory {
    * @returns 可立即执行的文本模型端口。
    */
   createTextModel(options: AiTextModelOptions): TextModelPort
+
+  /**
+   * 创建一次算法步骤使用的图片模型适配器。
+   * @param options 已解密但不会持久化或记录的模型参数。
+   * @returns 可立即执行的图片模型端口。
+   */
+  createImageModel(options: AiTextModelOptions): ImageModelPort
 }

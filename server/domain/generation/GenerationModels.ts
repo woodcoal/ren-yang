@@ -32,12 +32,16 @@ export interface ImageModelSnapshot {
   endpointOrigin: string
 }
 
-/** 图文运行创建时固定的文章生成与可选配图分析算法。 */
+/** 图文运行创建时固定的文章生成、修正与可选图片算法。 */
 export interface GenerationAlgorithmSnapshot {
   /** 完整文章生成算法快照。 */
   articleGeneration: AiAlgorithmSnapshot
   /** 需要图片时固定的配图分析算法快照。 */
   articleImageAnalysis: AiAlgorithmSnapshot | null
+  /** 用户反馈要求修正正文时使用的算法快照；迁移前运行可能缺失。 */
+  articleTextRevision?: AiAlgorithmSnapshot
+  /** 需要图片时固定的实际图片生成算法快照；迁移前运行可能缺失。 */
+  articleImageGeneration?: AiAlgorithmSnapshot | null
 }
 
 /** 一次兴趣或生成运行的完整事实记录。 */

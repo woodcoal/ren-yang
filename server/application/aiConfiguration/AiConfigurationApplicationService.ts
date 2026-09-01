@@ -174,7 +174,7 @@ export class AiConfigurationApplicationService {
     return { healthy: true, message: '接口、凭据和文本模型均可用' }
   }
 
-  /** @returns 四个固定算法及各自当前生效配置。 */
+  /** @returns 全部固定算法及各自当前生效配置。 */
   async listAlgorithms(): Promise<AiAlgorithmView[]> {
     return await Promise.all(Object.values(AI_ALGORITHM_DEFINITIONS).map(async (definition) => {
       const [active, versionCount] = await Promise.all([
@@ -223,8 +223,8 @@ export class AiConfigurationApplicationService {
     const steps = await Promise.all(definition.steps.map(async (definitionStep) => {
       const inputStep = inputs.get(definitionStep.key)!
       const deployment = await this.requireDeployment(inputStep.modelDeploymentId)
-      if (!deployment.isEnabled || deployment.modality !== 'text') {
-        throw new ApplicationError('CAPABILITY_DISABLED', `步骤“${definitionStep.name}”必须选择已启用的文本模型`, 422)
+      if (!deployment.isEnabled || deployment.modality !== definitionStep.modality) {
+        throw new ApplicationError('CAPABILITY_DISABLED', `步骤“${definitionStep.name}”必须选择已启用的${definitionStep.modality === 'text' ? '文本' : '图片'}模型`, 422)
       }
       const connection = await this.requireConnection(deployment.connectionId)
       if (!connection.isEnabled) {

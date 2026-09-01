@@ -6,15 +6,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AiAlgorithmApplicationService } from '../../server/application/aiConfiguration/AiAlgorithmApplicationService'
 import { AiAlgorithmTestApplicationService } from '../../server/application/aiConfiguration/AiAlgorithmTestApplicationService'
 import { AiConfigurationApplicationService } from '../../server/application/aiConfiguration/AiConfigurationApplicationService'
-import { DEFAULT_SYSTEM_AI_SETTINGS, SystemAiSettingsApplicationService } from '../../server/application/systemAi/SystemAiSettingsApplicationService'
 import { SqliteAiConfigurationRepository } from '../../server/infrastructure/database/SqliteAiConfigurationRepository'
 import { SqliteDatabase } from '../../server/infrastructure/database/SqliteDatabase'
-import { SqliteSystemAiSettingsRepository } from '../../server/infrastructure/database/SqliteSystemAiSettingsRepository'
-import { SqliteConfiguredImageModel, SqliteConfiguredTextModel } from '../../server/infrastructure/models/SqliteConfiguredModels'
 import { AesGcmSecretCipher } from '../../server/infrastructure/security/AesGcmSecretCipher'
 import type { AiModelFactory, AiTextModelOptions } from '../../server/ports/AiModelFactory'
 import type { TextModelPort, TextModelRequest, TextModelResponse } from '../../server/ports/TextModelPort'
 import { TextModelError } from '../../server/ports/TextModelPort'
+import type { ImageModelPort, ImageModelRequest, ImageModelResponse } from '../../server/ports/ImageModelPort'
 import type { AiPromptApplicationService } from '../../server/application/aiPrompts/AiPromptApplicationService'
 import { createTestAiPromptService } from '../support/createTestAiPromptService'
 
@@ -29,6 +27,8 @@ class RecordingModelFactory implements AiModelFactory {
   public readonly options: AiTextModelOptions[] = []
   /** 所有真实模型请求；用于验证步骤顺序和数据传递。 */
   public readonly requests: TextModelRequest[] = []
+  /** 所有真实图片请求；用于验证图片算法按快照执行。 */
+  public readonly imageRequests: ImageModelRequest[] = []
   /** 指定从零开始的请求序号抛出安全模型错误；为空时全部成功。 */
   public failAtRequestIndex: number | null = null
 
@@ -36,6 +36,29 @@ class RecordingModelFactory implements AiModelFactory {
   createTextModel(options: AiTextModelOptions): TextModelPort {
     this.options.push(options)
     return new FixedTextModel(options, this)
+  }
+
+  /** @param options 动态图片模型参数。 @returns 返回固定图片结果的模型端口。 */
+  createImageModel(options: AiTextModelOptions): ImageModelPort {
+    this.options.push(options)
+    return new FixedImageModel(options, this)
+  }
+}
+
+/** 不联网的固定图片模型。 */
+class FixedImageModel implements ImageModelPort {
+  /** @param options 当前动态模型参数。 @param recorder 统一记录请求的工厂。 */
+  constructor(private readonly options: AiTextModelOptions, private readonly recorder: RecordingModelFactory) {}
+
+  /** @returns 当前图片模型的非敏感快照。 */
+  getConfiguredModel() {
+    return { provider: 'openai_compatible_images' as const, model: this.options.model, endpointOrigin: new URL(this.options.endpoint).origin }
+  }
+
+  /** @param request 当前图片请求。 @returns 固定图片字节。 */
+  async generate(request: ImageModelRequest): Promise<ImageModelResponse> {
+    this.recorder.imageRequests.push(request)
+    return { bytes: new Uint8Array([1, 2, 3]), declaredMediaType: 'image/png' }
   }
 }
 
@@ -297,62 +320,39 @@ describe('AI 接口、模型部署与算法配置', () => {
     expect(modelFactory.requests).toHaveLength(1)
   })
 
-  it('系统默认文本和图片模型在数据库保存后立即使用对应端点、密钥、模型与 UserAgent', async () => {
-    const { service, repository, secretCipher } = createServices()
+  it('图片算法只接受图片部署并按固定快照执行', async () => {
+    const { service, algorithms, modelFactory } = createServices()
     const connection = await service.createConnection({
-      name: '内容与视觉接口', protocol: 'openai_compatible', endpoint: 'https://default-models.test/v1',
+      name: '内容与视觉接口', protocol: 'openai_compatible', endpoint: 'https://image-algorithm.test/v1',
       userAgent: 'RenYang-Configured/1.0', apiKey: 'database-model-key', isEnabled: true,
     })
     const textDeployment = await service.createModelDeployment({
-      connectionId: connection.id, name: '默认文本', model: 'database-text-model', modality: 'text', isEnabled: true,
+      connectionId: connection.id, name: '文本部署', model: 'database-text-model', modality: 'text', isEnabled: true,
     })
     const imageDeployment = await service.createModelDeployment({
-      connectionId: connection.id, name: '默认图片', model: 'database-image-model', modality: 'image', isEnabled: true,
+      connectionId: connection.id, name: '头像图片', model: 'database-image-model', modality: 'image', isEnabled: true,
     })
-    const systemSettings = new SystemAiSettingsApplicationService({
-      repository: new SqliteSystemAiSettingsRepository(database.getClient()),
-      aiConfiguration: repository,
-      clock: { now: () => 9_100 },
+    const parameters = { temperature: 0, maxOutputTokens: 64, timeoutMs: 30_000 }
+    await expect(service.publishAlgorithmConfiguration('persona_avatar', {
+      steps: [{ stepKey: 'generate', modelDeploymentId: textDeployment.id, parameters }],
+    })).rejects.toMatchObject({ code: 'CAPABILITY_DISABLED' })
+    await service.publishAlgorithmConfiguration('persona_avatar', {
+      steps: [{ stepKey: 'generate', modelDeploymentId: imageDeployment.id, parameters }],
     })
-    const textModel = new SqliteConfiguredTextModel(database.getClient(), secretCipher)
-    const imageModel = new SqliteConfiguredImageModel(database.getClient(), secretCipher)
 
-    expect(textModel.getConfiguredModel()).toBeNull()
-    expect(imageModel.getConfiguredModel()).toBeNull()
-    await systemSettings.updateSettings({
-      ...DEFAULT_SYSTEM_AI_SETTINGS,
-      textModelDeploymentId: textDeployment.id,
-      imageModelDeploymentId: imageDeployment.id,
-    })
-    expect(textModel.getConfiguredModel()).toMatchObject({ model: 'database-text-model', endpointOrigin: 'https://default-models.test' })
-    expect(imageModel.getConfiguredModel()).toMatchObject({ model: 'database-image-model', endpointOrigin: 'https://default-models.test' })
+    const snapshot = await algorithms.prepare('persona_avatar')
+    await algorithms.executeImageStep(snapshot, 'generate', {
+      nameJson: '"林默"', soulPromptJson: '"谨慎、冷静"', additionalPromptJson: '"暖色背景"',
+    }, '1:1')
 
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: '{"answer":"ok"}' } }] }), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ data: [{ b64_json: Buffer.from([1, 2, 3]).toString('base64') }] }), { status: 200 }))
-    vi.stubGlobal('fetch', fetchMock)
-    await textModel.generateStructured({
-      systemPrompt: '系统规则', userPrompt: '用户任务', responseSchemaName: 'configured_model_test',
-      parameters: {
-        temperature: 0.2, maxOutputTokens: 256, timeoutMs: 5_000,
-        maxEvidenceChunks: 1, maxTextBlocks: 1, maxImageBlocks: 0,
-        maxPromptCharacters: 10_000, maxTotalTokens: 2_000, maxBlockAttempts: 1,
-      },
+    expect(snapshot.steps[0]).toMatchObject({ modality: 'image', model: 'database-image-model' })
+    expect(modelFactory.options.at(-1)).toMatchObject({
+      endpoint: 'https://image-algorithm.test/v1', apiKey: 'database-model-key', model: 'database-image-model',
+      userAgent: 'RenYang-Configured/1.0',
     })
-    await imageModel.generate({ prompt: '测试图片', aspectRatio: '1:1', timeoutMs: 5_000 })
-
-    expect(fetchMock.mock.calls.map(call => String(call[0]))).toEqual([
-      'https://default-models.test/v1/chat/completions',
-      'https://default-models.test/v1/images/generations',
+    expect(modelFactory.imageRequests).toEqual([
+      expect.objectContaining({ aspectRatio: '1:1', timeoutMs: 30_000, prompt: expect.stringContaining('林默') }),
     ])
-    for (const [, init] of fetchMock.mock.calls) {
-      expect(init?.headers).toMatchObject({
-        authorization: 'Bearer database-model-key',
-        'user-agent': 'RenYang-Configured/1.0',
-      })
-    }
-    expect(JSON.parse(String(fetchMock.mock.calls[0]![1]?.body))).toMatchObject({ model: 'database-text-model' })
-    expect(JSON.parse(String(fetchMock.mock.calls[1]![1]?.body))).toMatchObject({ model: 'database-image-model' })
   })
 })
 

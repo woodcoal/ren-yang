@@ -69,7 +69,7 @@ const RESULT: RenderedArtifactView = {
 describe('直接图文生成组件', () => {
   it('一次提交人物、生成条件、输出格式和图片数量', async () => {
     const wrapper = await mountSuspended(ArtifactGenerationForm, {
-      props: { personas: [PERSONA], imageConfigured: true },
+      props: { personas: [PERSONA], imageConfigured: true, generationConfigured: true },
     })
 
     await wrapper.get('select[aria-label="使用的人物"]').setValue(PERSONA.id)
@@ -88,7 +88,7 @@ describe('直接图文生成组件', () => {
 
   it('图片模型未配置时图片数量固定为零', async () => {
     const wrapper = await mountSuspended(ArtifactGenerationForm, {
-      props: { personas: [PERSONA], imageConfigured: false },
+      props: { personas: [PERSONA], imageConfigured: false, generationConfigured: true },
     })
 
     const imageCount = wrapper.get('select[aria-label="图片数量"]')

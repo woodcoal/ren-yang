@@ -8,12 +8,13 @@ import type { FeedbackView } from '../../../shared/types/feedback'
 import type { Clock } from '../../ports/Clock'
 import type { ContextSyncTaskQueue } from '../../ports/ContextSyncTaskQueue'
 import type { FeedbackAggregate, FeedbackRepository } from '../../ports/FeedbackRepository'
+import type { TextModelSnapshot } from '../../domain/generation/GenerationModels'
 import type { IdentifierGenerator } from '../../ports/IdentifierGenerator'
 import type { TextModelPort } from '../../ports/TextModelPort'
 import { TextModelError } from '../../ports/TextModelPort'
 import { ApplicationError } from '../errors/ApplicationError'
 import type { AiPromptApplicationService } from '../aiPrompts/AiPromptApplicationService'
-import type { SystemAiSettingsApplicationService } from '../systemAi/SystemAiSettingsApplicationService'
+import type { AiAlgorithmApplicationService } from '../aiConfiguration/AiAlgorithmApplicationService'
 import {
   buildFeedbackClassificationVariables,
   FEEDBACK_CLASSIFICATION_PROMPT_CODE,
@@ -57,8 +58,8 @@ export interface FeedbackApplicationServiceDependencies {
   clock: Clock
   /** OpenViking 启用时使用的 Session 与反馈资料投影队列。 */
   contextSyncQueue?: ContextSyncTaskQueue
-  /** 系统反馈分类参数；未提供时保持原固定参数，便于独立测试。 */
-  systemAiSettings?: Pick<SystemAiSettingsApplicationService, 'resolveParameters'>
+  /** 反馈分类固定算法；未提供时仅供迁移前独立测试。 */
+  algorithms?: Pick<AiAlgorithmApplicationService, 'prepare' | 'executeStep'>
 }
 
 /** 编排反馈归因、一次性动作和显式人物成长素材创建。 */
@@ -84,27 +85,48 @@ export class FeedbackApplicationService {
     if (!await this.dependencies.repository.findRunPersona(runId)) {
       throw new ApplicationError('RESOURCE_NOT_FOUND', '反馈所属运行不存在', 404)
     }
-    const model = this.requireModel()
     const blockId = input.blockId ?? null
-    const prompt = await this.dependencies.prompts.render(
-      FEEDBACK_CLASSIFICATION_PROMPT_CODE,
-      buildFeedbackClassificationVariables({
-        content: input.content,
-        blockId,
-        isLongTerm: input.isLongTerm,
-        editedOutput: input.editedOutput ?? null,
-      }),
-    )
-    const parameters = this.dependencies.systemAiSettings
-      ? await this.dependencies.systemAiSettings.resolveParameters('feedbackClassification', FEEDBACK_MODEL_PARAMETERS)
-      : { ...FEEDBACK_MODEL_PARAMETERS }
+    const variables = buildFeedbackClassificationVariables({
+      content: input.content,
+      blockId,
+      isLongTerm: input.isLongTerm,
+      editedOutput: input.editedOutput ?? null,
+    })
+    let model: TextModelSnapshot
+    let parameters = { ...FEEDBACK_MODEL_PARAMETERS }
+    let promptVersion: string
     let suggestion
     try {
-      const response = await this.dependencies.model.generateStructured({
-        ...prompt,
-        parameters,
-        responseSchemaName: 'feedback_classification',
-      })
+      let response
+      if (this.dependencies.algorithms) {
+        const snapshot = await this.dependencies.algorithms.prepare('feedback_classification')
+        const step = snapshot.steps.find(item => item.stepKey === 'classify')
+        if (!step) throw new ApplicationError('AI_ALGORITHM_CONFIGURATION_INVALID', '反馈分类算法步骤不存在', 409)
+        model = {
+          provider: 'openai_compatible' as const,
+          model: step.model,
+          endpointOrigin: new URL(step.endpoint).origin,
+        }
+        parameters = { ...parameters, ...step.parameters }
+        promptVersion = step.promptVersionId
+        response = await this.dependencies.algorithms.executeStep(
+          snapshot,
+          'classify',
+          variables,
+          'feedback_classification',
+          'json_object',
+        )
+      }
+      else {
+        model = this.requireModel()
+        const prompt = await this.dependencies.prompts.render(FEEDBACK_CLASSIFICATION_PROMPT_CODE, variables)
+        promptVersion = prompt.versionId
+        response = await this.dependencies.model.generateStructured({
+          ...prompt,
+          parameters,
+          responseSchemaName: 'feedback_classification',
+        })
+      }
       suggestion = feedbackClassificationSuggestionSchema.parse(response.structuredOutput)
     }
     catch (error: unknown) {
@@ -129,7 +151,7 @@ export class FeedbackApplicationService {
         ...suggestion,
         modelSnapshot: model,
         parameterSnapshot: parameters,
-        promptVersion: prompt.versionId,
+        promptVersion,
         createdAt: timestamp,
       },
     )

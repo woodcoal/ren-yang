@@ -1,29 +1,20 @@
 <script setup lang="ts">
-import { computed, reactive, shallowRef } from 'vue'
+import { computed, shallowRef } from 'vue'
 import type { CreateAiConnectionInput, SaveAiModelDeploymentInput, UpdateAiConnectionInput } from '#shared/schemas/aiConfiguration'
-import { systemAiSettingsValuesSchema, type SystemAiSettingsValues } from '#shared/schemas/systemAi'
 import type { ApiResponse } from '#shared/types/api'
 import type { AiConnectionCheckResult, AiConnectionView, AiModelDeploymentView } from '#shared/types/aiConfiguration'
-import type { SystemAiSettingsView } from '#shared/types/systemAi'
 import { getApiErrorMessage } from '../utils/apiError'
 
-/** AI 模型页的三个管理阶段。 */
-type AiModelManagementView = 'connections' | 'deployments' | 'defaults'
+/** AI 模型页的两个管理阶段。 */
+type AiModelManagementView = 'connections' | 'deployments'
 
-const [connectionRequest, deploymentRequest, systemAiSettingsRequest] = await Promise.all([
+const [connectionRequest, deploymentRequest] = await Promise.all([
   useFetch<ApiResponse<AiConnectionView[]>>('/api/v1/ai/connections'),
   useFetch<ApiResponse<AiModelDeploymentView[]>>('/api/v1/ai/model-deployments'),
-  useFetch<ApiResponse<SystemAiSettingsView>>('/api/v1/system/ai-settings'),
 ])
 const connections = computed(() => connectionRequest.data.value?.data ?? [])
 const deployments = computed(() => deploymentRequest.data.value?.data ?? [])
 const { notifySuccess, notifyError } = useOperationNotifications()
-const systemAiSettings = reactive<SystemAiSettingsValues>(systemAiSettingsValuesSchema.parse(systemAiSettingsRequest.data.value?.data.values ?? {
-  textModelDeploymentId: '',
-  imageModelDeploymentId: '',
-  draftGeneration: { temperature: 0.4, maxOutputTokens: 2_048, timeoutMs: 60_000 },
-  feedbackClassification: { temperature: 0, maxOutputTokens: 4_096, timeoutMs: 60_000 },
-}))
 const activeView = shallowRef<AiModelManagementView>('connections')
 const selectedConnection = shallowRef<AiConnectionView | null>(null)
 const selectedDeployment = shallowRef<AiModelDeploymentView | null>(null)
@@ -32,7 +23,6 @@ const deploymentEditorOpen = shallowRef(false)
 const connectionFilter = shallowRef('all')
 const savingConnection = shallowRef(false)
 const savingDeployment = shallowRef(false)
-const savingDefaultModels = shallowRef(false)
 const checkingDeploymentId = shallowRef<string | null>(null)
 const filteredDeployments = computed(() => connectionFilter.value === 'all'
   ? deployments.value
@@ -41,8 +31,6 @@ const connectionFilterItems = computed(() => [
   { label: '全部接口', value: 'all' },
   ...connections.value.map(connection => ({ label: connection.name, value: connection.id })),
 ])
-const configuredDefaultModelCount = computed(() => Number(Boolean(systemAiSettings.textModelDeploymentId))
-  + Number(Boolean(systemAiSettings.imageModelDeploymentId)))
 
 /**
  * 查找模型部署所属的接口名称。
@@ -167,30 +155,6 @@ async function saveDeployment(input: SaveAiModelDeploymentInput): Promise<void> 
 }
 
 /**
- * 保存默认文本与图片模型，同时保留其他系统 AI 参数的当前值。
- * @param input 已通过共享 Schema 校验的完整系统 AI 设置。
- * @returns 保存与本地状态同步完成时结束。
- */
-async function saveDefaultModels(input: SystemAiSettingsValues): Promise<void> {
-  savingDefaultModels.value = true
-  try {
-    const response = await $fetch<ApiResponse<SystemAiSettingsView>>('/api/v1/system/ai-settings', {
-      method: 'PUT',
-      body: input,
-    })
-    Object.assign(systemAiSettings, systemAiSettingsValuesSchema.parse(response.data.values))
-    systemAiSettingsRequest.data.value = response
-    notifySuccess('默认文本与图片模型已保存。')
-  }
-  catch (error: unknown) {
-    notifyError(getApiErrorMessage(error, '默认模型保存失败'))
-  }
-  finally {
-    savingDefaultModels.value = false
-  }
-}
-
-/**
  * 对文本模型执行真实最小请求，验证地址、密钥和模型标识。
  * @param deployment 待检测的文本模型部署。
  * @returns 检测完成时结束。
@@ -212,7 +176,8 @@ async function checkDeployment(deployment: AiModelDeploymentView): Promise<void>
 
 <template>
   <div>
-    <ContentPageHeader title="AI 模型" description="先建立带加密凭据的接口连接，再登记具体模型并设置平台默认模型。" />
+    <ContentPageHeader title="AI 管理" description="统一维护接口连接、模型部署和固定算法；每项 AI 操作直接绑定对应算法。" />
+    <AiConfigurationAiManagementTabs />
     <div class="status-strip page-status-strip" aria-label="AI 模型状态摘要">
       <div class="status-cell"><span class="status-kicker">接口连接</span><strong class="status-value">{{ connections.length }}</strong></div>
       <div class="status-cell"><span class="status-kicker">模型部署</span><strong class="status-value">{{ deployments.length }}</strong></div>
@@ -227,14 +192,11 @@ async function checkDeployment(deployment: AiModelDeploymentView): Promise<void>
       <button type="button" :class="{ 'model-setup-step--active': activeView === 'deployments' }" class="model-setup-step" @click="switchView('deployments')">
         <span>2</span><span><strong>模型部署</strong><small>一个接口可登记多个模型</small></span><UBadge :color="deployments.length ? 'success' : 'neutral'" variant="subtle">{{ deployments.length }} 个</UBadge>
       </button>
-      <button type="button" :class="{ 'model-setup-step--active': activeView === 'defaults' }" class="model-setup-step" @click="switchView('defaults')">
-        <span>3</span><span><strong>默认模型</strong><small>平台通用文本与图片模型</small></span><UBadge :color="configuredDefaultModelCount === 2 ? 'success' : configuredDefaultModelCount === 1 ? 'info' : 'warning'" variant="subtle">已设置 {{ configuredDefaultModelCount }}/2</UBadge>
-      </button>
     </div>
 
     <div class="space-y-5 py-9">
       <UAlert color="neutral" variant="subtle" title="凭据安全边界" description="API Key 使用 AES-256-GCM 加密存入数据库；本地主密钥不入库，浏览器、审计和运行快照均不返回明文。" />
-      <UAlert v-if="connectionRequest.error.value || deploymentRequest.error.value || systemAiSettingsRequest.error.value" color="error" title="AI 模型配置加载失败" />
+      <UAlert v-if="connectionRequest.error.value || deploymentRequest.error.value" color="error" title="AI 模型配置加载失败" />
 
       <template v-if="activeView === 'connections'">
         <section class="archive-panel" aria-labelledby="ai-connection-list-heading">
@@ -293,15 +255,6 @@ async function checkDeployment(deployment: AiModelDeploymentView): Promise<void>
         </section>
       </template>
 
-      <template v-else>
-        <SystemAiSettingsForm
-          :model-value="systemAiSettings"
-          :operation="null"
-          :deployments="deployments"
-          :loading="savingDefaultModels"
-          @submit="saveDefaultModels"
-        />
-      </template>
     </div>
   </div>
 </template>
@@ -309,7 +262,7 @@ async function checkDeployment(deployment: AiModelDeploymentView): Promise<void>
 <style scoped>
 .model-setup-path {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   margin-top: 2rem;
   overflow: hidden;
   border: 1px solid var(--app-border);

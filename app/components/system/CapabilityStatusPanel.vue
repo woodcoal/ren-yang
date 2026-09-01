@@ -15,16 +15,16 @@ const props = withDefaults(defineProps<Props>(), { showLimits: false })
 /** 三项能力的明确状态、影响和视觉语义。 */
 const capabilityItems = computed(() => [
   {
-    label: '文本模型',
-    status: props.capabilities.textModel.configured ? '文本生成可用' : '文本模型未配置',
+    label: '文本算法',
+    status: props.capabilities.textModel.configured ? '文本生成可用' : '文本算法未配置',
     impact: props.capabilities.textModel.configured
       ? `${props.capabilities.textModel.model} · ${props.capabilities.textModel.endpointOrigin}`
-      : '人物草稿、兴趣判断、创作与反馈评测不可执行',
+      : '请在 AI 管理中为对应固定算法选择文本模型',
     color: props.capabilities.textModel.configured ? 'success' as const : 'error' as const,
   },
   {
-    label: '图片模型',
-    status: props.capabilities.imageModel.configured ? '图片生成可用' : '图片模型未配置',
+    label: '图片算法',
+    status: props.capabilities.imageModel.configured ? '图片生成可用' : '图片算法未配置',
     impact: props.capabilities.imageModel.configured
       ? `${props.capabilities.imageModel.model} · ${props.capabilities.imageModel.endpointOrigin}`
       : '图片块已禁用，纯文本不受影响',

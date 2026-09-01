@@ -43,10 +43,7 @@ export const appNavigationGroups: AppNavigationGroup[] = [
   {
     label: '系统',
     items: [
-      { label: '内容模板', to: '/templates', icon: 'i-lucide-panels-top-left' },
-      { label: 'AI 模型', to: '/ai-models', icon: 'i-lucide-server-cog' },
-      { label: 'AI 算法', to: '/ai-algorithms', icon: 'i-lucide-workflow' },
-      { label: 'AI 设置', to: '/ai-settings', icon: 'i-lucide-sliders-horizontal' },
+      { label: 'AI 管理', to: '/ai-models', icon: 'i-lucide-server-cog' },
       { label: '系统中心', to: '/settings', icon: 'i-lucide-settings-2' },
       { label: 'API Key', to: '/api-keys', icon: 'i-lucide-key-round' },
       { label: '日志与审计', to: '/system-records', icon: 'i-lucide-scroll-text' },
@@ -69,9 +66,10 @@ const standalonePageTitles: Record<string, string> = {
   '/setup': '首次设置',
   '/personas/new': '新建人物',
   '/sources/search': '资料段落搜索',
-  '/parameter-profiles': '生成设置',
+  '/ai-algorithms': 'AI 管理',
+  '/ai-settings': 'AI 管理',
   '/prompts': '提示词管理',
-  '/system-ai-settings': 'AI 设置',
+  '/system-ai-settings': 'AI 管理',
 }
 
 /** 动态详情页使用的稳定浏览器标题。 */

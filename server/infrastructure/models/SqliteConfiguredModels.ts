@@ -10,7 +10,7 @@ import { connectionSecretContext } from '../../application/aiConfiguration/AiCon
 import { OpenAiCompatibleImageModel } from './OpenAiCompatibleImageModel'
 import { OpenAiCompatibleTextModel } from './OpenAiCompatibleTextModel'
 
-/** 数据库默认模型解析所需的启用部署与连接行。 */
+/** 迁移前运行兼容所需的旧模型部署与连接行。 */
 interface ConfiguredDeploymentRow {
   /** AI 连接 UUID。 */
   connection_id: string
@@ -24,7 +24,7 @@ interface ConfiguredDeploymentRow {
   model: string
 }
 
-/** 从系统 AI 设置与启用部署中按调用时刻解析默认模型。 */
+/** 从迁移前系统 AI 设置行解析历史运行使用的模型。 */
 class SqliteConfiguredModelResolver {
   /**
    * 创建数据库模型解析器。
@@ -36,13 +36,13 @@ class SqliteConfiguredModelResolver {
     private readonly secretCipher: SecretCipher,
   ) {}
 
-  /** @returns 当前启用的默认文本模型；未选择或配置已停用时返回 null。 */
+  /** @returns 历史设置指向且仍启用的文本模型；未选择或配置已停用时返回 null。 */
   resolveTextModel(): OpenAiCompatibleTextModel | null {
     const row = this.findDeployment('text')
     return row ? new OpenAiCompatibleTextModel(this.toOptions(row)) : null
   }
 
-  /** @returns 当前启用的默认图片模型；未选择或配置已停用时返回 null。 */
+  /** @returns 历史设置指向且仍启用的图片模型；未选择或配置已停用时返回 null。 */
   resolveImageModel(): OpenAiCompatibleImageModel | null {
     const row = this.findDeployment('image')
     return row ? new OpenAiCompatibleImageModel(this.toOptions(row)) : null
@@ -87,9 +87,9 @@ class SqliteConfiguredModelResolver {
   }
 }
 
-/** 让既有业务服务在每次调用时使用数据库当前默认文本部署。 */
+/** 只为迁移前运行按旧设置解析文本模型。 */
 export class SqliteConfiguredTextModel implements TextModelPort {
-  /** 数据库默认模型解析器。 */
+  /** 迁移前历史运行模型解析器。 */
   private readonly resolver: SqliteConfiguredModelResolver
 
   /** @param client 已迁移 SQLite 客户端。 @param secretCipher 凭据解密器。 */
@@ -97,22 +97,22 @@ export class SqliteConfiguredTextModel implements TextModelPort {
     this.resolver = new SqliteConfiguredModelResolver(client, secretCipher)
   }
 
-  /** @returns 当前默认文本部署的非敏感快照；未配置时返回 null。 */
+  /** @returns 历史文本部署的非敏感快照；不可用时返回 null。 */
   getConfiguredModel(): TextModelSnapshot | null {
     return this.resolver.resolveTextModel()?.getConfiguredModel() ?? null
   }
 
-  /** @param request 文本模型请求。 @returns 当前数据库默认部署的响应。 */
+  /** @param request 历史运行固定的文本模型请求。 @returns 旧设置指向部署的响应。 */
   async generateStructured(request: TextModelRequest): Promise<TextModelResponse> {
     const model = this.resolver.resolveTextModel()
-    if (!model) throw new TextModelError('CAPABILITY_DISABLED', '默认文本模型尚未配置', false)
+    if (!model) throw new TextModelError('CAPABILITY_DISABLED', '历史运行使用的文本模型已不可用', false)
     return await model.generateStructured(request)
   }
 }
 
-/** 让既有业务服务在每次调用时使用数据库当前默认图片部署。 */
+/** 只为迁移前运行按旧设置解析图片模型。 */
 export class SqliteConfiguredImageModel implements ImageModelPort {
-  /** 数据库默认模型解析器。 */
+  /** 迁移前历史运行模型解析器。 */
   private readonly resolver: SqliteConfiguredModelResolver
 
   /** @param client 已迁移 SQLite 客户端。 @param secretCipher 凭据解密器。 */
@@ -120,15 +120,15 @@ export class SqliteConfiguredImageModel implements ImageModelPort {
     this.resolver = new SqliteConfiguredModelResolver(client, secretCipher)
   }
 
-  /** @returns 当前默认图片部署的非敏感快照；未配置时返回 null。 */
+  /** @returns 历史图片部署的非敏感快照；不可用时返回 null。 */
   getConfiguredModel(): ImageModelSnapshot | null {
     return this.resolver.resolveImageModel()?.getConfiguredModel() ?? null
   }
 
-  /** @param request 图片模型请求。 @returns 当前数据库默认部署的图片响应。 */
+  /** @param request 历史运行固定的图片模型请求。 @returns 旧设置指向部署的响应。 */
   async generate(request: ImageModelRequest): Promise<ImageModelResponse> {
     const model = this.resolver.resolveImageModel()
-    if (!model) throw new ImageModelError('CAPABILITY_DISABLED', '默认图片模型尚未配置', false)
+    if (!model) throw new ImageModelError('CAPABILITY_DISABLED', '历史运行使用的图片模型已不可用', false)
     return await model.generate(request)
   }
 }

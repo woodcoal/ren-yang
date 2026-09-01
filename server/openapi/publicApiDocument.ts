@@ -659,7 +659,7 @@ function createSchemas(): Record<string, Record<string, unknown>> {
         status: { type: 'string', enum: ['planning', 'awaiting_confirmation', 'queued', 'running', 'succeeded', 'partial', 'failed', 'canceled'] },
         input: { type: 'object', description: '创建运行时固定的业务输入。' },
         parameters: { type: 'object', description: '运行安全预算快照。' },
-        model: { type: 'object', description: '默认文本模型非敏感快照。' },
+        model: { type: 'object', description: '本次运行文章算法使用的非敏感文本模型快照。' },
         imageModel: { oneOf: [{ type: 'object' }, { type: 'null' }] },
         contextProvider: { type: 'string', enum: ['sqlite_fts5', 'openviking'] },
         errorCode: nullableString, errorMessage: nullableString,

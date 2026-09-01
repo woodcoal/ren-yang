@@ -14,10 +14,12 @@ const aiEndpointSchema = z.url('接口地址无效').max(2_000).superRefine((val
 /** AI 模型部署的输出形态。 */
 export const aiModelModalitySchema = z.enum(['text', 'image'], { error: '模型类型无效' })
 
-/** 首批代码固定流程的算法编码。 */
+/** 代码固定流程的全部算法编码。 */
 export const aiAlgorithmCodeSchema = z.enum([
   'persona_soul', 'world_soul', 'persona_growth', 'world_growth', 'persona_memory',
+  'persona_draft', 'world_draft', 'feedback_classification', 'persona_avatar',
   'interest_assessment', 'article_generation', 'article_image_analysis',
+  'article_text_revision', 'article_image_generation',
 ], { error: '算法编码无效' })
 
 /** 允许作为 HTTP User-Agent 请求头发送的可见 ASCII 文本。 */

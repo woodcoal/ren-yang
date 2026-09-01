@@ -49,8 +49,6 @@ import { AiPromptApplicationService } from '../../application/aiPrompts/AiPrompt
 import { SqliteAiPromptRepository } from '../database/SqliteAiPromptRepository'
 import { HistoryApplicationService } from '../../application/history/HistoryApplicationService'
 import { SqliteHistoryRepository } from '../database/SqliteHistoryRepository'
-import { SystemAiSettingsApplicationService } from '../../application/systemAi/SystemAiSettingsApplicationService'
-import { SqliteSystemAiSettingsRepository } from '../database/SqliteSystemAiSettingsRepository'
 import { AiConfigurationApplicationService } from '../../application/aiConfiguration/AiConfigurationApplicationService'
 import { AiAlgorithmApplicationService } from '../../application/aiConfiguration/AiAlgorithmApplicationService'
 import { AiAlgorithmTestApplicationService } from '../../application/aiConfiguration/AiAlgorithmTestApplicationService'
@@ -114,8 +112,6 @@ export class ApplicationRuntime {
   private readonly worker: InternalWorker
   /** 请求间可安全共享的系统应用服务。 */
   private readonly systemService: SystemApplicationService
-  /** 请求与各 AI 业务服务共用的系统 AI 参数设置。 */
-  private readonly systemAiSettingsService: SystemAiSettingsApplicationService
   /** 请求间共享的 AI 接口、模型部署和算法配置管理服务。 */
   private readonly aiConfigurationService: AiConfigurationApplicationService
   /** 请求间共享且不保存结果的固定算法测试服务。 */
@@ -168,11 +164,6 @@ export class ApplicationRuntime {
     const personaAvatars = new LocalPersonaAvatarStorage(options.dataDirectory, storageCapacity)
     const secretCipher = new AesGcmSecretCipher(options.credentialEncryptionSecret)
     const aiConfigurationRepository = new SqliteAiConfigurationRepository(this.sqlite.getClient())
-    this.systemAiSettingsService = new SystemAiSettingsApplicationService({
-      repository: new SqliteSystemAiSettingsRepository(this.sqlite.getClient()),
-      aiConfiguration: aiConfigurationRepository,
-      clock: this.clock,
-    })
     const textModel = new SqliteConfiguredTextModel(this.sqlite.getClient(), secretCipher)
     const imageModel = new SqliteConfiguredImageModel(this.sqlite.getClient(), secretCipher)
     const dynamicModelFactory = new OpenAiCompatibleModelFactory()
@@ -236,6 +227,7 @@ export class ApplicationRuntime {
       personaAvatars,
       imageModel,
       prompts: this.aiPromptService,
+      algorithms: aiAlgorithms,
       contextSyncQueue,
       secretCipher,
     })
@@ -286,7 +278,6 @@ export class ApplicationRuntime {
       tokenCounter,
       learning: learningRepository,
       contextSyncQueue,
-      systemAiSettings: this.systemAiSettingsService,
       algorithms: aiAlgorithms,
     })
     this.historyService = new HistoryApplicationService({
@@ -299,7 +290,7 @@ export class ApplicationRuntime {
       identifiers,
       clock: this.clock,
       contextSyncQueue,
-      systemAiSettings: this.systemAiSettingsService,
+      algorithms: aiAlgorithms,
     })
     this.contextSynchronizationService = new ContextSynchronizationApplicationService({
       repository: contextRepository,
@@ -374,7 +365,6 @@ export class ApplicationRuntime {
       contextSynchronization: this.contextSynchronizationService,
       backup: this.backupService,
       system: this.systemService,
-      systemAiSettings: this.systemAiSettingsService,
     }
   }
 

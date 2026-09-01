@@ -19,6 +19,8 @@ export interface AiAlgorithmStepSnapshot {
   userAgent?: string
   /** 供应商模型标识。 */
   model: string
+  /** 模型输出类型；迁移前快照缺失时按文本模型处理。 */
+  modality?: 'text' | 'image'
   /** 固定提示词编码。 */
   promptCode: string
   /** 固定提示词版本 UUID。 */

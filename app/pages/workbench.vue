@@ -10,6 +10,11 @@ import { getApiErrorMessage } from '../utils/apiError'
 interface CapabilityResponse {
   textModel: TextModelCapability
   imageModel: ImageModelCapability
+  algorithmCapabilities: {
+    articleGeneration: boolean
+    articleImageGeneration: boolean
+    interestAssessment: boolean
+  }
   openViking: { configured: boolean, enabled: boolean }
   contextProvider: 'sqlite_fts5' | 'openviking'
 }
@@ -23,6 +28,11 @@ const { notifySuccess, notifyError } = useOperationNotifications()
 const personas = computed(() => (personaData.value?.data ?? []).filter(persona => persona.isEnabled))
 const textCapability = computed(() => capabilityData.value?.data.textModel ?? null)
 const imageCapability = computed(() => capabilityData.value?.data.imageModel ?? null)
+const algorithmCapabilities = computed(() => capabilityData.value?.data.algorithmCapabilities ?? {
+  articleGeneration: false,
+  articleImageGeneration: false,
+  interestAssessment: false,
+})
 const task = shallowRef<'generation' | 'interest'>('generation')
 const loading = shallowRef(false)
 const interestForm = reactive({
@@ -94,7 +104,7 @@ async function createRun(title: string, description: string, request: () => Prom
       <UButton to="/history" color="neutral" variant="ghost">运行历史</UButton>
     </ContentPageHeader>
 
-    <UAlert v-if="!textCapability?.configured" class="mb-5" color="warning" title="文本模型未配置" description="请通过环境变量配置 OpenAI-compatible 接口后重启服务；密钥不会进入数据库。" />
+    <UAlert v-if="!textCapability?.configured" class="mb-5" color="warning" title="文本算法未配置" description="请在 AI 管理中配置接口、模型和对应固定算法。" />
 
     <div class="mb-6 grid gap-3 sm:grid-cols-2">
       <button class="workflow-panel text-left" :aria-pressed="task === 'generation'" @click="task = 'generation'">
@@ -112,7 +122,8 @@ async function createRun(title: string, description: string, request: () => Prom
     <GenerationArtifactGenerationForm
       v-if="task === 'generation'"
       :personas="personas"
-      :image-configured="Boolean(imageCapability?.configured)"
+      :image-configured="algorithmCapabilities.articleImageGeneration && Boolean(imageCapability?.configured)"
+      :generation-configured="algorithmCapabilities.articleGeneration"
       :loading="loading"
       @submit="submitGeneration"
     />
@@ -145,7 +156,7 @@ async function createRun(title: string, description: string, request: () => Prom
       </section>
       <div class="sticky-action-bar">
         <p class="text-sm text-muted">提交后进入运行详情，系统会自动完成判断。</p>
-        <UButton type="submit" size="lg" :disabled="!textCapability?.configured || personas.length === 0" :loading="loading">开始判断</UButton>
+        <UButton type="submit" size="lg" :disabled="!algorithmCapabilities.interestAssessment || personas.length === 0" :loading="loading">开始判断</UButton>
       </div>
     </form>
   </div>

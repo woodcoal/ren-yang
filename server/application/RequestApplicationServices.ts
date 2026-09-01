@@ -10,7 +10,6 @@ import type { LearningApplicationService } from './learning/LearningApplicationS
 import type { AnalysisApplicationService } from './analysis/AnalysisApplicationService'
 import type { AiPromptApplicationService } from './aiPrompts/AiPromptApplicationService'
 import type { HistoryApplicationService } from './history/HistoryApplicationService'
-import type { SystemAiSettingsApplicationService } from './systemAi/SystemAiSettingsApplicationService'
 import type { AiConfigurationApplicationService } from './aiConfiguration/AiConfigurationApplicationService'
 import type { AiAlgorithmTestApplicationService } from './aiConfiguration/AiAlgorithmTestApplicationService'
 import type { ApiKeyApplicationService } from './authentication/ApiKeyApplicationService'
@@ -50,6 +49,4 @@ export interface RequestApplicationServices {
   backup: BackupApplicationService
   /** 非敏感系统状态用例。 */
   system: SystemApplicationService
-  /** 系统内部 AI 操作的分场景参数设置用例。 */
-  systemAiSettings: SystemAiSettingsApplicationService
 }

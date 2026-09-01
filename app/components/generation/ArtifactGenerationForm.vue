@@ -6,8 +6,10 @@ import type { PersonaSummary } from '#shared/types/content'
 const props = defineProps<{
   /** 当前可以参与新创作的已启用人物。 */
   personas: PersonaSummary[]
-  /** 当前是否已配置图片模型。 */
+  /** 当前图文所需配图分析与图片生成算法链是否可用。 */
   imageConfigured: boolean
+  /** 完整文章生成算法链是否可用。 */
+  generationConfigured: boolean
   /** 父页面是否正在提交运行。 */
   loading?: boolean
 }>()
@@ -23,7 +25,7 @@ const form = reactive({
   outputFormat: 'text' as 'html' | 'text',
   imageCount: 0,
 })
-const canSubmit = computed(() => Boolean(form.personaId && form.requirement.trim() && !props.loading))
+const canSubmit = computed(() => Boolean(props.generationConfigured && form.personaId && form.requirement.trim() && !props.loading))
 
 watch(() => props.imageConfigured, (configured) => {
   if (!configured) form.imageCount = 0
@@ -83,7 +85,7 @@ function submit(): void {
     </section>
 
     <div class="sticky-action-bar">
-      <p class="text-sm text-muted">提交后直接生成最终文章；图片数量大于 0 时继续生成对应配图。</p>
+      <p class="text-sm text-muted">{{ generationConfigured ? '提交后直接生成最终文章；图片数量大于 0 时继续生成对应配图。' : '请先在 AI 管理中配置文章生成和正文修正算法。' }}</p>
       <UButton type="submit" size="lg" :disabled="!canSubmit" :loading="loading">开始生成</UButton>
     </div>
   </form>
