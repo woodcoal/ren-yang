@@ -8,10 +8,16 @@ import {
 } from '../../../shared/schemas/content'
 import type { PersonaDraftView, WorldDraftView } from '../../../shared/types/content'
 import {
+  articleImagesOutputSchema,
+  articleOutputSchema,
+  createGenerationRunSchema,
   documentSpecSchema,
   interestAssessmentSchema,
   textBlockOutputSchema,
   type ArtifactFormat,
+  type ArticleImagesOutput,
+  type ArticleOutput,
+  type ArtifactOutputFormat,
   type CreateFormatTemplateInput,
   type CreateGenerationRunInput,
   type CreateInterestRunInput,
@@ -59,7 +65,8 @@ import { ApplicationError } from '../errors/ApplicationError'
 import type { AiPromptApplicationService } from '../aiPrompts/AiPromptApplicationService'
 import type { SystemAiSettingsApplicationService } from '../systemAi/SystemAiSettingsApplicationService'
 import {
-  buildDocumentPlanPromptVariables,
+  buildArticleImagesPromptVariables,
+  buildArticlePromptVariables,
   buildImagePromptVariables,
   buildInterestPromptVariables,
   buildPersonaDraftPromptVariables,
@@ -95,13 +102,6 @@ export const DEFAULT_TEXT_PARAMETERS: TextModelParameters = {
   sourceBudgetTokens: 5_000,
 }
 
-/** 未选择格式模板时使用的最小文档结构指导。 */
-const DEFAULT_FORMAT_TEMPLATE = {
-  guidance: '按用户要求组织清晰的内容；标题、正文、列表以及已启用的辅助图片按需要使用。',
-  minimumBlocks: 1,
-  maximumBlocks: 8,
-}
-
 /** 人物草稿单项资料最多发送给模型的字符数。 */
 const PERSONA_DRAFT_SOURCE_CHARACTER_LIMIT = 5_000
 
@@ -131,7 +131,7 @@ export interface GenerationApplicationServiceDependencies {
   systemAiSettings?: Pick<SystemAiSettingsApplicationService, 'resolveParameters'>
 }
 
-/** 编排运行创建、查询、规格确认和 Worker 模型执行。 */
+/** 编排运行创建、查询、文章直出、内部结果保存和 Worker 模型执行。 */
 export class GenerationApplicationService implements TaskHandler {
   /** @param dependencies 运行、内容、检索、模型、标识、时间和哈希端口。 */
   constructor(private readonly dependencies: GenerationApplicationServiceDependencies) { }
@@ -271,13 +271,17 @@ export class GenerationApplicationService implements TaskHandler {
 
   /** @param input 兴趣判断输入。 @returns 已入队运行与任务标识。 */
   async createInterestRun(input: CreateInterestRunInput): Promise<CreatedRun> {
-    return await this.createRun('interest_assessment', input.personaId, { content: input.content }, input.scene ?? null, null, null)
+    return await this.createRun('interest_assessment', input.personaId, { content: input.content }, input.scene ?? null)
   }
 
-  /** @param input 文档规划输入。 @returns 处于规划状态的运行与任务标识。 */
+  /** @param input 一次直出文章输入。 @returns 处于文章生成状态的运行与任务标识。 */
   async createGenerationRun(input: CreateGenerationRunInput): Promise<CreatedRun> {
-    const includeImages = input.includeImages ?? false
-    return await this.createRun('artifact_generation', input.personaId, { requirement: input.requirement, includeImages }, input.scene ?? null, input.parameterProfileId ?? null, input.formatTemplateId ?? null)
+    const normalized = createGenerationRunSchema.parse(input)
+    return await this.createRun('artifact_generation', normalized.personaId, {
+      requirement: normalized.requirement,
+      outputFormat: normalized.outputFormat,
+      imageCount: normalized.imageCount,
+    }, null)
   }
 
   /** @param filter 已校验运行过滤条件。 @returns 运行摘要列表。 */
@@ -314,38 +318,6 @@ export class GenerationApplicationService implements TaskHandler {
     }
   }
 
-  /** @param runId 运行 UUID。 @param spec 已校验用户规格。 @returns 新规格修订。 */
-  async reviseDocumentSpec(runId: string, spec: DocumentSpec) {
-    const run = await this.requireRun(runId)
-    if (run.kind !== 'artifact_generation' || run.status !== 'awaiting_confirmation') {
-      throw new ApplicationError('DOCUMENT_SPEC_NOT_EDITABLE', '当前运行没有可编辑的待确认规格', 409)
-    }
-    this.validateDocumentLimits(spec, run)
-    const revised = await this.dependencies.runs.reviseDocumentSpec(runId, this.dependencies.identifiers.create(), spec, this.dependencies.clock.now())
-    if (!revised) throw new ApplicationError('VERSION_CONFLICT', '规格状态已经变化，请刷新后重试', 409)
-    return revised
-  }
-
-  /** @param runId 运行 UUID。 @returns 确认后的运行详情。 */
-  async confirmDocumentSpec(runId: string): Promise<RunDetails> {
-    const run = await this.requireRun(runId)
-    const specs = await this.dependencies.runs.listDocumentSpecs(runId)
-    const draft = specs.find(spec => spec.status === 'draft')
-    if (run.status !== 'awaiting_confirmation' || !draft) {
-      throw new ApplicationError('DOCUMENT_SPEC_NOT_CONFIRMED', '没有可确认的文档规格', 409)
-    }
-    this.validateDocumentLimits(draft.spec, run)
-    const confirmed = await this.dependencies.runs.confirmDocumentSpec(
-      runId,
-      this.dependencies.identifiers.create(),
-      this.dependencies.identifiers.create(),
-      draft.spec.blocks.map(() => this.dependencies.identifiers.create()),
-      this.dependencies.clock.now(),
-    )
-    if (!confirmed) throw new ApplicationError('VERSION_CONFLICT', '规格状态已经变化，请刷新后重试', 409)
-    return await this.getRun(runId)
-  }
-
   /** @param runId 运行 UUID。 @returns 接受取消后的详情。 */
   async cancelRun(runId: string): Promise<RunDetails> {
     await this.requireRun(runId)
@@ -367,43 +339,6 @@ export class GenerationApplicationService implements TaskHandler {
     const retried = await this.dependencies.runs.retryRun(runId, taskId, this.dependencies.clock.now())
     if (!retried) throw new ApplicationError('VERSION_CONFLICT', '运行状态已经变化，请刷新后重试', 409)
     return { runId, taskId, status: retried.status }
-  }
-
-  /** @param runId 运行 UUID。 @param blockId 目标块 UUID。 @returns 新单块任务。 */
-  async retryBlock(runId: string, blockId: string): Promise<CreatedRun> {
-    const run = await this.requireRun(runId)
-    if (!['succeeded', 'partial', 'failed'].includes(run.status)) throw new ApplicationError('RUN_NOT_RETRYABLE', '运行尚未结束，不能单独重试块', 409)
-    this.requireMatchingModel(run)
-    const block = (await this.dependencies.runs.listBlocks(runId)).find(item => item.id === blockId)
-    if (!block) throw new ApplicationError('RESOURCE_NOT_FOUND', '产物块不存在', 404)
-    if (block.isLocked) throw new ApplicationError('BLOCK_LOCKED', '锁定块不能重试', 409)
-    if ((await this.dependencies.runs.listBlockAttempts(blockId)).length >= run.parameterSnapshot.maxBlockAttempts) {
-      throw new ApplicationError('TASK_LIMIT_EXCEEDED', '该块已达到运行快照规定的最大尝试数', 422)
-    }
-    if (block.type === 'image') this.requireMatchingImageModel(run)
-    const taskId = this.dependencies.identifiers.create()
-    if (!await this.dependencies.runs.enqueueBlockRetry(runId, blockId, taskId, this.dependencies.clock.now())) {
-      throw new ApplicationError('VERSION_CONFLICT', '块或运行状态已经变化', 409)
-    }
-    return { runId, taskId, status: 'queued' }
-  }
-
-  /** @param runId 运行 UUID。 @param blockId 块 UUID。 @param attemptId 成功尝试 UUID。 @returns 更新后的运行详情。 */
-  async selectBlockAttempt(runId: string, blockId: string, attemptId: string): Promise<RunDetails> {
-    await this.requireRun(runId)
-    if (!await this.dependencies.runs.selectBlockAttempt(runId, blockId, attemptId, this.dependencies.clock.now())) {
-      throw new ApplicationError('BLOCK_ATTEMPT_NOT_SELECTABLE', '尝试不存在、未成功或不属于该块', 409)
-    }
-    return await this.getRun(runId)
-  }
-
-  /** @param runId 运行 UUID。 @param blockId 块 UUID。 @param locked 新锁定值。 @returns 更新后的运行详情。 */
-  async setBlockLock(runId: string, blockId: string, locked: boolean): Promise<RunDetails> {
-    await this.requireRun(runId)
-    if (!await this.dependencies.runs.setBlockLock(runId, blockId, locked, this.dependencies.clock.now())) {
-      throw new ApplicationError('BLOCK_NOT_LOCKABLE', '只有已选择成功尝试的块可以锁定或解除锁定', 409)
-    }
-    return await this.getRun(runId)
   }
 
   /** @param runId 运行 UUID。 @param formats 目标格式。 @returns 同一组选中块的安全预览。 */
@@ -492,23 +427,24 @@ export class GenerationApplicationService implements TaskHandler {
     )
   }
 
-  /** @param kind 运行类型。 @param personaId 人物 UUID。 @param input 固定输入。 @param scene 场景。 @param profileId 参数方案。 @param templateId 格式模板。 @returns 已创建运行。 */
-  private async createRun(kind: GenerationRunRecord['kind'], personaId: string, input: GenerationRunRecord['input'], scene: GenerationRunRecord['scene'], profileId: string | null, templateId: string | null): Promise<CreatedRun> {
+  /** @param kind 运行类型。 @param personaId 人物 UUID。 @param input 固定输入。 @param scene 仅兴趣判断可用的临时场景。 @returns 已创建运行。 */
+  private async createRun(kind: GenerationRunRecord['kind'], personaId: string, input: GenerationRunRecord['input'], scene: GenerationRunRecord['scene']): Promise<CreatedRun> {
     const model = this.dependencies.model.getConfiguredModel()
     if (!model) throw new ApplicationError('CAPABILITY_DISABLED', '文本模型尚未配置', 422)
-    const imageModel = 'includeImages' in input && input.includeImages
+    const imageModel = 'imageCount' in input && input.imageCount > 0
       ? this.dependencies.imageModel.getConfiguredModel()
       : null
-    if ('includeImages' in input && input.includeImages && !imageModel) {
+    if ('imageCount' in input && input.imageCount > 0 && !imageModel) {
       throw new ApplicationError('CAPABILITY_DISABLED', '图片模型尚未配置，不能创建包含图片的运行', 422)
     }
     const promptCodes = kind === 'interest_assessment'
       ? [GENERATION_PROMPT_CODES.interestAssessment, GENERATION_PROMPT_CODES.jsonRetry]
       : [
-          GENERATION_PROMPT_CODES.documentPlan,
+          GENERATION_PROMPT_CODES.article,
+          ...('imageCount' in input && input.imageCount > 0 ? [GENERATION_PROMPT_CODES.articleImages] : []),
           GENERATION_PROMPT_CODES.textBlock,
           GENERATION_PROMPT_CODES.jsonRetry,
-          ...('includeImages' in input && input.includeImages ? [GENERATION_PROMPT_CODES.imageBlock] : []),
+          ...('imageCount' in input && input.imageCount > 0 ? [GENERATION_PROMPT_CODES.imageBlock] : []),
         ]
     const aiPromptVersions = await this.dependencies.prompts.snapshotPublishedVersions(promptCodes)
     const persona = await this.requirePersona(personaId)
@@ -517,8 +453,7 @@ export class GenerationApplicationService implements TaskHandler {
     const version = await this.requirePublishedPersonaVersion(persona.activeVersionId, persona.id)
     const parameters = kind === 'interest_assessment'
       ? await this.resolveSystemParameters('interestAnalysis', DEFAULT_TEXT_PARAMETERS)
-      : await this.resolveProfileParameters(profileId)
-    const template = templateId ? await this.requireFormatTemplate(templateId) : { spec: DEFAULT_FORMAT_TEMPLATE }
+      : { ...DEFAULT_TEXT_PARAMETERS }
     const linkedWorld = persona.worldId ? await this.dependencies.content.findWorld(persona.worldId) : null
     const world = linkedWorld?.isEnabled ? linkedWorld : null
     const effectivePersona = world ? persona : { ...persona, worldId: null }
@@ -558,8 +493,6 @@ export class GenerationApplicationService implements TaskHandler {
     const fixedPrompt = await this.buildInitialRunPrompt(
       kind,
       input,
-      template.spec,
-      parameters,
       emptyPromptContext,
       aiPromptVersions,
     )
@@ -614,8 +547,6 @@ export class GenerationApplicationService implements TaskHandler {
     const initialPrompt = await this.buildInitialRunPrompt(
       kind,
       input,
-      template.spec,
-      parameters,
       promptContext,
       aiPromptVersions,
     )
@@ -682,7 +613,7 @@ export class GenerationApplicationService implements TaskHandler {
     }
     await this.dependencies.runs.createRun({
       runId, taskId, taskType: kind === 'interest_assessment' ? 'assess_interest' : 'plan_document', kind,
-      personaVersionId: version.id, formatTemplateId: templateId, parameterProfileId: profileId,
+      personaVersionId: version.id, formatTemplateId: null, parameterProfileId: null,
       status: kind === 'interest_assessment' ? 'queued' : 'planning', input, scene, parameters, model, imageModel,
       promptVersion: `ai-catalog:${this.dependencies.sourceProcessor.hash(JSON.stringify(aiPromptVersions)).slice(0, 16)}`,
       contextProvider: contextSearch.provider,
@@ -701,17 +632,13 @@ export class GenerationApplicationService implements TaskHandler {
    * 构建创建运行时即可确定的首次文本模型提示。
    * @param kind 运行类型。
    * @param input 固定任务输入。
-   * @param template 格式模板规格。
-   * @param parameters 运行参数快照。
    * @param context 已选择的心智与资料上下文。
    * @param aiPromptVersions 创建运行时固定的提示词版本映射。
-   * @returns 兴趣判断或文档规划的完整提示。
+   * @returns 兴趣判断或完整文章生成的首次提示。
    */
   private buildInitialRunPrompt(
     kind: GenerationRunRecord['kind'],
     input: GenerationRunRecord['input'],
-    template: { guidance: string, minimumBlocks: number, maximumBlocks: number },
-    parameters: TextModelParameters,
     context: PromptContext,
     aiPromptVersions: Record<string, string>,
   ): Promise<{ systemPrompt: string, userPrompt: string }> {
@@ -722,22 +649,15 @@ export class GenerationApplicationService implements TaskHandler {
         aiPromptVersions[GENERATION_PROMPT_CODES.interestAssessment],
       )
     }
-    const allowImages = 'includeImages' in input && input.includeImages
-    const maximum = Math.min(template.maximumBlocks, parameters.maxTextBlocks + (allowImages ? parameters.maxImageBlocks : 0))
-    if (template.minimumBlocks > maximum) {
-      throw new ApplicationError('TASK_LIMIT_EXCEEDED', '格式模板最少块数超过当前运行允许的图文块总数', 422)
-    }
+    if (!('requirement' in input)) throw new Error('图文运行缺少创作条件')
     return this.dependencies.prompts.render(
-      GENERATION_PROMPT_CODES.documentPlan,
-      buildDocumentPlanPromptVariables(
+      GENERATION_PROMPT_CODES.article,
+      buildArticlePromptVariables(
         context,
-        'requirement' in input ? input.requirement : '',
-        template.guidance,
-        template.minimumBlocks,
-        maximum,
-        allowImages,
+        input.requirement,
+        input.outputFormat,
       ),
-      aiPromptVersions[GENERATION_PROMPT_CODES.documentPlan],
+      aiPromptVersions[GENERATION_PROMPT_CODES.article],
     )
   }
 
@@ -836,50 +756,71 @@ export class GenerationApplicationService implements TaskHandler {
     await this.recordPersonaOperation(run, output.reasoningSummary, output as Record<string, unknown>, timestamp)
   }
 
-  /** @param runId 文档规划运行 UUID。 @returns 规划结束时完成。 */
+  /** @param runId 图文创作运行 UUID。 @returns 最终文章、可选配图计划和自动确认文档保存完成时结束。 */
   private async executeDocumentPlan(runId: string): Promise<void> {
     const run = await this.requireRun(runId)
     this.requireMatchingModel(run)
     await this.requireRunStarted(run, ['planning', 'running'])
     const context = await this.loadPromptContext(run)
-    const template = run.formatTemplateId ? await this.requireFormatTemplate(run.formatTemplateId) : { spec: DEFAULT_FORMAT_TEMPLATE }
-    const allowImages = 'includeImages' in run.input && run.input.includeImages
-    const maximum = Math.min(
-      template.spec.maximumBlocks,
-      run.parameterSnapshot.maxTextBlocks + (allowImages ? run.parameterSnapshot.maxImageBlocks : 0),
-    )
-    if (template.spec.minimumBlocks > maximum) {
-      throw new ApplicationError('TASK_LIMIT_EXCEEDED', '格式模板最少块数超过当前运行允许的图文块总数', 422)
-    }
+    if (!('requirement' in run.input)) throw new Error('图文运行缺少创作条件')
     const prompt = await this.dependencies.prompts.render(
-      GENERATION_PROMPT_CODES.documentPlan,
-      buildDocumentPlanPromptVariables(
-        context,
-        'requirement' in run.input ? run.input.requirement : '',
-        template.spec.guidance,
-        template.spec.minimumBlocks,
-        maximum,
-        allowImages,
-      ),
-      requireRunPromptVersion(run, GENERATION_PROMPT_CODES.documentPlan),
+      GENERATION_PROMPT_CODES.article,
+      buildArticlePromptVariables(context, run.input.requirement, run.input.outputFormat),
+      requireRunPromptVersion(run, GENERATION_PROMPT_CODES.article),
     )
-    const { output, usage } = await this.generateValidated(
+    const articleResult = await this.generateValidated(
       prompt,
       requireRunPromptVersion(run, GENERATION_PROMPT_CODES.jsonRetry),
       run.parameterSnapshot,
-      'document_spec',
-      (value) => {
-      const parsed = documentSpecSchema.parse(value)
-      if (parsed.blocks.length < template.spec.minimumBlocks || parsed.blocks.length > maximum) throw new Error('模型规划的块数量超出模板或运行限制')
-      if (!allowImages && parsed.blocks.some(block => block.type === 'image')) throw new Error('当前运行未启用图片，模型不得规划图片块')
-      this.validateDocumentLimits(parsed, run)
-      return parsed
-      },
+      'article',
+      value => articleOutputSchema.parse(value),
       run.usage,
     )
-    if (await this.finishCancellationIfRequested(runId, usage)) return
-    const cumulativeUsage = aggregateTextModelUsage(run.usage ? [run.usage, usage] : [usage])
-    if (!await this.dependencies.runs.savePlannedDocumentSpec(runId, this.dependencies.identifiers.create(), output, cumulativeUsage, this.dependencies.clock.now())) throw new Error('文档规划运行状态已经变化')
+    if (articleResult.output.paragraphs.length > run.parameterSnapshot.maxTextBlocks) {
+      throw new ApplicationError('TASK_LIMIT_EXCEEDED', '文章段落数量超过运行上限', 422)
+    }
+    if (await this.finishCancellationIfRequested(runId, articleResult.usage)) return
+
+    let imagePlan: ArticleImagesOutput = { images: [] }
+    let operationUsage = articleResult.usage
+    if (run.input.imageCount > 0) {
+      this.requireMatchingImageModel(run)
+      const imagePrompt = await this.dependencies.prompts.render(
+        GENERATION_PROMPT_CODES.articleImages,
+        buildArticleImagesPromptVariables(articleResult.output, run.input.imageCount),
+        requireRunPromptVersion(run, GENERATION_PROMPT_CODES.articleImages),
+      )
+      const imageResult = await this.generateValidated(
+        imagePrompt,
+        requireRunPromptVersion(run, GENERATION_PROMPT_CODES.jsonRetry),
+        run.parameterSnapshot,
+        'article_images',
+        value => validateArticleImages(value, run.input.imageCount, articleResult.output.paragraphs.length),
+        aggregateTextModelUsage(run.usage ? [run.usage, articleResult.usage] : [articleResult.usage]),
+      )
+      operationUsage = aggregateTextModelUsage([operationUsage, imageResult.usage])
+      imagePlan = imageResult.output
+      if (await this.finishCancellationIfRequested(runId, operationUsage)) return
+    }
+
+    const spec = buildDirectDocumentSpec(articleResult.output, imagePlan, run.input.outputFormat)
+    this.validateDocumentLimits(spec, run)
+    const cumulativeUsage = aggregateTextModelUsage(run.usage ? [run.usage, operationUsage] : [operationUsage])
+    if (!await this.dependencies.runs.savePlannedDocumentSpec(
+      runId,
+      this.dependencies.identifiers.create(),
+      spec,
+      cumulativeUsage,
+      this.dependencies.clock.now(),
+    )) throw new Error('文章保存时运行状态已经变化')
+    const confirmed = await this.dependencies.runs.confirmDocumentSpec(
+      runId,
+      this.dependencies.identifiers.create(),
+      this.dependencies.identifiers.create(),
+      spec.blocks.map(() => this.dependencies.identifiers.create()),
+      this.dependencies.clock.now(),
+    )
+    if (!confirmed) throw new Error('文章自动确认时运行状态已经变化')
   }
 
   /** @param runId 已确认文档运行 UUID。 @returns 所有图文块串行执行结束时完成。 */
@@ -914,7 +855,16 @@ export class GenerationApplicationService implements TaskHandler {
     }
     const timestamp = this.dependencies.clock.now()
     const status = await this.dependencies.runs.finishDocumentRun(runId, timestamp)
-    if (status !== 'failed') await this.recordPersonaOperation(run, `图文任务已${status === 'succeeded' ? '全部完成' : '部分完成'}，共处理 ${blocks.length} 个内容块。`, null, timestamp)
+    if (status !== 'failed') {
+      const textCount = blocks.filter(block => block.type === 'text' && block.status === 'succeeded').length
+      const imageCount = blocks.filter(block => block.type === 'image' && block.status === 'succeeded').length
+      await this.recordPersonaOperation(
+        run,
+        `图文任务已${status === 'succeeded' ? '全部完成' : '部分完成'}，已保留 ${textCount} 段正文和 ${imageCount} 张图片。`,
+        null,
+        timestamp,
+      )
+    }
   }
 
   /**
@@ -945,7 +895,7 @@ export class GenerationApplicationService implements TaskHandler {
     else await this.executeArtifactBlock(run, context, spec.spec, target, previousOutputs, correctionInstruction)
     const timestamp = this.dependencies.clock.now()
     const status = await this.dependencies.runs.finishDocumentRun(runId, timestamp)
-    if (status !== 'failed') await this.recordPersonaOperation(run, `图文任务单块重试后状态为${status === 'succeeded' ? '全部完成' : '部分完成'}。`, null, timestamp)
+    if (status !== 'failed') await this.recordPersonaOperation(run, `图文任务根据反馈修正后状态为${status === 'succeeded' ? '全部完成' : '部分完成'}。`, null, timestamp)
   }
 
   /**
@@ -1001,6 +951,24 @@ export class GenerationApplicationService implements TaskHandler {
     correctionInstruction: string | null = null,
   ): Promise<{ succeeded: boolean, text: string | null }> {
     const existingAttempts = await this.dependencies.runs.listBlockAttempts(block.id)
+    if (block.spec.type === 'text' && block.spec.generatedText && correctionInstruction === null) {
+      if (existingAttempts.length >= run.parameterSnapshot.maxBlockAttempts) return { succeeded: false, text: null }
+      const attemptId = this.dependencies.identifiers.create()
+      const attempt = await this.dependencies.runs.startBlockAttempt(block.id, attemptId, {
+        promptVersion: run.promptVersion,
+        generatedArticleText: true,
+      }, this.dependencies.clock.now())
+      if (!attempt) return { succeeded: false, text: null }
+      // 完整文章已由前一模型调用生成；这里只把段落落入既有文档存储，不产生新的供应商用量。
+      await this.dependencies.runs.completeBlockAttempt(
+        block.id,
+        attemptId,
+        block.spec.generatedText,
+        { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+        this.dependencies.clock.now(),
+      )
+      return { succeeded: true, text: block.spec.generatedText }
+    }
     // 用户明确确认的反馈必须获得一次新的修正机会，不受该块此前自动尝试次数影响。
     const remainingAttempts = correctionInstruction === null
       ? run.parameterSnapshot.maxBlockAttempts - existingAttempts.length
@@ -1284,14 +1252,6 @@ export class GenerationApplicationService implements TaskHandler {
     )
   }
 
-  /** @param id 参数方案 UUID 或 null。 @returns 最终参数快照。 */
-  private async resolveProfileParameters(id: string | null): Promise<TextModelParameters> {
-    if (!id) return { ...DEFAULT_TEXT_PARAMETERS }
-    const value = await this.dependencies.runs.findParameterProfile(id)
-    if (!value || !value.isActive) throw new ApplicationError('RESOURCE_NOT_FOUND', '参数方案不存在或已停用', 404)
-    return value.values
-  }
-
   /**
    * 合并指定系统 AI 场景的可配置供应商参数与业务固定安全参数。
    * @param operation 草稿生成或兴趣分析场景。
@@ -1307,13 +1267,6 @@ export class GenerationApplicationService implements TaskHandler {
       : { ...defaults }
   }
 
-  /** @param id 格式模板 UUID。 @returns 有效模板。 */
-  private async requireFormatTemplate(id: string) {
-    const value = await this.dependencies.runs.findFormatTemplate(id)
-    if (!value || !value.isActive) throw new ApplicationError('RESOURCE_NOT_FOUND', '格式模板不存在或已停用', 404)
-    return value
-  }
-
   /** @param run 运行。 @param expected 可执行起始状态。 @returns 状态切换完成时结束。 */
   private async requireRunStarted(run: GenerationRunRecord, expected: GenerationRunRecord['status'][]): Promise<void> {
     if (!await this.dependencies.runs.markRunRunning(run.id, expected, this.dependencies.clock.now())) throw new Error('运行状态不允许执行当前任务')
@@ -1327,7 +1280,7 @@ export class GenerationApplicationService implements TaskHandler {
     if (textBlocks > run.parameterSnapshot.maxTextBlocks) throw new ApplicationError('TASK_LIMIT_EXCEEDED', '文字块数量超过运行上限', 422)
     if (imageBlocks > run.parameterSnapshot.maxImageBlocks) throw new ApplicationError('TASK_LIMIT_EXCEEDED', '图片块数量超过运行上限', 422)
     if (spec.blocks.some(block => block.type === 'image')) {
-      if (!('includeImages' in run.input) || !run.input.includeImages || !run.imageModelSnapshot) {
+      if (!('imageCount' in run.input) || run.input.imageCount === 0 || !run.imageModelSnapshot) {
         throw new ApplicationError('CAPABILITY_DISABLED', '当前运行没有启用图片能力，不能加入图片块', 422)
       }
       this.requireMatchingImageModel(run)
@@ -1507,6 +1460,76 @@ function appendCorrectionInstruction(originalInstruction: string, correctionInst
 /** @param block 目标块。 @param blocks 同文档块快照。 @returns 全部显式依赖是否成功。 */
 function dependenciesSucceeded(block: ArtifactBlockRecord, blocks: ArtifactBlockRecord[]): boolean {
   return block.spec.dependsOn.every(key => blocks.find(candidate => candidate.specKey === key)?.status === 'succeeded')
+}
+
+/**
+ * 校验文章配图数量与插入位置，并按正文阅读顺序稳定排序。
+ * @param value 模型返回的未知配图结构。
+ * @param imageCount 用户明确要求的图片数量。
+ * @param paragraphCount 已生成文章的段落数量。
+ * @returns 数量准确、位置有效的配图计划。
+ */
+function validateArticleImages(value: unknown, imageCount: number, paragraphCount: number): ArticleImagesOutput {
+  const parsed = articleImagesOutputSchema.parse(value)
+  if (parsed.images.length !== imageCount) {
+    throw new ZodError([{ code: 'custom', path: ['images'], message: `配图数量必须严格等于 ${imageCount}`, input: value }])
+  }
+  if (parsed.images.some(image => image.afterParagraph >= paragraphCount)) {
+    throw new ZodError([{ code: 'custom', path: ['images'], message: '配图插入位置超出文章段落范围', input: value }])
+  }
+  return {
+    images: parsed.images
+      .map((image, index) => ({ image, index }))
+      .sort((left, right) => left.image.afterParagraph - right.image.afterParagraph || left.index - right.index)
+      .map(item => item.image),
+  }
+}
+
+/**
+ * 把最终文章和后置配图计划转换为内部持久文档；技术块只用于保存顺序，不暴露给用户编辑。
+ * @param article 已完成的最终文章。
+ * @param imagePlan 已校验并按正文顺序排列的配图计划。
+ * @param outputFormat 用户要求的 HTML 或纯文本格式。
+ * @returns 可由既有安全渲染器和图片执行器消费的内部文档规格。
+ */
+function buildDirectDocumentSpec(
+  article: ArticleOutput,
+  imagePlan: ArticleImagesOutput,
+  outputFormat: ArtifactOutputFormat,
+): DocumentSpec {
+  const blocks: DocumentSpec['blocks'] = []
+  let imageOrdinal = 0
+  article.paragraphs.forEach((paragraph, paragraphIndex) => {
+    blocks.push({
+      key: `paragraph_${paragraphIndex + 1}`,
+      type: 'text',
+      role: 'paragraph',
+      instruction: `使用已经生成的文章第 ${paragraphIndex + 1} 段`,
+      acceptanceCriteria: ['保持已生成正文原样'],
+      dependsOn: [],
+      generatedText: paragraph,
+    })
+    for (const image of imagePlan.images.filter(item => item.afterParagraph === paragraphIndex)) {
+      imageOrdinal += 1
+      blocks.push({
+        key: `image_${imageOrdinal}`,
+        type: 'image',
+        role: 'illustration',
+        instruction: `根据最终文章生成第 ${imageOrdinal} 张相关配图`,
+        acceptanceCriteria: ['图片与文章内容直接相关'],
+        dependsOn: [],
+        visualBrief: image.visualBrief,
+      })
+    }
+  })
+  return {
+    title: article.title,
+    summary: article.summary,
+    purpose: '',
+    constraints: [],
+    requestedFormats: [outputFormat === 'html' ? 'html' : 'txt'],
+    blocks,
+  }
 }
 
 /** @param spec 已确认规格。 @param formats 请求格式。 @returns 全部格式已在规格中请求时无返回值。 */

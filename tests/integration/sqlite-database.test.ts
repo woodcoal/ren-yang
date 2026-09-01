@@ -56,7 +56,7 @@ describe('SqliteDatabase', () => {
     ])
     expect(current.getClient().prepare(`
       SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations
-    `).get()).toEqual({ count: 3, version: 1789286400000 })
+    `).get()).toEqual({ count: 4, version: 1789372800000 })
     expect(current.getClient().prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name IN (
       'api_keys', 'public_api_idempotency_records', 'public_api_audit_events'
     ) ORDER BY name`).all()).toEqual([
@@ -66,8 +66,8 @@ describe('SqliteDatabase', () => {
     ])
     expect(current.getClient().prepare(`
       SELECT COUNT(*) AS count FROM ai_prompts WHERE active_version_id IS NOT NULL
-    `).get()).toEqual({ count: 20 })
-    expect(current.getClient().prepare(`SELECT COUNT(*) AS count FROM ai_prompt_versions`).get()).toEqual({ count: 20 })
+    `).get()).toEqual({ count: 22 })
+    expect(current.getClient().prepare(`SELECT COUNT(*) AS count FROM ai_prompt_versions`).get()).toEqual({ count: 22 })
     expect(current.getClient().prepare(`SELECT COUNT(*) AS count FROM ai_algorithms`).get()).toEqual({ count: 5 })
     expect(current.getClient().prepare(`SELECT code FROM ai_algorithms WHERE code = 'persona_memory'`).get()).toEqual({ code: 'persona_memory' })
     expect(current.getClient().prepare(`PRAGMA table_info(ai_connections)`).all()).toEqual(expect.arrayContaining([
@@ -177,7 +177,7 @@ describe('SqliteDatabase', () => {
     `).get()).toEqual({ name: '旧资料', content_text: '压平前正文。', is_enabled: 1 })
     expect(database.getClient().prepare(`
       SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations
-    `).get()).toEqual({ count: 18, version: 1789286400000 })
+    `).get()).toEqual({ count: 19, version: 1789372800000 })
     expect(database.getClient().prepare(`SELECT COUNT(*) AS count FROM ai_algorithms`).get()).toEqual({ count: 5 })
     expect(database.getClient().prepare(`SELECT name FROM sqlite_master
       WHERE type = 'table' AND name = 'openviking_sync_runtime'`).get()).toEqual({ name: 'openviking_sync_runtime' })

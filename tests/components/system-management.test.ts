@@ -55,7 +55,7 @@ describe('系统管理组件', () => {
     const activeRun: RunSummary = {
       id: '00000000-0000-4000-8000-000000000010', kind: 'artifact_generation',
       personaVersionId: '00000000-0000-4000-8000-000000000011', personaId: '00000000-0000-4000-8000-000000000012', personaName: '林默',
-      status: 'running', input: { requirement: '写学院观察', includeImages: false }, scene: null,
+      status: 'running', input: { requirement: '写学院观察', outputFormat: 'text', imageCount: 0 }, scene: null,
       parameters: CAPABILITIES.defaultParameters,
       model: { provider: 'openai_compatible', model: 'text-model', endpointOrigin: 'https://text.test' }, imageModel: null,
       promptVersion: 'artifact-v2', contextProvider: 'sqlite_fts5', result: null, usage: null,

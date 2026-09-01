@@ -4,7 +4,7 @@ import type { SubmitFeedbackInput } from '#shared/schemas/feedback'
 import type { ArtifactBlockView } from '#shared/types/generation'
 
 const props = withDefaults(defineProps<{
-  /** 当前运行可定位的产物块。 */
+  /** 当前运行可定位的正文区域或图片。 */
   blocks?: ArtifactBlockView[]
   /** 父页面提交锁。 */
   loading?: boolean
@@ -40,6 +40,12 @@ function submit(): void {
     editedOutput: form.editedOutput || null,
   })
 }
+
+/** @param block 内部结果单元。 @returns 用户可理解的正文区域或图片名称。 */
+function resultPartLabel(block: ArtifactBlockView): string {
+  const sameTypeIndex = props.blocks.filter(item => item.type === block.type && item.ordinal <= block.ordinal).length
+  return block.type === 'image' ? `第 ${sameTypeIndex} 张图片` : `第 ${sameTypeIndex} 段正文`
+}
 </script>
 
 <template>
@@ -48,11 +54,11 @@ function submit(): void {
       <UTextarea v-model="form.content" :rows="4" placeholder="说明哪里需要调整，以及这是否应成为长期人物变化。" />
     </UFormField>
     <div class="grid gap-4 md:grid-cols-2">
-      <UFormField label="具体产物块">
+      <UFormField label="具体内容（可选）">
         <select v-model="form.blockId" class="native-control">
           <option value="">整个运行或人物</option>
           <option v-for="block in props.blocks" :key="block.id" :value="block.id">
-            {{ block.ordinal + 1 }} · {{ block.specKey }} · {{ block.role }}
+            {{ resultPartLabel(block) }}
           </option>
         </select>
       </UFormField>

@@ -4,7 +4,7 @@ import type { ImageModelSnapshot } from '../domain/generation/GenerationModels'
 export interface ImageModelRequest {
   /** 已由应用层构造、不包含隐藏凭据的视觉提示。 */
   prompt: string
-  /** 规格确认时固定的宽高比。 */
+  /** 最终文章配图分析时固定的宽高比。 */
   aspectRatio: '1:1' | '4:3' | '3:4' | '16:9' | '9:16'
   /** 单次网络调用超时毫秒数。 */
   timeoutMs: number

@@ -48,14 +48,14 @@ describe('反馈组件', () => {
     expect(wrapper.text()).toContain('人工校准发布后才会进入新任务')
   })
 
-  it('当前产物分类必须选择具体块', async () => {
+  it('当前结果分类必须选择需要修正的具体内容', async () => {
     const wrapper = await mountSuspended(FeedbackClassificationReview, {
       props: { feedback: createFeedback('artifact') },
     })
     await wrapper.findAll('button').find(button => button.text().includes('确认用途'))!.trigger('click')
 
     expect(wrapper.emitted('confirm')).toBeUndefined()
-    expect(wrapper.text()).toContain('当前产物反馈必须选择具体产物块')
+    expect(wrapper.text()).toContain('当前结果反馈必须选择需要修正的具体内容')
   })
 
   it('资料事实分类必须选择具体资料', async () => {

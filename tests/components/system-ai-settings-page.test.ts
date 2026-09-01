@@ -76,12 +76,13 @@ describe('AI 设置页面', () => {
     expect(savedSettings).toEqual(settings)
   })
 
-  it('工作台仅在结构化图文创作模式显示生成设置', async () => {
+  it('工作台直接显示输出格式与图片数量且不暴露参数方案', async () => {
     const wrapper = await mountSuspended(WorkbenchPage, { route: '/workbench' })
     await flushPromises()
 
     expect(wrapper.find('[aria-label="生成设置"]').exists()).toBe(false)
-    await wrapper.get('[aria-label="任务类型"]').setValue('generation')
-    expect(wrapper.find('[aria-label="生成设置"]').exists()).toBe(true)
+    expect(wrapper.find('[aria-label="输出格式"]').exists()).toBe(true)
+    expect(wrapper.find('[aria-label="图片数量"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('不经过大纲或规格确认')
   })
 })

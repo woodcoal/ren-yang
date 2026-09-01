@@ -285,27 +285,6 @@ export class SqliteRunRepository implements RunRepository {
     }).immediate()
   }
 
-  /** @param runId 运行 UUID。 @param specId 新规格 UUID。 @param spec 用户编辑规格。 @param timestamp 创建时间。 @returns 新修订或 null。 */
-  async reviseDocumentSpec(runId: string, specId: string, spec: DocumentSpecRecord['spec'], timestamp: number): Promise<DocumentSpecRecord | null> {
-    return this.client.transaction(() => {
-      const latest = this.client.prepare(`
-        SELECT revision FROM document_specs
-        WHERE run_id = ? AND status = 'draft' ORDER BY revision DESC LIMIT 1
-      `).get(runId) as { revision: number } | undefined
-      const run = this.client.prepare(`
-        SELECT 1 FROM generation_runs WHERE id = ? AND status = 'awaiting_confirmation'
-      `).get(runId)
-      if (!latest || !run) return null
-      this.client.prepare(`UPDATE document_specs SET status = 'superseded' WHERE run_id = ? AND status = 'draft'`).run(runId)
-      const revision = latest.revision + 1
-      this.client.prepare(`
-        INSERT INTO document_specs (id, run_id, revision, status, spec_json, created_at)
-        VALUES (?, ?, ?, 'draft', ?, ?)
-      `).run(specId, runId, revision, JSON.stringify(spec), timestamp)
-      return { id: specId, runId, revision, status: 'draft', spec, confirmedAt: null, createdAt: timestamp }
-    }).immediate()
-  }
-
   /**
    * 原子确认最新规格、建立文档和块，并创建执行任务。
    * @param runId 运行 UUID。
@@ -566,58 +545,6 @@ export class SqliteRunRepository implements RunRepository {
           updated_at = ? WHERE id = ?
       `).run(timestamp, blockId)
     }).immediate()
-  }
-
-  /** @param runId 运行 UUID。 @param blockId 块 UUID。 @param taskId 新任务 UUID。 @param timestamp 创建时间。 @returns 是否入队。 */
-  async enqueueBlockRetry(runId: string, blockId: string, taskId: string, timestamp: number): Promise<boolean> {
-    return this.client.transaction(() => {
-      const block = this.client.prepare(`
-        SELECT artifact_blocks.id FROM artifact_blocks
-        INNER JOIN artifact_documents ON artifact_documents.id = artifact_blocks.document_id
-        WHERE artifact_documents.run_id = ? AND artifact_blocks.id = ?
-          AND artifact_blocks.status IN ('succeeded', 'failed') AND artifact_blocks.is_locked = 0
-      `).get(runId, blockId)
-      if (!block) return false
-      const changed = this.client.prepare(`
-        UPDATE generation_runs SET status = 'queued', completed_at = NULL, error_code = NULL, error_message = NULL, updated_at = ?
-        WHERE id = ? AND status IN ('succeeded', 'partial', 'failed')
-      `).run(timestamp, runId)
-      if (changed.changes !== 1) return false
-      this.client.prepare(`UPDATE artifact_blocks SET status = 'pending', updated_at = ? WHERE id = ?`).run(timestamp, blockId)
-      this.client.prepare(`
-        INSERT INTO task_jobs (id, run_id, type, payload_json, status, attempt_count, max_attempts, created_at, updated_at)
-        VALUES (?, ?, 'execute_block', ?, 'queued', 0, 2, ?, ?)
-      `).run(taskId, runId, JSON.stringify({ runId, blockId }), timestamp, timestamp)
-      return true
-    }).immediate()
-  }
-
-  /** @param runId 运行 UUID。 @param blockId 块 UUID。 @param attemptId 成功尝试 UUID。 @param timestamp 选择时间。 @returns 是否更新。 */
-  async selectBlockAttempt(runId: string, blockId: string, attemptId: string, timestamp: number): Promise<boolean> {
-    return this.client.prepare(`
-      UPDATE artifact_blocks SET selected_attempt_id = ?, selected_at = ?, status = 'succeeded', updated_at = ?
-      WHERE id = ? AND status = 'succeeded' AND document_id IN (
-        SELECT artifact_documents.id FROM artifact_documents
-        INNER JOIN generation_runs ON generation_runs.id = artifact_documents.run_id
-        WHERE artifact_documents.run_id = ? AND generation_runs.status IN ('succeeded', 'partial', 'failed')
-      )
-        AND EXISTS (
-          SELECT 1 FROM block_attempts WHERE id = ? AND block_id = artifact_blocks.id AND status = 'succeeded'
-        )
-    `).run(attemptId, timestamp, timestamp, blockId, runId, attemptId).changes === 1
-  }
-
-  /** @param runId 运行 UUID。 @param blockId 块 UUID。 @param locked 新锁定值。 @param timestamp 操作时间。 @returns 是否更新。 */
-  async setBlockLock(runId: string, blockId: string, locked: boolean, timestamp: number): Promise<boolean> {
-    return this.client.prepare(`
-      UPDATE artifact_blocks SET is_locked = ?, locked_at = ?, updated_at = ?
-      WHERE id = ? AND document_id IN (
-        SELECT artifact_documents.id FROM artifact_documents
-        INNER JOIN generation_runs ON generation_runs.id = artifact_documents.run_id
-        WHERE artifact_documents.run_id = ? AND generation_runs.status IN ('succeeded', 'partial', 'failed')
-      )
-        AND selected_attempt_id IS NOT NULL AND status = 'succeeded'
-    `).run(locked ? 1 : 0, locked ? timestamp : null, timestamp, blockId, runId).changes === 1
   }
 
   /** @param runId 运行 UUID。 @param timestamp 完成时间。 @returns 根据块结果计算的最终状态。 */

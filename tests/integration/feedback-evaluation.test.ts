@@ -307,7 +307,7 @@ function seedPublishedPersonaAndRun(): void {
   `).run(
     IDS.run,
     IDS.version,
-    JSON.stringify({ requirement: '写一段档案说明', includeImages: false }),
+    JSON.stringify({ requirement: '写一段档案说明', outputFormat: 'text', imageCount: 0 }),
     JSON.stringify({ temperature: 0.4, maxOutputTokens: 2048, timeoutMs: 60000, maxEvidenceChunks: 8, maxTextBlocks: 12, maxImageBlocks: 4, maxPromptCharacters: 120000, maxTotalTokens: 50000, maxBlockAttempts: 2 }),
     JSON.stringify({ provider: 'openai_compatible', model: 'test-model', endpointOrigin: 'https://model.test' }),
   )

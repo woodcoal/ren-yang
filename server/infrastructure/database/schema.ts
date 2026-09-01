@@ -1101,7 +1101,7 @@ export const evidenceSnapshots = sqliteTable(
   ],
 )
 
-/** AI 规划且必须由用户确认的文档规格修订。 */
+/** 系统根据最终文章和配图计划自动保存并确认的内部文档快照。 */
 export const documentSpecs = sqliteTable(
   'document_specs',
   {

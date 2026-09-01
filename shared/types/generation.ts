@@ -89,7 +89,7 @@ export interface RunSummary {
   personaId: string
   personaName: string
   status: 'planning' | 'awaiting_confirmation' | 'queued' | 'running' | 'succeeded' | 'partial' | 'failed' | 'canceled'
-  input: { content: string } | { requirement: string, includeImages: boolean }
+  input: { content: string } | { requirement: string, outputFormat: 'html' | 'text', imageCount: number }
   scene: SceneContext | null
   parameters: TextModelParameters
   model: { provider: 'openai_compatible', model: string, endpointOrigin: string }

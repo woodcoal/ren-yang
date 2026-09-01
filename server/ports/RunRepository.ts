@@ -124,8 +124,6 @@ export interface RunRepository {
   completeInterestRun(runId: string, result: GenerationRunRecord['result'], usage: TextModelUsage, timestamp: number): Promise<boolean>
   /** @param runId 运行 UUID。 @param specId 规格 UUID。 @param spec AI 规划规格。 @param usage 模型用量。 @param timestamp 完成时间。 @returns 是否保存。 */
   savePlannedDocumentSpec(runId: string, specId: string, spec: DocumentSpec, usage: TextModelUsage, timestamp: number): Promise<boolean>
-  /** @param runId 运行 UUID。 @param specId 新规格 UUID。 @param spec 用户编辑规格。 @param timestamp 创建时间。 @returns 新修订或 null。 */
-  reviseDocumentSpec(runId: string, specId: string, spec: DocumentSpec, timestamp: number): Promise<DocumentSpecRecord | null>
   /** @param runId 运行 UUID。 @param documentId 文档 UUID。 @param taskId 执行任务 UUID。 @param blockIds 块 UUID。 @param timestamp 确认时间。 @returns 是否确认。 */
   confirmDocumentSpec(runId: string, documentId: string, taskId: string, blockIds: string[], timestamp: number): Promise<boolean>
   /** @param runId 运行 UUID。 @param code 稳定错误码。 @param message 脱敏原因。 @param timestamp 完成时间。 @returns 无返回值。 */
@@ -153,12 +151,6 @@ export interface RunRepository {
   completeImageBlockAttempt(blockId: string, attemptId: string, asset: Omit<ImageAssetRecord, 'attemptId' | 'createdAt'>, timestamp: number): Promise<void>
   /** @param blockId 块 UUID。 @param attemptId 尝试 UUID。 @param code 稳定错误码。 @param message 脱敏原因。 @param usage 已收到供应商响应时的用量。 @param timestamp 完成时间。 @returns 无返回值。 */
   failBlockAttempt(blockId: string, attemptId: string, code: string, message: string, usage: TextModelUsage | null, timestamp: number): Promise<void>
-  /** @param runId 运行 UUID。 @param blockId 块 UUID。 @param taskId 新任务 UUID。 @param timestamp 创建时间。 @returns 是否创建单块任务。 */
-  enqueueBlockRetry(runId: string, blockId: string, taskId: string, timestamp: number): Promise<boolean>
-  /** @param runId 运行 UUID。 @param blockId 块 UUID。 @param attemptId 成功尝试 UUID。 @param timestamp 选择时间。 @returns 是否选择成功。 */
-  selectBlockAttempt(runId: string, blockId: string, attemptId: string, timestamp: number): Promise<boolean>
-  /** @param runId 运行 UUID。 @param blockId 块 UUID。 @param locked 新锁定值。 @param timestamp 操作时间。 @returns 是否更新成功。 */
-  setBlockLock(runId: string, blockId: string, locked: boolean, timestamp: number): Promise<boolean>
   /** @param runId 运行 UUID。 @param timestamp 完成时间。 @returns 最终运行状态。 */
   finishDocumentRun(runId: string, timestamp: number): Promise<'succeeded' | 'partial' | 'failed'>
 }

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, shallowRef, watch } from 'vue'
-import type { ArtifactFormat, DocumentSpec } from '#shared/schemas/generation'
+import type { ArtifactFormat, ArtifactOutputFormat } from '#shared/schemas/generation'
 import type { ConfirmFeedbackClassificationInput, SubmitFeedbackInput } from '#shared/schemas/feedback'
 import type { ApiResponse } from '#shared/types/api'
 import type { PersonaDetails, PersonaSnapshot } from '#shared/types/content'
@@ -11,6 +11,7 @@ import { getApiErrorMessage } from '../../utils/apiError'
 const route = useRoute()
 const runId = String(route.params.id)
 const { runWithAiLoading } = useAiLoading()
+const { notifySuccess, notifyError } = useOperationNotifications()
 const { data, error, refresh } = await useFetch<ApiResponse<RunDetails>>(`/api/v1/runs/${runId}`)
 const details = computed(() => data.value?.data ?? null)
 const personaId = computed(() => details.value?.run.personaId ?? '')
@@ -22,20 +23,32 @@ const [{ data: feedbackData, refresh: refreshFeedback }, { data: personaData, re
   }),
 ])
 const active = computed(() => details.value ? ['planning', 'queued', 'running'].includes(details.value.run.status) : false)
-const draftSpec = computed(() => details.value?.documentSpecs.find(spec => spec.status === 'draft') ?? null)
-const confirmedSpec = computed(() => details.value?.documentSpecs.find(spec => spec.status === 'confirmed') ?? null)
-const artifactFormats = computed<ArtifactFormat[]>(() => confirmedSpec.value?.spec.requestedFormats ?? [])
-const canRenderArtifact = computed(() => details.value?.blocks.some(block => block.selectedAttemptId) ?? false)
+const artifactOutputFormat = computed<ArtifactOutputFormat | null>(() => {
+  const input = details.value?.run.input
+  return input && 'requirement' in input ? input.outputFormat : null
+})
+const artifactFormat = computed<ArtifactFormat | null>(() => {
+  if (artifactOutputFormat.value === 'html') return 'html'
+  if (artifactOutputFormat.value === 'text') return 'txt'
+  return null
+})
+const artifactReady = computed(() => {
+  if (details.value?.run.kind !== 'artifact_generation') return false
+  if (!['succeeded', 'partial'].includes(details.value.run.status)) return false
+  return details.value.blocks.some(block => block.selectedAttemptId)
+})
 const runFeedback = computed(() => (feedbackData.value?.data ?? []).filter(item => item.runId === runId))
 const pendingFeedback = computed(() => runFeedback.value.filter(item => item.confirmedTarget === null))
 const personaDetails = computed(() => personaData.value?.data ?? null)
 const personaVersion = computed(() => personaDetails.value?.versions.find(version => version.id === details.value?.run.personaVersionId) ?? null)
 const personaSnapshotFields = computed(() => personaVersion.value ? toPersonaSnapshotFields(personaVersion.value.snapshot) : [])
-const { notifySuccess, notifyError } = useOperationNotifications()
 const actionLoading = shallowRef(false)
+const artifactLoading = shallowRef(false)
+const artifactLoadAttempted = shallowRef(false)
+const artifactError = shallowRef<string | null>(null)
+const artifactResult = shallowRef<RenderedArtifactView | null>(null)
 const pollingTimer = shallowRef<ReturnType<typeof setInterval> | null>(null)
-const artifactPreview = shallowRef<RenderedArtifactView | null>(null)
-const selectedTab = shallowRef<'result' | 'content' | 'evidence' | 'feedback' | 'settings'>('result')
+const selectedTab = shallowRef<'result' | 'evidence' | 'feedback' | 'settings'>('result')
 
 /** @returns 启动每两秒一次的活动运行轮询；已有计时器时不重复创建。 */
 function startPolling(): void {
@@ -51,31 +64,11 @@ function stopPolling(): void {
 }
 
 watch(active, value => value ? startPolling() : stopPolling())
-// 等待规格确认时直接展示创作内容，避免用户进入页面后还要猜测应打开哪个标签。
-watch(() => details.value?.run.status, (status) => {
-  if (status === 'awaiting_confirmation') selectedTab.value = 'content'
+watch(artifactReady, (ready) => {
+  if (ready) void loadArtifactResult()
 }, { immediate: true })
 onMounted(startPolling)
 onUnmounted(stopPolling)
-
-/** @param spec 已通过组件校验的文档规格。 @returns 保存一个新的不可变规格修订。 */
-async function saveSpec(spec: DocumentSpec): Promise<void> {
-  await executeAction('已保存新的规格修订', async () => {
-    await $fetch(`/api/v1/runs/${runId}/document-spec`, { method: 'PUT', body: spec })
-  })
-}
-
-/** @param spec 已通过组件校验的当前规格。 @returns 保存修订、确认规格并创建块执行任务。 */
-async function confirmSpec(spec: DocumentSpec): Promise<void> {
-  await executeAction('规格已确认，图文块已进入执行队列', async () => {
-    await $fetch(`/api/v1/runs/${runId}/document-spec`, { method: 'PUT', body: spec })
-    await runWithAiLoading({
-      title: 'AI 正在准备生成图文内容',
-      description: '系统正在确认内容规划并创建各图文块的生成任务。',
-      completionHint: '任务进入队列后，详情页会持续显示每个图文块的处理状态。',
-    }, async () => await $fetch(`/api/v1/runs/${runId}/document-spec/confirm`, { method: 'POST' }))
-  })
-}
 
 /** @returns 请求取消排队或运行中的任务。 */
 async function cancelRun(): Promise<void> {
@@ -89,54 +82,38 @@ async function retryRun(): Promise<void> {
   await executeAction('已创建新的重试任务', async () => {
     await runWithAiLoading({
       title: 'AI 正在准备重试任务',
-      description: '系统正在复制固定输入与生成设置，并为失败内容创建新的运行任务。',
-      completionHint: '重试任务建立后，详情页会继续显示处理进度。',
+      description: '系统正在复用固定输入和人物版本，继续生成未完成的结果。',
+      completionHint: '任务建立后，详情页会继续显示处理进度。',
     }, async () => await $fetch(`/api/v1/runs/${runId}/retry`, { method: 'POST' }))
   })
 }
 
-/** @param blockId 目标块 UUID。 @returns 创建单块任务并刷新尝试历史。 */
-async function retryBlock(blockId: string): Promise<void> {
-  await executeAction('已创建单块重试任务', async () => {
-    await runWithAiLoading({
-      title: 'AI 正在准备重新生成内容块',
-      description: '系统正在按当前锁定的规格为这个内容块创建新尝试。',
-      completionHint: '新尝试建立后，当前内容块会持续显示处理状态。',
-    }, async () => await $fetch(`/api/v1/runs/${runId}/blocks/${blockId}/attempts`, { method: 'POST' }))
-  })
-}
-
-/** @param blockId 目标块 UUID。 @param attemptId 历史成功尝试 UUID。 @returns 切换当前选择并刷新详情。 */
-async function selectBlockAttempt(blockId: string, attemptId: string): Promise<void> {
-  await executeAction('已切换当前选中尝试', async () => {
-    await $fetch(`/api/v1/runs/${runId}/blocks/${blockId}/select`, { method: 'POST', body: { attemptId } })
-  })
-}
-
-/** @param blockId 目标块 UUID。 @param locked 新锁定状态。 @returns 更新锁定状态并刷新详情。 */
-async function setBlockLock(blockId: string, locked: boolean): Promise<void> {
-  await executeAction(locked ? '已锁定当前结果' : '已解除块锁定', async () => {
-    await $fetch(`/api/v1/runs/${runId}/blocks/${blockId}/lock`, { method: 'POST', body: { locked } })
-  })
-}
-
-/** @returns 从服务端按同一组选中尝试生成全部允许格式的安全预览。 */
-async function renderArtifact(): Promise<void> {
-  if (actionLoading.value || artifactFormats.value.length === 0) return
-  actionLoading.value = true
+/** @returns 自动读取当前运行唯一输出格式的最终正文与图片数据。 */
+async function loadArtifactResult(): Promise<void> {
+  const format = artifactFormat.value
+  if (!artifactReady.value || !format || artifactLoading.value || artifactLoadAttempted.value) return
+  artifactLoading.value = true
+  artifactLoadAttempted.value = true
+  artifactError.value = null
   try {
     const response = await $fetch<ApiResponse<RenderedArtifactView>>(`/api/v1/runs/${runId}/render`, {
-      method: 'POST', body: { formats: artifactFormats.value },
+      method: 'POST',
+      body: { formats: [format] },
     })
-    artifactPreview.value = response.data
-    notifySuccess('已根据当前选中结果生成预览。', '产物预览已生成')
+    artifactResult.value = response.data
   }
   catch (requestError: unknown) {
-    notifyError(getApiErrorMessage(requestError, '产物预览失败'), '产物预览失败')
+    artifactError.value = getApiErrorMessage(requestError, '生成结果读取失败')
   }
   finally {
-    actionLoading.value = false
+    artifactLoading.value = false
   }
+}
+
+/** @returns 清除上次读取错误并重新获取最终结果。 */
+function retryArtifactResult(): void {
+  artifactLoadAttempted.value = false
+  void loadArtifactResult()
 }
 
 /** @param input 原始反馈输入。 @returns 保存反馈并展示 AI 分类建议。 */
@@ -151,7 +128,12 @@ async function submitFeedback(input: SubmitFeedbackInput): Promise<void> {
   })
 }
 
-/** @param feedbackId 反馈 UUID。 @param input 用户确认后的分类动作。 @returns 执行动作并刷新运行、人物和反馈。 */
+/**
+ * 执行用户确认后的反馈分类动作。
+ * @param feedbackId 反馈 UUID。
+ * @param input 用户确认后的分类动作。
+ * @returns 动作执行及运行、人物、反馈刷新完成时结束。
+ */
 async function confirmFeedback(feedbackId: string, input: ConfirmFeedbackClassificationInput): Promise<void> {
   const successMessage = input.targetType === 'persona'
     ? '反馈已加入人物成长素材池，尚未改变当前提示词'
@@ -162,13 +144,19 @@ async function confirmFeedback(feedbackId: string, input: ConfirmFeedbackClassif
   })
 }
 
-/** @param successMessage 操作成功通知。 @param action 单次写操作。 @returns 统一处理提交锁、通知和详情刷新。 */
+/**
+ * 统一处理运行写操作、通知和详情刷新。
+ * @param successMessage 操作成功通知。
+ * @param action 单次写操作。
+ * @returns 操作成功或失败处理完成时结束。
+ */
 async function executeAction(successMessage: string, action: () => Promise<void>): Promise<void> {
   if (actionLoading.value) return
   actionLoading.value = true
   try {
     await action()
-    artifactPreview.value = null
+    artifactResult.value = null
+    artifactLoadAttempted.value = false
     await refresh()
     notifySuccess(successMessage)
   }
@@ -204,8 +192,8 @@ function skippedReasonLabel(reason: string | null): string {
 <template>
   <div>
     <ContentPageHeader
-      :title="details ? `${details.run.personaName} · ${details.run.kind === 'interest_assessment' ? '兴趣判断' : '图文创作'}` : '任务详情'"
-      description="跟踪当前运行位置，审阅结果和图文内容，并追溯这次任务锁定的设定、资料与参数。"
+      :title="details ? `${details.run.personaName} · ${details.run.kind === 'interest_assessment' ? '兴趣判断' : '文章创作'}` : '任务详情'"
+      description="查看生成结果，并追溯本次任务使用的人物、资料和运行设置。"
     >
       <UButton to="/history" color="neutral" variant="ghost">返回历史</UButton>
     </ContentPageHeader>
@@ -215,178 +203,144 @@ function skippedReasonLabel(reason: string | null): string {
       <GenerationRunStatusPanel :run="details.run" :tasks="details.tasks" :loading="actionLoading" @cancel="cancelRun" @retry="retryRun" />
       <nav class="mind-tabs my-6" aria-label="任务详情标签">
         <button class="mind-tab" :aria-selected="selectedTab === 'result'" @click="selectedTab = 'result'">结果</button>
-        <button class="mind-tab" :aria-selected="selectedTab === 'content'" @click="selectedTab = 'content'">创作内容</button>
         <button class="mind-tab" :aria-selected="selectedTab === 'evidence'" @click="selectedTab = 'evidence'">使用依据</button>
         <button class="mind-tab" :aria-selected="selectedTab === 'feedback'" @click="selectedTab = 'feedback'">反馈学习</button>
         <button class="mind-tab" :aria-selected="selectedTab === 'settings'" @click="selectedTab = 'settings'">运行设置</button>
       </nav>
 
-      <div>
-        <div class="space-y-6">
-          <UCard v-if="selectedTab === 'result'">
-            <template #header><h2 class="font-semibold text-highlighted">固定输入</h2></template>
-            <pre class="content-pre">{{ 'content' in details.run.input ? details.run.input.content : details.run.input.requirement }}</pre>
-            <div v-if="details.run.scene" class="mt-4 rounded-md bg-elevated p-3 text-sm">
-              <p class="font-medium text-highlighted">临时场景</p><pre class="content-pre mt-2">{{ JSON.stringify(details.run.scene, null, 2) }}</pre>
-            </div>
-          </UCard>
-          <UCard v-if="selectedTab === 'result' && details.run.promptContext">
-            <template #header><div><h2 class="font-semibold text-highlighted">本次提示词用量</h2><p class="mt-1 text-sm text-muted">创建任务时已固定；后续修改设置不会改变本次结果。</p></div></template>
-            <div class="space-y-4 text-sm">
-              <div class="grid grid-cols-2 gap-3">
-                <div><p class="text-xs text-muted">预计输入</p><p class="mt-1 font-medium">{{ details.run.promptContext.estimatedInputTokens }} Token</p></div>
-                <div><p class="text-xs text-muted">可用输入</p><p class="mt-1 font-medium">{{ details.run.promptContext.availableInputTokens }} Token</p></div>
-              </div>
-              <dl class="space-y-2">
-                <div><dt class="text-muted">世界</dt><dd>{{ details.run.promptContext.budgets.world.used }} / {{ details.run.promptContext.budgets.world.limit }}</dd></div>
-                <div><dt class="text-muted">人物</dt><dd>{{ details.run.promptContext.budgets.persona.used }} / {{ details.run.promptContext.budgets.persona.limit }}</dd></div>
-                <div><dt class="text-muted">参考资料</dt><dd>{{ details.run.promptContext.budgets.sources.used }} / {{ details.run.promptContext.budgets.sources.limit }}</dd></div>
-                <div><dt class="text-muted">计算方式</dt><dd>{{ details.run.promptContext.tokenCountExact ? '模型精确计算' : '保守估算' }}</dd></div>
-              </dl>
-              <div>
-                <p class="font-medium text-highlighted">已选入 {{ details.run.promptContext.selected.length }} 项</p>
-                <ul v-if="details.run.promptContext.selected.length" class="mt-2 space-y-1 text-xs text-muted">
-                  <li v-for="item in details.run.promptContext.selected" :key="`selected-${item.category}-${item.entityId}-${item.contentHash}`">{{ promptCategoryLabel(item.category) }} · {{ item.estimatedTokens }} Token</li>
-                </ul>
-              </div>
-              <div v-if="details.run.promptContext.skipped.length">
-                <p class="font-medium text-highlighted">未选入 {{ details.run.promptContext.skipped.length }} 项</p>
-                <ul class="mt-2 space-y-1 text-xs text-muted">
-                  <li v-for="item in details.run.promptContext.skipped" :key="`skipped-${item.category}-${item.entityId}-${item.contentHash}`">{{ promptCategoryLabel(item.category) }} · {{ skippedReasonLabel(item.skippedReason) }}</li>
-                </ul>
-              </div>
-            </div>
-          </UCard>
+      <div v-if="selectedTab === 'result'" class="space-y-6">
+        <UCard>
+          <template #header><h2 class="font-semibold text-highlighted">生成条件</h2></template>
+          <pre class="content-pre">{{ 'content' in details.run.input ? details.run.input.content : details.run.input.requirement }}</pre>
+          <div v-if="details.run.scene" class="mt-4 rounded-md bg-elevated p-3 text-sm">
+            <p class="font-medium text-highlighted">临时场景</p>
+            <pre class="content-pre mt-2">{{ JSON.stringify(details.run.scene, null, 2) }}</pre>
+          </div>
+        </UCard>
 
-          <UCard v-if="selectedTab === 'result' && details.run.result">
-            <template #header>
-              <div class="flex flex-wrap items-center justify-between gap-2">
-                <h2 class="font-semibold text-highlighted">兴趣判断结果</h2>
-                <UBadge color="info" variant="subtle">AI 模拟推断，不是人物事实</UBadge>
-              </div>
-            </template>
-            <div class="grid gap-3 sm:grid-cols-3">
-              <div><p class="text-xs text-muted">结论</p><p class="mt-1 font-medium">{{ details.run.result.decision }}</p></div>
-              <div><p class="text-xs text-muted">兴趣概率</p><p class="mt-1 font-medium">{{ Math.round(details.run.result.probability * 100) }}%</p></div>
-              <div><p class="text-xs text-muted">置信度</p><p class="mt-1 font-medium">{{ Math.round(details.run.result.confidence * 100) }}%</p></div>
+        <UCard v-if="details.run.result">
+          <template #header>
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <h2 class="font-semibold text-highlighted">兴趣判断结果</h2>
+              <UBadge color="info" variant="subtle">AI 模拟推断，不是人物事实</UBadge>
             </div>
-            <p class="mt-4 text-sm">{{ details.run.result.reasoningSummary }}</p>
-            <div class="mt-4 space-y-2"><p v-for="factor in details.run.result.factors" :key="factor.dimension" class="rounded-md bg-elevated p-3 text-sm"><strong>{{ factor.dimension }} {{ factor.score }}</strong>：{{ factor.explanation }}</p></div>
-            <div v-if="details.run.result.unknowns.length" class="mt-4"><p class="text-sm font-medium">不确定项</p><ul class="mt-2 list-disc pl-5 text-sm text-muted"><li v-for="item in details.run.result.unknowns" :key="item">{{ item }}</li></ul></div>
-          </UCard>
+          </template>
+          <div class="grid gap-3 sm:grid-cols-3">
+            <div><p class="text-xs text-muted">结论</p><p class="mt-1 font-medium">{{ details.run.result.decision }}</p></div>
+            <div><p class="text-xs text-muted">兴趣概率</p><p class="mt-1 font-medium">{{ Math.round(details.run.result.probability * 100) }}%</p></div>
+            <div><p class="text-xs text-muted">置信度</p><p class="mt-1 font-medium">{{ Math.round(details.run.result.confidence * 100) }}%</p></div>
+          </div>
+          <p class="mt-4 text-sm">{{ details.run.result.reasoningSummary }}</p>
+          <div class="mt-4 space-y-2"><p v-for="factor in details.run.result.factors" :key="factor.dimension" class="rounded-md bg-elevated p-3 text-sm"><strong>{{ factor.dimension }} {{ factor.score }}</strong>：{{ factor.explanation }}</p></div>
+          <div v-if="details.run.result.unknowns.length" class="mt-4"><p class="text-sm font-medium">不确定项</p><ul class="mt-2 list-disc pl-5 text-sm text-muted"><li v-for="item in details.run.result.unknowns" :key="item">{{ item }}</li></ul></div>
+        </UCard>
 
-          <UCard v-if="selectedTab === 'content' && draftSpec && details.run.status === 'awaiting_confirmation'">
-            <template #header><div><h2 class="font-semibold text-highlighted">确认内容规划</h2><p class="mt-1 text-sm text-muted">这是第 {{ draftSpec.revision }} 版规划，确认前不会正式生成图文内容。</p></div></template>
-            <GenerationDocumentSpecEditor
-              :spec="draftSpec.spec"
-              :allow-images="'includeImages' in details.run.input && details.run.input.includeImages"
-              :loading="actionLoading"
-              @save="saveSpec"
-              @confirm="confirmSpec"
-            />
-          </UCard>
+        <UAlert v-if="details.run.kind === 'artifact_generation' && active" color="info" title="正在生成最终内容" description="文章完成后会自动显示；如设置了图片，系统会继续根据文章生成指定数量配图。" />
+        <UAlert v-if="artifactLoading" color="info" title="正在读取生成结果" />
+        <UAlert v-else-if="artifactError" color="error" title="生成结果读取失败" :description="artifactError" :actions="[{ label: '重试', onClick: retryArtifactResult }]" />
+        <GenerationArtifactResult
+          v-else-if="artifactResult && artifactOutputFormat"
+          :run-id="runId"
+          :output-format="artifactOutputFormat"
+          :result="artifactResult"
+        />
+      </div>
 
-          <UCard v-if="selectedTab === 'content' && details.blocks.length">
-            <template #header><h2 class="font-semibold text-highlighted">产物图文块</h2></template>
-            <div class="space-y-4">
-              <GenerationArtifactBlockCard
-                v-for="block in details.blocks"
-                :key="block.id"
-                :run-id="runId"
-                :block="block"
-                :max-attempts="details.run.parameters.maxBlockAttempts"
+      <UCard v-if="selectedTab === 'evidence'">
+        <template #header><div><h2 class="font-semibold text-highlighted">本次使用的设定与资料</h2><p class="mt-1 text-sm text-muted">任务创建时已固定保存，之后修改人物或资料不会改变这里的内容。</p></div></template>
+        <GenerationEvidenceList
+          :evidence="details.evidence"
+          :supporting-evidence-ids="details.run.result?.supportingEvidenceIds ?? []"
+          :opposing-evidence-ids="details.run.result?.opposingEvidenceIds ?? []"
+        />
+      </UCard>
+
+      <UCard v-if="selectedTab === 'feedback'">
+        <template #header><div><h2 class="font-semibold text-highlighted">运行反馈</h2><p class="mt-1 text-sm text-muted">原始反馈不会直接改写人物；确认“作为人物成长素材”后，仍需 AI 提炼、人工校准和发布。</p></div></template>
+        <div class="space-y-5">
+          <FeedbackForm :blocks="details.blocks" :loading="actionLoading" @submit="submitFeedback" />
+          <template v-if="pendingFeedback.length">
+            <div v-for="item in pendingFeedback" :key="item.id" class="border-t border-default pt-5">
+              <p class="mb-3 whitespace-pre-wrap text-sm">{{ item.content }}</p>
+              <FeedbackClassificationReview
+                :feedback="item"
+                :blocks="details.blocks"
+                :sources="personaDetails?.sources ?? []"
                 :loading="actionLoading"
-                :actions-disabled="active"
-                @retry="retryBlock(block.id)"
-                @select="selectBlockAttempt(block.id, $event)"
-                @lock="setBlockLock(block.id, $event)"
+                @confirm="confirmFeedback(item.id, $event)"
               />
             </div>
-          </UCard>
-
-          <GenerationArtifactPreview
-            v-if="selectedTab === 'content' && confirmedSpec && canRenderArtifact"
-            :run-id="runId"
-            :formats="artifactFormats"
-            :preview="artifactPreview"
-            :loading="actionLoading"
-            @render="renderArtifact"
-          />
-
-          <UCard v-if="selectedTab === 'evidence'">
-            <template #header><div><h2 class="font-semibold text-highlighted">本次使用的设定与资料</h2><p class="mt-1 text-sm text-muted">任务创建时已固定保存，之后修改人物或资料不会改变这里的内容。</p></div></template>
-            <GenerationEvidenceList
-              :evidence="details.evidence"
-              :supporting-evidence-ids="details.run.result?.supportingEvidenceIds ?? []"
-              :opposing-evidence-ids="details.run.result?.opposingEvidenceIds ?? []"
-            />
-          </UCard>
-
-          <UCard v-if="selectedTab === 'feedback'">
-            <template #header><div><h2 class="font-semibold text-highlighted">运行反馈</h2><p class="mt-1 text-sm text-muted">原始反馈不会直接改写人物；确认“作为人物成长素材”后，仍需 AI 提炼、人工校准和发布。</p></div></template>
-            <div class="space-y-5">
-              <FeedbackForm :blocks="details.blocks" :loading="actionLoading" @submit="submitFeedback" />
-              <template v-if="pendingFeedback.length">
-                <div v-for="item in pendingFeedback" :key="item.id" class="border-t border-default pt-5">
-                  <p class="mb-3 whitespace-pre-wrap text-sm">{{ item.content }}</p>
-                  <FeedbackClassificationReview
-                    :feedback="item"
-                    :blocks="details.blocks"
-                    :sources="personaDetails?.sources ?? []"
-                    :loading="actionLoading"
-                    @confirm="confirmFeedback(item.id, $event)"
-                  />
-                </div>
-              </template>
-              <div v-if="runFeedback.some(item => item.confirmedTarget !== null)" class="border-t border-default pt-5">
-                <p class="mb-3 text-sm font-medium text-highlighted">已确认反馈</p>
-                <ul class="space-y-2 text-sm">
-                  <li v-for="item in runFeedback.filter(value => value.confirmedTarget !== null)" :key="item.id" class="rounded-md bg-elevated p-3">
-                    <span class="whitespace-pre-wrap">{{ item.content }}</span>
-                    <UBadge class="ml-2" color="neutral" variant="subtle">{{ item.confirmedTarget }}</UBadge>
-                  </li>
-                </ul>
-              </div>
-            </div>
-          </UCard>
-        </div>
-
-        <div v-if="selectedTab === 'settings'" class="mt-6 space-y-6">
-          <UCard>
-            <template #header><div><h2 class="font-semibold text-highlighted">本次任务使用的设置</h2><p class="mt-1 text-sm text-muted">用于复查任务当时使用的人物版本、模型和生成限制。</p></div></template>
-            <dl class="space-y-3 text-sm">
-              <div><dt class="text-muted">人物版本</dt><dd class="break-all">{{ details.run.personaVersionId }}</dd></div>
-              <div><dt class="text-muted">提示版本</dt><dd>{{ details.run.promptVersion }}</dd></div>
-              <div v-if="details.run.imageModel"><dt class="text-muted">图片模型</dt><dd>{{ details.run.imageModel.model }}</dd></div>
-              <div><dt class="text-muted">参数</dt><dd><pre class="content-pre">{{ JSON.stringify(details.run.parameters, null, 2) }}</pre></dd></div>
-              <div><dt class="text-muted">完成时间</dt><dd>{{ formatTime(details.run.completedAt) }}</dd></div>
-            </dl>
-          </UCard>
-          <UCard v-if="details.documentSpecs.length > 1">
-            <template #header><h2 class="font-semibold text-highlighted">规格修订历史</h2></template>
-            <div class="space-y-2 text-sm"><p v-for="spec in details.documentSpecs" :key="spec.id">v{{ spec.revision }} · {{ spec.status }} · {{ formatTime(spec.createdAt) }}</p></div>
-          </UCard>
-          <UCard>
-            <template #header><h2 class="font-semibold text-highlighted">固定人物版本快照</h2></template>
-            <div v-if="personaVersion" class="space-y-4 text-sm">
-              <div v-for="field in personaSnapshotFields" :key="field.label">
-                <p class="text-xs text-muted">{{ field.label }}</p>
-                <p class="mt-1 whitespace-pre-wrap">{{ field.value || '—' }}</p>
-              </div>
-            </div>
-            <p v-else class="text-sm text-muted">人物版本快照加载失败。</p>
-          </UCard>
-          <UCard>
-            <template #header><h2 class="font-semibold text-highlighted">关联资料</h2></template>
-            <ul v-if="personaDetails?.sources.length" class="space-y-3 text-sm">
-              <li v-for="source in personaDetails.sources" :key="source.id" class="rounded-md bg-elevated p-3">
-                <NuxtLink :to="`/sources/${source.id}`" class="font-medium text-highlighted hover:underline">{{ source.name }}</NuxtLink>
-                <p class="mt-1 text-xs text-muted">{{ source.role }} · {{ source.chunkCount }} 个内容段落</p>
+          </template>
+          <div v-if="runFeedback.some(item => item.confirmedTarget !== null)" class="border-t border-default pt-5">
+            <p class="mb-3 text-sm font-medium text-highlighted">已确认反馈</p>
+            <ul class="space-y-2 text-sm">
+              <li v-for="item in runFeedback.filter(value => value.confirmedTarget !== null)" :key="item.id" class="rounded-md bg-elevated p-3">
+                <span class="whitespace-pre-wrap">{{ item.content }}</span>
+                <UBadge class="ml-2" color="neutral" variant="subtle">{{ item.confirmedTarget }}</UBadge>
               </li>
             </ul>
-            <p v-else class="text-sm text-muted">该人物没有直接关联资料。</p>
-          </UCard>
+          </div>
         </div>
+      </UCard>
+
+      <div v-if="selectedTab === 'settings'" class="space-y-6">
+        <UCard v-if="details.run.promptContext">
+          <template #header><div><h2 class="font-semibold text-highlighted">本次提示词用量</h2><p class="mt-1 text-sm text-muted">创建任务时已固定；后续修改设置不会改变本次结果。</p></div></template>
+          <div class="space-y-4 text-sm">
+            <div class="grid grid-cols-2 gap-3">
+              <div><p class="text-xs text-muted">预计输入</p><p class="mt-1 font-medium">{{ details.run.promptContext.estimatedInputTokens }} Token</p></div>
+              <div><p class="text-xs text-muted">可用输入</p><p class="mt-1 font-medium">{{ details.run.promptContext.availableInputTokens }} Token</p></div>
+            </div>
+            <dl class="space-y-2">
+              <div><dt class="text-muted">世界</dt><dd>{{ details.run.promptContext.budgets.world.used }} / {{ details.run.promptContext.budgets.world.limit }}</dd></div>
+              <div><dt class="text-muted">人物</dt><dd>{{ details.run.promptContext.budgets.persona.used }} / {{ details.run.promptContext.budgets.persona.limit }}</dd></div>
+              <div><dt class="text-muted">参考资料</dt><dd>{{ details.run.promptContext.budgets.sources.used }} / {{ details.run.promptContext.budgets.sources.limit }}</dd></div>
+              <div><dt class="text-muted">计算方式</dt><dd>{{ details.run.promptContext.tokenCountExact ? '模型精确计算' : '保守估算' }}</dd></div>
+            </dl>
+            <div>
+              <p class="font-medium text-highlighted">已选入 {{ details.run.promptContext.selected.length }} 项</p>
+              <ul v-if="details.run.promptContext.selected.length" class="mt-2 space-y-1 text-xs text-muted">
+                <li v-for="item in details.run.promptContext.selected" :key="`selected-${item.category}-${item.entityId}-${item.contentHash}`">{{ promptCategoryLabel(item.category) }} · {{ item.estimatedTokens }} Token</li>
+              </ul>
+            </div>
+            <div v-if="details.run.promptContext.skipped.length">
+              <p class="font-medium text-highlighted">未选入 {{ details.run.promptContext.skipped.length }} 项</p>
+              <ul class="mt-2 space-y-1 text-xs text-muted">
+                <li v-for="item in details.run.promptContext.skipped" :key="`skipped-${item.category}-${item.entityId}-${item.contentHash}`">{{ promptCategoryLabel(item.category) }} · {{ skippedReasonLabel(item.skippedReason) }}</li>
+              </ul>
+            </div>
+          </div>
+        </UCard>
+        <UCard>
+          <template #header><div><h2 class="font-semibold text-highlighted">本次任务使用的设置</h2><p class="mt-1 text-sm text-muted">用于复查任务当时使用的人物版本、模型和生成限制。</p></div></template>
+          <dl class="space-y-3 text-sm">
+            <div><dt class="text-muted">人物版本</dt><dd class="break-all">{{ details.run.personaVersionId }}</dd></div>
+            <div><dt class="text-muted">提示版本</dt><dd>{{ details.run.promptVersion }}</dd></div>
+            <div v-if="details.run.imageModel"><dt class="text-muted">图片模型</dt><dd>{{ details.run.imageModel.model }}</dd></div>
+            <div><dt class="text-muted">参数</dt><dd><pre class="content-pre">{{ JSON.stringify(details.run.parameters, null, 2) }}</pre></dd></div>
+            <div><dt class="text-muted">完成时间</dt><dd>{{ formatTime(details.run.completedAt) }}</dd></div>
+          </dl>
+        </UCard>
+        <UCard>
+          <template #header><h2 class="font-semibold text-highlighted">固定人物版本快照</h2></template>
+          <div v-if="personaVersion" class="space-y-4 text-sm">
+            <div v-for="field in personaSnapshotFields" :key="field.label">
+              <p class="text-xs text-muted">{{ field.label }}</p>
+              <p class="mt-1 whitespace-pre-wrap">{{ field.value || '—' }}</p>
+            </div>
+          </div>
+          <p v-else class="text-sm text-muted">人物版本快照加载失败。</p>
+        </UCard>
+        <UCard>
+          <template #header><h2 class="font-semibold text-highlighted">关联资料</h2></template>
+          <ul v-if="personaDetails?.sources.length" class="space-y-3 text-sm">
+            <li v-for="source in personaDetails.sources" :key="source.id" class="rounded-md bg-elevated p-3">
+              <NuxtLink :to="`/sources/${source.id}`" class="font-medium text-highlighted hover:underline">{{ source.name }}</NuxtLink>
+              <p class="mt-1 text-xs text-muted">{{ source.role }} · {{ source.chunkCount }} 个内容段落</p>
+            </li>
+          </ul>
+          <p v-else class="text-sm text-muted">该人物没有直接关联资料。</p>
+        </UCard>
       </div>
     </template>
   </div>

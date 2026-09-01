@@ -80,14 +80,15 @@ export const createInterestRunSchema = z.object({
   scene: sceneContextSchema.optional(),
 })
 
-/** 文档规划运行输入。 */
+/** 图文创作最终输出格式。 */
+export const artifactOutputFormatSchema = z.enum(['html', 'text'], { error: '输出格式无效' })
+
+/** 一次直出图文创作输入。 */
 export const createGenerationRunSchema = z.object({
   personaId: z.string().uuid('人物标识无效'),
   requirement: z.string().trim().min(1, '创作要求不能为空').max(50_000),
-  scene: sceneContextSchema.optional(),
-  parameterProfileId: z.string().uuid('参数方案标识无效').nullable().optional(),
-  formatTemplateId: z.string().uuid('格式模板标识无效').nullable().optional(),
-  includeImages: z.boolean().default(false),
+  outputFormat: artifactOutputFormatSchema.default('text'),
+  imageCount: z.number().int().min(0, '图片数量不能小于 0').max(4, '图片数量不能超过 4').default(0),
 })
 
 /** 兴趣判断分项因素。 */
@@ -129,6 +130,8 @@ export const textDocumentSpecBlockSchema = z.object({
   instruction: z.string().trim().min(1).max(5_000),
   acceptanceCriteria: z.array(z.string().trim().min(1).max(1_000)).min(1).max(10),
   dependsOn: z.array(z.string()).max(20),
+  /** 一次直出文章已经生成的段落正文；存在时初次执行不再调用文字模型。 */
+  generatedText: z.string().trim().min(1).max(50_000).optional(),
 })
 
 /** 文档规格中的图片块。 */
@@ -148,7 +151,7 @@ export const documentSpecBlockSchema = z.union([imageDocumentSpecBlockSchema, te
 /** 用户可以从同一产物选择的导出格式。 */
 export const artifactFormatSchema = z.enum(['html', 'markdown', 'txt'])
 
-/** AI 规划及用户编辑共用的文档规格。 */
+/** 系统根据最终文章与配图计划自动形成的内部有序文档快照。 */
 export const documentSpecSchema = z.object({
   title: z.string().trim().min(1, '文档标题不能为空').max(500),
   summary: z.string().trim().min(1, '文档摘要不能为空').max(2_000),
@@ -185,17 +188,22 @@ export const textBlockOutputSchema = z.object({
   text: z.string().trim().min(1, '文字块输出不能为空').max(50_000),
 })
 
-/** 修改待确认文档规格。 */
-export const updateDocumentSpecSchema = documentSpecSchema
-
-/** 选择块的一次成功尝试。 */
-export const selectBlockAttemptSchema = z.object({
-  attemptId: z.string().uuid('尝试标识无效'),
+/** 文本模型一次生成的完整文章。 */
+export const articleOutputSchema = z.object({
+  title: z.string().trim().min(1, '文章标题不能为空').max(500),
+  summary: z.string().trim().min(1, '文章摘要不能为空').max(2_000),
+  paragraphs: z.array(z.string().trim().min(1).max(50_000)).min(1).max(20),
 })
 
-/** 设置块锁定状态。 */
-export const setBlockLockSchema = z.object({
-  locked: z.boolean(),
+/** 根据最终文章确定的一项图片及其插入位置。 */
+export const articleImageItemSchema = z.object({
+  afterParagraph: z.number().int().min(0),
+  visualBrief: imageVisualBriefSchema,
+})
+
+/** 根据最终文章分析出的全部图片。 */
+export const articleImagesOutputSchema = z.object({
+  images: z.array(articleImageItemSchema).max(4),
 })
 
 /** 请求即时渲染一种或多种格式。 */
@@ -221,7 +229,10 @@ export type CreateParameterProfileInput = z.infer<typeof createParameterProfileS
 export type CreateFormatTemplateInput = z.infer<typeof createFormatTemplateSchema>
 export type CreateInterestRunInput = z.infer<typeof createInterestRunSchema>
 export type CreateGenerationRunInput = z.input<typeof createGenerationRunSchema>
+export type ArtifactOutputFormat = z.infer<typeof artifactOutputFormatSchema>
 export type InterestAssessment = z.infer<typeof interestAssessmentSchema>
+export type ArticleOutput = z.infer<typeof articleOutputSchema>
+export type ArticleImagesOutput = z.infer<typeof articleImagesOutputSchema>
 export type DocumentSpec = z.infer<typeof documentSpecSchema>
 export type ImageVisualBrief = z.infer<typeof imageVisualBriefSchema>
 export type ArtifactFormat = z.infer<typeof artifactFormatSchema>

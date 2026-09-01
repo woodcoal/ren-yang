@@ -1,4 +1,4 @@
-import type { DocumentSpec, ImageVisualBrief } from '../../../shared/schemas/generation'
+import type { ArticleOutput, ArtifactOutputFormat, DocumentSpec, ImageVisualBrief } from '../../../shared/schemas/generation'
 import type { EvidenceSnapshotRecord } from '../../domain/generation/GenerationModels'
 import type { PersonaSnapshot, WorldSnapshot } from '../../domain/content/ContentModels'
 
@@ -7,6 +7,8 @@ export const GENERATION_PROMPT_CODES = {
   personaDraft: 'generation.persona_draft',
   worldDraft: 'generation.world_draft',
   interestAssessment: 'generation.interest_assessment',
+  article: 'generation.article',
+  articleImages: 'generation.article_images',
   documentPlan: 'generation.document_plan',
   textBlock: 'generation.text_block',
   imageBlock: 'generation.image_block',
@@ -77,6 +79,38 @@ export function buildWorldDraftPromptVariables(prompt: string): Record<string, s
  */
 export function buildInterestPromptVariables(context: PromptContext, content: string): Record<string, string> {
   return { ...buildContextVariables(context), contentJson: JSON.stringify(content) }
+}
+
+/**
+ * 构建一次直出文章模板变量。
+ * @param context 固定人物、世界、场景和证据快照。
+ * @param requirement 用户明确的创作条件。
+ * @param outputFormat 最终 HTML 或纯文本输出格式。
+ * @returns 与固定提示词变量契约完全一致的字符串映射。
+ */
+export function buildArticlePromptVariables(
+  context: PromptContext,
+  requirement: string,
+  outputFormat: ArtifactOutputFormat,
+): Record<string, string> {
+  return {
+    ...buildContextVariables(context),
+    requirementJson: JSON.stringify(requirement),
+    outputFormat: JSON.stringify(outputFormat),
+  }
+}
+
+/**
+ * 构建文章后置配图分析模板变量。
+ * @param article 已通过结构校验的最终文章。
+ * @param imageCount 用户要求的准确图片数量。
+ * @returns 与固定提示词变量契约完全一致的字符串映射。
+ */
+export function buildArticleImagesPromptVariables(article: ArticleOutput, imageCount: number): Record<string, string> {
+  return {
+    articleJson: JSON.stringify(article),
+    imageCount: String(imageCount),
+  }
 }
 
 /**

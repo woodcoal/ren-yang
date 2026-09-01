@@ -70,7 +70,7 @@ function run(): GenerationRunRecord {
   return {
     id: '00000000-0000-4000-8000-000000000040', kind: 'artifact_generation',
     personaVersionId: '00000000-0000-4000-8000-000000000041', formatTemplateId: null, parameterProfileId: null,
-    status: 'succeeded', input: { requirement: '测试', includeImages: true }, scene: null,
+    status: 'succeeded', input: { requirement: '测试', outputFormat: 'html', imageCount: 1 }, scene: null,
     parameterSnapshot: { temperature: 0.4, maxOutputTokens: 2048, timeoutMs: 60000, maxEvidenceChunks: 8, maxTextBlocks: 12, maxImageBlocks: 4, maxPromptCharacters: 120000, maxTotalTokens: 50000, maxBlockAttempts: 2, contextWindowTokens: 32768, reservedOutputTokens: 4096, safetyMarginTokens: 2048, worldBudgetTokens: 5000, worldSoulBudgetTokens: 2500, worldGrowthBudgetTokens: 2500, personaBudgetTokens: 9000, personaSoulBudgetTokens: 3500, personaGrowthBudgetTokens: 2500, personaMemoryBudgetTokens: 3000, sourceBudgetTokens: 5000 },
     modelSnapshot: { provider: 'openai_compatible', model: 'test', endpointOrigin: 'https://text.test' },
     imageModelSnapshot: { provider: 'openai_compatible_images', model: 'test-image', endpointOrigin: 'https://image.test' },
@@ -92,8 +92,8 @@ describe('统一图文渲染与打包', () => {
     expect(rendered.markdown).toContain('assets/00000000-0000-4000-8000-000000000011.png')
     expect(rendered.markdown).toContain('![插图\\](javascript:alert(1))](assets/00000000-0000-4000-8000-000000000011.png)')
     expect(rendered.markdown).toContain('摘要\\<script\\>alert\\(1\\)\\</script\\>')
-    expect(rendered.txt).toContain('[图片：插图](javascript:alert(1))]')
-    expect(rendered.txt).toContain('文件：assets/00000000-0000-4000-8000-000000000011.png')
+    expect(rendered.txt).not.toContain('[图片：')
+    expect(rendered.txt).not.toContain('assets/00000000-0000-4000-8000-000000000011.png')
     expect(rendered.txt).not.toContain('\u0000')
   })
 

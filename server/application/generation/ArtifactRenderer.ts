@@ -70,10 +70,8 @@ function renderMarkdown(spec: DocumentSpec, blocks: SelectedArtifactBlock[]): st
 function renderText(spec: DocumentSpec, blocks: SelectedArtifactBlock[]): string {
   const sections = [sanitizeText(spec.title), sanitizeText(spec.summary)]
   for (const item of blocks) {
-    if (item.block.type === 'image' && item.asset) {
-      sections.push(`[图片：${sanitizeText(item.asset.altText)}]\n文件：${item.asset.relativePath}`)
-      continue
-    }
+    // 纯文本正文与图片数据分别返回；图片文件和替代文本由 RenderedArtifactView.assets 承载。
+    if (item.block.type === 'image') continue
     const text = sanitizeText(item.outputText ?? '')
     sections.push(item.block.role === 'list' ? toListItems(text).map(value => `- ${value}`).join('\n') : text)
   }

@@ -8,7 +8,7 @@ import type { ArtifactBlockView } from '#shared/types/generation'
 const props = withDefaults(defineProps<{
   /** 等待确认的反馈。 */
   feedback: FeedbackView
-  /** 当前运行可重试块。 */
+  /** 当前运行可按反馈修正的正文区域或图片。 */
   blocks?: ArtifactBlockView[]
   /** 可关联的资料列表。 */
   sources?: SourceSummary[]
@@ -35,7 +35,7 @@ const confidenceLabel = computed(() => `${Math.round(props.feedback.suggestion.c
 function confirm(): void {
   error.value = null
   if (form.targetType === 'artifact' && !form.blockId) {
-    error.value = '当前产物反馈必须选择具体产物块'
+    error.value = '当前结果反馈必须选择需要修正的具体内容'
     return
   }
   if (form.targetType === 'source_fact' && !form.sourceId) {
@@ -48,6 +48,12 @@ function confirm(): void {
     sourceId: form.targetType === 'source_fact' ? form.sourceId : null,
     hasEvidenceConflict: form.targetType === 'source_fact' ? form.hasEvidenceConflict : false,
   })
+}
+
+/** @param block 内部结果单元。 @returns 用户可理解的正文区域或图片名称。 */
+function resultPartLabel(block: ArtifactBlockView): string {
+  const sameTypeIndex = props.blocks.filter(item => item.type === block.type && item.ordinal <= block.ordinal).length
+  return block.type === 'image' ? `第 ${sameTypeIndex} 张图片` : `第 ${sameTypeIndex} 段正文`
 }
 </script>
 
@@ -67,10 +73,10 @@ function confirm(): void {
       </select>
     </UFormField>
 
-    <UFormField v-if="form.targetType === 'artifact'" label="重试产物块" required>
+      <UFormField v-if="form.targetType === 'artifact'" label="需要修正的具体内容" required>
       <select v-model="form.blockId" class="native-control">
         <option value="">请选择</option>
-        <option v-for="block in props.blocks" :key="block.id" :value="block.id">{{ block.ordinal + 1 }} · {{ block.specKey }}</option>
+        <option v-for="block in props.blocks" :key="block.id" :value="block.id">{{ resultPartLabel(block) }}</option>
       </select>
     </UFormField>
 

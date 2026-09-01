@@ -76,22 +76,16 @@ function createModelOutput(body: string): string {
     return '记住曾完成学院课程介绍；后续同类任务优先采用严谨、克制且便于导出的结构。'
   }
 
-  if (systemPrompt.includes('规划一份统一文档规格')) {
+  if (systemPrompt.includes('人物风格文章生成器')) {
     return JSON.stringify({
       title: '学院观察',
       summary: '以人物口吻介绍学院课程。',
-      purpose: '完成可导出的端到端验收文档',
-      constraints: ['不虚构资料事实'],
-      requestedFormats: ['html', 'markdown', 'txt'],
-      blocks: [
-        { key: 'title', type: 'text', role: 'heading', instruction: '写标题', acceptanceCriteria: ['标题简短'], dependsOn: [] },
-        { key: 'body', type: 'text', role: 'paragraph', instruction: '写正文', acceptanceCriteria: ['符合人物风格'], dependsOn: ['title'] },
-      ],
+      paragraphs: ['这门课程值得以严谨、克制的方式介绍。'],
     })
   }
 
-  if (systemPrompt.includes('生成一个纯文字块')) {
-    return JSON.stringify({ text: userPrompt.includes('写标题') ? '学院观察' : '这门课程值得以严谨、克制的方式介绍。' })
+  if (systemPrompt.includes('文章配图分析器')) {
+    return JSON.stringify({ images: [] })
   }
 
   throw new Error('端到端模型替身收到未覆盖的提示类型')

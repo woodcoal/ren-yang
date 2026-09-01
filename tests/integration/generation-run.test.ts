@@ -26,7 +26,6 @@ import { ImageModelError } from '../../server/ports/ImageModelPort'
 import type { TextModelPort, TextModelRequest, TextModelResponse } from '../../server/ports/TextModelPort'
 import { TextModelError } from '../../server/ports/TextModelPort'
 import type { PersonaSnapshot } from '../../shared/types/content'
-import type { DocumentSpec } from '../../shared/schemas/generation'
 import type { AiPromptApplicationService } from '../../server/application/aiPrompts/AiPromptApplicationService'
 import { createTestAiPromptService } from '../support/createTestAiPromptService'
 import { SystemAiSettingsApplicationService } from '../../server/application/systemAi/SystemAiSettingsApplicationService'
@@ -55,6 +54,8 @@ class FixedTextModel implements TextModelPort {
   public invalidPersonaMetaOnce = false
   /** 是否让第一次世界草稿错误地包含创建流程元话术。 */
   public invalidWorldMetaOnce = false
+  /** 是否持续返回数量不符的文章配图分析。 */
+  public invalidArticleImagesAlways = false
   /** 兴趣调用前还要模拟的限流次数。 */
   public interestRateLimitsRemaining = 0
   /** 每次成功响应返回的固定供应商用量。 */
@@ -126,6 +127,35 @@ class FixedTextModel implements TextModelPort {
           { key: 'title', role: 'heading', instruction: '写标题', acceptanceCriteria: ['简短'], dependsOn: [] },
           { key: 'body', role: 'paragraph', instruction: '写正文', acceptanceCriteria: ['符合人物风格'], dependsOn: ['title'] },
         ],
+      }, this.usage)
+    }
+    if (request.responseSchemaName === 'article') {
+      return response({
+        title: '学院观察',
+        summary: '以人物口吻介绍学院课程。',
+        paragraphs: ['这里的课程值得认真研究。', '每一门课都需要结合可靠资料判断价值。'],
+      }, this.usage)
+    }
+    if (request.responseSchemaName === 'article_images') {
+      const imageCount = Number(request.userPrompt.match(/<图片数量>(\d+)<\/图片数量>/)?.[1] ?? 0)
+      if (this.invalidArticleImagesAlways) return response({ images: [] }, this.usage)
+      return response({
+        images: [
+          {
+            afterParagraph: 0,
+            visualBrief: {
+              theme: '魔法学院课程', subject: '古代文献图书馆', composition: '横向居中构图', colorPalette: '深蓝与暖金',
+              texture: '纸张与木材', aspectRatio: '16:9', altText: '魔法学院古代文献图书馆', negativePrompt: '文字、水印',
+            },
+          },
+          {
+            afterParagraph: 1,
+            visualBrief: {
+              theme: '学院学习', subject: '安静阅读的学生', composition: '中景构图', colorPalette: '暖棕色',
+              texture: '自然光', aspectRatio: '4:3', altText: '学生在学院中阅读', negativePrompt: '文字、水印',
+            },
+          },
+        ].slice(0, imageCount),
       }, this.usage)
     }
     const currentBlockInstruction = request.userPrompt.match(/<当前块任务>(.*?)<\/当前块任务>/s)?.[1]
@@ -447,32 +477,26 @@ describe('阶段三纯文本运行', () => {
     })
   })
 
-  it('规划规格后必须确认，确认后串行生成并保存独立块尝试', async () => {
+  it('提交创作条件后无需确认即可直接生成最终文章', async () => {
     const created = await generation.createGenerationRun({
       personaId,
       requirement: '用人物风格介绍魔法学院课程。',
-      scene: undefined,
-      parameterProfileId: null,
-      formatTemplateId: null,
+      outputFormat: 'text',
+      imageCount: 0,
     })
-    await worker.executeNext()
-    const planned = await generation.getRun(created.runId)
-    expect(planned.run.status).toBe('awaiting_confirmation')
-    expect(planned.documentSpecs).toHaveLength(1)
-    expect(planned.blocks).toEqual([])
-    expect(await worker.executeNext()).toMatchObject({ handled: false })
 
-    await generation.confirmDocumentSpec(created.runId)
     await worker.executeNext()
+    await worker.executeNext()
+
     const completed = await generation.getRun(created.runId)
     expect(completed.run.status).toBe('succeeded')
-    expect(completed.blocks.map(block => block.attempts[0]?.outputText)).toEqual([
-      '学院观察',
-      '这里的课程值得认真研究。',
+    expect(completed.documentSpecs).toEqual([
+      expect.objectContaining({ status: 'confirmed' }),
     ])
-    expect(completed.blocks.every(block => block.selectedAttemptId === block.attempts[0]?.id)).toBe(true)
-    expect(completed.blocks.map(block => block.attempts[0]?.usage?.totalTokens)).toEqual([15, 15])
-    expect(completed.run.usage).toEqual({ inputTokens: 30, outputTokens: 15, totalTokens: 45 })
+    expect(completed.blocks.map(block => block.attempts[0]?.outputText)).toEqual([
+      '这里的课程值得认真研究。',
+      '每一门课都需要结合可靠资料判断价值。',
+    ])
   })
 
   it('排队运行可协作取消且不会再被 Worker 领取', async () => {
@@ -587,7 +611,6 @@ describe('阶段三纯文本运行', () => {
   it('租约过期后恢复中断块，保留失败尝试并继续后续块', async () => {
     const created = await generation.createGenerationRun({ personaId, requirement: '介绍课程' })
     await worker.executeNext()
-    await generation.confirmDocumentSpec(created.runId)
     const planned = await generation.getRun(created.runId)
     const firstBlock = planned.blocks[0]!
     const repository = new SqliteTaskJobRepository(database.getClient())
@@ -616,7 +639,6 @@ describe('阶段三纯文本运行', () => {
     await worker.executeNext()
     const generated = await generation.createGenerationRun({ personaId, requirement: '介绍魔法学院课程' })
     await worker.executeNext()
-    await generation.confirmDocumentSpec(generated.runId)
     await worker.executeNext()
 
     await expect(contentService.getPersonaDeletionImpact(personaId)).resolves.toMatchObject({
@@ -629,65 +651,85 @@ describe('阶段三纯文本运行', () => {
   })
 })
 
-/** @param dependency 图片是否依赖标题。 @returns 阶段四固定图文规格。 */
-function mixedDocumentSpec(dependency = true): DocumentSpec {
-  return {
-    title: '学院观察',
-    summary: '图文介绍学院。',
-    purpose: '介绍课程',
-    constraints: ['不虚构资料事实'],
-    requestedFormats: ['html', 'markdown', 'txt'],
-    blocks: [
-      { key: 'title', type: 'text', role: 'heading', instruction: '写标题', acceptanceCriteria: ['简短'], dependsOn: [] },
-      {
-        key: 'hero', type: 'image', role: 'hero_image', instruction: '生成学院主图', acceptanceCriteria: ['清晰'], dependsOn: dependency ? ['title'] : [],
-        visualBrief: {
-          theme: '魔法学院', subject: '古代文献图书馆', composition: '横向居中构图', colorPalette: '深蓝与暖金',
-          texture: '纸张与木材', aspectRatio: '16:9', altText: '魔法学院古代文献图书馆', negativePrompt: '文字、水印',
-        },
-      },
-      { key: 'body', type: 'text', role: 'paragraph', instruction: '写正文', acceptanceCriteria: ['符合人物风格'], dependsOn: ['title'] },
-    ],
-  }
-}
-
-/** @param spec 待确认图文规格。 @returns 完成规划、修订、确认和执行后的运行标识。 */
-async function executeMixedRun(spec: DocumentSpec = mixedDocumentSpec()): Promise<string> {
-  const created = await generation.createGenerationRun({ personaId, requirement: '图文介绍学院课程', includeImages: true })
-  await worker.executeNext()
-  await generation.reviseDocumentSpec(created.runId, spec)
-  await generation.confirmDocumentSpec(created.runId)
-  await worker.executeNext()
+/**
+ * 按新契约完成一次直接图文生成。
+ * @param outputFormat 用户要求的最终输出格式。
+ * @param imageCount 文章完成后需要生成的图片数量。
+ * @returns 已完成运行的 UUID。
+ */
+async function executeDirectRun(outputFormat: 'html' | 'text' = 'html', imageCount = 1): Promise<string> {
+  const created = await generation.createGenerationRun({
+    personaId,
+    requirement: '图文介绍学院课程',
+    outputFormat,
+    imageCount,
+  })
+  await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: true })
+  await expect(worker.executeNext()).resolves.toMatchObject({ handled: true })
   return created.runId
 }
 
-describe('阶段四图文块与导出', () => {
-  it('文档规格分别执行文字块与图片块数量上限', async () => {
-    const profile = await generation.createParameterProfile({
-      name: '两文一图',
-      values: { ...DEFAULT_TEXT_PARAMETERS, maxTextBlocks: 2, maxImageBlocks: 1 },
-    })
+describe('直接图文生成与导出', () => {
+  it('HTML 格式按文章分析位置从头到尾插入指定数量图片', async () => {
     const created = await generation.createGenerationRun({
-      personaId, requirement: '生成一文一图', includeImages: true, parameterProfileId: profile.id,
+      personaId,
+      requirement: '生成一篇图文混排的课程介绍。',
+      outputFormat: 'html',
+      imageCount: 2,
     })
-    await worker.executeNext()
-    const withinLimit = mixedDocumentSpec()
-    await expect(generation.reviseDocumentSpec(created.runId, withinLimit)).resolves.toMatchObject({ revision: 2 })
 
-    const tooManyTexts = mixedDocumentSpec()
-    tooManyTexts.blocks.push({
-      key: 'ending', type: 'text', role: 'paragraph', instruction: '写结尾', acceptanceCriteria: ['简短'], dependsOn: ['body'],
+    await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: true })
+    await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: true })
+
+    const rendered = await generation.renderRun(created.runId, ['html'])
+    const html = rendered.documents.html ?? ''
+    const firstParagraph = html.indexOf('这里的课程值得认真研究。')
+    const firstImage = html.indexOf('<figure>')
+    const secondParagraph = html.indexOf('每一门课都需要结合可靠资料判断价值。')
+    const secondImage = html.indexOf('<figure>', firstImage + 1)
+    expect([firstParagraph, firstImage, secondParagraph, secondImage].every(index => index >= 0)).toBe(true)
+    expect(firstParagraph).toBeLessThan(firstImage)
+    expect(firstImage).toBeLessThan(secondParagraph)
+    expect(secondParagraph).toBeLessThan(secondImage)
+    expect(rendered.assets).toHaveLength(2)
+  })
+
+  it('文本格式分别返回文章正文和图片数据', async () => {
+    const created = await generation.createGenerationRun({
+      personaId,
+      requirement: '生成一篇带一张配图的课程介绍。',
+      outputFormat: 'text',
+      imageCount: 1,
     })
-    await expect(generation.reviseDocumentSpec(created.runId, tooManyTexts))
-      .rejects.toMatchObject({ code: 'TASK_LIMIT_EXCEEDED', message: '文字块数量超过运行上限' })
-    const tooManyImages = mixedDocumentSpec()
-    tooManyImages.blocks = [
-      tooManyImages.blocks[0]!,
-      tooManyImages.blocks[1]!,
-      { ...tooManyImages.blocks[1]!, key: 'illustration_2', dependsOn: ['title'] },
-    ]
-    await expect(generation.reviseDocumentSpec(created.runId, tooManyImages))
-      .rejects.toMatchObject({ code: 'TASK_LIMIT_EXCEEDED', message: '图片块数量超过运行上限' })
+
+    await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: true })
+    await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: true })
+
+    await expect(generation.getRun(created.runId)).resolves.toMatchObject({ run: { status: 'succeeded' } })
+    const rendered = await generation.renderRun(created.runId, ['txt'])
+    expect(rendered.documents.txt).toContain('这里的课程值得认真研究。')
+    expect(rendered.documents.txt).not.toContain('[图片：')
+    expect(rendered.assets).toEqual([
+      expect.objectContaining({ altText: '魔法学院古代文献图书馆' }),
+    ])
+  })
+
+  it('配图分析数量与请求不符时以模型输出无效稳定失败', async () => {
+    model.invalidArticleImagesAlways = true
+    const created = await generation.createGenerationRun({
+      personaId,
+      requirement: '生成一篇带一张配图的课程介绍。',
+      outputFormat: 'html',
+      imageCount: 1,
+    })
+
+    await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: false })
+    await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: false })
+
+    await expect(generation.getRun(created.runId)).resolves.toMatchObject({
+      run: { status: 'failed', errorCode: 'MODEL_OUTPUT_INVALID' },
+    })
+    expect(imageModel.calls).toBe(0)
   })
 
   it('图片模型未配置时拒绝图片运行但不影响纯文本运行', async () => {
@@ -707,145 +749,59 @@ describe('阶段四图文块与导出', () => {
       learning: new SqliteLearningRepository(database.getClient()),
     })
 
-    await expect(disabled.createGenerationRun({ personaId, requirement: '生成图文', includeImages: true }))
+    await expect(disabled.createGenerationRun({ personaId, requirement: '生成图文', outputFormat: 'html', imageCount: 1 }))
       .rejects.toMatchObject({ code: 'CAPABILITY_DISABLED' })
-    await expect(disabled.createGenerationRun({ personaId, requirement: '仅生成文字', includeImages: false }))
+    await expect(disabled.createGenerationRun({ personaId, requirement: '仅生成文字', outputFormat: 'text', imageCount: 0 }))
       .resolves.toMatchObject({ status: 'planning' })
     expect(database.getClient().prepare('SELECT COUNT(*) AS count FROM generation_runs').get()).toEqual({ count: 1 })
   })
 
-  it('生成固定 PNG 并从同一组选中尝试渲染及导出三种格式', async () => {
-    const runId = await executeMixedRun()
+  it('生成固定 PNG 并从最终结果渲染及导出 HTML', async () => {
+    const runId = await executeDirectRun()
     const details = await generation.getRun(runId)
     const imageBlock = details.blocks.find(block => block.type === 'image')!
     const asset = imageBlock.attempts[0]!.asset!
 
-    expect(details.run).toMatchObject({ status: 'succeeded', input: { includeImages: true }, imageModel: { model: 'fixed-image-model' } })
+    expect(details.run).toMatchObject({ status: 'succeeded', input: { outputFormat: 'html', imageCount: 1 }, imageModel: { model: 'fixed-image-model' } })
     expect(imageModel.calls).toBe(1)
     expect(imageModel.lastRequest).toMatchObject({ aspectRatio: '16:9' })
     expect(imageModel.lastRequest?.prompt).toContain('古代文献图书馆')
     expect(existsSync(resolve(directory, 'artifacts', runId, asset.relativePath))).toBe(true)
     await expect(generation.getImageAsset(runId, asset.id)).resolves.toMatchObject({ mediaType: 'image/png' })
 
-    const rendered = await generation.renderRun(runId, ['html', 'markdown', 'txt'])
+    const rendered = await generation.renderRun(runId, ['html'])
     expect(rendered.assets).toEqual([expect.objectContaining({ id: asset.id, relativePath: asset.relativePath })])
     expect(rendered.documents.html).toContain('学院观察')
-    expect(rendered.documents.markdown).toContain('学院观察')
-    expect(rendered.documents.txt).toContain('学院观察')
-    for (const format of ['html', 'markdown', 'txt'] as const) {
-      const exported = await generation.exportRun(runId, format)
-      expect(exported).toMatchObject({ fileName: expect.stringMatching(/\.zip$/), mediaType: 'application/zip' })
-      const names = Object.keys(unzipSync(exported.bytes))
-      expect(names).toContain(`document.${format === 'markdown' ? 'md' : format}`)
-      expect(names).toContain(asset.relativePath)
-      expect(names).toContain('manifest.json')
-    }
+    const exported = await generation.exportRun(runId, 'html')
+    expect(exported).toMatchObject({ fileName: expect.stringMatching(/\.zip$/), mediaType: 'application/zip' })
+    const names = Object.keys(unzipSync(exported.bytes))
+    expect(names).toContain('document.html')
+    expect(names).toContain(asset.relativePath)
+    expect(names).toContain('manifest.json')
   })
 
-  it('图片失败时保留成功文字并标记部分成功，整文重试跳过锁定成功块', async () => {
+  it('图片失败时保留成功文章并标记部分成功，整体重试只处理失败图片', async () => {
     imageModel.shouldFail = true
-    const runId = await executeMixedRun()
+    const runId = await executeDirectRun()
     const partial = await generation.getRun(runId)
     const imageBlock = partial.blocks.find(block => block.type === 'image')!
-    const lockedText = partial.blocks.find(block => block.specKey === 'title')!
-    const textCalls = model.calls.get('text_block')
+    const textAttempts = partial.blocks.filter(block => block.type === 'text').map(block => block.attempts.length)
 
     expect(partial.run.status).toBe('partial')
     expect(imageBlock.attempts).toEqual([expect.objectContaining({ status: 'failed', errorCode: 'IMAGE_OUTPUT_INVALID' })])
     expect(partial.blocks.filter(block => block.type === 'text').every(block => block.status === 'succeeded')).toBe(true)
-    await generation.setBlockLock(runId, lockedText.id, true)
 
     imageModel.shouldFail = false
     await generation.retryRun(runId)
     await worker.executeNext()
     const recovered = await generation.getRun(runId)
     expect(recovered.run.status).toBe('succeeded')
-    expect(recovered.blocks.find(block => block.id === lockedText.id)).toMatchObject({ isLocked: true, selectedAttemptId: lockedText.selectedAttemptId })
-    expect(model.calls.get('text_block')).toBe(textCalls)
+    expect(recovered.blocks.filter(block => block.type === 'text').map(block => block.attempts.length)).toEqual(textAttempts)
     expect(recovered.blocks.find(block => block.id === imageBlock.id)?.attempts).toHaveLength(2)
   })
 
-  it('单块重试追加尝试，允许选择历史成功尝试且锁定后禁止重试', async () => {
-    const runId = await executeMixedRun()
-    const initial = await generation.getRun(runId)
-    const imageBlock = initial.blocks.find(block => block.type === 'image')!
-    const firstAttempt = imageBlock.attempts[0]!
-
-    await generation.retryBlock(runId, imageBlock.id)
-    await expect(generation.selectBlockAttempt(runId, imageBlock.id, firstAttempt.id))
-      .rejects.toMatchObject({ code: 'BLOCK_ATTEMPT_NOT_SELECTABLE' })
-    await worker.executeNext()
-    const retried = await generation.getRun(runId)
-    const updatedImage = retried.blocks.find(block => block.id === imageBlock.id)!
-    expect(updatedImage.attempts).toHaveLength(2)
-    expect(updatedImage.selectedAttemptId).not.toBe(firstAttempt.id)
-
-    const selected = await generation.selectBlockAttempt(runId, imageBlock.id, firstAttempt.id)
-    expect(selected.blocks.find(block => block.id === imageBlock.id)?.selectedAttemptId).toBe(firstAttempt.id)
-    const locked = await generation.setBlockLock(runId, imageBlock.id, true)
-    expect(locked.blocks.find(block => block.id === imageBlock.id)).toMatchObject({ isLocked: true, lockedAt: expect.any(Number) })
-    await expect(generation.retryBlock(runId, imageBlock.id)).rejects.toMatchObject({ code: 'BLOCK_LOCKED' })
-    await expect(generation.setBlockLock(runId, imageBlock.id, false)).resolves.toMatchObject({
-      blocks: expect.arrayContaining([expect.objectContaining({ id: imageBlock.id, isLocked: false, lockedAt: null })]),
-    })
-    await expect(generation.retryBlock(runId, imageBlock.id)).rejects.toMatchObject({
-      code: 'TASK_LIMIT_EXCEEDED', message: '该块已达到运行快照规定的最大尝试数',
-    })
-  })
-
-  it('反馈修正重试超过原自动尝试上限时仍执行一次并携带反馈正文', async () => {
-    const runId = await executeMixedRun()
-    const initial = await generation.getRun(runId)
-    const textBlock = initial.blocks.find(block => block.specKey === 'body')!
-
-    // 先执行普通重试耗尽运行快照中的两次尝试上限。
-    await generation.retryBlock(runId, textBlock.id)
-    await worker.executeNext()
-    expect((await generation.getRun(runId)).blocks.find(block => block.id === textBlock.id)?.attempts).toHaveLength(2)
-
-    const correctionInstruction = '正文太长，请压缩成一句话。'
-    const taskId = '00000000-0000-4000-8000-000000009999'
-    database.getClient().transaction(() => {
-      database.getClient().prepare(`UPDATE generation_runs SET status = 'queued', completed_at = NULL WHERE id = ?`).run(runId)
-      database.getClient().prepare(`UPDATE artifact_blocks SET status = 'pending' WHERE id = ?`).run(textBlock.id)
-      database.getClient().prepare(`
-        INSERT INTO task_jobs (id, run_id, type, payload_json, status, attempt_count, max_attempts, created_at, updated_at)
-        VALUES (?, ?, 'execute_block', ?, 'queued', 0, 2, 9000, 9000)
-      `).run(taskId, runId, JSON.stringify({ runId, blockId: textBlock.id, correctionInstruction }))
-    }).immediate()
-
-    await worker.executeNext()
-
-    const corrected = await generation.getRun(runId)
-    const attempts = corrected.blocks.find(block => block.id === textBlock.id)!.attempts
-    expect(attempts).toHaveLength(3)
-    const latestInput = database.getClient().prepare(`
-      SELECT input_snapshot_json FROM block_attempts WHERE block_id = ? ORDER BY attempt_no DESC LIMIT 1
-    `).get(textBlock.id) as { input_snapshot_json: string }
-    expect(JSON.parse(latestInput.input_snapshot_json)).toMatchObject({ correctionInstruction })
-    expect(model.requests.get('text_block')?.userPrompt).toContain(correctionInstruction)
-  })
-
-  it('依赖图片失败时记录依赖错误且不调用后续文字模型', async () => {
-    imageModel.shouldFail = true
-    const spec = mixedDocumentSpec(false)
-    spec.blocks = [
-      spec.blocks[1]!,
-      { ...spec.blocks[2]!, dependsOn: ['hero'] },
-    ]
-    const runId = await executeMixedRun(spec)
-    const details = await generation.getRun(runId)
-
-    expect(details.run.status).toBe('failed')
-    expect(imageModel.calls).toBe(1)
-    expect(model.calls.get('text_block')).toBeUndefined()
-    expect(details.blocks.find(block => block.specKey === 'body')?.attempts).toEqual([
-      expect.objectContaining({ status: 'failed', errorCode: 'DEPENDENCY_FAILED' }),
-    ])
-  })
-
   it('人物删除同步清理该人物运行的本地图片目录', async () => {
-    const runId = await executeMixedRun()
+    const runId = await executeDirectRun()
     const details = await generation.getRun(runId)
     const relativePath = details.blocks.find(block => block.type === 'image')!.attempts[0]!.asset!.relativePath
     const absolutePath = resolve(directory, 'artifacts', runId, relativePath)

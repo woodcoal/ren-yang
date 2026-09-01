@@ -39,7 +39,7 @@ export interface GenerationRunRecord {
   formatTemplateId: string | null
   parameterProfileId: string | null
   status: RunStatus
-  input: { content: string } | { requirement: string, includeImages: boolean }
+  input: { content: string } | { requirement: string, outputFormat: 'html' | 'text', imageCount: number }
   scene: SceneContext | null
   parameterSnapshot: TextModelParameters
   modelSnapshot: TextModelSnapshot

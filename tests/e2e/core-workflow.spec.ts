@@ -126,7 +126,7 @@ async function extractAndPublishLearningPrompt(page: Page, options: LearningProm
   await expect(editor).toHaveValue(options.calibratedPrompt)
 }
 
-test('首次设置、灵魂保存、文档确认及三格式导出形成可复现闭环', async ({ page }) => {
+test('首次设置、灵魂保存及文章直接生成形成可复现闭环', async ({ page }) => {
   // 单场景覆盖首次设置、三类学习提炼和异步生成，使用 Playwright 慢测试预算避免正常构建链被误判超时。
   test.slow()
   await page.goto('/')
@@ -352,24 +352,17 @@ test('首次设置、灵魂保存、文档确认及三格式导出形成可复�
   await page.keyboard.press('Escape')
 
   await page.getByRole('main').getByRole('link', { name: '新建任务', exact: true }).click()
-  await page.getByLabel('任务类型').selectOption('generation')
   await page.getByLabel('使用的人物').selectOption({ label: '林默' })
-  await page.getByLabel('创作要求').fill('用人物风格介绍学院课程，并输出 HTML、Markdown 和 Txt。')
-  await page.getByRole('button', { name: '确认并开始规划', exact: true }).click()
+  await page.getByLabel('输出格式').selectOption('html')
+  await page.getByLabel('生成条件').fill('用人物风格介绍学院课程，并输出 HTML。')
+  await page.getByRole('button', { name: '开始生成', exact: true }).click()
 
-  await expect(page.getByRole('heading', { name: '确认内容规划', exact: true })).toBeVisible()
-  await page.getByRole('button', { name: '保存并确认执行', exact: true }).click()
-  await expect(page.getByText('规格已确认，图文块已进入执行队列', { exact: true })).toBeVisible()
-
-  await expect(page.getByRole('heading', { name: '安全预览与导出', exact: true })).toBeVisible({ timeout: 30_000 })
-  await page.getByRole('button', { name: '生成安全预览', exact: true }).click()
-  await expect(page.getByTitle('HTML 沙箱预览')).toBeVisible()
-  await expect(page.getByTitle('HTML 沙箱预览').contentFrame()
+  await expect(page.getByRole('heading', { name: '生成结果', exact: true })).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByTitle('HTML 图文混排结果')).toBeVisible()
+  await expect(page.getByTitle('HTML 图文混排结果').contentFrame()
     .getByRole('heading', { name: '学院观察', exact: true, level: 1 })).toBeVisible()
 
-  await downloadArtifact(page, '下载 HTML', 'html')
-  await downloadArtifact(page, '下载 Markdown', 'md')
-  await downloadArtifact(page, '下载 TXT', 'txt')
+  await downloadArtifact(page, '下载结果', 'html')
 
   // 成功任务自动形成记忆原始素材，可人工评分、批量启停，再提炼成独立记忆提示词。
   await page.goto(personaWorkspaceUrl)
@@ -378,7 +371,7 @@ test('首次设置、灵魂保存、文档确认及三格式导出形成可复�
   await page.getByRole('button', { name: '历史任务', exact: true }).click()
   await expect(page.getByRole('heading', { name: '历史任务素材池', exact: true })).toBeVisible()
   await expect(page.getByLabel('每页历史任务数量')).toBeVisible()
-  await expect(page.getByText('图文任务已全部完成，共处理 2 个内容块。', { exact: true })).toBeVisible()
+  await expect(page.getByText('图文任务已全部完成，已保留 1 段正文和 0 张图片。', { exact: true })).toBeVisible()
   await page.getByLabel('修改图文创作任务的提炼评分').fill('5')
   await page.getByLabel('修改图文创作任务的提炼评分').press('Tab')
   await expect(page.getByText('历史任务提炼评分已更新', { exact: true })).toBeVisible()
