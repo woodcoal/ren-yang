@@ -147,10 +147,22 @@ export class AnalysisApplicationService implements TaskHandler {
       if (!runtime) throw new ApplicationError('VERSION_CONFLICT', '分析批次不存在或状态已变化', 409)
       if (runtime.algorithmSnapshot) {
         if (runtime.algorithmSnapshot.algorithmCode === 'persona_memory') {
-          await this.executeConfiguredMemoryAlgorithm(batchId, runtime.algorithmSnapshot, runtime.baseline, runtime.batch.inputs)
+          await this.executeConfiguredMemoryAlgorithm(
+            batchId,
+            runtime.algorithmSnapshot,
+            runtime.baseline,
+            runtime.batch.inputs,
+            runtime.batch.baselineSoulVersionId,
+          )
         }
         else {
-          await this.executeConfiguredGrowthAlgorithm(batchId, runtime.algorithmSnapshot, runtime.baseline, runtime.batch.inputs)
+          await this.executeConfiguredGrowthAlgorithm(
+            batchId,
+            runtime.algorithmSnapshot,
+            runtime.baseline,
+            runtime.batch.inputs,
+            runtime.batch.baselineSoulVersionId,
+          )
         }
         return
       }
@@ -196,6 +208,7 @@ export class AnalysisApplicationService implements TaskHandler {
    * @param snapshot 创建批次时固定的算法配置。
    * @param baseline 当前灵魂与当前成长提示词基线。
    * @param inputs 创建批次时固定的成长资料输入。
+   * @param subjectSnapshotHash 创建批次时固定的主体灵魂版本标识。
    * @returns 两步模型调用与草稿保存完成时结束。
    */
   private async executeConfiguredGrowthAlgorithm(
@@ -203,6 +216,7 @@ export class AnalysisApplicationService implements TaskHandler {
     snapshot: AiAlgorithmSnapshot,
     baseline: unknown[],
     inputs: AnalysisBatchView['inputs'],
+    subjectSnapshotHash: string,
   ): Promise<void> {
     const extractResponse = await this.dependencies.algorithms!.executeStep(
       snapshot,
@@ -210,6 +224,7 @@ export class AnalysisApplicationService implements TaskHandler {
       buildAnalysisPromptVariables(baseline, inputs),
       'growth_atomic_facts',
       'json_object',
+      { subjectSnapshotHash },
     )
     const extracted = modelGrowthExtractionResultSchema.parse(extractResponse.structuredOutput)
     const facts = validateAndMergeGrowthFacts(extracted.facts, inputs)
@@ -219,6 +234,7 @@ export class AnalysisApplicationService implements TaskHandler {
       { baselineJson: JSON.stringify(baseline), factsJson: JSON.stringify(facts) },
       'learning_prompt',
       'text',
+      { subjectSnapshotHash },
     )
     const result = modelLearningPromptResultSchema.parse({
       promptText: synthesizeResponse.structuredOutput,
@@ -237,6 +253,7 @@ export class AnalysisApplicationService implements TaskHandler {
    * @param snapshot 创建批次时固定的人物记忆算法配置。
    * @param baseline 当前人物灵魂与当前记忆提示词基线。
    * @param inputs 创建批次时固定的任务记录和第三方经历。
+   * @param subjectSnapshotHash 创建批次时固定的人物灵魂版本标识。
    * @returns 两步模型调用与待人工发布草稿保存完成时结束。
    */
   private async executeConfiguredMemoryAlgorithm(
@@ -244,6 +261,7 @@ export class AnalysisApplicationService implements TaskHandler {
     snapshot: AiAlgorithmSnapshot,
     baseline: unknown[],
     inputs: AnalysisBatchView['inputs'],
+    subjectSnapshotHash: string,
   ): Promise<void> {
     const extractResponse = await this.dependencies.algorithms!.executeStep(
       snapshot,
@@ -251,6 +269,7 @@ export class AnalysisApplicationService implements TaskHandler {
       buildAnalysisPromptVariables(baseline, inputs),
       'memory_evidence_facts',
       'json_object',
+      { subjectSnapshotHash },
     )
     const extracted = modelMemoryExtractionResultSchema.parse(extractResponse.structuredOutput)
     const facts = validateAndMergeMemoryFacts(extracted.facts, inputs)
@@ -260,6 +279,7 @@ export class AnalysisApplicationService implements TaskHandler {
       { baselineJson: JSON.stringify(baseline), factsJson: JSON.stringify(facts) },
       'learning_prompt',
       'text',
+      { subjectSnapshotHash },
     )
     const result = modelLearningPromptResultSchema.parse({
       promptText: synthesizeResponse.structuredOutput,

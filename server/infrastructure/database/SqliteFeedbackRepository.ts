@@ -71,17 +71,19 @@ export class SqliteFeedbackRepository implements FeedbackRepository {
     return value ? toFeedbackAggregate(value) : null
   }
 
-  /** @param runId 运行 UUID。 @returns 运行固定的人物或 null。 */
-  async findRunPersona(runId: string): Promise<{ personaId: string } | null> {
+  /** @param runId 运行 UUID。 @returns 运行固定的人物及人物版本或 null。 */
+  async findRunPersona(runId: string): Promise<{ personaId: string, personaVersionId: string } | null> {
     const value = this.client.prepare(`
-      SELECT soul_versions.persona_id
+      SELECT soul_versions.persona_id, generation_runs.persona_version_id
       FROM generation_runs
       INNER JOIN soul_versions ON soul_versions.id = generation_runs.persona_version_id
       WHERE generation_runs.id = ?
         AND soul_versions.subject_type = 'persona'
         AND soul_versions.persona_id IS NOT NULL
     `).get(runId)
-    return value ? { personaId: String(row(value).persona_id) } : null
+    return value
+      ? { personaId: String(row(value).persona_id), personaVersionId: String(row(value).persona_version_id) }
+      : null
   }
 
   /** @param feedbackId 反馈 UUID。 @param blockId 块 UUID。 @param taskId 新任务 UUID。 @param timestamp 确认时间。 @returns 是否确认并入队。 */

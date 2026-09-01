@@ -82,7 +82,8 @@ export class FeedbackApplicationService {
    * @returns 尚待用户确认的反馈视图。
    */
   async submitFeedback(runId: string, input: SubmitFeedbackInput): Promise<FeedbackView> {
-    if (!await this.dependencies.repository.findRunPersona(runId)) {
+    const runPersona = await this.dependencies.repository.findRunPersona(runId)
+    if (!runPersona) {
       throw new ApplicationError('RESOURCE_NOT_FOUND', '反馈所属运行不存在', 404)
     }
     const blockId = input.blockId ?? null
@@ -115,6 +116,7 @@ export class FeedbackApplicationService {
           variables,
           'feedback_classification',
           'json_object',
+          { subjectSnapshotHash: runPersona.personaVersionId },
         )
       }
       else {

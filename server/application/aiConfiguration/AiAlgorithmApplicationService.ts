@@ -12,6 +12,16 @@ import type { ImageModelResponse, ImageModelRequest } from '../../ports/ImageMod
 import type { AiPromptApplicationService } from '../aiPrompts/AiPromptApplicationService'
 import { ApplicationError } from '../errors/ApplicationError'
 import { connectionSecretContext } from './AiConfigurationApplicationService'
+import {
+  AiCacheAffinityScheduler,
+  buildAiCacheAffinityKey,
+} from './AiCacheAffinityScheduler'
+
+/** 文本模型调用可选的业务主体缓存亲和上下文。 */
+export interface AiCacheAffinityContext {
+  /** 人物或其他业务主体不可变快照的哈希或稳定版本标识。 */
+  subjectSnapshotHash: string
+}
 
 /** 管理员测试单个步骤时返回的只读执行事实。 */
 export interface AiAlgorithmTestStepExecution {
@@ -62,12 +72,19 @@ export interface AiAlgorithmApplicationServiceDependencies {
   secretCipher: SecretCipher
   /** 动态模型适配器工厂。 */
   modelFactory: AiModelFactory
+  /** 进程内文本模型缓存亲和调度器；默认由服务独占创建。 */
+  cacheAffinityScheduler?: Pick<AiCacheAffinityScheduler, 'run'>
 }
 
 /** 按固定代码流程准备不可变快照，并通过数据库选择的不同端点执行步骤。 */
 export class AiAlgorithmApplicationService {
-  /** @param dependencies 配置仓储、提示词、加密器和模型工厂。 */
-  constructor(private readonly dependencies: AiAlgorithmApplicationServiceDependencies) {}
+  /** 当前服务实例共享的进程内缓存亲和调度器。 */
+  private readonly cacheAffinityScheduler: Pick<AiCacheAffinityScheduler, 'run'>
+
+  /** @param dependencies 配置仓储、提示词、加密器、模型工厂和可选测试调度器。 */
+  constructor(private readonly dependencies: AiAlgorithmApplicationServiceDependencies) {
+    this.cacheAffinityScheduler = dependencies.cacheAffinityScheduler ?? new AiCacheAffinityScheduler()
+  }
 
   /**
    * 固定一次新任务使用的实现、配置、模型、提示词和参数。
@@ -146,6 +163,7 @@ export class AiAlgorithmApplicationService {
    * @param variables 提示词模板的完整变量。
    * @param responseSchemaName 供应商诊断使用的结构名称。
    * @param responseFormat JSON 对象或纯文本输出。
+   * @param cacheAffinity 可选业务主体不可变快照；未提供时直接执行，不进入队列。
    * @returns 模型输出和用量。
    */
   async executeStep(
@@ -154,11 +172,28 @@ export class AiAlgorithmApplicationService {
     variables: Record<string, string>,
     responseSchemaName: string,
     responseFormat: 'json_object' | 'text',
+    cacheAffinity?: AiCacheAffinityContext,
   ): Promise<TextModelResponse> {
     const { step, connection } = await this.resolveStep(snapshot, stepKey, 'text')
     const prompt = await this.dependencies.prompts.render(step.promptCode, variables, step.promptVersionId)
     this.validatePromptLength(prompt.systemPrompt, prompt.userPrompt)
-    return await this.generate(step, connection, prompt, responseSchemaName, responseFormat)
+    if (!cacheAffinity) return await this.generate(step, connection, prompt, responseSchemaName, responseFormat)
+    const key = buildAiCacheAffinityKey({
+      subjectSnapshotHash: cacheAffinity.subjectSnapshotHash,
+      algorithmCode: snapshot.algorithmCode,
+      promptVersionId: step.promptVersionId,
+      modelDeploymentId: step.modelDeploymentId,
+      fixedParameters: {
+        ...buildTextModelParameters(step.parameters),
+        thinkingDisableMode: step.thinkingDisableMode ?? 'none',
+        responseSchemaName,
+        responseFormat,
+      },
+    })
+    return await this.cacheAffinityScheduler.run(
+      key,
+      async () => await this.generate(step, connection, prompt, responseSchemaName, responseFormat),
+    )
   }
 
 
