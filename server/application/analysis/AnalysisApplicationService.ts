@@ -398,7 +398,8 @@ function buildAnalysisPromptVariables(
   return {
     baselineJson: JSON.stringify(baseline),
     inputsJson: JSON.stringify(inputs.map(item => ({
-        id: item.id, inputType: item.inputType, inputId: item.inputId, title: item.title,
+        // 模型只能看到并引用批次证据 UUID，避免误把原资料 UUID 当作证据引用返回。
+        id: item.id, inputType: item.inputType, title: item.title,
         content: item.contentSnapshot, importance: item.importance, isNew: item.isNew,
     }))),
   }

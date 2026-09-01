@@ -114,11 +114,13 @@ class TwoStageGrowthAlgorithms {
     variables: Record<string, string>,
   ): Promise<TextModelResponse> {
     if (stepKey === 'extract') {
-      const input = (JSON.parse(variables.inputsJson!) as Array<{ id: string }>)[0]!
+      const input = (JSON.parse(variables.inputsJson!) as Array<{ id: string, inputId?: string }>)[0]!
+      // 模拟模型优先复制与输出字段同名的 inputId；输入中不应暴露容易误引的原资料 UUID。
+      const evidenceInputId = input.inputId ?? input.id
       return {
         structuredOutput: { facts: [
-          { statement: '优先保障稳定水运。', evidenceInputIds: [input.id], confidence: 0.8 },
-          { statement: '  优先保障稳定水运。 ', evidenceInputIds: [input.id], confidence: 0.9 },
+          { statement: '优先保障稳定水运。', evidenceInputIds: [evidenceInputId], confidence: 0.8 },
+          { statement: '  优先保障稳定水运。 ', evidenceInputIds: [evidenceInputId], confidence: 0.9 },
         ] },
         usage: { inputTokens: 10, outputTokens: 10, totalTokens: 20 },
       }
@@ -175,12 +177,14 @@ class TwoStageMemoryAlgorithms {
     variables: Record<string, string>,
   ): Promise<TextModelResponse> {
     if (stepKey === 'extract') {
-      const input = (JSON.parse(variables.inputsJson!) as Array<{ id: string }>)[0]!
+      const input = (JSON.parse(variables.inputsJson!) as Array<{ id: string, inputId?: string }>)[0]!
+      // 模拟模型优先复制与输出字段同名的 inputId；输入中不应暴露容易误引的原资料 UUID。
+      const evidenceInputId = input.inputId ?? input.id
       return {
         structuredOutput: { facts: [{
           statement: '完成过一次小说人物关系校对。',
           memoryType: 'experience',
-          evidence: [{ inputId: input.id, signalType: 'external_record' }],
+          evidence: [{ inputId: evidenceInputId, signalType: 'external_record' }],
           confidence: 0.9,
           conflicts: [],
         }] },
