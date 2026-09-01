@@ -1,0 +1,84 @@
+import { describe, expect, it } from 'vitest'
+import { createPublicOpenApiDocument } from '../../server/openapi/publicApiDocument'
+
+/** 当前实现必须与文档双向覆盖的公共资源路径。 */
+const EXPECTED_PATHS = [
+  '/api/v2/personas',
+  '/api/v2/personas/{personaId}',
+  '/api/v2/personas/{personaId}/status',
+  '/api/v2/personas/{personaId}/deletion-impact',
+  '/api/v2/personas/{personaId}/world',
+  '/api/v2/personas/{personaId}/soul',
+  '/api/v2/personas/{personaId}/soul/draft',
+  '/api/v2/personas/{personaId}/soul/publish',
+  '/api/v2/worlds',
+  '/api/v2/worlds/{worldId}',
+  '/api/v2/worlds/{worldId}/status',
+  '/api/v2/worlds/{worldId}/deletion-impact',
+  '/api/v2/worlds/{worldId}/soul',
+  '/api/v2/worlds/{worldId}/soul/draft',
+  '/api/v2/worlds/{worldId}/soul/publish',
+  '/api/v2/sources',
+  '/api/v2/sources/files',
+  '/api/v2/sources/{sourceId}',
+  '/api/v2/sources/{sourceId}/status',
+  '/api/v2/sources/{sourceId}/deletion-impact',
+  '/api/v2/sources/{sourceId}/links',
+  '/api/v2/sources/{sourceId}/links/{linkId}',
+  '/api/v2/sources/{sourceId}/global',
+]
+
+describe('公共 OpenAPI 契约', () => {
+  it('只覆盖 /api/v2 公共接口且与实现资源路径一致', () => {
+    const document = createPublicOpenApiDocument()
+    expect(document.openapi).toBe('3.1.0')
+    expect(Object.keys(document.paths).sort()).toEqual([...EXPECTED_PATHS].sort())
+    expect(JSON.stringify(document)).not.toContain('/api/v1')
+    expect(document.components.securitySchemes.ApiKeyBearer).toMatchObject({ type: 'http', scheme: 'bearer' })
+  })
+
+  it('每个操作声明用途、权限、成功示例和统一失败响应', () => {
+    const document = createPublicOpenApiDocument()
+    for (const pathItem of Object.values(document.paths)) {
+      for (const operation of Object.values(pathItem)) {
+        expect(operation.summary).toBeTruthy()
+        expect(operation.description).toContain('权限：')
+        expect(operation.security).toEqual([{ ApiKeyBearer: [] }])
+        expect(operation['x-required-scope']).toBeTruthy()
+        expect(operation.responses['401']).toBeTruthy()
+        expect(operation.responses['403']).toBeTruthy()
+        expect(operation.responses['404']).toBeTruthy()
+        expect(operation.responses['422']).toBeTruthy()
+        expect(operation.responses['429']).toBeTruthy()
+        const success = operation.responses['200'] ?? operation.responses['201']
+        expect(success?.content?.['application/json']?.examples?.success).toBeTruthy()
+        expect(success?.content?.['application/json']?.schema).toMatchObject({
+          properties: { data: { $ref: expect.stringMatching(/^#\/components\/schemas\//) } },
+        })
+      }
+    }
+    expect(document.paths['/api/v2/personas']?.get?.responses['200']?.content?.['application/json']?.schema)
+      .toMatchObject({ properties: { data: { $ref: '#/components/schemas/PersonaPage' } } })
+    expect(document.paths['/api/v2/sources/{sourceId}']?.get?.responses['200']?.content?.['application/json']?.schema)
+      .toMatchObject({ properties: { data: { $ref: '#/components/schemas/SourceDetails' } } })
+  })
+
+  it('所有写操作都声明幂等键，同一分页参数用于三类列表', () => {
+    const document = createPublicOpenApiDocument()
+    for (const pathItem of Object.values(document.paths)) {
+      for (const [method, operation] of Object.entries(pathItem)) {
+        if (method === 'get') continue
+        expect(operation.parameters).toEqual(expect.arrayContaining([
+          expect.objectContaining({ name: 'Idempotency-Key', in: 'header', required: true }),
+        ]))
+        expect(operation.responses['409']).toBeTruthy()
+        expect(operation.responses['413']).toBeTruthy()
+      }
+    }
+    for (const path of ['/api/v2/personas', '/api/v2/worlds', '/api/v2/sources'] as const) {
+      expect(document.paths[path]?.get?.parameters?.map(parameter => parameter.name)).toEqual([
+        'page', 'pageSize', 'query', 'status', 'sort', 'order',
+      ])
+    }
+  })
+})

@@ -49,8 +49,12 @@ export class SqliteContentRepository implements ContentRepository, SoulRepositor
    * @param query 可选人物名称筛选词。
    * @returns 顺序稳定的人物分页记录。
    */
-  async listPersonasPage(page: number, pageSize: 5 | 10 | 20 | 50 | 100, query?: string): Promise<PersonaPageRecord> {
-    return this.listPage('personas', page, pageSize, toPersona, query)
+  async listPersonasPage(
+    page: number, pageSize: 5 | 10 | 20 | 50 | 100, query?: string,
+    status: 'all' | 'enabled' | 'disabled' = 'all',
+    sort: 'name' | 'createdAt' | 'updatedAt' = 'updatedAt', order: 'asc' | 'desc' = 'desc',
+  ): Promise<PersonaPageRecord> {
+    return this.listPage('personas', page, pageSize, toPersona, query, status, sort, order)
   }
 
   /** @param id 人物 UUID。 @returns 找到的人物或 null。 */
@@ -285,8 +289,12 @@ export class SqliteContentRepository implements ContentRepository, SoulRepositor
    * @param query 可选世界名称筛选词。
    * @returns 顺序稳定的世界分页记录。
    */
-  async listWorldsPage(page: number, pageSize: 5 | 10 | 20 | 50 | 100, query?: string): Promise<WorldPageRecord> {
-    return this.listPage('worlds', page, pageSize, toWorld, query)
+  async listWorldsPage(
+    page: number, pageSize: 5 | 10 | 20 | 50 | 100, query?: string,
+    status: 'all' | 'enabled' | 'disabled' = 'all',
+    sort: 'name' | 'createdAt' | 'updatedAt' = 'updatedAt', order: 'asc' | 'desc' = 'desc',
+  ): Promise<WorldPageRecord> {
+    return this.listPage('worlds', page, pageSize, toWorld, query, status, sort, order)
   }
 
   /** @param id 世界 UUID。 @returns 找到的世界或 null。 */
@@ -617,22 +625,12 @@ export class SqliteContentRepository implements ContentRepository, SoulRepositor
    * @param pageSize 受共享 Schema 限制的每页数量。
    * @returns 顺序稳定的资料分页记录。
    */
-  async listSourcesPage(page: number, pageSize: 5 | 10 | 20 | 50 | 100, query = ''): Promise<SourcePageRecord> {
-    const normalizedQuery = query.trim()
-    const count = this.client.prepare(`
-      SELECT COUNT(*) AS total FROM source_materials
-      WHERE (? = '' OR instr(lower(name), lower(?)) > 0)
-    `).get(normalizedQuery, normalizedQuery) as { total: number }
-    const total = Number(count.total)
-    const totalPages = Math.max(1, Math.ceil(total / pageSize))
-    const effectivePage = Math.min(page, totalPages)
-    const items = this.client.prepare(`
-      SELECT * FROM source_materials
-      WHERE (? = '' OR instr(lower(name), lower(?)) > 0)
-      ORDER BY updated_at DESC, id
-      LIMIT ? OFFSET ?
-    `).all(normalizedQuery, normalizedQuery, pageSize, (effectivePage - 1) * pageSize).map(toSource)
-    return { items, total, page: effectivePage, pageSize, totalPages }
+  async listSourcesPage(
+    page: number, pageSize: 5 | 10 | 20 | 50 | 100, query?: string,
+    status: 'all' | 'enabled' | 'disabled' = 'all',
+    sort: 'name' | 'createdAt' | 'updatedAt' = 'updatedAt', order: 'asc' | 'desc' = 'desc',
+  ): Promise<SourcePageRecord> {
+    return this.listPage('source_materials', page, pageSize, toSource, query, status, sort, order)
   }
 
   /** @param id 资料 UUID。 @returns 找到的资料或 null。 */
@@ -896,15 +894,29 @@ export class SqliteContentRepository implements ContentRepository, SoulRepositor
    * @remarks 表名不能由请求输入提供；这里只接受代码内固定联合类型。
    */
   private listPage<T>(
-    table: 'personas' | 'worlds',
+    table: 'personas' | 'worlds' | 'source_materials',
     page: number,
     pageSize: 5 | 10 | 20 | 50 | 100,
     mapper: (value: unknown) => T,
     query?: string,
+    status: 'all' | 'enabled' | 'disabled' = 'all',
+    sort: 'name' | 'createdAt' | 'updatedAt' = 'updatedAt',
+    order: 'asc' | 'desc' = 'desc',
   ): { items: T[], total: number, page: number, pageSize: 5 | 10 | 20 | 50 | 100, totalPages: number } {
     const keyword = query?.trim()
-    const whereClause = keyword ? ' WHERE instr(lower(name), lower(?)) > 0' : ''
-    const parameters = keyword ? [keyword] : []
+    const filters: string[] = []
+    const parameters: Array<string | number> = []
+    if (keyword) {
+      filters.push('instr(lower(name), lower(?)) > 0')
+      parameters.push(keyword)
+    }
+    if (status !== 'all') {
+      filters.push('is_enabled = ?')
+      parameters.push(status === 'enabled' ? 1 : 0)
+    }
+    const whereClause = filters.length > 0 ? ` WHERE ${filters.join(' AND ')}` : ''
+    const sortColumn = sort === 'name' ? 'name' : sort === 'createdAt' ? 'created_at' : 'updated_at'
+    const sortOrder = order === 'asc' ? 'ASC' : 'DESC'
     const count = this.client.prepare(`SELECT COUNT(*) AS total FROM ${table}${whereClause}`)
       .get(...parameters) as { total: number }
     const total = Number(count.total)
@@ -912,7 +924,7 @@ export class SqliteContentRepository implements ContentRepository, SoulRepositor
     const effectivePage = Math.min(page, totalPages)
     const items = this.client.prepare(`
       SELECT * FROM ${table}${whereClause}
-      ORDER BY updated_at DESC, id
+      ORDER BY ${sortColumn} ${sortOrder}, id ${sortOrder}
       LIMIT ? OFFSET ?
     `).all(...parameters, pageSize, (effectivePage - 1) * pageSize).map(mapper)
     return { items, total, page: effectivePage, pageSize, totalPages }

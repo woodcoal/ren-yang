@@ -650,7 +650,9 @@ describe('人物、世界与资料管理闭环', () => {
     const third = await service.listSourcesPage({ page: 3, pageSize: 10 })
     const overflow = await service.listSourcesPage({ page: 999, pageSize: 10 })
 
-    expect(listSourcesPageSchema.parse({})).toEqual({ page: 1, pageSize: 10 })
+    expect(listSourcesPageSchema.parse({})).toEqual({
+      page: 1, pageSize: 10, status: 'all', sort: 'updatedAt', order: 'desc',
+    })
     expect(first).toMatchObject({ total: 23, page: 1, pageSize: 10, totalPages: 3 })
     expect(first.items).toHaveLength(10)
     expect(second).toMatchObject({ total: 23, page: 2, pageSize: 10, totalPages: 3 })
@@ -682,7 +684,9 @@ describe('人物、世界与资料管理闭环', () => {
     const worldFirst = await service.listWorldsPage({ page: 1, pageSize: 10 })
     const worldLast = await service.listWorldsPage({ page: 999, pageSize: 10 })
 
-    expect(listSubjectsPageSchema.parse({})).toEqual({ page: 1, pageSize: 10 })
+    expect(listSubjectsPageSchema.parse({})).toEqual({
+      page: 1, pageSize: 10, status: 'all', sort: 'updatedAt', order: 'desc',
+    })
     expect(personaFirst).toMatchObject({ total: 13, page: 1, pageSize: 10, totalPages: 2 })
     expect(personaFirst.items).toHaveLength(10)
     expect(personaLast).toMatchObject({ total: 13, page: 2, pageSize: 10, totalPages: 2 })

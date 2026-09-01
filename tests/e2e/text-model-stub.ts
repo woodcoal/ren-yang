@@ -23,7 +23,7 @@ function createModelOutput(body: string): string {
   const payload = JSON.parse(body) as { messages?: Array<{ role?: string, content?: string }> }
   const systemPrompt = payload.messages?.find(message => message.role === 'system')?.content ?? ''
   const userPrompt = payload.messages?.find(message => message.role === 'user')?.content ?? ''
-  const inputPayload = /<不可信成长资料>([\s\S]*?)<\/不可信成长资料>/u.exec(userPrompt)?.[1]
+  const inputPayload = /<(?:不可信成长资料|不可信记忆资料)>([\s\S]*?)<\/(?:不可信成长资料|不可信记忆资料)>/u.exec(userPrompt)?.[1]
   const parsedInputs = inputPayload ? JSON.parse(inputPayload) as Array<{ id?: unknown }> : []
   const evidenceId = typeof parsedInputs[0]?.id === 'string' ? parsedInputs[0].id : undefined
 
@@ -44,6 +44,23 @@ function createModelOutput(body: string): string {
 
   if (systemPrompt.includes('人物成长提示词编译器')) {
     return '表达时先给出结论，再用可核验的依据说明判断，并保持克制。'
+  }
+
+  if (systemPrompt.includes('人物记忆证据提取器')) {
+    if (!evidenceId) throw new Error('人物记忆测试输入缺少证据 UUID')
+    return JSON.stringify({
+      facts: [{
+        statement: '曾完成学院课程介绍。',
+        memoryType: 'experience',
+        evidence: [{ inputId: evidenceId, signalType: 'task_result' }],
+        confidence: 0.95,
+        conflicts: [],
+      }],
+    })
+  }
+
+  if (systemPrompt.includes('人物记忆提示词编译器')) {
+    return '记住曾完成学院课程介绍；后续同类任务优先采用严谨、克制且便于导出的结构。'
   }
 
   // 三类学习提炼使用不同的确定文本，便于浏览器测试确认请求没有串到错误对象。

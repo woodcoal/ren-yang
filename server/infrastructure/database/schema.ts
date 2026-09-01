@@ -20,6 +20,79 @@ export const administrators = sqliteTable(
   ],
 )
 
+/** 管理员创建的公共 API Key；只保存不可逆摘要和人工辨认前缀。 */
+export const apiKeys = sqliteTable(
+  'api_keys',
+  {
+    id: text('id').primaryKey(),
+    name: text('name').notNull(),
+    keyPrefix: text('key_prefix').notNull(),
+    keyDigest: text('key_digest').notNull(),
+    scopesJson: text('scopes_json').notNull(),
+    expiresAt: integer('expires_at'),
+    lastUsedAt: integer('last_used_at'),
+    revokedAt: integer('revoked_at'),
+    createdAt: integer('created_at').notNull(),
+  },
+  table => [
+    uniqueIndex('api_keys_digest_unique').on(table.keyDigest),
+    index('api_keys_created_at_index').on(table.createdAt),
+    check('api_keys_name_check', sql`length(trim(${table.name})) > 0`),
+    check('api_keys_prefix_check', sql`length(${table.keyPrefix}) = 12`),
+    check('api_keys_digest_check', sql`length(${table.keyDigest}) = 64`),
+    check('api_keys_scopes_json_check', sql`json_valid(${table.scopesJson}) AND json_type(${table.scopesJson}) = 'array'`),
+  ],
+)
+
+/** 公共写请求首次成功结果的永久幂等记录。 */
+export const publicApiIdempotencyRecords = sqliteTable(
+  'public_api_idempotency_records',
+  {
+    id: text('id').primaryKey(),
+    apiKeyId: text('api_key_id').notNull().references(() => apiKeys.id, { onDelete: 'restrict' }),
+    method: text('method').notNull(),
+    path: text('path').notNull(),
+    idempotencyKey: text('idempotency_key').notNull(),
+    requestHash: text('request_hash').notNull(),
+    responseJson: text('response_json'),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  table => [
+    uniqueIndex('public_api_idempotency_identity_unique').on(table.apiKeyId, table.method, table.path, table.idempotencyKey),
+    index('public_api_idempotency_created_at_index').on(table.createdAt),
+    check('public_api_idempotency_method_check', sql`length(trim(${table.method})) > 0`),
+    check('public_api_idempotency_path_check', sql`length(trim(${table.path})) > 0`),
+    check('public_api_idempotency_key_check', sql`length(trim(${table.idempotencyKey})) BETWEEN 1 AND 200`),
+    check('public_api_idempotency_hash_check', sql`length(${table.requestHash}) = 64`),
+    check('public_api_idempotency_response_check', sql`${table.responseJson} IS NULL OR json_valid(${table.responseJson})`),
+  ],
+)
+
+/** 可按 Key、请求、资源和结果定位的公共 API 脱敏审计。 */
+export const publicApiAuditEvents = sqliteTable(
+  'public_api_audit_events',
+  {
+    id: text('id').primaryKey(),
+    apiKeyId: text('api_key_id').notNull().references(() => apiKeys.id, { onDelete: 'restrict' }),
+    requestId: text('request_id').notNull(),
+    method: text('method').notNull(),
+    path: text('path').notNull(),
+    targetType: text('target_type').notNull(),
+    targetId: text('target_id'),
+    result: text('result').notNull(),
+    statusCode: integer('status_code').notNull(),
+    errorCode: text('error_code'),
+    createdAt: integer('created_at').notNull(),
+  },
+  table => [
+    index('public_api_audit_key_created_at_index').on(table.apiKeyId, table.createdAt),
+    index('public_api_audit_created_at_index').on(table.createdAt),
+    check('public_api_audit_result_check', sql`${table.result} IN ('succeeded', 'failed')`),
+    check('public_api_audit_status_check', sql`${table.statusCode} BETWEEN 100 AND 599`),
+  ],
+)
+
 /** 管理员关键变更与维护动作的不可变审计记录。 */
 export const auditEvents = sqliteTable(
   'audit_events',
@@ -1280,6 +1353,9 @@ export const contextSyncRecords = sqliteTable(
 /** 数据库 Schema 的统一导出，供 Drizzle 查询和迁移使用。 */
 export const databaseSchema = {
   administrators,
+  apiKeys,
+  publicApiIdempotencyRecords,
+  publicApiAuditEvents,
   auditEvents,
   systemAiSettings,
   openVikingSettings,

@@ -199,7 +199,7 @@ export interface ContentRepository {
   /** @returns 按更新时间倒序的人物。 */
   listPersonas(): Promise<PersonaRecord[]>
   /** @param page 从 1 开始的页码。 @param pageSize 每页数量。 @param query 可选人物名称筛选词。 @returns 已按总数修正的人物分页记录。 */
-  listPersonasPage(page: number, pageSize: 5 | 10 | 20 | 50 | 100, query?: string): Promise<PersonaPageRecord>
+  listPersonasPage(page: number, pageSize: 5 | 10 | 20 | 50 | 100, query?: string, status?: 'all' | 'enabled' | 'disabled', sort?: 'name' | 'createdAt' | 'updatedAt', order?: 'asc' | 'desc'): Promise<PersonaPageRecord>
   /** @param id 人物标识。 @returns 人物或 null。 */
   findPersona(id: string): Promise<PersonaRecord | null>
   /** @param personaId 人物标识。 @returns 至少配置一项的账号信息密文记录，否则为 null。 */
@@ -230,7 +230,7 @@ export interface ContentRepository {
   /** @returns 按更新时间倒序的世界。 */
   listWorlds(): Promise<WorldRecord[]>
   /** @param page 从 1 开始的页码。 @param pageSize 每页数量。 @param query 可选世界名称筛选词。 @returns 已按总数修正的世界分页记录。 */
-  listWorldsPage(page: number, pageSize: 5 | 10 | 20 | 50 | 100, query?: string): Promise<WorldPageRecord>
+  listWorldsPage(page: number, pageSize: 5 | 10 | 20 | 50 | 100, query?: string, status?: 'all' | 'enabled' | 'disabled', sort?: 'name' | 'createdAt' | 'updatedAt', order?: 'asc' | 'desc'): Promise<WorldPageRecord>
   /** @param id 世界标识。 @returns 世界或 null。 */
   findWorld(id: string): Promise<WorldRecord | null>
   /** @param record 完整创建命令。 @returns 无返回值。 */
@@ -259,7 +259,7 @@ export interface ContentRepository {
   /** @returns 按更新时间倒序的全部资料。 */
   listSources(): Promise<SourceMaterialRecord[]>
   /** @param page 从 1 开始的页码。 @param pageSize 每页数量。 @param query 可选资料名称筛选词。 @returns 已按总数修正的资料分页记录。 */
-  listSourcesPage(page: number, pageSize: 5 | 10 | 20 | 50 | 100, query?: string): Promise<SourcePageRecord>
+  listSourcesPage(page: number, pageSize: 5 | 10 | 20 | 50 | 100, query?: string, status?: 'all' | 'enabled' | 'disabled', sort?: 'name' | 'createdAt' | 'updatedAt', order?: 'asc' | 'desc'): Promise<SourcePageRecord>
   /** @param id 资料标识。 @returns 资料或 null。 */
   findSource(id: string): Promise<SourceMaterialRecord | null>
   /** @param record 完整资料创建命令。 @returns 无返回值。 */

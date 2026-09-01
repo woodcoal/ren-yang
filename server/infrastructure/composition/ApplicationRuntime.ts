@@ -1,5 +1,7 @@
 import type { H3Event } from 'h3'
 import { AuthenticationApplicationService } from '../../application/authentication/AuthenticationApplicationService'
+import { ApiKeyApplicationService } from '../../application/authentication/ApiKeyApplicationService'
+import { PublicApiApplicationService } from '../../application/publicApi/PublicApiApplicationService'
 import { AdministratorMaintenanceApplicationService } from '../../application/authentication/AdministratorMaintenanceApplicationService'
 import { ContentApplicationService } from '../../application/content/ContentApplicationService'
 import { SoulApplicationService } from '../../application/content/SoulApplicationService'
@@ -53,6 +55,8 @@ import { AiConfigurationApplicationService } from '../../application/aiConfigura
 import { AiAlgorithmApplicationService } from '../../application/aiConfiguration/AiAlgorithmApplicationService'
 import { AiAlgorithmTestApplicationService } from '../../application/aiConfiguration/AiAlgorithmTestApplicationService'
 import { SqliteAiConfigurationRepository } from '../database/SqliteAiConfigurationRepository'
+import { SqliteApiKeyRepository } from '../database/SqliteApiKeyRepository'
+import { SqlitePublicApiRepository } from '../database/SqlitePublicApiRepository'
 import { SqliteOpenVikingSettingsRepository } from '../database/SqliteOpenVikingSettingsRepository'
 import { OpenAiCompatibleModelFactory } from '../models/OpenAiCompatibleModelFactory'
 
@@ -116,6 +120,10 @@ export class ApplicationRuntime {
   private readonly aiConfigurationService: AiConfigurationApplicationService
   /** 请求间共享且不保存结果的固定算法测试服务。 */
   private readonly aiAlgorithmTestService: AiAlgorithmTestApplicationService
+  /** 请求间共享的 API Key 管理与认证服务。 */
+  private readonly apiKeyService: ApiKeyApplicationService
+  /** 公共写请求幂等和审计服务。 */
+  private readonly publicApiService: PublicApiApplicationService
 
   /**
    * 创建并连接阶段一所需的全部运行时对象。
@@ -137,6 +145,16 @@ export class ApplicationRuntime {
     }
     this.administratorRepository = new DrizzleAdministratorRepository(this.sqlite.db)
     const identifiers = new SystemIdentifierGenerator()
+    this.apiKeyService = new ApiKeyApplicationService({
+      repository: new SqliteApiKeyRepository(this.sqlite.getClient()),
+      identifiers,
+      clock: this.clock,
+    })
+    this.publicApiService = new PublicApiApplicationService({
+      repository: new SqlitePublicApiRepository(this.sqlite.getClient()),
+      identifiers,
+      clock: this.clock,
+    })
     const contentRepository = new SqliteContentRepository(this.sqlite.getClient())
     this.aiPromptService = new AiPromptApplicationService({
       repository: new SqliteAiPromptRepository(this.sqlite.getClient()),
@@ -335,6 +353,8 @@ export class ApplicationRuntime {
    */
   createRequestServices(event: H3Event): RequestApplicationServices {
     return {
+      apiKeys: this.apiKeyService,
+      publicApi: this.publicApiService,
       aiConfiguration: this.aiConfigurationService,
       aiAlgorithmTesting: this.aiAlgorithmTestService,
       aiPrompts: this.aiPromptService,

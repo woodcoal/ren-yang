@@ -73,7 +73,7 @@ export interface AuditEventView {
   /** 审计 UUID。 */
   id: string
   /** 动作发起主体。 */
-  actor: 'administrator' | 'maintenance' | 'system'
+  actor: 'administrator' | 'maintenance' | 'system' | 'api_key'
   /** 稳定动作名称。 */
   action: string
   /** 被操作资源类型。 */

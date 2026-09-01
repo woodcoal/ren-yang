@@ -29,6 +29,7 @@ function initializeRequestLogging(nitroApp: NitroApp): void {
   /** @param event 当前请求。 @returns 添加请求标识后结束。 */
   function startRequest(event: H3Event): void {
     const requestId = randomUUID()
+    event.context.requestId = requestId
     contexts.set(event, { requestId, startedAt: process.hrtime.bigint() })
     setResponseHeader(event, 'x-request-id', requestId)
   }

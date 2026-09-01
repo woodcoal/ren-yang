@@ -21,6 +21,9 @@ const ACTION_LABELS: Record<string, string> = {
   revision_proposal_published: '发布人物修订提案',
   revision_proposal_rejected: '拒绝人物修订提案',
   data_restored: '恢复数据备份',
+  api_key_created: '创建 API Key',
+  api_key_revoked: '吊销 API Key',
+  public_api_request: '公共 API 写操作',
 }
 
 /** @param action 稳定审计动作。 @returns 已知动作中文名或原始稳定名称。 */
@@ -32,12 +35,27 @@ function actionLabel(action: string): string {
 function actorLabel(actor: AuditEventView['actor']): string {
   if (actor === 'administrator') return '管理员'
   if (actor === 'maintenance') return '本机维护命令'
+  if (actor === 'api_key') return 'API Key'
   return '系统'
 }
 
 /** @param timestamp UTC Unix 毫秒。 @returns 本地时间。 */
 function formatTime(timestamp: number): string {
   return new Date(timestamp).toLocaleString('zh-CN')
+}
+
+/**
+ * 格式化公共 API 审计中的 Key、请求、路径和结果定位字段。
+ * @param event 管理界面审计记录。
+ * @returns API Key 审计摘要；其他主体返回 null。
+ */
+function publicApiDetails(event: AuditEventView): string | null {
+  if (event.actor !== 'api_key') return null
+  const value = (key: string): string => {
+    const detail = event.details[key]
+    return detail === null || detail === undefined ? '—' : String(detail)
+  }
+  return `Key ${value('apiKeyId')} · 请求 ${value('requestId')} · ${value('method')} ${value('path')} · ${value('result')} / ${value('statusCode')}`
 }
 </script>
 
@@ -61,6 +79,7 @@ function formatTime(timestamp: number): string {
         <p class="mt-2 break-all text-xs text-muted">
           {{ event.targetType }} · {{ event.targetId ?? '全局动作' }}
         </p>
+        <p v-if="publicApiDetails(event)" class="mt-1 break-all text-xs text-dimmed">{{ publicApiDetails(event) }}</p>
       </div>
     </div>
     <p v-else class="py-6 text-center text-sm text-muted">尚无关键动作审计记录。</p>

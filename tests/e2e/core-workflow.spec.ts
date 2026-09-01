@@ -100,14 +100,14 @@ interface LearningPromptFlowOptions {
 }
 
 /**
- * 执行一次 AI 重新生成、人工校准和保存发布的完整浏览器流程。
+ * 执行一次 AI 全量生成、人工校准和保存发布的完整浏览器流程。
  * @param page 当前浏览器页面，页面中只能有一个可见的学习提示词工作台。
  * @param options 当前提示词类型的确定草稿、校准文本及成功反馈。
  * @returns 已发布文本保留在统一编辑框中时结束。
  */
 async function extractAndPublishLearningPrompt(page: Page, options: LearningPromptFlowOptions): Promise<void> {
   await expect(page.getByRole('heading', { name: `${options.title}提示词`, exact: true })).toBeVisible()
-  await page.getByRole('button', { name: '重新 AI 生成提示词', exact: true }).click()
+  await page.getByRole('button', { name: '全量生成', exact: true }).click()
 
   // Worker 异步消费提炼任务；反复使用页面提供的刷新动作，直到完整草稿已经落库。
   const completedAlert = page.getByText('完整提示词草稿已生成', { exact: true })
@@ -189,7 +189,10 @@ test('首次设置、灵魂保存、文档确认及三格式导出形成可复�
     { name: '错误格式.exe', mimeType: 'application/octet-stream', buffer: Buffer.from('不能导入') },
   ])
   await fileForm.getByRole('button', { name: '导入 2 个文件', exact: true }).click()
-  await expect(page.getByText(/成功 1 个，失败 1 个/)).toBeVisible()
+  await expect(page.getByText(
+    '成功 1 个，失败 1 个。错误格式.exe：仅支持 UTF-8 编码的 TXT 或 Markdown 文件',
+    { exact: true },
+  )).toBeVisible()
   await expect(page.getByText('港口规则', { exact: true })).toBeVisible()
 
   // 资料项目使用名称筛选；正文段落搜索进入独立结果页并高亮关键词。

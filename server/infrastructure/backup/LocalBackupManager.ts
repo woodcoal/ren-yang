@@ -20,9 +20,13 @@ const MANIFEST_NAME = 'manifest.json'
 const DATABASE_NAME = 'app.sqlite'
 /** 允许进入备份的受控相对路径。 */
 const FILE_PATH_PATTERN = /^(sources\/[0-9a-f-]{36}\.(txt|md)|artifacts\/[0-9a-f-]{36}\/assets\/[0-9a-f-]{36}\.(png|jpg|webp))$/i
-/** 本次压平前，从旧单基线继续升级到最终结构的迁移条数。 */
+/** 公共 API 增量迁移前的压平基线版本。 */
+const PREVIOUS_CURRENT_MIGRATION_VERSION = 1789113600000
+/** 公共 API 增量迁移前的单基线迁移条数。 */
+const PREVIOUS_CURRENT_BASELINE_MIGRATION_COUNT = 1
+/** 本次压平前，从旧单基线继续升级到压平基线结构的迁移条数。 */
 const PREVIOUS_CURRENT_MIGRATION_COUNT = 7
-/** 本次压平前，从最早十步历史链继续升级到最终结构的迁移条数。 */
+/** 本次压平前，从最早十步历史链继续升级到压平基线结构的迁移条数。 */
 const PREVIOUS_CURRENT_LEGACY_MIGRATION_COUNT = 16
 
 /** 当前迁移日志的稳定数据库身份。 */
@@ -281,8 +285,9 @@ function inspectDatabase(databasePath: string, expectedMigration: MigrationIdent
  * @returns 数据库能够由当前程序安全升级时为 true。
  */
 function isCompatibleDatabaseMigration(actual: MigrationIdentity, expected: MigrationIdentity): boolean {
-  if (actual.version !== expected.version) return false
-  return actual.count === expected.count
+  if (actual.version === expected.version) return actual.count === expected.count
+  if (actual.version !== PREVIOUS_CURRENT_MIGRATION_VERSION) return false
+  return actual.count === PREVIOUS_CURRENT_BASELINE_MIGRATION_COUNT
     || actual.count === PREVIOUS_CURRENT_MIGRATION_COUNT
     || actual.count === PREVIOUS_CURRENT_LEGACY_MIGRATION_COUNT
 }
@@ -372,7 +377,9 @@ function assertManifestMigrationCompatibility(
   manifest: CompatibleBackupManifest,
   expectedMigration: MigrationIdentity,
 ): void {
-  const compatible = manifest.version === 2 && manifest.migrationVersion === expectedMigration.version
+  const compatible = manifest.version === 2
+    && (manifest.migrationVersion === expectedMigration.version
+      || manifest.migrationVersion === PREVIOUS_CURRENT_MIGRATION_VERSION)
   if (!compatible) throw new Error('备份迁移版本与当前程序不兼容')
 }
 

@@ -13,9 +13,15 @@ import type { HistoryApplicationService } from './history/HistoryApplicationServ
 import type { SystemAiSettingsApplicationService } from './systemAi/SystemAiSettingsApplicationService'
 import type { AiConfigurationApplicationService } from './aiConfiguration/AiConfigurationApplicationService'
 import type { AiAlgorithmTestApplicationService } from './aiConfiguration/AiAlgorithmTestApplicationService'
+import type { ApiKeyApplicationService } from './authentication/ApiKeyApplicationService'
+import type { PublicApiApplicationService } from './publicApi/PublicApiApplicationService'
 
 /** 每个 HTTP 请求能够访问的应用服务集合。 */
 export interface RequestApplicationServices {
+  /** 管理员 API Key 生命周期和公共请求认证用例。 */
+  apiKeys: ApiKeyApplicationService
+  /** 公共写请求幂等与脱敏审计用例。 */
+  publicApi: PublicApiApplicationService
   /** 加密 AI 接口、模型部署和固定算法配置用例。 */
   aiConfiguration: AiConfigurationApplicationService
   /** 固定 AI 算法的真实调用、草稿优先且不落库测试用例。 */

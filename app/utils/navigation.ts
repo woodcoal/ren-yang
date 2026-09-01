@@ -48,6 +48,7 @@ export const appNavigationGroups: AppNavigationGroup[] = [
       { label: 'AI 算法', to: '/ai-algorithms', icon: 'i-lucide-workflow' },
       { label: 'AI 设置', to: '/ai-settings', icon: 'i-lucide-sliders-horizontal' },
       { label: '系统中心', to: '/settings', icon: 'i-lucide-settings-2' },
+      { label: 'API Key', to: '/api-keys', icon: 'i-lucide-key-round' },
       { label: '日志与审计', to: '/system-records', icon: 'i-lucide-scroll-text' },
     ],
   },

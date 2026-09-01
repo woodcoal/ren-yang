@@ -145,7 +145,9 @@ export class ContentApplicationService {
    * @returns 服务端修正页码后的人物分页结果。
    */
   async listPersonasPage(input: ListSubjectsPageInput): Promise<PersonaPageView> {
-    const page = await this.dependencies.repository.listPersonasPage(input.page, input.pageSize, input.query)
+    const page = await this.dependencies.repository.listPersonasPage(
+      input.page, input.pageSize, input.query, input.status, input.sort, input.order,
+    )
     return {
       ...page,
       items: await Promise.all(page.items.map(persona => this.toPersonaSummary(persona))),
@@ -361,6 +363,17 @@ export class ContentApplicationService {
   }
 
   /**
+   * 建立或解除人物与唯一世界的关系，并复用人物更新和上下文同步规则。
+   * @param personaId 人物 UUID。
+   * @param worldId 目标世界 UUID；null 表示解除关系。
+   * @returns 更新后人物详情。
+   */
+  async setPersonaWorld(personaId: string, worldId: string | null): Promise<PersonaDetails> {
+    const persona = await this.requirePersona(personaId)
+    return await this.updatePersona(personaId, { name: persona.name, worldId })
+  }
+
+  /**
    * 修改单个人物启用状态，同时保留其版本、资料、记忆和历史运行。
    * @param personaId 人物 UUID。
    * @param input 已校验的新状态。
@@ -466,7 +479,9 @@ export class ContentApplicationService {
    * @returns 服务端修正页码后的世界分页结果。
    */
   async listWorldsPage(input: ListSubjectsPageInput): Promise<WorldPageView> {
-    const page = await this.dependencies.repository.listWorldsPage(input.page, input.pageSize, input.query)
+    const page = await this.dependencies.repository.listWorldsPage(
+      input.page, input.pageSize, input.query, input.status, input.sort, input.order,
+    )
     return {
       ...page,
       items: await Promise.all(page.items.map(world => this.toWorldSummary(world))),
@@ -672,7 +687,9 @@ export class ContentApplicationService {
    * @returns 服务端修正页码后的资料分页结果。
    */
   async listSourcesPage(input: ListSourcesPageInput): Promise<SourcePageView> {
-    const page = await this.dependencies.repository.listSourcesPage(input.page, input.pageSize, input.query)
+    const page = await this.dependencies.repository.listSourcesPage(
+      input.page, input.pageSize, input.query, input.status, input.sort, input.order,
+    )
     return {
       ...page,
       items: await Promise.all(page.items.map(source => this.toSourceSummary(source))),
@@ -839,6 +856,21 @@ export class ContentApplicationService {
     const changes = await this.dependencies.repository.replaceGlobalSources(sourceIds, this.dependencies.clock.now())
     await this.enqueueSourceSynchronizations([...changes.addedSourceIds, ...changes.removedSourceIds])
     return { sourceIds: await this.dependencies.repository.listGlobalSourceIds(), ...changes }
+  }
+
+  /**
+   * 修改单项资料是否属于全局范围，并复用现有全量校验和同步规则。
+   * @param sourceId 资料 UUID。
+   * @param isGlobal true 表示关联全局范围，false 表示解除。
+   * @returns 更新后的全局资料集合。
+   */
+  async setSourceGlobal(sourceId: string, isGlobal: boolean): Promise<GlobalSourcesView> {
+    await this.requireSource(sourceId)
+    const current = await this.dependencies.repository.listGlobalSourceIds()
+    const next = isGlobal
+      ? [...new Set([...current, sourceId])]
+      : current.filter(id => id !== sourceId)
+    return await this.replaceGlobalSources({ sourceIds: next })
   }
 
   /**

@@ -12,6 +12,9 @@ const PUBLIC_PAGE_PATHS = new Set(['/login', '/setup'])
 async function enforceAuthentication(to: RouteLocationNormalized) {
   const requestFetch = useRequestFetch()
 
+  // 公共 API 文档独立于网页登录会话；实际业务请求仍必须提供 API Key。
+  if (to.path === '/api/v2/docs' || to.path.startsWith('/api/v2/docs/')) return
+
   if (PUBLIC_PAGE_PATHS.has(to.path)) {
     const setup = await requestFetch<ApiResponse<SetupStatusResult>>('/api/v1/setup/status')
     if (to.path === '/setup' && !setup.data.setupRequired) {

@@ -1,9 +1,28 @@
 import { describe, expect, it } from 'vitest'
 import type { H3Event } from 'h3'
 import { H3RequestSecurity } from '../../server/infrastructure/authentication/H3RequestSecurity'
+import { parseBearerApiKey } from '../../server/infrastructure/authentication/ApiKeyBearerAuthentication'
 import { isBrowserRequestOriginAllowed } from '../../server/infrastructure/http/RequestOriginValidator'
+import { requiresBoundedRequestBody } from '../../server/infrastructure/http/RequestBodyLimitPolicy'
 
 describe('HTTP 来源安全', () => {
+  it('公共 API 只接受标准 Bearer 请求头中的非空 API Key', () => {
+    expect(parseBearerApiKey('Bearer ry_v2_secret')).toBe('ry_v2_secret')
+    expect(parseBearerApiKey('bearer ry_v2_secret')).toBe('ry_v2_secret')
+    expect(parseBearerApiKey(undefined)).toBeNull()
+    expect(parseBearerApiKey('Basic credential')).toBeNull()
+    expect(parseBearerApiKey('Bearer')).toBeNull()
+    expect(parseBearerApiKey('Bearer key extra')).toBeNull()
+  })
+
+  it('网页内部与公共 API 写请求共用实际字节上限', () => {
+    expect(requiresBoundedRequestBody('/api/v1/personas', 'POST')).toBe(true)
+    expect(requiresBoundedRequestBody('/api/v2/sources/files', 'POST')).toBe(true)
+    expect(requiresBoundedRequestBody('/api/v2/openapi.json', 'GET')).toBe(false)
+    expect(requiresBoundedRequestBody('/api/v2/docs', 'GET')).toBe(false)
+    expect(requiresBoundedRequestBody('/unrelated', 'POST')).toBe(false)
+  })
+
   it('同源浏览器请求和无来源头的维护脚本可以执行修改', () => {
     expect(isBrowserRequestOriginAllowed('https://ren-yang.example', 'same-origin', 'https://ren-yang.example')).toBe(true)
     expect(isBrowserRequestOriginAllowed(undefined, undefined, 'http://127.0.0.1:3000')).toBe(true)

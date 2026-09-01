@@ -251,6 +251,9 @@ export const listSourcesPageSchema = z.object({
     z.literal(5), z.literal(10), z.literal(20), z.literal(50), z.literal(100),
   ])).default(10),
   query: z.string().trim().max(200, '资料筛选词不能超过 200 字').optional(),
+  status: z.enum(['all', 'enabled', 'disabled']).default('all'),
+  sort: z.enum(['name', 'createdAt', 'updatedAt']).default('updatedAt'),
+  order: z.enum(['asc', 'desc']).default('desc'),
 })
 
 /** 人物与世界管理列表共用的服务端分页参数。 */
