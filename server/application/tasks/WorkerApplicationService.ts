@@ -1,5 +1,5 @@
 import type { Clock } from '../../ports/Clock'
-import type { TaskHandler, TaskJobRepository } from '../../ports/TaskPorts'
+import type { TaskHandler, TaskJobRepository, TaskQueueLane } from '../../ports/TaskPorts'
 import { TaskExecutionError } from '../../ports/TaskPorts'
 import type { LearningAutomationApplicationService } from '../learningAutomation/LearningAutomationApplicationService'
 
@@ -13,6 +13,8 @@ export interface WorkerApplicationServiceDependencies {
   clock: Clock
   /** 单次任务租约长度。 */
   leaseDurationMs: number
+  /** 当前 Worker 允许领取的固定任务通道。 */
+  lane?: TaskQueueLane
   /** 可选的学习自动化周期调度入口。 */
   learningAutomation?: Pick<LearningAutomationApplicationService, 'runDueCycle'>
 }
@@ -31,7 +33,7 @@ export interface WorkerTickResult {
 export class WorkerApplicationService {
   /**
    * 创建 Worker 应用服务。
-   * @param dependencies 任务数据、处理器、时间和租约配置。
+   * @param dependencies 任务数据、处理器、时间、租约和领取通道配置。
    */
   constructor(private readonly dependencies: WorkerApplicationServiceDependencies) {}
 
@@ -52,6 +54,7 @@ export class WorkerApplicationService {
     const job = await this.dependencies.taskJobRepository.claimNext(
       this.dependencies.clock.now(),
       this.dependencies.leaseDurationMs,
+      this.dependencies.lane ?? 'all',
     )
     if (!job) {
       return { handled: false, jobId: null, succeeded: null }

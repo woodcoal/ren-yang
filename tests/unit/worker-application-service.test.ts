@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { WorkerApplicationService } from '../../server/application/tasks/WorkerApplicationService'
 import type { TaskJob } from '../../server/domain/tasks/TaskJob'
 import type { Clock } from '../../server/ports/Clock'
-import type { TaskHandler, TaskJobRepository } from '../../server/ports/TaskPorts'
+import type { TaskHandler, TaskJobRepository, TaskQueueLane } from '../../server/ports/TaskPorts'
 import { TaskExecutionError } from '../../server/ports/TaskPorts'
 
 /** 测试使用的固定时钟。 */
@@ -32,6 +32,8 @@ class ObservableTaskRepository implements TaskJobRepository {
   public failed = 0
   /** 最近一次失败是否允许重试。 */
   public lastRetryable: boolean | null = null
+  /** 最近一次领取请求限定的任务通道。 */
+  public lastLane: TaskQueueLane | null = null
 
   /** @returns 固定恢复数量。 */
   async recoverExpired(): Promise<number> {
@@ -39,7 +41,8 @@ class ObservableTaskRepository implements TaskJobRepository {
   }
 
   /** @returns 当前下一任务并清空。 */
-  async claimNext(): Promise<TaskJob | null> {
+  async claimNext(_timestamp: number, _leaseDurationMs: number, lane: TaskQueueLane = 'all'): Promise<TaskJob | null> {
+    this.lastLane = lane
     const claimed = this.next
     this.next = null
     return claimed
@@ -64,12 +67,17 @@ class ObservableTaskRepository implements TaskJobRepository {
  * @param handler 测试任务处理器。
  * @returns 被测 Worker 应用服务。
  */
-function createService(repository: ObservableTaskRepository, handler: TaskHandler): WorkerApplicationService {
+function createService(
+  repository: ObservableTaskRepository,
+  handler: TaskHandler,
+  lane: TaskQueueLane = 'all',
+): WorkerApplicationService {
   return new WorkerApplicationService({
     taskJobRepository: repository,
     taskHandler: handler,
     clock,
     leaseDurationMs: 60_000,
+    lane,
   })
 }
 
@@ -122,5 +130,14 @@ describe('WorkerApplicationService', () => {
     await expect(service.executeNext()).resolves.toEqual({ handled: false, jobId: null, succeeded: null })
     expect(repository.succeeded).toBe(0)
     expect(repository.failed).toBe(0)
+  })
+
+  it('把前台或 OpenViking 通道限制传给原子领取仓储', async () => {
+    const repository = new ObservableTaskRepository()
+    const service = createService(repository, { execute: async () => undefined }, 'foreground')
+
+    await service.executeNext()
+
+    expect(repository.lastLane).toBe('foreground')
   })
 })

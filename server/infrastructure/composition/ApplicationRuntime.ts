@@ -14,6 +14,7 @@ import { SystemApplicationService } from '../../application/system/SystemApplica
 import { WorkerApplicationService } from '../../application/tasks/WorkerApplicationService'
 import { TaskRoutingApplicationService } from '../../application/tasks/TaskRoutingApplicationService'
 import { InternalWorker } from '../../worker/InternalWorker'
+import { InternalWorkerGroup } from '../../worker/InternalWorkerGroup'
 import { H3RequestSecurity } from '../authentication/H3RequestSecurity'
 import { NuxtAuthenticationSession } from '../authentication/NuxtAuthenticationSession'
 import { ScryptPasswordHasher } from '../authentication/ScryptPasswordHasher'
@@ -114,8 +115,8 @@ export class ApplicationRuntime {
   private readonly contextSynchronizationService: ContextSynchronizationApplicationService
   /** 在线一致性备份应用服务。 */
   private readonly backupService: BackupApplicationService
-  /** 进程内 Worker。 */
-  private readonly worker: InternalWorker
+  /** 进程内前台与 OpenViking Worker 分组。 */
+  private readonly worker: InternalWorkerGroup
   /** 请求间可安全共享的系统应用服务。 */
   private readonly systemService: SystemApplicationService
   /** 请求间共享的 AI 接口、模型部署和算法配置管理服务。 */
@@ -332,18 +333,31 @@ export class ApplicationRuntime {
     ))
 
     const taskJobRepository = new SqliteTaskJobRepository(this.sqlite.getClient())
-    const workerService = new WorkerApplicationService({
+    const taskHandler = new TaskRoutingApplicationService(
+      this.generationService,
+      this.contextSynchronizationService,
+      this.analysisService,
+    )
+    const foregroundWorkerService = new WorkerApplicationService({
       taskJobRepository,
-      taskHandler: new TaskRoutingApplicationService(
-        this.generationService,
-        this.contextSynchronizationService,
-        this.analysisService,
-      ),
+      taskHandler,
       clock: this.clock,
       leaseDurationMs: options.workerLeaseDurationMs ?? 60_000,
+      lane: 'foreground',
       learningAutomation: this.learningAutomationService,
     })
-    this.worker = new InternalWorker(workerService, options.workerPollIntervalMs ?? 1_000)
+    const openVikingWorkerService = new WorkerApplicationService({
+      taskJobRepository,
+      taskHandler,
+      clock: this.clock,
+      leaseDurationMs: options.workerLeaseDurationMs ?? 60_000,
+      lane: 'openviking',
+    })
+    const workerPollIntervalMs = options.workerPollIntervalMs ?? 1_000
+    this.worker = new InternalWorkerGroup([
+      new InternalWorker(foregroundWorkerService, workerPollIntervalMs),
+      new InternalWorker(openVikingWorkerService, workerPollIntervalMs),
+    ])
     this.systemService = new SystemApplicationService({
       administratorRepository: this.administratorRepository,
       databaseHealth: this.sqlite,

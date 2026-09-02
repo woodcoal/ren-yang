@@ -1,6 +1,6 @@
 import type { Database as BetterSqliteDatabase, RunResult } from 'better-sqlite3'
 import type { TaskJob } from '../../domain/tasks/TaskJob'
-import type { TaskJobRepository, TaskQueueStatusReader } from '../../ports/TaskPorts'
+import type { TaskJobRepository, TaskQueueLane, TaskQueueStatusReader } from '../../ports/TaskPorts'
 import { calculateOpenVikingRetryDelay } from '../../domain/context/OpenVikingRetryPolicy'
 
 /** SQLite 查询返回的任务行。 */
@@ -146,14 +146,20 @@ export class SqliteTaskJobRepository implements TaskJobRepository, TaskQueueStat
    * 在 SQLite 立即事务中领取最早的排队任务。
    * @param timestamp 当前 UTC Unix 毫秒。
    * @param leaseDurationMs 租约持续时间。
+   * @param lane 允许领取的任务通道；OpenViking 通道只包含三类同步任务。
    * @returns 已领取任务或 null。
    */
-  async claimNext(timestamp: number, leaseDurationMs: number): Promise<TaskJob | null> {
+  async claimNext(timestamp: number, leaseDurationMs: number, lane: TaskQueueLane = 'all'): Promise<TaskJob | null> {
     const claimTransaction = this.client.transaction((): TaskJob | null => {
       const row = this.client.prepare(`
         SELECT id, type, payload_json, status, attempt_count, max_attempts, lease_until
         FROM task_jobs
         WHERE status = 'queued' AND attempt_count < max_attempts AND available_at <= ?
+          AND (
+            ? = 'all'
+            OR (? = 'foreground' AND type NOT IN ('sync_context_source', 'sync_openviking_users', 'sync_openviking_session'))
+            OR (? = 'openviking' AND type IN ('sync_context_source', 'sync_openviking_users', 'sync_openviking_session'))
+          )
           AND (
             type NOT IN ('sync_context_source', 'sync_openviking_users', 'sync_openviking_session')
             OR NOT EXISTS (
@@ -164,7 +170,7 @@ export class SqliteTaskJobRepository implements TaskJobRepository, TaskQueueStat
           )
         ORDER BY available_at ASC, created_at ASC, id ASC
         LIMIT 1
-      `).get(timestamp, timestamp) as TaskJobRow | undefined
+      `).get(timestamp, lane, lane, lane, timestamp) as TaskJobRow | undefined
 
       if (!row) {
         return null
