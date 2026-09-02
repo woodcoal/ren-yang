@@ -5,7 +5,7 @@
 | 方法与路径 | 权限 | 用途 |
 | --- | --- | --- |
 | `GET /api/v2/personas` | `persona:read` | 分页查询人物 |
-| `POST /api/v2/personas` | `persona:write` | 创建人物并发布初始灵魂 |
+| `POST /api/v2/personas` | `persona:write` | 按输入原文手动创建人物并发布初始灵魂，不调用 AI |
 | `GET /api/v2/personas/{personaId}` | `persona:read` | 查询详情、版本和关联资料 |
 | `PATCH /api/v2/personas/{personaId}` | `persona:write` | 修改名称与世界关系 |
 | `PATCH /api/v2/personas/{personaId}/status` | `persona:write` | 启用或停用 |
@@ -28,7 +28,7 @@
 }
 ```
 
-`name` 最长 100 字符，`sourceIds` 最多 100 项，`snapshot.promptText` 为 1–50000 字符。人物只能属于一个世界。
+`name` 最长 100 字符，`sourceIds` 最多 100 项，`snapshot.promptText` 为 1–50000 字符。该接口会直接保存并发布 `snapshot.promptText`，不分析、改写或蒸馏内容；公共 API 暂不开放 AI 人物蒸馏。人物只能属于一个世界。
 
 ## 世界
 

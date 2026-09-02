@@ -9,7 +9,7 @@ interface HistoryQuery {
   parameters: unknown[]
 }
 
-/** 使用 SQLite 合并生成运行与分析批次，并提供准确分页。 */
+/** 使用 SQLite 合并人物蒸馏、生成运行与分析批次，并提供准确分页。 */
 export class SqliteHistoryRepository implements HistoryRepository {
   /**
    * 创建任务记录仓储。
@@ -18,7 +18,7 @@ export class SqliteHistoryRepository implements HistoryRepository {
   constructor(private readonly client: BetterSqliteDatabase) {}
 
   /**
-   * 按筛选条件合并两类任务记录并执行稳定分页。
+   * 按筛选条件合并四类任务记录并执行稳定分页。
    * @param input 已校验的分页与筛选参数。
    * @returns 当前页记录、准确总数和服务端修正后的页码。
    */
@@ -40,7 +40,7 @@ export class SqliteHistoryRepository implements HistoryRepository {
 }
 
 /**
- * 为生成运行与分析批次构造使用相同筛选语义的 UNION 查询。
+ * 为人物蒸馏、生成运行与分析批次构造使用相同筛选语义的 UNION 查询。
  * @param input 已校验的分页与筛选参数。
  * @returns 不含排序和分页、可复用于计数与取页的参数化查询。
  */
@@ -51,6 +51,8 @@ function buildHistoryQuery(input: ListHistoryPageInput): HistoryQuery {
   const batchParameters: unknown[] = []
   const analysisClauses: string[] = []
   const analysisParameters: unknown[] = []
+  const distillationClauses: string[] = []
+  const distillationParameters: unknown[] = []
   const batchStatusExpression = `CASE
     WHEN SUM(CASE WHEN generation_runs.status = 'running' THEN 1 ELSE 0 END) > 0 THEN 'running'
     WHEN SUM(CASE WHEN generation_runs.status IN ('planning', 'awaiting_confirmation', 'queued') THEN 1 ELSE 0 END) > 0 THEN 'queued'
@@ -58,6 +60,15 @@ function buildHistoryQuery(input: ListHistoryPageInput): HistoryQuery {
     WHEN SUM(CASE WHEN generation_runs.status = 'canceled' THEN 1 ELSE 0 END) = COUNT(*) THEN 'canceled'
     WHEN SUM(CASE WHEN generation_runs.status = 'succeeded' THEN 1 ELSE 0 END) > 0 THEN 'partial'
     ELSE 'failed'
+  END`
+  const distillationStatusExpression = `CASE persona_distillation_runs.status
+    WHEN 'assessing_sources' THEN 'running'
+    WHEN 'awaiting_source_review' THEN 'awaiting_review'
+    WHEN 'extracting' THEN 'running'
+    WHEN 'synthesizing' THEN 'running'
+    WHEN 'evaluating' THEN 'running'
+    WHEN 'awaiting_candidate_review' THEN 'awaiting_review'
+    ELSE persona_distillation_runs.status
   END`
   runClauses.push('NOT EXISTS (SELECT 1 FROM interest_batch_items WHERE interest_batch_items.run_id = generation_runs.id)')
   if (input.personaId) {
@@ -67,6 +78,8 @@ function buildHistoryQuery(input: ListHistoryPageInput): HistoryQuery {
     batchParameters.push(input.personaId)
     analysisClauses.push('analysis_batches.persona_id = ?')
     analysisParameters.push(input.personaId)
+    distillationClauses.push('persona_distillation_runs.created_persona_id = ?')
+    distillationParameters.push(input.personaId)
   }
   if (input.kind) {
     runClauses.push('generation_runs.kind = ?')
@@ -74,6 +87,7 @@ function buildHistoryQuery(input: ListHistoryPageInput): HistoryQuery {
     if (input.kind !== 'interest_assessment') batchClauses.push('1 = 0')
     analysisClauses.push('analysis_batches.analysis_type = ?')
     analysisParameters.push(input.kind)
+    if (input.kind !== 'persona_distillation') distillationClauses.push('1 = 0')
   }
   if (input.status) {
     runClauses.push('generation_runs.status = ?')
@@ -82,10 +96,13 @@ function buildHistoryQuery(input: ListHistoryPageInput): HistoryQuery {
     batchParameters.push(input.status)
     analysisClauses.push('analysis_batches.status = ?')
     analysisParameters.push(input.status)
+    distillationClauses.push(`${distillationStatusExpression} = ?`)
+    distillationParameters.push(input.status)
   }
   const runWhere = runClauses.length ? `WHERE ${runClauses.join(' AND ')}` : ''
   const batchWhere = batchClauses.length ? `WHERE ${batchClauses.join(' AND ')}` : ''
   const analysisWhere = analysisClauses.length ? `WHERE ${analysisClauses.join(' AND ')}` : ''
+  const distillationWhere = distillationClauses.length ? `WHERE ${distillationClauses.join(' AND ')}` : ''
 
   return {
     sql: `
@@ -162,8 +179,36 @@ function buildHistoryQuery(input: ListHistoryPageInput): HistoryQuery {
       LEFT JOIN worlds ON worlds.id = analysis_batches.world_id
       LEFT JOIN personas ON personas.id = analysis_batches.persona_id
       ${analysisWhere}
+      UNION ALL
+      SELECT
+        'distillation' AS source_type,
+        persona_distillation_runs.id AS id,
+        'persona_distillation' AS kind,
+        'persona' AS subject_type,
+        COALESCE(personas.id, persona_distillation_runs.id) AS subject_id,
+        COALESCE(personas.name, persona_distillation_runs.requested_name) AS subject_name,
+        CASE WHEN personas.id IS NULL THEN 0 ELSE 1 END AS subject_exists,
+        ${distillationStatusExpression} AS status,
+        persona_distillation_runs.objective AS description,
+        CASE persona_distillation_runs.status
+          WHEN 'assessing_sources' THEN '正在检查资料'
+          WHEN 'awaiting_source_review' THEN '等待资料确认'
+          WHEN 'extracting' THEN '正在提取认知'
+          WHEN 'synthesizing' THEN '正在综合灵魂'
+          WHEN 'evaluating' THEN '正在评测候选'
+          WHEN 'awaiting_candidate_review' THEN '等待候选确认'
+          WHEN 'completed' THEN '人物已创建'
+          WHEN 'failed' THEN '执行失败'
+          ELSE '已取消'
+        END AS secondary,
+        persona_distillation_runs.error_code AS error_code,
+        persona_distillation_runs.error_message AS error_message,
+        persona_distillation_runs.created_at AS created_at
+      FROM persona_distillation_runs
+      LEFT JOIN personas ON personas.id = persona_distillation_runs.created_persona_id
+      ${distillationWhere}
     `,
-    parameters: [...runParameters, ...batchParameters, ...analysisParameters],
+    parameters: [...runParameters, ...batchParameters, ...analysisParameters, ...distillationParameters],
   }
 }
 

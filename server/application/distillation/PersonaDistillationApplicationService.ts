@@ -12,6 +12,7 @@ import {
 import type {
   ConfirmPersonaDistillationCandidateInput,
   CreatePersonaDistillationInput,
+  ModelPersonaDistillationExtraction,
   ReviewPersonaDistillationSourcesInput,
   SavePersonaDistillationCandidateInput,
 } from '../../../shared/schemas/personaDistillation'
@@ -377,6 +378,13 @@ export class PersonaDistillationApplicationService implements TaskHandler {
   /** @param run 当前认知提取运行。 @returns 候选、证据和质量门禁保存完成时结束。 */
   private async executeExtraction(run: PersonaDistillationRunRecord): Promise<void> {
     const inputs = run.inputs.filter(input => input.accepted && input.sourceAvailable && input.contentSnapshot !== null)
+    const validationInputs: PersonaDistillationInput[] = inputs.map(input => ({
+      id: input.id,
+      sourceRelation: input.sourceRelation ?? 'third_party',
+      coverageDimensions: input.coverageDimensions,
+      independentSourceKey: input.independentSourceKey ?? input.id,
+      content: input.contentSnapshot ?? '',
+    }))
     const response = await this.dependencies.algorithms.executeStep(
       run.algorithmSnapshot as AiAlgorithmSnapshot,
       'extract_claims',
@@ -387,17 +395,20 @@ export class PersonaDistillationApplicationService implements TaskHandler {
       },
       'persona_distillation_claims',
       'json_object',
-      { validateStructuredOutput: value => { modelPersonaDistillationExtractionSchema.parse(value) } },
+      {
+        validateStructuredOutput: (value) => {
+          const parsed = modelPersonaDistillationExtractionSchema.parse(value)
+          validateAndMergePersonaDistillationClaims(
+            normalizeUserStatementEvidenceQuotes(parsed, run.inputs).claims,
+            validationInputs,
+          )
+        },
+      },
     )
     if (await this.stopIfCancellationRequested(run.id)) return
-    const extracted = modelPersonaDistillationExtractionSchema.parse(response.structuredOutput)
-    const validated = validateAndMergePersonaDistillationClaims(extracted.claims, inputs.map(input => ({
-      id: input.id,
-      sourceRelation: input.sourceRelation ?? 'third_party',
-      coverageDimensions: input.coverageDimensions,
-      independentSourceKey: input.independentSourceKey ?? input.id,
-      content: input.contentSnapshot ?? '',
-    })))
+    const rawExtraction = modelPersonaDistillationExtractionSchema.parse(response.structuredOutput)
+    const extracted = normalizeUserStatementEvidenceQuotes(rawExtraction, run.inputs)
+    const validated = validateAndMergePersonaDistillationClaims(extracted.claims, validationInputs)
     const coverage = buildPersonaDistillationCoverage(inputs
       .filter(input => input.inputType === 'source_material')
       .map(input => ({
@@ -422,7 +433,7 @@ export class PersonaDistillationApplicationService implements TaskHandler {
     }))
     if (!await this.dependencies.distillations.saveExtraction({
       runId: run.id,
-      rawExtraction: extracted,
+      rawExtraction,
       claims,
       qualityGate,
       timestamp: this.dependencies.clock.now(),
@@ -541,6 +552,30 @@ function toModelInput(input: PersonaDistillationRunRecord['inputs'][number]) {
     originUrl: input.originUrl,
     authorName: input.authorName,
     publishedAt: input.publishedAt,
+  }
+}
+
+/**
+ * 将用户明确设定的证据引文固定为本次运行保存的完整原文，避免模型改写导致无法定位。
+ * @param extraction 模型返回且已通过结构校验的认知提取结果。
+ * @param inputs 本次运行的不可变输入快照。
+ * @returns 只规范用户设定引文、保留外部资料精确引文的提取结果。
+ */
+function normalizeUserStatementEvidenceQuotes(
+  extraction: ModelPersonaDistillationExtraction,
+  inputs: PersonaDistillationRunRecord['inputs'],
+): ModelPersonaDistillationExtraction {
+  const userStatements = new Map(inputs
+    .filter(input => input.inputType === 'user_statement' && input.contentSnapshot !== null)
+    .map(input => [input.id, input.contentSnapshot ?? '']))
+  return {
+    claims: extraction.claims.map(claim => ({
+      ...claim,
+      evidence: claim.evidence.map((evidence) => {
+        const statement = userStatements.get(evidence.inputId)
+        return statement === undefined ? evidence : { ...evidence, quote: statement }
+      }),
+    })),
   }
 }
 

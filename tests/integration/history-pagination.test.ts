@@ -78,6 +78,28 @@ afterEach(() => {
 })
 
 describe('统一任务记录分页', () => {
+  it('人物蒸馏运行进入统一任务记录并保留继续处理标识', async () => {
+    const runId = '70000000-0000-4000-8000-000000000001'
+    database.getClient().prepare(`
+      INSERT INTO persona_distillation_runs (
+        id, status, requested_name, objective, provider, algorithm_snapshot_json, created_at, updated_at
+      ) VALUES (?, 'awaiting_candidate_review', '待确认人物', '提炼人物判断方式。', 'sqlite_fts5', '{}', 800, 900)
+    `).run(runId)
+
+    const result = await repository.listPage({ page: 1, pageSize: 20, kind: 'persona_distillation' })
+
+    expect(result).toMatchObject({ total: 1 })
+    expect(result.items).toEqual([expect.objectContaining({
+      sourceType: 'distillation',
+      id: runId,
+      kind: 'persona_distillation',
+      subjectName: '待确认人物',
+      subjectExists: false,
+      status: 'awaiting_review',
+      description: '提炼人物判断方式。',
+    })])
+  })
+
   it('按创建时间合并不同来源并返回准确的第二页', async () => {
     const result = await repository.listPage({ page: 2, pageSize: 5 })
 

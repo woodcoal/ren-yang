@@ -44,6 +44,8 @@ class FixedPersonaDistillationAlgorithms {
   readonly executedSteps: string[] = []
   /** 是否在没有资料输入时模拟模型虚构返回一项资料分类。 */
   hallucinateEmptySourceAssessment = false
+  /** 是否模拟模型把用户明确设定改写为无法逐字定位的引文。 */
+  paraphraseUserStatementEvidence = false
 
   /** @returns 固定的四步非敏感算法快照。 */
   async prepare(): Promise<AiAlgorithmSnapshot> {
@@ -81,7 +83,7 @@ class FixedPersonaDistillationAlgorithms {
   ): Promise<TextModelResponse> {
     this.executedSteps.push(stepKey)
     const inputs = 'inputsJson' in variables
-      ? JSON.parse(variables.inputsJson) as Array<{ id: string, inputType: string }>
+      ? JSON.parse(variables.inputsJson) as Array<{ id: string, inputType: string, content?: string }>
       : []
     const requirement = inputs.find(input => input.inputType === 'user_statement')
     const sourceInputs = inputs.filter(input => input.inputType === 'source_material')
@@ -107,7 +109,11 @@ class FixedPersonaDistillationAlgorithms {
             limitations: '只有用户明确要求支持，不能冒充真实经历。',
             basis: 'explicit',
             confidence: 0.9,
-            evidence: [{ inputId: requirement?.id, relation: 'supporting', quote: '提炼判断方式' }],
+            evidence: [{
+              inputId: requirement?.id,
+              relation: 'supporting',
+              quote: this.paraphraseUserStatementEvidence ? '这是模型改写后无法定位的引文。' : '提炼判断方式',
+            }],
             conflicts: [],
           }] }
         : stepKey === 'synthesize_soul'
@@ -170,6 +176,29 @@ afterEach(() => {
 })
 
 describe('人物蒸馏应用闭环', () => {
+  it('无资料认知提取改写用户设定引文时固定使用原始设定作为证据', async () => {
+    const objective = '提炼判断方式，并且所有未知事实必须明确说明。'
+    const created = await service.createRun({
+      requestedName: '顾岚',
+      objective,
+      worldId: null,
+      sourceIds: [],
+    })
+    await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: true })
+    const assessed = await service.getRun(created.id)
+    await service.reviewSources(created.id, {
+      expectedUpdatedAt: assessed.updatedAt,
+      acceptedInputIds: [],
+      corrections: [],
+    })
+    algorithms.paraphraseUserStatementEvidence = true
+
+    await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: true })
+    const candidate = await service.getRun(created.id)
+    expect(candidate).toMatchObject({ status: 'awaiting_candidate_review' })
+    expect(candidate.claims[0]?.evidence[0]?.quote).toBe(objective)
+  })
+
   it('没有资料时由程序直接形成零覆盖，不调用可能虚构输入的资料分类模型', async () => {
     algorithms.hallucinateEmptySourceAssessment = true
     const created = await service.createRun({

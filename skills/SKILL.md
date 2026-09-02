@@ -23,6 +23,7 @@ description: 通过人样公共 API v2 管理人物、世界、资料与灵魂�
 - 每个写请求使用一个稳定 `Idempotency-Key`。网络超时或响应丢失时，原方法、路径和请求体必须复用原 Key；请求体变化时必须换新 Key。
 - 删除人物、世界或资料前先调用对应 `deletion-impact`，确认阻塞关系和影响后再删除。
 - 灵魂修改遵循“读取工作区 → 基于当前版本保存草稿 → 发布草稿”，不得直接覆盖已发布版本。
+- 创建人物时将用户提供的完整默认灵魂作为 `snapshot.promptText` 调用 `POST /api/v2/personas`；该路径按原文发布且不调用 AI，公共 API 不提供人物蒸馏。
 - 兴趣判断优先把同一人物的一至二十条文本放在一个批次中；单项失败只重试该 `itemId`。
 - `/api/v2` 的人物路径参数、`personaId` 和人物类型 `targetId` 可使用人物 UUID、用户名或邮箱；优先使用稳定用户名，响应中的人物标识仍保存为 UUID。
 - `202` 只表示任务已接受。按参考文件中的终态轮询对应查询接口，不把 `queued`、`running`、`planning` 或 `awaiting_confirmation` 当作成功。

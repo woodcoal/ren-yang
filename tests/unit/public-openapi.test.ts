@@ -106,6 +106,10 @@ describe('公共 OpenAPI 契约', () => {
     expect(document.components.schemas.CreateGenerationRun).toMatchObject({
       properties: { personaId: { $ref: '#/components/schemas/PersonaIdentifier' } },
     })
+    expect(document.paths['/api/v2/personas']?.post).toMatchObject({
+      summary: expect.stringContaining('不调用 AI'),
+    })
+    expect(document.components.schemas.CreatePersona.description).toContain('按原文发布')
     expect(document.components.schemas.CreateSource).toMatchObject({
       properties: {
         originUrl: { type: ['string', 'null'], format: 'uri' },

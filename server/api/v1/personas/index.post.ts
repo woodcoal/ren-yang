@@ -4,9 +4,10 @@ import { createPersonaSchema } from '#shared/schemas/content'
 import { executeController } from '../../../presentation/http/controller'
 
 /**
- * 创建人物和初始候选版本。
+ * 按输入原文直接创建人物和初始当前灵魂版本。
  * @param event 当前 H3 请求事件。
  * @returns 统一人物详情响应。
+ * @remarks 该接口不调用 AI；AI 蒸馏使用独立的人物蒸馏运行接口。
  */
 async function handleCreatePersona(event: H3Event) {
   return await executeController(event, async () => {

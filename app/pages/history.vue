@@ -9,7 +9,7 @@ const route = useRoute()
 
 /** 任务记录页允许的任务类型。 */
 const historyKinds: readonly HistoryKind[] = [
-  'interest_assessment', 'artifact_generation', 'world_growth', 'persona_growth', 'persona_memory',
+  'persona_distillation', 'interest_assessment', 'artifact_generation', 'world_growth', 'persona_growth', 'persona_memory',
 ]
 
 /** 任务记录页允许的统一状态。 */
@@ -89,7 +89,7 @@ const statusLabels: Record<HistoryStatus, string> = {
 
 /** 任务类型中文标签。 */
 const kindLabels: Record<HistoryKind, string> = {
-  interest_assessment: '兴趣判断', artifact_generation: '图文创作',
+  persona_distillation: '人物蒸馏', interest_assessment: '兴趣判断', artifact_generation: '图文创作',
   world_growth: '世界成长提炼', persona_growth: '人物成长提炼', persona_memory: '人物记忆提炼',
 }
 
@@ -129,6 +129,7 @@ function descriptionPreview(value: string): string {
 
 /** @param item 统一任务记录。 @returns 任务详情或所属对象详情地址。 */
 function detailsPath(item: HistoryItemView): string {
+  if (item.sourceType === 'distillation') return `/personas/distillations/${item.id}`
   if (item.sourceType === 'interest_batch') return `/interest-batches/${item.id}`
   if (item.sourceType === 'run') return `/runs/${item.id}`
   return item.subjectType === 'world' ? `/worlds/${item.subjectId}` : `/personas/${item.subjectId}`
@@ -181,7 +182,7 @@ function formatTime(timestamp: number): string {
 
 <template>
   <div>
-    <ContentPageHeader title="在可追溯的记录中继续工作" description="统一查看生成任务、后台成长提炼和记忆提炼，并按对象、类型和状态定位记录。">
+    <ContentPageHeader title="在可追溯的记录中继续工作" description="统一查看人物创建、生成任务、后台成长提炼和记忆提炼，并按对象、类型和状态定位记录。">
       <UButton to="/workbench" icon="i-lucide-plus">创建新任务</UButton>
     </ContentPageHeader>
 
@@ -197,6 +198,7 @@ function formatTime(timestamp: number): string {
             </select>
             <select v-model="filters.kind" class="native-control min-w-0 flex-1" aria-label="按类型筛选">
               <option value="">全部类型</option>
+              <option value="persona_distillation">人物蒸馏</option>
               <option value="interest_assessment">兴趣判断</option>
               <option value="artifact_generation">图文创作</option>
               <option value="world_growth">世界成长提炼</option>

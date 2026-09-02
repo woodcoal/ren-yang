@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, ref, shallowRef, watch } from 'vue'
+import type { CreatePersonaInput } from '#shared/schemas/content'
 import type { CreatePersonaDistillationInput } from '#shared/schemas/personaDistillation'
 import type { ApiResponse } from '#shared/types/api'
-import type { PersonaPageView, PersonaStatusUpdateResult, SourceSummary, WorldSummary } from '#shared/types/content'
+import type { PersonaDetails, PersonaPageView, PersonaStatusUpdateResult, SourceSummary, WorldSummary } from '#shared/types/content'
 import type { PersonaDistillationRunView } from '#shared/types/personaDistillation'
 import { getApiErrorMessage } from '../../utils/apiError'
 
@@ -51,9 +52,12 @@ const personaPage = computed<PersonaPageView>(() => data.value?.data ?? {
 const personas = computed(() => personaPage.value.items)
 const worlds = computed(() => worldData.value?.data ?? [])
 const sources = computed(() => sourceData.value?.data ?? [])
-const showCreate = shallowRef(false)
-const createLoading = shallowRef(false)
-const createError = shallowRef<string | null>(null)
+const showManualCreate = shallowRef(false)
+const manualCreateLoading = shallowRef(false)
+const manualCreateError = shallowRef<string | null>(null)
+const showDistillationCreate = shallowRef(false)
+const distillationCreateLoading = shallowRef(false)
+const distillationCreateError = shallowRef<string | null>(null)
 const personaFilterInput = shallowRef(requestedPersonaFilter.value)
 const selectedPersonaIds = ref<string[]>([])
 const batchEnableConfirmationOpen = shallowRef(false)
@@ -130,10 +134,42 @@ function updateCurrentPageSelection(event: Event): void {
   selectedPersonaIds.value = (event.target as HTMLInputElement).checked ? [...pagePersonaIds.value] : []
 }
 
-/** @returns 打开人物快速创建弹窗并清除上一次请求错误。 */
-function openCreateModal(): void {
-  createError.value = null
-  showCreate.value = true
+/** @returns 打开手动人物创建弹窗并清除上一次请求错误。 */
+function openManualCreateModal(): void {
+  manualCreateError.value = null
+  showManualCreate.value = true
+}
+
+/** @returns 打开 AI 人物蒸馏弹窗并清除上一次请求错误。 */
+function openDistillationCreateModal(): void {
+  distillationCreateError.value = null
+  showDistillationCreate.value = true
+}
+
+/**
+ * 不调用 AI，按用户原文创建人物并发布初始当前灵魂。
+ * @param input 用户确认的人物名称、完整灵魂和可选关系。
+ * @returns 人物创建和导航全部完成时结束。
+ */
+async function createManualPersona(input: CreatePersonaInput): Promise<void> {
+  if (manualCreateLoading.value) return
+  manualCreateLoading.value = true
+  manualCreateError.value = null
+  try {
+    const created = await $fetch<ApiResponse<PersonaDetails>>('/api/v1/personas', {
+      method: 'POST',
+      body: input,
+    })
+    notifySuccess(`人物“${created.data.persona.name}”已按输入原文创建。`, '人物创建完成')
+    await navigateTo(`/personas/${created.data.persona.id}`)
+  }
+  catch (requestError: unknown) {
+    manualCreateError.value = getApiErrorMessage(requestError, '人物创建失败')
+    notifyError(manualCreateError.value, '人物创建失败')
+  }
+  finally {
+    manualCreateLoading.value = false
+  }
 }
 
 /**
@@ -142,9 +178,9 @@ function openCreateModal(): void {
  * @returns 运行创建和导航全部完成时结束。
  */
 async function createPersonaDistillation(input: CreatePersonaDistillationInput): Promise<void> {
-  if (createLoading.value) return
-  createLoading.value = true
-  createError.value = null
+  if (distillationCreateLoading.value) return
+  distillationCreateLoading.value = true
+  distillationCreateError.value = null
   try {
     const created = await $fetch<ApiResponse<PersonaDistillationRunView>>('/api/v1/persona-distillations', {
       method: 'POST',
@@ -154,11 +190,11 @@ async function createPersonaDistillation(input: CreatePersonaDistillationInput):
     await navigateTo(`/personas/distillations/${created.data.id}`)
   }
   catch (requestError: unknown) {
-    createError.value = getApiErrorMessage(requestError, '人物蒸馏创建失败')
-    notifyError(createError.value, '人物蒸馏创建失败')
+    distillationCreateError.value = getApiErrorMessage(requestError, '人物蒸馏创建失败')
+    notifyError(distillationCreateError.value, '人物蒸馏创建失败')
   }
   finally {
-    createLoading.value = false
+    distillationCreateLoading.value = false
   }
 }
 
@@ -223,9 +259,13 @@ async function changePageSize(pageSize: number): Promise<void> {
 <template>
   <div>
     <ContentPageHeader title="人物工作区" description="查看每个人物的启用状态、灵魂版本、所属世界和资料。">
-      <DistillationCreateModal v-model:open="showCreate" :worlds="worlds" :sources="sources" :loading="createLoading"
-        :error-message="createError" @submit="createPersonaDistillation">
-        <UButton icon="i-lucide-plus">创建人物</UButton>
+      <ContentManualPersonaCreateModal v-model:open="showManualCreate" :worlds="worlds" :sources="sources"
+        :loading="manualCreateLoading" :error-message="manualCreateError" @submit="createManualPersona">
+        <UButton color="neutral" variant="soft" icon="i-lucide-pen-line">手动创建</UButton>
+      </ContentManualPersonaCreateModal>
+      <DistillationCreateModal v-model:open="showDistillationCreate" :worlds="worlds" :sources="sources"
+        :loading="distillationCreateLoading" :error-message="distillationCreateError" @submit="createPersonaDistillation">
+        <UButton icon="i-lucide-sparkles">AI 蒸馏创建</UButton>
       </DistillationCreateModal>
     </ContentPageHeader>
 
@@ -324,7 +364,10 @@ async function changePageSize(pageSize: number): Promise<void> {
             <p class="mt-1 text-sm text-muted">{{ requestedPersonaFilter ? '请调整人物名称关键词后重试。' : '创建人物时可以按需选择世界和参考资料。' }}</p>
             <UButton v-if="requestedPersonaFilter" class="mt-4" color="neutral" variant="soft"
               @click="clearPersonaFilter">清除筛选</UButton>
-            <UButton v-else class="mt-4" @click="openCreateModal">创建第一个人物</UButton>
+            <div v-else class="mt-4 flex flex-wrap justify-center gap-2">
+              <UButton color="neutral" variant="soft" icon="i-lucide-pen-line" @click="openManualCreateModal">手动创建第一个人物</UButton>
+              <UButton icon="i-lucide-sparkles" @click="openDistillationCreateModal">AI 蒸馏创建第一个人物</UButton>
+            </div>
           </div>
         </div>
       </div>

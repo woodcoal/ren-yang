@@ -155,11 +155,11 @@ watch(() => props.workspace.activeVersion, synchronizeActiveVersion, { immediate
               icon="i-lucide-wand-sparkles"
               color="neutral"
               variant="ghost"
-              aria-label="AI 整理当前提示词"
-              title="AI 整理当前提示词"
+              aria-label="重新生成当前灵魂提示词"
+              title="根据当前编辑内容重新生成，只回填编辑框"
               :disabled="!editor.snapshot.promptText.trim() || loading || analysisLoading"
               @click="analyzePrompt"
-            />
+            >重新生成</UButton>
             <UButton
               type="button"
               data-soul-history-button

@@ -3,7 +3,7 @@ import { useToast } from '#imports'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DOMWrapper, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
-import type { AnalyzeSoulPromptInput, UpdatePersonasStatusInput, UpdateWorldsStatusInput } from '#shared/schemas/content'
+import type { AnalyzeSoulPromptInput, CreatePersonaInput, UpdatePersonasStatusInput, UpdateWorldsStatusInput } from '#shared/schemas/content'
 import type { CreatePersonaDistillationInput } from '#shared/schemas/personaDistillation'
 import type { PersonaSummary, WorldSummary } from '#shared/types/content'
 import PersonasPage from '../../app/pages/personas/index.vue'
@@ -12,7 +12,7 @@ import WorldsPage from '../../app/pages/worlds/index.vue'
 const worldSnapshot = {
   promptText: '人类生活在依靠浮石能量稳定的浮岛。',
 }
-const personaCreateRequests: unknown[] = []
+const personaCreateRequests: CreatePersonaInput[] = []
 const personaDistillationRequests: CreatePersonaDistillationInput[] = []
 const worldCreateRequests: unknown[] = []
 const soulAnalyzeRequests: AnalyzeSoulPromptInput[] = []
@@ -83,8 +83,9 @@ registerEndpoint('/api/v1/personas/page', (event) => {
 registerEndpoint('/api/v1/personas', {
   method: 'POST',
   handler: async (event) => {
-    personaCreateRequests.push(await readBody(event))
-    throw createError({ statusCode: 503, message: '测试创建失败' })
+    const input = await readBody<CreatePersonaInput>(event)
+    personaCreateRequests.push(input)
+    return { data: { persona: { id: '10000000-0000-4000-8000-000000000099', name: input.name } } }
   },
 })
 registerEndpoint('/api/v1/worlds', {
@@ -191,7 +192,7 @@ async function submitPersonaDistillation(
   name: string,
   objective: string,
 ): Promise<{ nameInput: HTMLInputElement, objectiveTextarea: HTMLTextAreaElement }> {
-  const openButton = wrapper.findAll('button').find(button => button.text() === '创建人物')
+  const openButton = wrapper.findAll('button').find(button => button.text() === 'AI 蒸馏创建')
   if (!openButton) throw new Error('人物列表缺少创建人物按钮')
   await openButton.trigger('click')
   await flushPromises()
@@ -210,6 +211,31 @@ async function submitPersonaDistillation(
   await flushPromises()
   await flushPromises()
   return { nameInput, objectiveTextarea }
+}
+
+/**
+ * 按用户操作手动输入人物灵魂并直接创建。
+ * @param wrapper 当前人物列表页包装器。
+ * @param name 人物名称。
+ * @param promptText 将按原文发布的默认灵魂提示词。
+ * @returns 手动创建提交完成时结束。
+ */
+async function submitManualPersona(wrapper: VueWrapper, name: string, promptText: string): Promise<void> {
+  const openButton = wrapper.findAll('button').find(button => button.text() === '手动创建')
+  if (!openButton) throw new Error('人物列表缺少手动创建按钮')
+  await openButton.trigger('click')
+  await flushPromises()
+  const nameInput = document.querySelector<HTMLInputElement>('[data-manual-persona-create] input[type="text"]')
+  const promptTextarea = document.querySelector<HTMLTextAreaElement>('[data-manual-persona-create] textarea')
+  if (!nameInput || !promptTextarea) throw new Error('手动人物创建表单缺少名称或灵魂输入')
+  await new DOMWrapper(nameInput).setValue(name)
+  await new DOMWrapper(promptTextarea).setValue(promptText)
+  const submitButton = [...document.querySelectorAll<HTMLButtonElement>('button')]
+    .find(button => button.textContent?.includes('手动创建并发布'))
+  if (!submitButton) throw new Error('手动人物创建表单缺少提交按钮')
+  await new DOMWrapper(submitButton).trigger('click')
+  await flushPromises()
+  await flushPromises()
 }
 
 describe('世界与人物列表快速初始化', () => {
@@ -231,20 +257,38 @@ describe('世界与人物列表快速初始化', () => {
     document.body.innerHTML = ''
   })
 
-  it('人物列表只创建异步蒸馏运行，世界列表仍可按原文直接创建', async () => {
+  it('人物列表可手动按原文创建，也可创建异步蒸馏运行', async () => {
     const wrapper = await mountSuspended(PersonasPage, { route: '/personas' })
     wrapper.vm.$nuxt.runWithContext(() => useToast().clear())
-    await submitPersonaDistillation(wrapper, '林默', '提炼谨慎且重视证据的判断方式。')
+    const manualPrompt = '谨慎、重视证据，资料不足时明确说明未知。'
+    await submitManualPersona(wrapper, '手动人物', manualPrompt)
 
     expect(soulAnalyzeRequests).toEqual([])
-    expect(personaCreateRequests).toEqual([])
+    expect(personaDistillationRequests).toEqual([])
+    expect(personaCreateRequests).toEqual([{
+      name: '手动人物',
+      worldId: null,
+      sourceIds: [],
+      snapshot: { promptText: manualPrompt },
+      changeSummary: '手动创建初始人物灵魂',
+    }])
+    await vi.waitFor(() => expect(wrapper.vm.$nuxt.runWithContext(() => useToast().toasts.value)
+      .some(notification => notification.title === '人物创建完成')).toBe(true))
+    wrapper.unmount()
+    document.body.innerHTML = ''
+
+    const distillationWrapper = await mountSuspended(PersonasPage, { route: '/personas' })
+    distillationWrapper.vm.$nuxt.runWithContext(() => useToast().clear())
+    await submitPersonaDistillation(distillationWrapper, '林默', '提炼谨慎且重视证据的判断方式。')
+
+    expect(soulAnalyzeRequests).toEqual([])
     expect(personaDistillationRequests).toEqual([{
       requestedName: '林默',
       objective: '提炼谨慎且重视证据的判断方式。',
       worldId: null,
       sourceIds: [],
     }])
-    wrapper.unmount()
+    distillationWrapper.unmount()
     document.body.innerHTML = ''
 
     const worldWrapper = await mountSuspended(WorldsPage, { route: '/worlds' })

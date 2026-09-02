@@ -2,7 +2,7 @@ import { z } from 'zod'
 
 /** 任务记录页支持的任务类型。 */
 export const historyKindSchema = z.enum([
-  'interest_assessment', 'artifact_generation', 'world_growth', 'persona_growth', 'persona_memory',
+  'persona_distillation', 'interest_assessment', 'artifact_generation', 'world_growth', 'persona_growth', 'persona_memory',
 ])
 
 /** 任务记录页支持的统一状态。 */

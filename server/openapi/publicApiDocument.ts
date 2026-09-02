@@ -177,7 +177,7 @@ export function createPublicOpenApiDocument(): PublicOpenApiDocument {
     paths: {
       '/api/v2/personas': {
         get: readOperation('人物', 'listPersonas', '分页查询人物', 'persona:read', LIST_PARAMETERS),
-        post: writeOperation('人物', 'createPersona', '创建人物并发布初始灵魂', 'persona:write', [], '#/components/schemas/CreatePersona', 201),
+        post: writeOperation('人物', 'createPersona', '按输入原文手动创建人物并发布初始灵魂，不调用 AI', 'persona:write', [], '#/components/schemas/CreatePersona', 201),
       },
       '/api/v2/personas/{personaId}': {
         get: readOperation('人物', 'getPersona', '查询人物详情', 'persona:read', [personaId]),
@@ -548,7 +548,7 @@ function createSchemas(): Record<string, Record<string, unknown>> {
       type: 'string', minLength: 1, maxLength: 320,
       description: '人物 UUID、用户名或邮箱；用户名和邮箱忽略大小写及首尾空白。',
     },
-    CreatePersona: { type: 'object', required: ['name', 'sourceIds', 'snapshot', 'changeSummary'], properties: { name: { type: 'string', maxLength: 100 }, worldId: { type: ['string', 'null'], format: 'uuid' }, sourceIds: { type: 'array', maxItems: 100, items: { type: 'string', format: 'uuid' } }, snapshot: soul, changeSummary: { type: 'string', maxLength: 500 } } },
+    CreatePersona: { type: 'object', description: '手动创建人物的完整输入；snapshot.promptText 按原文发布，不调用 AI 分析或蒸馏。', required: ['name', 'sourceIds', 'snapshot', 'changeSummary'], properties: { name: { type: 'string', maxLength: 100 }, worldId: { type: ['string', 'null'], format: 'uuid' }, sourceIds: { type: 'array', maxItems: 100, items: { type: 'string', format: 'uuid' } }, snapshot: soul, changeSummary: { type: 'string', maxLength: 500 } } },
     UpdatePersona: { type: 'object', required: ['name', 'worldId'], properties: { name: { type: 'string', maxLength: 100 }, worldId: { type: ['string', 'null'], format: 'uuid' } } },
     PersonaWorldInput: { type: 'object', required: ['worldId'], properties: { worldId: { type: 'string', format: 'uuid' } } },
     CreateWorld: { type: 'object', required: ['name', 'snapshot', 'changeSummary'], properties: { name: { type: 'string', maxLength: 100 }, summary: { type: 'string', maxLength: 2_000, default: '' }, snapshot: soul, changeSummary: { type: 'string', maxLength: 500 } } },

@@ -1,9 +1,9 @@
 import type { HistoryKind, HistoryStatus } from '../schemas/history'
 
-/** 任务记录页统一展示的一项生成运行或分析批次。 */
+/** 任务记录页统一展示的一项人物蒸馏、生成运行或分析批次。 */
 export interface HistoryItemView {
-  /** 三类业务记录的来源。 */
-  sourceType: 'run' | 'interest_batch' | 'analysis'
+  /** 四类业务记录的来源。 */
+  sourceType: 'distillation' | 'run' | 'interest_batch' | 'analysis'
   /** 生成运行或分析批次 UUID。 */
   id: string
   /** 任务类型。 */

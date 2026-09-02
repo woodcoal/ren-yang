@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import type { FormSubmitEvent } from '@nuxt/ui'
 import { computed, reactive, watch } from 'vue'
-import { createPersonaDistillationSchema, type CreatePersonaDistillationInput } from '#shared/schemas/personaDistillation'
+import { createPersonaSchema, type CreatePersonaInput } from '#shared/schemas/content'
 import type { SourceSummary, WorldSummary } from '#shared/types/content'
 
-/** 人物蒸馏创建弹窗属性。 */
+/** 手动创建人物弹窗属性。 */
 interface Props {
   /** 可选世界列表。 */
   worlds: WorldSummary[]
@@ -19,21 +19,22 @@ interface Props {
 const props = defineProps<Props>()
 const open = defineModel<boolean>('open', { required: true })
 const emit = defineEmits<{
-  /** 用户确认后提交人物名称、用途和可选上下文。 */
-  submit: [input: CreatePersonaDistillationInput]
+  /** 用户确认后提交完整的手动人物创建输入。 */
+  submit: [input: CreatePersonaInput]
 }>()
 
-/** 创建人物蒸馏运行的唯一表单状态。 */
-const state = reactive<CreatePersonaDistillationInput>({
-  requestedName: '',
-  objective: '',
+/** 手动创建人物的唯一表单状态。 */
+const state = reactive<CreatePersonaInput>({
+  name: '',
   worldId: null,
   sourceIds: [],
+  snapshot: { promptText: '' },
+  changeSummary: '手动创建初始人物灵魂',
 })
 
-/** 只有启用且已有当前灵魂的世界才能进入新人物上下文。 */
+/** 只有启用且已有当前灵魂的世界才能成为人物归属。 */
 const availableWorlds = computed(() => props.worlds.filter(world => world.isEnabled && world.activeVersionId))
-/** 只有启用资料才能固定到新蒸馏运行。 */
+/** 只有启用资料才能在创建时直接关联。 */
 const availableSources = computed(() => props.sources.filter(source => source.isEnabled).map(source => ({
   label: `${source.name} · ${sourceRoleLabel(source.role)}`,
   value: source.id,
@@ -49,22 +50,23 @@ function sourceRoleLabel(role: SourceSummary['role']): string {
 }
 
 /**
- * 清空上一次已经关闭的创建表单。
+ * 清空上一次已经关闭的手动创建表单。
  * @returns 无返回值。
  */
 function resetState(): void {
-  state.requestedName = ''
-  state.objective = ''
+  state.name = ''
   state.worldId = null
   state.sourceIds = []
+  state.snapshot.promptText = ''
+  state.changeSummary = '手动创建初始人物灵魂'
 }
 
 /**
- * 把 Nuxt UI 已校验的创建输入交给人物列表页。
+ * 把 Nuxt UI 已校验的手动创建输入交给人物列表页。
  * @param event 已通过共享 Schema 校验的表单提交事件。
  * @returns 无返回值。
  */
-function handleSubmit(event: FormSubmitEvent<CreatePersonaDistillationInput>): void {
+function handleSubmit(event: FormSubmitEvent<CreatePersonaInput>): void {
   emit('submit', event.data)
 }
 
@@ -76,36 +78,36 @@ watch(open, (isOpen, wasOpen) => {
 <template>
   <UModal
     v-model:open="open"
-    title="AI 蒸馏创建人物"
-    description="系统先检查资料覆盖，再提炼和评测候选；最终确认前不会创建人物。"
+    title="手动创建人物"
+    description="直接保存你输入的默认灵魂提示词，不调用 AI 分析。"
     :dismissible="!loading"
     :close="!loading"
   >
     <slot />
     <template #body>
-      <UForm :schema="createPersonaDistillationSchema" :state="state" class="space-y-5" data-persona-distillation-create @submit="handleSubmit">
-        <UFormField name="requestedName" label="人物名称" description="这是候选名称，最终确认前仍可修改。" required>
-          <UInput v-model="state.requestedName" class="w-full" placeholder="例如：查理·芒格" :disabled="loading" />
+      <UForm :schema="createPersonaSchema" :state="state" class="space-y-5" data-manual-persona-create @submit="handleSubmit">
+        <UFormField name="name" label="人物名称" required>
+          <UInput v-model="state.name" class="w-full" placeholder="例如：林默" :disabled="loading" />
         </UFormField>
-        <UFormField name="objective" label="人物用途与聚焦方向" description="说明希望提炼哪些判断方式、表达特征，以及人物将用于什么场景。" required>
+        <UFormField name="snapshot.promptText" label="默认灵魂提示词" description="将按原文直接发布为初始当前灵魂。" required>
           <UTextarea
-            v-model="state.objective"
+            v-model="state.snapshot.promptText"
             class="w-full"
-            :rows="6"
-            :maxrows="12"
+            :rows="10"
+            :maxrows="18"
             autoresize
-            placeholder="例如：全面提炼他的决策框架，用于商业判断；事实不足时必须承认未知，不模仿本人身份。"
+            placeholder="输入可直接用于新任务的完整人物灵魂提示词。"
             :disabled="loading"
           />
         </UFormField>
         <div class="grid gap-5 md:grid-cols-2">
-          <UFormField name="worldId" label="所属世界（可选）" description="只影响创建后的人物归属，不作为人物证据。">
+          <UFormField name="worldId" label="所属世界（可选）">
             <select v-model="state.worldId" class="native-control" :disabled="loading">
               <option :value="null">独立人物</option>
               <option v-for="world in availableWorlds" :key="world.id" :value="world.id">{{ world.name }}</option>
             </select>
           </UFormField>
-          <UFormField name="sourceIds" label="参考资料（可选）" description="只使用已导入并启用的文本资料；最多 100 项。">
+          <UFormField name="sourceIds" label="参考资料（可选）" description="只建立关联，不会分析或改写灵魂。">
             <UInputMenu
               v-model="state.sourceIds"
               class="w-full"
@@ -122,16 +124,11 @@ watch(open, (isOpen, wasOpen) => {
             </UInputMenu>
           </UFormField>
         </div>
-        <UAlert
-          color="neutral"
-          variant="subtle"
-          title="两次人工确认"
-          description="资料覆盖完成后确认一次；候选正文和评测完成后再确认一次。中途可以离开，稍后按运行记录继续。"
-        />
+        <UAlert color="neutral" variant="subtle" title="不使用 AI" description="创建后立即启用；人物名称和灵魂提示词均按当前输入保存。" />
         <UAlert v-if="errorMessage" color="error" title="创建失败" :description="errorMessage" />
         <div class="flex justify-end gap-2">
           <UButton type="button" color="neutral" variant="ghost" :disabled="loading" @click="open = false">取消</UButton>
-          <UButton type="submit" icon="i-lucide-sparkles" :loading="loading">开始人物蒸馏</UButton>
+          <UButton type="submit" icon="i-lucide-save" :loading="loading">手动创建并发布</UButton>
         </div>
       </UForm>
     </template>

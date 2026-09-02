@@ -4,10 +4,10 @@ import { executePublicWriteController } from '../../../presentation/http/publicC
 import { toPublicJson } from '../../../presentation/http/publicJson'
 
 /**
- * 创建人物并通过现有业务链发布初始灵魂。
+ * 按请求原文创建人物并通过现有业务链发布初始灵魂。
  * @param event 已认证 API Key 且包含人物输入的请求事件。
  * @returns 创建完成后的人物详情。
- * @remarks 要求 `persona:write` 权限和幂等键，不开放人物账号凭据。
+ * @remarks 要求 `persona:write` 权限和幂等键，不开放人物账号凭据，也不调用 AI 蒸馏。
  */
 export default defineEventHandler(async (event) => {
   const body: unknown = await readBody(event)

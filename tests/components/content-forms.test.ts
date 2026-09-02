@@ -213,6 +213,7 @@ describe('阶段二内容表单', () => {
     const promptTextarea = wrapper.get<HTMLTextAreaElement>('[data-soul-prompt-form] textarea')
     expect(promptTextarea.element.value).toBe('当前灵魂提示词')
     expect(wrapper.find('[data-soul-analyze-button]').exists()).toBe(true)
+    expect(wrapper.get('[data-soul-analyze-button]').text()).toBe('重新生成')
     expect(wrapper.find('[data-soul-history-button]').exists()).toBe(true)
     expect(wrapper.text()).not.toContain('确认并发布')
 
