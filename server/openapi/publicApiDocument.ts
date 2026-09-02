@@ -107,7 +107,9 @@ const RESPONSE_SCHEMA_BY_OPERATION: Record<string, string> = {
   linkGlobalSource: 'GlobalSources',
   unlinkGlobalSource: 'GlobalSources',
   createGenerationRun: 'CreatedRun',
+  createSynchronousGenerationRun: 'SynchronousGenerationRun',
   createInterestBatch: 'InterestBatch',
+  createSynchronousInterestBatch: 'SynchronousInterestBatch',
   getInterestBatch: 'InterestBatch',
   retryInterestBatchItem: 'InterestBatch',
   listRuns: 'RunList',
@@ -256,8 +258,14 @@ export function createPublicOpenApiDocument(): PublicOpenApiDocument {
       '/api/v2/generation-runs': {
         post: writeOperation('图文运行', 'createGenerationRun', '创建直接图文生成运行', 'generation:write', [], '#/components/schemas/CreateGenerationRun', 202),
       },
+      '/api/v2/generation-runs/sync': {
+        post: synchronousWriteOperation('图文运行', 'createSynchronousGenerationRun', '同步优先创建直接图文生成运行', 'generation:write', '#/components/schemas/CreateSynchronousGenerationRun'),
+      },
       '/api/v2/interest-batches': {
         post: writeOperation('兴趣判定', 'createInterestBatch', '创建批量兴趣判定', 'generation:write', [], '#/components/schemas/CreateInterestBatch', 202),
+      },
+      '/api/v2/interest-batches/sync': {
+        post: synchronousWriteOperation('兴趣判定', 'createSynchronousInterestBatch', '同步优先创建批量兴趣判定', 'generation:write', '#/components/schemas/CreateSynchronousInterestBatch'),
       },
       '/api/v2/interest-batches/{batchId}': {
         get: readOperation('兴趣判定', 'getInterestBatch', '查询批量兴趣判定', 'generation:read', [batchId]),
@@ -357,6 +365,29 @@ function writeOperation(
   mediaType = 'application/json',
 ): OpenApiOperation {
   return operation(tag, operationId, summary, scope, [...parameters, IDEMPOTENCY_PARAMETER], true, schemaRef, status, mediaType)
+}
+
+/**
+ * 创建限时等待且可用 202 自动降级为异步查询的公共写操作。
+ * @param tag 业务标签。
+ * @param operationId 稳定操作名。
+ * @param summary 接口用途摘要。
+ * @param scope 要求的写权限。
+ * @param schemaRef 同步优先请求 Schema。
+ * @returns 同时声明 200 完成结果和 202 排队结果的写操作。
+ * @remarks 幂等记录只固定资源创建，重放时会重新读取同一资源的当前状态。
+ */
+function synchronousWriteOperation(
+  tag: string,
+  operationId: string,
+  summary: string,
+  scope: string,
+  schemaRef: string,
+): OpenApiOperation {
+  const result = writeOperation(tag, operationId, summary, scope, [], schemaRef, 200)
+  result.responses['202'] = successResponse(`${summary}并转为异步查询`, operationId)
+  result.description = `${summary}。权限：\`${scope}\`。写请求必须提供 Idempotency-Key；同一幂等键只创建一次资源。限时内终止返回 200，超时返回 202 且任务继续执行。`
+  return result
 }
 
 /** 创建包含统一响应、示例和错误码的单个操作。 */
@@ -541,6 +572,16 @@ function createSchemas(): Record<string, Record<string, unknown>> {
         imageCount: { type: 'integer', minimum: 0, maximum: 4, default: 0 },
       },
     },
+    CreateSynchronousGenerationRun: {
+      type: 'object', required: ['personaId', 'requirement'],
+      properties: {
+        personaId: { $ref: '#/components/schemas/PersonaIdentifier' },
+        requirement: { type: 'string', minLength: 1, maxLength: 50_000 },
+        outputFormat: { type: 'string', enum: ['html', 'text'], default: 'text' },
+        imageCount: { type: 'integer', minimum: 0, maximum: 4, default: 0 },
+        waitTimeoutMs: { type: 'integer', minimum: 1_000, maximum: 120_000, default: 120_000, description: '只控制当前 HTTP 请求等待时长，不改变模型调用超时。' },
+      },
+    },
     CreateInterestBatch: {
       type: 'object', required: ['personaId', 'items'],
       properties: {
@@ -556,6 +597,24 @@ function createSchemas(): Record<string, Record<string, unknown>> {
             },
           },
         },
+      },
+    },
+    CreateSynchronousInterestBatch: {
+      type: 'object', required: ['personaId', 'items'],
+      properties: {
+        personaId: { $ref: '#/components/schemas/PersonaIdentifier' },
+        additionalPrompt: { type: 'string', maxLength: 4_000, default: '', description: '可选；对整批文本生效且不修改人物长期设定。' },
+        items: {
+          type: 'array', minItems: 1, maxItems: 20,
+          items: {
+            type: 'object', required: ['itemId', 'text'],
+            properties: {
+              itemId: { type: 'string', minLength: 1, maxLength: 100 },
+              text: { type: 'string', minLength: 1, maxLength: 50_000 },
+            },
+          },
+        },
+        waitTimeoutMs: { type: 'integer', minimum: 1_000, maximum: 120_000, default: 30_000, description: '只控制当前 HTTP 请求等待时长，不改变模型调用超时。' },
       },
     },
     RenderRun: {
@@ -682,6 +741,13 @@ function createSchemas(): Record<string, Record<string, unknown>> {
         createdAt: timestamp, updatedAt: timestamp,
       },
     },
+    SynchronousInterestBatch: {
+      type: 'object', required: ['mode', 'batch'],
+      properties: {
+        mode: { type: 'string', enum: ['completed', 'queued'], description: 'completed 返回 200；queued 返回 202。' },
+        batch: { $ref: '#/components/schemas/InterestBatch' },
+      },
+    },
     RunSummary: {
       type: 'object', required: ['id', 'kind', 'personaId', 'personaName', 'status', 'input', 'parameters', 'model', 'contextProvider', 'createdAt', 'updatedAt'],
       properties: {
@@ -706,6 +772,15 @@ function createSchemas(): Record<string, Record<string, unknown>> {
         documentSpecs: { type: 'array', items: { type: 'object' } },
         blocks: { type: 'array', items: { type: 'object' } },
         tasks: { type: 'array', items: { type: 'object' } },
+      },
+    },
+    SynchronousGenerationRun: {
+      type: 'object', required: ['mode', 'taskId', 'details', 'result'],
+      properties: {
+        mode: { type: 'string', enum: ['completed', 'queued'], description: 'completed 返回 200；queued 返回 202。' },
+        taskId: uuid,
+        details: { $ref: '#/components/schemas/RunDetails' },
+        result: { oneOf: [{ $ref: '#/components/schemas/RenderedArtifact' }, { type: 'null' }] },
       },
     },
     RenderedArtifact: {

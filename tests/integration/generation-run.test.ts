@@ -348,6 +348,54 @@ afterEach(() => {
   rmSync(directory, { recursive: true, force: true })
 })
 
+describe('同步优先等待', () => {
+  it('兴趣批次在等待期内完成时直接返回完整顺序结果', async () => {
+    const created = await generation.createInterestBatch({
+      personaId,
+      items: [{ itemId: 'first', text: '古代文献整理' }, { itemId: 'second', text: '学院课程安排' }],
+    })
+    await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: true })
+
+    await expect(generation.waitForInterestBatch(created.batchId, 1_000)).resolves.toMatchObject({
+      mode: 'completed',
+      batch: {
+        batchId: created.batchId,
+        status: 'completed',
+        items: [{ itemId: 'first', status: 'succeeded' }, { itemId: 'second', status: 'succeeded' }],
+      },
+    })
+  })
+
+  it('兴趣批次超过等待时间时返回当前队列结果且不取消任务', async () => {
+    const created = await generation.createInterestBatch({
+      personaId,
+      items: [{ itemId: 'pending', text: '尚未执行的内容' }],
+    })
+
+    await expect(generation.waitForInterestBatch(created.batchId, 1)).resolves.toMatchObject({
+      mode: 'queued',
+      batch: { batchId: created.batchId, status: 'queued' },
+    })
+    await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: true })
+    await expect(generation.getInterestBatch(created.batchId)).resolves.toMatchObject({ status: 'completed' })
+  })
+
+  it('图文运行完成时返回运行详情与直接渲染结果', async () => {
+    const created = await generation.createGenerationRun({
+      personaId, requirement: '生成纯文本课程简介', outputFormat: 'text', imageCount: 0,
+    })
+    await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: true })
+    await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: true })
+
+    await expect(generation.waitForGenerationRun(created.runId, created.taskId, 1_000)).resolves.toMatchObject({
+      mode: 'completed',
+      taskId: created.taskId,
+      details: { run: { id: created.runId, status: 'succeeded' } },
+      result: { runId: created.runId, documents: { txt: expect.stringContaining('这里的课程值得认真研究。') } },
+    })
+  })
+})
+
 describe('阶段三纯文本运行', () => {
   it('系统能力由固定算法链判定，不再依赖迁移前默认模型', async () => {
     const identifiers = new SystemIdentifierGenerator()

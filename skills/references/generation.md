@@ -41,6 +41,14 @@ POST /api/v2/interest-batches/{batchId}/items/{itemId}/retry
 
 该操作返回 `202`，使用新幂等键，不重跑全批，也不携带旧模型回答。不要把多条文本拆成多个单项批次，除非它们属于不同人物或需要不同附加提示词。
 
+需要优先等待结果时使用：
+
+```http
+POST /api/v2/interest-batches/sync
+```
+
+请求字段与批量创建相同，并可增加 `waitTimeoutMs`；默认 `30000`，允许 `1000` 至 `120000` 毫秒。全部条目在等待期内终止时返回 `200`、`mode=completed` 和完整 `batch`；超时返回 `202`、`mode=queued` 和当前 `batch`。超时不是失败，继续使用 `batch.batchId` 查询。
+
 ## 直接图文生成
 
 ```http
@@ -68,6 +76,16 @@ GET /api/v2/runs/{runId}
 ```
 
 常见活动状态包括 `planning`、`awaiting_confirmation`、`queued`、`running`；终态包括 `succeeded`、`partial`、`failed`、`canceled`。以在线 OpenAPI 的 `RunSummary.status` 枚举为准。
+
+需要优先等待最终产物时使用：
+
+```http
+POST /api/v2/generation-runs/sync
+```
+
+请求字段与异步图文创建相同，并可增加 `waitTimeoutMs`；默认和最大值均为 `120000` 毫秒，最小值为 `1000`。限时内进入终态返回 `200`、`mode=completed`、完整 `details` 和 `taskId`；成功或部分成功还返回按创建格式直接渲染的 `result`。超时返回 `202`、`mode=queued`、当前 `details` 和 `taskId`，后续使用 `details.run.id` 查询。失败或取消是已经终止的业务结果，此时仍返回 `200`，但 `result` 为 `null`。
+
+`waitTimeoutMs` 只控制 HTTP 等待时长，不改变模型调用超时。代理和客户端超时应至少比它多留 30 秒。同步优先接口仍先持久化原任务并由 Worker 执行；客户端断开或等待超时不会取消任务。
 
 ## 运行管理与输出
 

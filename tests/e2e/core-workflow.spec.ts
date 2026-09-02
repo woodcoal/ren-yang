@@ -147,6 +147,49 @@ async function verifyPublicGenerationApi(page: Page, personaId: string): Promise
   expect(exportResponse.headers()['content-type']).toContain('text/plain')
   expect(exportResponse.headers()['x-request-id']).toBeTruthy()
   expect(await exportResponse.text()).toContain('学院观察')
+
+  const synchronousGenerationRequest = {
+    headers: { authorization, 'idempotency-key': 'e2e-public-generation-sync-001' },
+    data: { personaId, requirement: '同步生成学院简介。', outputFormat: 'text', imageCount: 0, waitTimeoutMs: 30_000 },
+  }
+  const synchronousGenerationResponse = await page.request.post('/api/v2/generation-runs/sync', synchronousGenerationRequest)
+  expect(synchronousGenerationResponse.status()).toBe(200)
+  const synchronousGeneration = await synchronousGenerationResponse.json() as {
+    data: { details: { run: { id: string } } }
+    meta: { idempotencyReplayed: boolean }
+  }
+  expect(synchronousGeneration).toMatchObject({
+    data: {
+      mode: 'completed',
+      details: { run: { status: 'succeeded' } },
+      result: { documents: { txt: expect.stringContaining('学院观察') } },
+    },
+  })
+  const synchronousGenerationReplay = await page.request.post('/api/v2/generation-runs/sync', synchronousGenerationRequest)
+  expect(synchronousGenerationReplay.status()).toBe(200)
+  await expect(synchronousGenerationReplay.json()).resolves.toMatchObject({
+    data: { details: { run: { id: synchronousGeneration.data.details.run.id } } },
+    meta: { idempotencyReplayed: true },
+  })
+
+  const synchronousInterestResponse = await page.request.post('/api/v2/interest-batches/sync', {
+    headers: { authorization, 'idempotency-key': 'e2e-public-interest-sync-001' },
+    data: {
+      personaId,
+      items: [{ itemId: 'course', text: '学院课程是否值得关注？' }, { itemId: 'archive', text: '古代文献整理是否有吸引力？' }],
+      waitTimeoutMs: 30_000,
+    },
+  })
+  expect(synchronousInterestResponse.status()).toBe(200)
+  await expect(synchronousInterestResponse.json()).resolves.toMatchObject({
+    data: {
+      mode: 'completed',
+      batch: {
+        status: 'completed',
+        items: [{ itemId: 'course', status: 'succeeded' }, { itemId: 'archive', status: 'succeeded' }],
+      },
+    },
+  })
 }
 
 /** 学习提示词浏览器闭环的稳定文本和反馈。 */

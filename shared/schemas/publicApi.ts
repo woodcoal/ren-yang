@@ -58,6 +58,21 @@ export const publicCreateGenerationRunSchema = createGenerationRunSchema.extend(
   personaId: publicPersonaIdentifierSchema,
 })
 
+/** 公共同步优先接口允许占用 HTTP 连接的等待时长。 */
+export const publicSynchronousWaitTimeoutSchema = z.number().int('同步等待时长必须是整数')
+  .min(1_000, '同步等待不能少于 1000 毫秒')
+  .max(120_000, '同步等待不能超过 120000 毫秒')
+
+/** 公共 API v2 同步优先兴趣批次输入；未完成时仍返回持久批次。 */
+export const publicCreateSynchronousInterestBatchSchema = publicCreateInterestBatchSchema.extend({
+  waitTimeoutMs: publicSynchronousWaitTimeoutSchema.default(30_000),
+})
+
+/** 公共 API v2 同步优先图文运行输入；图文默认最多等待两分钟。 */
+export const publicCreateSynchronousGenerationRunSchema = publicCreateGenerationRunSchema.extend({
+  waitTimeoutMs: publicSynchronousWaitTimeoutSchema.default(120_000),
+})
+
 /** 公共 API v2 查询运行的输入；人物筛选可使用 UUID、用户名或邮箱。 */
 export const publicListRunsQuerySchema = listRunsQuerySchema.extend({
   personaId: publicPersonaIdentifierSchema.optional(),

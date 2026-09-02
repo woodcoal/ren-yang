@@ -76,6 +76,25 @@ function createModelOutput(body: string): string {
     return '记住曾完成学院课程介绍；后续同类任务优先采用严谨、克制且便于导出的结构。'
   }
 
+  // 同步公共接口仍复用正式批量兴趣算法，替身必须按输入 itemId 原顺序返回逐项契约。
+  if (systemPrompt.includes('人物批量兴趣判定器')) {
+    const itemsPayload = /<待判断文本列表>([\s\S]*?)<\/待判断文本列表>/u.exec(userPrompt)?.[1]
+    const items = itemsPayload ? JSON.parse(itemsPayload) as Array<{ itemId: string, text: string }> : []
+    return JSON.stringify({
+      results: items.map(item => ({
+        itemId: item.itemId,
+        probability: 0.9,
+        confidence: 0.85,
+        decision: 'interested',
+        factors: [{ dimension: 'topic', score: 0.9, explanation: `人物关注${item.text}` }],
+        supportingEvidenceIds: [],
+        opposingEvidenceIds: [],
+        unknowns: [],
+        reasoningSummary: '内容符合人物对学院课程与档案的长期兴趣。',
+      })),
+    })
+  }
+
   if (systemPrompt.includes('人物风格文章生成器')) {
     return JSON.stringify({
       title: '学院观察',

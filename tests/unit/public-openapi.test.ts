@@ -27,7 +27,9 @@ const EXPECTED_PATHS = [
   '/api/v2/sources/{sourceId}/links/{linkId}',
   '/api/v2/sources/{sourceId}/global',
   '/api/v2/generation-runs',
+  '/api/v2/generation-runs/sync',
   '/api/v2/interest-batches',
+  '/api/v2/interest-batches/sync',
   '/api/v2/interest-batches/{batchId}',
   '/api/v2/interest-batches/{batchId}/items/{itemId}/retry',
   '/api/v2/runs',
@@ -81,6 +83,14 @@ describe('公共 OpenAPI 契约', () => {
       .toMatchObject({ properties: { data: { $ref: '#/components/schemas/CreatedRun' } } })
     expect(document.paths['/api/v2/interest-batches']?.post?.responses['202']?.content?.['application/json']?.schema)
       .toMatchObject({ properties: { data: { $ref: '#/components/schemas/InterestBatch' } } })
+    expect(document.paths['/api/v2/interest-batches/sync']?.post?.responses).toMatchObject({
+      200: { content: { 'application/json': { schema: { properties: { data: { $ref: '#/components/schemas/SynchronousInterestBatch' } } } } } },
+      202: { content: { 'application/json': { schema: { properties: { data: { $ref: '#/components/schemas/SynchronousInterestBatch' } } } } } },
+    })
+    expect(document.paths['/api/v2/generation-runs/sync']?.post?.responses).toMatchObject({
+      200: { content: { 'application/json': { schema: { properties: { data: { $ref: '#/components/schemas/SynchronousGenerationRun' } } } } } },
+      202: { content: { 'application/json': { schema: { properties: { data: { $ref: '#/components/schemas/SynchronousGenerationRun' } } } } } },
+    })
     expect(document.components.schemas.CreateInterestBatch).toMatchObject({
       properties: {
         personaId: { $ref: '#/components/schemas/PersonaIdentifier' },
@@ -89,6 +99,12 @@ describe('公共 OpenAPI 契约', () => {
     })
     expect(document.components.schemas.CreateGenerationRun).toMatchObject({
       properties: { personaId: { $ref: '#/components/schemas/PersonaIdentifier' } },
+    })
+    expect(document.components.schemas.CreateSynchronousInterestBatch).toMatchObject({
+      properties: { waitTimeoutMs: { type: 'integer', minimum: 1_000, maximum: 120_000, default: 30_000 } },
+    })
+    expect(document.components.schemas.CreateSynchronousGenerationRun).toMatchObject({
+      properties: { waitTimeoutMs: { type: 'integer', minimum: 1_000, maximum: 120_000, default: 120_000 } },
     })
     expect(document.components.schemas.PersonaIdentifier).toEqual({
       type: 'string', minLength: 1, maxLength: 320,

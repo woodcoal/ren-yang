@@ -24,6 +24,16 @@ export interface PublicWriteControllerOptions<TData extends PublicApiJsonValue> 
   successStatusCode: number
   /** 从成功结果提取目标资源标识。 */
   targetId?: (data: TData) => string | null
+  /** 在幂等创建结果持久化后等待或映射本次动态响应。 */
+  resolveResponse?: (data: TData) => Promise<PublicWriteResolvedResponse>
+}
+
+/** 公共写接口完成幂等创建后生成的本次响应。 */
+export interface PublicWriteResolvedResponse {
+  /** 允许安全序列化的公共业务结果。 */
+  data: PublicApiJsonValue
+  /** 本次请求实际返回的成功状态码。 */
+  statusCode: number
 }
 
 /** 公共 API 统一成功响应。 */
@@ -45,7 +55,7 @@ export async function executePublicWriteController<TData extends PublicApiJsonVa
   scope: ApiKeyScope,
   options: PublicWriteControllerOptions<TData>,
   action: () => Promise<TData>,
-): Promise<PublicApiResponse<TData> | PublicApiErrorResponse> {
+): Promise<PublicApiResponse<PublicApiJsonValue> | PublicApiErrorResponse> {
   const principal = event.context.apiKeyPrincipal
   const method = getMethod(event).toUpperCase()
   const path = getRequestURL(event).pathname
@@ -61,7 +71,11 @@ export async function executePublicWriteController<TData extends PublicApiJsonVa
       payload: options.payload,
       action,
     })
-    setResponseStatus(event, options.successStatusCode)
+    // 同步优先接口只把资源创建纳入幂等事务；等待异常后重试仍复用已创建资源，不会重复排队。
+    const resolved = options.resolveResponse
+      ? await options.resolveResponse(result.data)
+      : { data: result.data, statusCode: options.successStatusCode }
+    setResponseStatus(event, resolved.statusCode)
     await event.context.applicationServices.publicApi.recordAudit({
       apiKeyId: principal.id,
       requestId: requireRequestId(event),
@@ -70,11 +84,11 @@ export async function executePublicWriteController<TData extends PublicApiJsonVa
       targetType: options.targetType,
       targetId: options.targetId?.(result.data) ?? null,
       result: 'succeeded',
-      statusCode: options.successStatusCode,
+      statusCode: resolved.statusCode,
       errorCode: null,
     })
     return {
-      data: result.data,
+      data: resolved.data,
       meta: { requestId: requireRequestId(event), idempotencyReplayed: result.replayed },
     }
   }

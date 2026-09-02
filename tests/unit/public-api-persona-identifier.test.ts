@@ -3,6 +3,8 @@ import { createInterestBatchSchema, createGenerationRunSchema, listRunsQuerySche
 import {
   publicCreateGenerationRunSchema,
   publicCreateInterestBatchSchema,
+  publicCreateSynchronousGenerationRunSchema,
+  publicCreateSynchronousInterestBatchSchema,
   publicCreateSourceLinkSchema,
   publicCreateSourceWithTargetsSchema,
   publicListRunsQuerySchema,
@@ -30,6 +32,21 @@ describe('公共 API v2 人物标识契约', () => {
     })).toThrow()
     expect(() => createGenerationRunSchema.parse({ personaId: 'linmo', requirement: '写一段简介' })).toThrow()
     expect(() => listRunsQuerySchema.parse({ personaId: 'linmo' })).toThrow()
+  })
+
+  it('同步优先接口使用各自默认等待时间并拒绝超过两分钟', () => {
+    expect(publicCreateSynchronousInterestBatchSchema.parse({
+      personaId: 'linmo', items: [{ itemId: 'item-1', text: '测试兴趣' }],
+    }).waitTimeoutMs).toBe(30_000)
+    expect(publicCreateSynchronousGenerationRunSchema.parse({
+      personaId: 'linmo', requirement: '写一段简介',
+    }).waitTimeoutMs).toBe(120_000)
+    expect(() => publicCreateSynchronousGenerationRunSchema.parse({
+      personaId: 'linmo', requirement: '写一段简介', waitTimeoutMs: 120_001,
+    })).toThrow('同步等待不能超过 120000 毫秒')
+    expect(() => publicCreateSynchronousInterestBatchSchema.parse({
+      personaId: 'linmo', items: [{ itemId: 'item-1', text: '测试兴趣' }], waitTimeoutMs: 999,
+    })).toThrow('同步等待不能少于 1000 毫秒')
   })
 
   it('资料关系仅在人物目标中接受别名，世界目标继续要求 UUID', () => {

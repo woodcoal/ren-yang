@@ -145,6 +145,14 @@ export interface InterestBatchView {
   updatedAt: number
 }
 
+/** 同步优先兴趣接口在等待完成或降级排队时返回的统一结果。 */
+export interface SynchronousInterestBatchView {
+  /** completed 表示限时内结束，queued 表示调用方应继续查询。 */
+  mode: 'completed' | 'queued'
+  /** 当前批次完整结果；即使降级排队也保留稳定批次标识。 */
+  batch: InterestBatchView
+}
+
 /** 运行列表及详情共用摘要。 */
 export interface RunSummary {
   id: string
@@ -257,6 +265,18 @@ export interface RunDetails {
     createdAt: number
     updatedAt: number
   }>
+}
+
+/** 同步优先图文接口返回的运行详情与可选最终产物。 */
+export interface SynchronousGenerationRunView {
+  /** completed 表示运行已终止，queued 表示调用方应继续查询。 */
+  mode: 'completed' | 'queued'
+  /** 创建运行时首个持久任务的稳定标识。 */
+  taskId: string
+  /** 当前运行、块和任务的完整快照。 */
+  details: RunDetails
+  /** 成功或部分成功时的直接渲染结果；排队、失败或取消时为空。 */
+  result: RenderedArtifactView | null
 }
 
 /** 参数方案公开视图。 */

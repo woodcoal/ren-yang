@@ -43,6 +43,8 @@ import type {
   RunDetails,
   RenderedArtifactView,
   RunSummary,
+  SynchronousGenerationRunView,
+  SynchronousInterestBatchView,
 } from '../../../shared/types/generation'
 import type { SystemCapabilitiesResult } from '../../../shared/types/system'
 import type { LearningPromptVersionView } from '../../../shared/types/learning'
@@ -117,6 +119,9 @@ const PERSONA_DRAFT_SOURCE_CHARACTER_LIMIT = 5_000
 
 /** 人物草稿世界最多发送给模型的字符数。 */
 const PERSONA_DRAFT_WORLD_CHARACTER_LIMIT = 10_000
+
+/** 同步优先接口查询持久运行状态的固定间隔。 */
+const SYNCHRONOUS_WAIT_POLL_INTERVAL_MS = 250
 
 /** 生成应用服务依赖。 */
 export interface GenerationApplicationServiceDependencies {
@@ -383,6 +388,22 @@ export class GenerationApplicationService implements TaskHandler {
   }
 
   /**
+   * 在调用方给定的有限时间内等待兴趣批次终止。
+   * @param batchId 已持久化的兴趣批次 UUID。
+   * @param waitTimeoutMs 本次 HTTP 请求允许等待的毫秒数。
+   * @returns 已完成的完整批次，或保留查询标识的排队结果。
+   * @remarks 超时只停止当前等待，不取消或重新创建后台任务。
+   */
+  async waitForInterestBatch(batchId: string, waitTimeoutMs: number): Promise<SynchronousInterestBatchView> {
+    const batch = await waitForTerminalValue(
+      () => this.getInterestBatch(batchId),
+      value => value.status === 'completed',
+      waitTimeoutMs,
+    )
+    return { mode: batch.status === 'completed' ? 'completed' : 'queued', batch }
+  }
+
+  /**
    * 仅重试兴趣批次中一个失败条目，不携带上次模型回答。
    * @param batchId 兴趣批次 UUID。
    * @param itemId 客户端稳定条目标识。
@@ -446,6 +467,29 @@ export class GenerationApplicationService implements TaskHandler {
       }))),
       tasks,
     }
+  }
+
+  /**
+   * 在调用方给定的有限时间内等待图文运行终止并按请求格式渲染产物。
+   * @param runId 已持久化的图文运行 UUID。
+   * @param taskId 创建运行时返回的首个任务 UUID。
+   * @param waitTimeoutMs 本次 HTTP 请求允许等待的毫秒数。
+   * @returns 当前完整运行详情，以及成功或部分成功时的直接产物。
+   * @remarks 失败和取消属于已完成业务结果；等待超时不会取消后台任务。
+   */
+  async waitForGenerationRun(runId: string, taskId: string, waitTimeoutMs: number): Promise<SynchronousGenerationRunView> {
+    // 等待阶段只读取运行主记录，避免每 250 毫秒重复装载全部块、尝试和图片资产。
+    const run = await waitForTerminalValue(
+      () => this.requireRun(runId),
+      value => isTerminalRunStatus(value.status),
+      waitTimeoutMs,
+    )
+    const details = await this.getRun(runId)
+    const completed = isTerminalRunStatus(run.status)
+    const result = ['succeeded', 'partial'].includes(run.status)
+      ? await this.renderRun(runId, ['requirement' in details.run.input && details.run.input.outputFormat === 'html' ? 'html' : 'txt'])
+      : null
+    return { mode: completed ? 'completed' : 'queued', taskId, details, result }
   }
 
   /** @param runId 运行 UUID。 @returns 接受取消后的详情。 */
@@ -2065,6 +2109,48 @@ function readRunId(payloadJson: string): string {
 function readOptionalPayloadString(payloadJson: string, field: string): string | null {
   const value = JSON.parse(payloadJson) as Record<string, unknown>
   return typeof value[field] === 'string' && value[field].trim() ? value[field] : null
+}
+
+/**
+ * 轮询一个持久化值直到进入终态或耗尽本次等待时间。
+ * @param readValue 每次从 SQLite 事实源读取最新值的异步函数。
+ * @param isTerminal 判断当前值是否已经进入业务终态的函数。
+ * @param waitTimeoutMs 当前调用允许等待的毫秒数；非正数只执行最后一次即时读取。
+ * @returns 终态值，或截止时读取到的最新活动值。
+ * @remarks 等待只影响当前调用，不领取任务、不延长租约，也不取消后台执行。
+ */
+async function waitForTerminalValue<T>(
+  readValue: () => Promise<T>,
+  isTerminal: (value: T) => boolean,
+  waitTimeoutMs: number,
+): Promise<T> {
+  const deadline = Date.now() + Math.max(0, waitTimeoutMs)
+  let value = await readValue()
+  while (!isTerminal(value)) {
+    const remainingMs = deadline - Date.now()
+    if (remainingMs <= 0) return value
+    await waitForMilliseconds(Math.min(SYNCHRONOUS_WAIT_POLL_INTERVAL_MS, remainingMs))
+    value = await readValue()
+  }
+  return value
+}
+
+/**
+ * 等待指定毫秒数后继续轮询。
+ * @param durationMs 不超过当前剩余等待预算的正整数毫秒数。
+ * @returns 定时器触发后完成。
+ */
+async function waitForMilliseconds(durationMs: number): Promise<void> {
+  await new Promise<void>(resolve => setTimeout(resolve, durationMs))
+}
+
+/**
+ * 判断生成运行是否已经进入不会自动继续变化的终态。
+ * @param status 当前生成运行状态。
+ * @returns 成功、部分成功、失败或取消时为 true。
+ */
+function isTerminalRunStatus(status: GenerationRunRecord['status']): boolean {
+  return ['succeeded', 'partial', 'failed', 'canceled'].includes(status)
 }
 
 /**
