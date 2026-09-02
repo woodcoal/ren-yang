@@ -20,6 +20,9 @@ export async function readBoundedRequestBody(request: IncomingMessage, maximumBy
   const declared = parseContentLength(request.headers['content-length'])
   if (declared !== null && declared > maximumBytes) throw new RequestBodyLimitError(maximumBytes)
 
+  const internalBody = getNitroInternalBody(request)
+  if (internalBody) return await readBoundedWebBody(internalBody, maximumBytes)
+
   const chunks: Buffer[] = []
   let total = 0
   for await (const value of request) {
@@ -29,6 +32,50 @@ export async function readBoundedRequestBody(request: IncomingMessage, maximumBy
     chunks.push(chunk)
   }
   return Buffer.concat(chunks, total)
+}
+
+/**
+ * 识别 Nitro 服务端内部 `$fetch` 附加的 Web 正文流。
+ * @param request 当前 Node 请求或 Nitro 内部请求替身。
+ * @returns Web 正文流；普通 Node 入站请求返回 null。
+ */
+function getNitroInternalBody(request: IncomingMessage): ReadableStream<Uint8Array> | null {
+  const candidate = request as unknown as { __unenv__?: unknown, body?: unknown }
+  if (candidate.__unenv__ === undefined || !isReadableStream(candidate.body)) return null
+  return candidate.body
+}
+
+/**
+ * 在不依赖 Node Readable 异步迭代器的前提下读取 Nitro 内部 Web 正文流。
+ * @param body Nitro 服务端内部 `$fetch` 传入的 Web 正文流。
+ * @param maximumBytes 允许缓冲的最大字节数。
+ * @returns 不超过上限的完整正文。
+ */
+async function readBoundedWebBody(body: ReadableStream<Uint8Array>, maximumBytes: number): Promise<Buffer> {
+  const reader = body.getReader()
+  const chunks: Buffer[] = []
+  let total = 0
+  try {
+    while (true) {
+      const next = await reader.read()
+      if (next.done) return Buffer.concat(chunks, total)
+      const chunk = Buffer.from(next.value)
+      total += chunk.byteLength
+      if (total > maximumBytes) {
+        await reader.cancel()
+        throw new RequestBodyLimitError(maximumBytes)
+      }
+      chunks.push(chunk)
+    }
+  }
+  finally {
+    reader.releaseLock()
+  }
+}
+
+/** @param value 未知正文载体。 @returns 是否为可读取的 Web 正文流。 */
+function isReadableStream(value: unknown): value is ReadableStream<Uint8Array> {
+  return typeof value === 'object' && value !== null && 'getReader' in value
 }
 
 /**

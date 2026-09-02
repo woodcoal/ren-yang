@@ -45,6 +45,11 @@ describe('请求与磁盘资源限制', () => {
     await expect(readBoundedRequestBody(request, 20)).resolves.toEqual(Buffer.from('人物资料'))
   })
 
+  it('Nitro 内部请求使用 Web 正文流时不调用未实现的 Node 异步迭代器', async () => {
+    const request = createNitroInternalRequest(Buffer.from('渲染请求'))
+    await expect(readBoundedRequestBody(request, 20)).resolves.toEqual(Buffer.from('渲染请求'))
+  })
+
   it('资料文件在容量门禁拒绝后不产生半成品', async () => {
     const storage = new LocalSourceFileStorage(directory, new RejectingCapacityGuard())
     const sourceId = '00000000-0000-4000-8000-000000000001'
@@ -81,4 +86,26 @@ describe('请求与磁盘资源限制', () => {
  */
 function createRequest(chunks: Buffer[], headers: IncomingMessage['headers']): IncomingMessage {
   return Object.assign(Readable.from(chunks), { headers }) as IncomingMessage
+}
+
+/**
+ * 构造 Nitro 服务端内部 `$fetch` 产生的最小请求形态。
+ * @param body 内部 Web 请求正文。
+ * @returns Node 异步迭代器不可用、但含 Web 正文流的请求替身。
+ */
+function createNitroInternalRequest(body: Buffer): IncomingMessage {
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(body)
+      controller.close()
+    },
+  })
+  return {
+    headers: { 'content-length': String(body.byteLength) },
+    __unenv__: {},
+    body: stream,
+    async *[Symbol.asyncIterator](): AsyncGenerator<never> {
+      throw new Error('Readable.asyncIterator is not implemented yet!')
+    },
+  } as unknown as IncomingMessage
 }
