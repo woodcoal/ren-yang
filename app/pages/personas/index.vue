@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { computed, ref, shallowRef, watch } from 'vue'
-import type { QuickCreateSubjectInput } from '#shared/schemas/content'
+import type { CreatePersonaDistillationInput } from '#shared/schemas/personaDistillation'
 import type { ApiResponse } from '#shared/types/api'
-import type { PersonaDetails, PersonaPageView, PersonaStatusUpdateResult, SoulSnapshot } from '#shared/types/content'
+import type { PersonaPageView, PersonaStatusUpdateResult, SourceSummary, WorldSummary } from '#shared/types/content'
+import type { PersonaDistillationRunView } from '#shared/types/personaDistillation'
 import { getApiErrorMessage } from '../../utils/apiError'
 
 const route = useRoute()
-const { runWithAiLoading } = useAiLoading()
 const { notifySuccess, notifyError } = useOperationNotifications()
 
 /** @param value 查询参数原值。 @param fallback 无效时的默认值。 @returns 正整数。 */
@@ -41,12 +41,19 @@ const personaPageQuery = computed(() => ({
   query: requestedPersonaFilter.value || undefined,
 }))
 const { data, error, refresh } = await useFetch<ApiResponse<PersonaPageView>>('/api/v1/personas/page', { query: personaPageQuery })
+const [{ data: worldData }, { data: sourceData }] = await Promise.all([
+  useFetch<ApiResponse<WorldSummary[]>>('/api/v1/worlds'),
+  useFetch<ApiResponse<SourceSummary[]>>('/api/v1/sources'),
+])
 const personaPage = computed<PersonaPageView>(() => data.value?.data ?? {
   items: [], total: 0, page: requestedPage.value, pageSize: requestedPageSize.value, totalPages: 1,
 })
 const personas = computed(() => personaPage.value.items)
+const worlds = computed(() => worldData.value?.data ?? [])
+const sources = computed(() => sourceData.value?.data ?? [])
 const showCreate = shallowRef(false)
 const createLoading = shallowRef(false)
+const createError = shallowRef<string | null>(null)
 const personaFilterInput = shallowRef(requestedPersonaFilter.value)
 const selectedPersonaIds = ref<string[]>([])
 const batchEnableConfirmationOpen = shallowRef(false)
@@ -125,40 +132,30 @@ function updateCurrentPageSelection(event: Event): void {
 
 /** @returns 打开人物快速创建弹窗并清除上一次请求错误。 */
 function openCreateModal(): void {
+  createError.value = null
   showCreate.value = true
 }
 
 /**
- * 按用户选择直接保存原文或先用 AI 整理，再创建人物当前灵魂并进入详情。
- * @param input 用户确认的人物名称、灵魂提示词和整理方式。
- * @returns 整理、创建和导航全部完成时结束。
+ * 创建异步人物蒸馏运行并进入可恢复的工作区。
+ * @param input 用户确认的人物名称、用途、可选世界和参考资料。
+ * @returns 运行创建和导航全部完成时结束。
  */
-async function createPersona(input: QuickCreateSubjectInput): Promise<void> {
+async function createPersonaDistillation(input: CreatePersonaDistillationInput): Promise<void> {
+  if (createLoading.value) return
   createLoading.value = true
+  createError.value = null
   try {
-    let snapshot: SoulSnapshot = { promptText: input.promptText }
-    if (input.autoAnalyze) {
-      const analyzed = await runWithAiLoading({
-        title: 'AI 正在整理人物灵魂',
-        description: '模型正在把原始设定整理为清晰、可执行的人物提示词，可能需要几十秒。',
-        completionHint: '整理完成后将继续创建人物并自动进入详情页。',
-      }, async () => await $fetch<ApiResponse<SoulSnapshot>>('/api/v1/soul/analyze', {
-        method: 'POST', body: { subjectType: 'persona', promptText: input.promptText },
-      }))
-      snapshot = analyzed.data
-    }
-    const created = await $fetch<ApiResponse<PersonaDetails>>('/api/v1/personas', {
-      method: 'POST', body: {
-        name: input.name, worldId: null, sourceIds: [], snapshot,
-        changeSummary: input.autoAnalyze ? 'AI 整理初始人物灵魂' : '按原文建立初始人物灵魂',
-        username: input.username, email: input.email, password: input.password,
-      },
+    const created = await $fetch<ApiResponse<PersonaDistillationRunView>>('/api/v1/persona-distillations', {
+      method: 'POST',
+      body: input,
     })
-    notifySuccess(`人物“${created.data.persona.name}”已创建。`, '人物创建完成')
-    await navigateTo(`/personas/${created.data.persona.id}`)
+    notifySuccess(`人物“${created.data.requestedName}”的蒸馏运行已创建。`, '人物蒸馏已开始')
+    await navigateTo(`/personas/distillations/${created.data.id}`)
   }
   catch (requestError: unknown) {
-    notifyError(getApiErrorMessage(requestError, '人物创建失败'), '人物创建失败')
+    createError.value = getApiErrorMessage(requestError, '人物蒸馏创建失败')
+    notifyError(createError.value, '人物蒸馏创建失败')
   }
   finally {
     createLoading.value = false
@@ -226,10 +223,10 @@ async function changePageSize(pageSize: number): Promise<void> {
 <template>
   <div>
     <ContentPageHeader title="人物工作区" description="查看每个人物的启用状态、灵魂版本、所属世界和资料。">
-      <ContentQuickCreateSubjectModal v-model:open="showCreate" subject-type="persona" :loading="createLoading"
-        :error-message="null" @submit="createPersona">
+      <DistillationCreateModal v-model:open="showCreate" :worlds="worlds" :sources="sources" :loading="createLoading"
+        :error-message="createError" @submit="createPersonaDistillation">
         <UButton icon="i-lucide-plus">创建人物</UButton>
-      </ContentQuickCreateSubjectModal>
+      </DistillationCreateModal>
     </ContentPageHeader>
 
     <UAlert v-if="error" color="error" title="人物列表加载失败" :actions="[{ label: '重试', onClick: () => refresh() }]" />
