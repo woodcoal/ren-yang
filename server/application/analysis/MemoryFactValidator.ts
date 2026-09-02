@@ -1,7 +1,7 @@
 import { ApplicationError } from '../errors/ApplicationError'
 
-/** 人物记忆算法允许模型标记的证据信号。 */
-export type MemoryEvidenceSignal = 'external_record' | 'user_feedback' | 'user_decision' | 'task_result' | 'self_output'
+/** 人物记忆证据由程序根据不可变输入类型派生的信号。 */
+export type MemoryEvidenceSignal = 'external_record' | 'task_result'
 
 /** 通过来源、独立性和形成门槛校验的记忆原子事实。 */
 export interface ValidatedMemoryFact {
@@ -10,7 +10,7 @@ export interface ValidatedMemoryFact {
   /** 记忆业务类型。 */
   memoryType: 'interest' | 'judgment' | 'experience' | 'preference'
   /** 去重后的有效证据及其信号类型。 */
-  evidence: Array<{ inputId: string, signalType: Exclude<MemoryEvidenceSignal, 'self_output'> }>
+  evidence: Array<{ inputId: string, signalType: MemoryEvidenceSignal }>
   /** 实际独立有效证据数量。 */
   independentEvidenceCount: number
   /** 相同陈述合并后的最高置信度。 */
@@ -25,8 +25,8 @@ export interface MemoryFactCandidate {
   statement: string
   /** 候选记忆类型。 */
   memoryType: ValidatedMemoryFact['memoryType']
-  /** 模型引用的证据及信号分类。 */
-  evidence: Array<{ inputId: string, signalType: MemoryEvidenceSignal }>
+  /** 模型引用的证据；业务信号由程序根据输入类型派生。 */
+  evidence: Array<{ inputId: string }>
   /** 模型置信度。 */
   confidence: number
   /** 模型发现的冲突。 */
@@ -46,7 +46,7 @@ export interface MemoryFactInput {
  * @param facts 模型返回且已通过结构 Schema 的记忆候选。
  * @param inputs 当前批次允许引用的不可变输入。
  * @returns 稳定排序、去重且满足形成门槛的记忆事实。
- * @throws 模型引用不存在或信号类型与输入来源不匹配时拒绝整个结果；没有事实达到门槛时返回业务错误。
+ * @throws 模型引用不存在或输入来源不受支持时拒绝整个结果。
  */
 export function validateAndMergeMemoryFacts(
   facts: MemoryFactCandidate[],
@@ -70,9 +70,6 @@ export function validateAndMergeMemoryFacts(
   const validated = [...merged.values()]
     .filter(meetsEvidenceThreshold)
     .map(toValidatedMemoryFact)
-  if (validated.length === 0) {
-    throw new ApplicationError('MEMORY_EVIDENCE_INSUFFICIENT', '当前资料尚未形成满足独立证据门槛的人物记忆', 422)
-  }
   return validated
 }
 
@@ -91,10 +88,10 @@ interface MutableMemoryFact {
 }
 
 /**
- * 校验每项证据真实存在且信号类型符合输入来源，并删除自我输出证据。
+ * 校验每项证据真实存在，并根据不可变输入类型派生证据信号。
  * @param evidence 模型返回的证据引用。
  * @param inputById 当前批次输入索引。
- * @returns 去除自我输出并按输入 UUID 去重的有效证据。
+ * @returns 按输入 UUID 去重且已派生信号的有效证据。
  */
 function validateMemoryEvidence(
   evidence: MemoryFactCandidate['evidence'],
@@ -104,29 +101,21 @@ function validateMemoryEvidence(
   for (const item of evidence) {
     const input = inputById.get(item.inputId)
     if (!input) throw new ApplicationError('MODEL_OUTPUT_INVALID', '模型返回的人物记忆引用了不存在的资料', 502)
-    if (!signalMatchesInput(item.signalType, input.inputType)) {
-      throw new ApplicationError('MODEL_OUTPUT_INVALID', '模型返回的人物记忆证据信号与资料类型不匹配', 502)
-    }
-    if (item.signalType === 'self_output') continue
-    const current = valid.get(item.inputId)
-    // 同一输入仍只算一份独立证据；明确用户反馈优先于该记录中的任务结果或用户决定。
-    if (!current || item.signalType === 'user_feedback') {
-      valid.set(item.inputId, item as ValidatedMemoryFact['evidence'][number])
-    }
+    valid.set(item.inputId, { inputId: item.inputId, signalType: signalForInput(input.inputType) })
   }
   return [...valid.values()].sort((left, right) => left.inputId.localeCompare(right.inputId))
 }
 
 /**
- * 判断模型信号能否由对应输入类型提供。
- * @param signalType 模型标记的证据信号。
+ * 根据不可变输入类型派生证据信号，避免模型自行提升证据权重。
  * @param inputType 批次输入业务类型。
- * @returns 信号与来源匹配时为 true。
+ * @returns 输入类型对应的固定证据信号。
+ * @throws 输入类型不属于人物记忆事实源时拒绝模型结果。
  */
-function signalMatchesInput(signalType: MemoryEvidenceSignal, inputType: string): boolean {
-  if (inputType === 'persona_external_record') return signalType === 'external_record'
-  if (inputType === 'persona_operation_record') return signalType !== 'external_record'
-  return false
+function signalForInput(inputType: string): MemoryEvidenceSignal {
+  if (inputType === 'persona_external_record') return 'external_record'
+  if (inputType === 'persona_operation_record') return 'task_result'
+  throw new ApplicationError('MODEL_OUTPUT_INVALID', '模型返回的人物记忆引用了不支持的资料类型', 502)
 }
 
 /**
@@ -153,7 +142,6 @@ function mergeMemoryFact(
  */
 function meetsEvidenceThreshold(fact: MutableMemoryFact): boolean {
   const evidence = [...fact.evidence.values()]
-  if (evidence.some(item => item.signalType === 'user_feedback')) return true
   if (fact.memoryType === 'experience') return evidence.length >= 1
   if (fact.memoryType === 'judgment') return evidence.length >= 3
   return evidence.length >= 2

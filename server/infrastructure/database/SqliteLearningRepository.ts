@@ -516,14 +516,7 @@ export class SqliteLearningRepository implements LearningRepository {
   /** @param personaId 人物 UUID。 @returns 人物处理记录。 */
   async listPersonaOperationRecords(personaId: string): Promise<PersonaOperationRecordView[]> {
     return this.client.prepare(`
-      SELECT persona_operation_records.*, generation_runs.input_json, generation_runs.result_json,
-        (SELECT group_concat(block_attempts.output_text, char(10) || char(10))
-          FROM artifact_documents
-          INNER JOIN artifact_blocks ON artifact_blocks.document_id = artifact_documents.id
-          INNER JOIN block_attempts ON block_attempts.id = artifact_blocks.selected_attempt_id
-          WHERE artifact_documents.run_id = persona_operation_records.run_id
-            AND block_attempts.output_text IS NOT NULL
-          ORDER BY artifact_blocks.ordinal) AS artifact_output
+      SELECT persona_operation_records.*, generation_runs.input_json
       FROM persona_operation_records
       INNER JOIN generation_runs ON generation_runs.id = persona_operation_records.run_id
       WHERE persona_operation_records.persona_id = ?
@@ -987,8 +980,8 @@ function toOperationRecord(value: unknown): PersonaOperationRecordView {
   const row = value as Record<string, unknown>
   const operationType = row.operation_type as PersonaOperationRecordView['operationType']
   const input = formatJsonSnapshot(row.input_json)
-  const result = nullableString(row.artifact_output) ?? formatJsonSnapshot(row.result_json) ?? String(row.result_summary)
-  const content = `任务输入：\n${input ?? '未保存任务输入'}\n\n任务结果：\n${result}`
+  const decision = formatJsonSnapshot(row.decision_json)
+  const content = `任务输入：\n${input ?? '未保存任务输入'}\n\n结果摘要：\n${String(row.result_summary)}${decision ? `\n\n结构化决策：\n${decision}` : ''}`
   return {
     id: String(row.id), personaId: String(row.persona_id), runId: String(row.run_id),
     operationType, title: operationTypeLabel(operationType), content, contentHash: hashContent(content),

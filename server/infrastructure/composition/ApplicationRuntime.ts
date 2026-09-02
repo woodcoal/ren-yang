@@ -196,6 +196,7 @@ export class ApplicationRuntime {
       prompts: this.aiPromptService,
       secretCipher,
       modelFactory: dynamicModelFactory,
+      tokenCounter: new ConservativeTokenCounter(),
     })
     this.aiAlgorithmTestService = new AiAlgorithmTestApplicationService({ algorithms: aiAlgorithms })
     const tokenCounter = new ConservativeTokenCounter()

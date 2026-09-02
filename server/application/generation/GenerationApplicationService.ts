@@ -139,7 +139,7 @@ export interface GenerationApplicationServiceDependencies {
   /** 调用前执行分层提示词预算的 Token 计数器。 */
   tokenCounter: TokenCounter
   /** 当前学习提示词和人物处理记录事实源。 */
-  learning: Pick<LearningRepository, 'findLearningPromptWorkspace' | 'createPersonaOperationRecord'>
+  learning: Pick<LearningRepository, 'findLearningPromptWorkspace' | 'createPersonaOperationRecord' | 'listGrowth' | 'listMemories'>
   /** OpenViking 启用时使用的 Session 异步队列。 */
   contextSyncQueue?: ContextSyncTaskQueue
   /** 新 AI 操作使用的固定算法；未提供时仅供迁移前独立测试和历史运行兼容。 */
@@ -257,6 +257,7 @@ export class GenerationApplicationService implements TaskHandler {
         ? personaDraftSchema.parse((await this.dependencies.algorithms.executeStep(
             await this.dependencies.algorithms.prepare('persona_draft'),
             'generate', variables, 'persona_draft', 'json_object',
+            { limits: { ...DEFAULT_TEXT_PARAMETERS }, validateStructuredOutput: value => { personaDraftSchema.parse(value) } },
           )).structuredOutput)
         : (await this.generateValidated(
             await this.dependencies.prompts.render(GENERATION_PROMPT_CODES.personaDraft, variables),
@@ -289,6 +290,7 @@ export class GenerationApplicationService implements TaskHandler {
         ? worldDraftSchema.parse((await this.dependencies.algorithms.executeStep(
             await this.dependencies.algorithms.prepare('world_draft'),
             'generate', variables, 'world_draft', 'json_object',
+            { limits: { ...DEFAULT_TEXT_PARAMETERS }, validateStructuredOutput: value => { worldDraftSchema.parse(value) } },
           )).structuredOutput)
         : (await this.generateValidated(
             await this.dependencies.prompts.render(GENERATION_PROMPT_CODES.worldDraft, variables),
@@ -717,7 +719,7 @@ export class GenerationApplicationService implements TaskHandler {
     const worldGrowthCount = countOptionalPrompt(this.dependencies.tokenCounter, step.model, worldGrowthVersion?.promptText)
     const personaGrowthCount = countOptionalPrompt(this.dependencies.tokenCounter, step.model, personaGrowthVersion?.promptText)
     const personaMemoryCount = countOptionalPrompt(this.dependencies.tokenCounter, step.model, personaMemoryVersion?.promptText)
-    const prepared = await this.preparePromptBudgetCandidates(effectivePersona, contextSearch.candidates, step.model)
+    const prepared = await this.preparePromptBudgetCandidates(effectivePersona, contextSearch.provider, contextSearch.candidates, step.model)
     let selection
     try {
       selection = selectPromptContextByBudget({
@@ -972,6 +974,7 @@ export class GenerationApplicationService implements TaskHandler {
     const personaMemoryCount = countOptionalPrompt(this.dependencies.tokenCounter, tokenCounterModel, personaMemoryVersion?.promptText)
     const prepared = await this.preparePromptBudgetCandidates(
       effectivePersona,
+      contextSearch.provider,
       contextSearch.candidates,
       tokenCounterModel,
     )
@@ -1147,20 +1150,44 @@ export class GenerationApplicationService implements TaskHandler {
   /**
    * 使用 SQLite 当前状态再次过滤提供器结果，并生成逐条预算输入。
    * @param persona 当前人物及所属世界。
+   * @param provider 本次运行固定的上下文提供器，用于区分本地切片与远端投影哈希语义。
    * @param candidates OpenViking 或 FTS5 排序结果。
    * @param model 当前模型名称。
    * @returns 有效候选、证据标识和被拒绝条目快照。
    */
   private async preparePromptBudgetCandidates(
     persona: PersonaRecord,
+    provider: 'sqlite_fts5' | 'openviking',
     candidates: Awaited<ReturnType<ContextProvider['search']>>['candidates'],
     model: string,
   ): Promise<PreparedPromptCandidates> {
-    const [personaSources, worldSources] = await Promise.all([
+    const [personaSources, worldSources, globalSourceIds, personaGrowth, personaMemories, worldGrowth] = await Promise.all([
       this.dependencies.content.listPersonaSources(persona.id),
       persona.worldId ? this.dependencies.content.listWorldSources(persona.worldId) : Promise.resolve([]),
+      this.dependencies.content.listGlobalSourceIds(),
+      this.dependencies.learning.listGrowth('persona', persona.id),
+      this.dependencies.learning.listMemories(persona.id),
+      persona.worldId ? this.dependencies.learning.listGrowth('world', persona.worldId) : Promise.resolve([]),
     ])
-    const sources = new Map([...worldSources, ...personaSources].map(item => [item.id, item]))
+    const knownSources = new Map([...worldSources, ...personaSources].map(item => [item.id, item]))
+    const globalCandidateIds = [...new Set(candidates.flatMap(candidate => candidate.sourceId ? [candidate.sourceId] : []))]
+      .filter(sourceId => globalSourceIds.includes(sourceId) && !knownSources.has(sourceId))
+    const globalSources = (await Promise.all(globalCandidateIds.map(sourceId => this.dependencies.content.findSource(sourceId))))
+      .filter((source): source is NonNullable<typeof source> => source !== null)
+    const sources = new Map([...worldSources, ...personaSources, ...globalSources].map(item => [item.id, item]))
+    const sourceIdsWithChunks = [...new Set(candidates.flatMap(candidate => {
+      return candidate.entityType === 'source' && candidate.sourceId && candidate.chunkId && sources.has(candidate.sourceId)
+        ? [candidate.sourceId]
+        : []
+    }))]
+    const chunks = new Map((await Promise.all(sourceIdsWithChunks.map(async (sourceId) => {
+      return await this.dependencies.content.listSourceChunks(sourceId)
+    }))).flat().map(chunk => [chunk.id, chunk]))
+    const learning = new Map([
+      ...worldGrowth.filter(item => item.status === 'active').map(item => [`world_growth:${item.id}`, item] as const),
+      ...personaGrowth.filter(item => item.status === 'active').map(item => [`persona_growth:${item.id}`, item] as const),
+      ...personaMemories.filter(item => item.status === 'active').map(item => [`persona_memory:${item.id}`, item] as const),
+    ])
     const valid: PreparedPromptCandidates['valid'] = []
     const invalid: PromptContextItemSnapshot[] = []
     const seen = new Set<string>()
@@ -1184,8 +1211,23 @@ export class GenerationApplicationService implements TaskHandler {
       }
       const uniqueKey = promptBudgetCandidateKey(budget)
       const source = candidate.sourceId ? sources.get(candidate.sourceId) : null
-      const isValid = candidate.entityType === 'source'
-        && Boolean(source && source.contentText.includes(candidate.content))
+      const sourceChunk = candidate.chunkId ? chunks.get(candidate.chunkId) : null
+      const currentLearning = candidate.entityType === 'source'
+        ? null
+        : learning.get(`${candidate.entityType}:${candidate.entityId}`)
+      const isValidSource = candidate.entityType === 'source' && Boolean(
+        source?.isEnabled && (provider === 'openviking'
+          ? candidate.chunkId === null && source.contentHash === candidate.contentHash
+          : sourceChunk?.sourceId === source.id
+            && sourceChunk.content === candidate.content
+            && sourceChunk.contentHash === candidate.contentHash),
+      )
+      const isValidLearning = candidate.entityType !== 'source' && Boolean(
+        currentLearning
+        && currentLearning.content === candidate.content
+        && this.dependencies.sourceProcessor.hash(currentLearning.content) === candidate.contentHash,
+      )
+      const isValid = isValidSource || isValidLearning
       if (!isValid || seen.has(uniqueKey)) {
         invalid.push(toPromptContextItemSnapshot(budget, 'scope_or_state_invalid'))
         continue
@@ -1284,6 +1326,11 @@ export class GenerationApplicationService implements TaskHandler {
       const responseItemId = String((value as Record<string, unknown>).itemId)
       if (rawById.has(responseItemId)) duplicateIds.add(responseItemId)
       else rawById.set(responseItemId, value)
+    }
+    const targetIds = new Set(targets.map(target => target.itemId))
+    const unknownIds = [...rawById.keys()].filter(responseItemId => !targetIds.has(responseItemId))
+    if (unknownIds.length > 0) {
+      throw new ApplicationError('MODEL_OUTPUT_INVALID', '模型返回了请求之外的兴趣条目标识', 502)
     }
     const completed = await Promise.all(targets.map(async (target) => {
       const raw = rawById.get(target.itemId)
@@ -1429,7 +1476,12 @@ export class GenerationApplicationService implements TaskHandler {
       variables,
       schemaName,
       'json_object',
-      useCacheAffinity,
+      {
+        useCacheAffinity,
+        limits,
+        priorUsage,
+        validateStructuredOutput: value => { parse(value) },
+      },
     )
     const cumulativeUsage = aggregateTextModelUsage(priorUsage ? [priorUsage, response.usage] : [response.usage])
     const totalTokens = usageTotalTokens(cumulativeUsage)
@@ -1658,7 +1710,12 @@ export class GenerationApplicationService implements TaskHandler {
               variables,
               'text_block',
               'json_object',
-              true,
+              {
+                useCacheAffinity: true,
+                limits: run.parameterSnapshot,
+                priorUsage: await this.getRunUsage(run),
+                validateStructuredOutput: value => { textBlockOutputSchema.parse(value) },
+              },
             )
           : await this.generateLegacyTextBlock(run, variables)
         responseUsage = response.usage

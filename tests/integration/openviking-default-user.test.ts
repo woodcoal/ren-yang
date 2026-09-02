@@ -38,6 +38,22 @@ afterEach(() => {
 })
 
 describe('OpenViking default User 映射', () => {
+  it('调用方明确传入无有效世界时不回退到人物已关联的禁用世界', async () => {
+    database.getClient().prepare(`
+      INSERT INTO worlds (id, name, summary, active_soul_version_id, is_enabled, created_at, updated_at)
+      VALUES ('world-id', '已禁用世界', '', NULL, 0, 1000, 1000)
+    `).run()
+    database.getClient().prepare(`
+      INSERT INTO personas (id, world_id, name, origin, active_soul_version_id, created_at, updated_at)
+      VALUES ('persona-id', 'world-id', '测试人物', 'original', NULL, 1000, 1000)
+    `).run()
+    const repository = new SqliteContextIndexRepository(database.getClient())
+
+    await expect(repository.findRemoteSearchScope('persona-id', null)).resolves.toMatchObject({
+      userId: 'default', peerId: 'persona-persona-id', targets: [],
+    })
+  })
+
   it('只为世界创建业务 User且无世界人物使用 default', async () => {
     database.getClient().prepare(`
       INSERT INTO worlds (id, name, summary, active_soul_version_id, created_at, updated_at)

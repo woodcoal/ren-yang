@@ -363,7 +363,7 @@ export class OpenVikingHttpContextProvider implements ContextProvider, OpenVikin
     if (request.limit === 0) return { provider: 'openviking' as const, candidates: [] }
     const [scope, localLearning, runtime] = await Promise.all([
       this.options.repository.findRemoteSearchScope(request.personaId, request.worldId),
-      this.options.repository.listActiveLocalLearning(request.personaId),
+      this.options.repository.listActiveLocalLearning(request.personaId, request.worldId),
       this.options.repository.getSyncRuntime(),
     ])
     if (runtime.state === 'degraded') throw new ContextProviderError('OpenViking 同步异常，当前任务改用 SQLite 本地检索')
@@ -399,17 +399,22 @@ export class OpenVikingHttpContextProvider implements ContextProvider, OpenVikin
         throw new OpenVikingError('PROVIDER_OUTPUT_INVALID', 'OpenViking 检索结果缺少资源或记忆列表')
       }
       const scopeByUri = new Map(scope.targets.map(target => [target.remoteUri, target]))
+      const sourceDocuments = new Map((await Promise.all(
+        [...new Set(scope.targets.flatMap(target => target.sourceId ? [target.sourceId] : []))]
+          .map(async sourceId => [sourceId, await this.options.repository.findSourceDocument(sourceId)] as const),
+      )).filter((entry): entry is readonly [string, NonNullable<typeof entry[1]>] => entry[1] !== null))
       const candidates = [...result.memories, ...result.resources]
         .flatMap((value): EvidenceCandidate[] => {
           if (!isRecord(value) || typeof value.uri !== 'string') return []
           const resultUri = value.uri
           const target = scope.targets.find(item => resultUri === item.remoteUri || resultUri.startsWith(`${item.remoteUri}/`))
           const sourceScope = target ? scopeByUri.get(target.remoteUri) : undefined
+          const sourceDocument = sourceScope?.sourceId ? sourceDocuments.get(sourceScope.sourceId) : undefined
           const rawContent = typeof value.content === 'string' && value.content.trim()
             ? value.content
             : typeof value.abstract === 'string' ? value.abstract : ''
           const content = rawContent.trim().slice(0, 20_000)
-          if (!target || !sourceScope || !content) return []
+          if (!target || !sourceScope || !sourceDocument || !content) return []
           return [{
             entityType: 'source',
             entityId: target.sourceId ?? resultUri,
@@ -418,7 +423,8 @@ export class OpenVikingHttpContextProvider implements ContextProvider, OpenVikin
             role: sourceScope.role,
             heading: null,
             content,
-            contentHash: createHash('sha256').update(content).digest('hex'),
+            // 远端返回的是命中片段；版本校验必须使用 SQLite 当前完整资料哈希，而不是片段哈希。
+            contentHash: sourceDocument.contentHash,
             priority: sourceScope.priority,
           }]
         })

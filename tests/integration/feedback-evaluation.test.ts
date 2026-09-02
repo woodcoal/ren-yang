@@ -6,6 +6,7 @@ import { FEEDBACK_MODEL_PARAMETERS, FeedbackApplicationService } from '../../ser
 import type { AiAlgorithmApplicationService } from '../../server/application/aiConfiguration/AiAlgorithmApplicationService'
 import { SqliteDatabase } from '../../server/infrastructure/database/SqliteDatabase'
 import { SqliteFeedbackRepository } from '../../server/infrastructure/database/SqliteFeedbackRepository'
+import { SqliteContextIndexRepository } from '../../server/infrastructure/database/SqliteContextIndexRepository'
 import type { Clock } from '../../server/ports/Clock'
 import type { ContextSyncTaskQueue } from '../../server/ports/ContextSyncTaskQueue'
 import type { IdentifierGenerator } from '../../server/ports/IdentifierGenerator'
@@ -156,6 +157,13 @@ describe('反馈分类与人物成长素材闭环', () => {
     const feedback = await service.submitFeedback(IDS.run, {
       content: '以后回答时明确提到证据。', blockId: null, rating: 'positive', isLongTerm: true, editedOutput: null,
     })
+    const contextRepository = new SqliteContextIndexRepository(database.getClient())
+    expect(queue.feedbackIds).toEqual([])
+    expect(await contextRepository.findSessionExchange('feedback', feedback.id)).toBeNull()
+    expect(await contextRepository.listPendingSessionSources()).not.toContainEqual({
+      sourceType: 'feedback',
+      sourceId: feedback.id,
+    })
     const confirmed = await service.confirmClassification(feedback.id, {
       targetType: 'persona', blockId: null, sourceId: null, hasEvidenceConflict: false,
     })
@@ -191,6 +199,14 @@ describe('反馈分类与人物成长素材闭环', () => {
     expect(database.getClient().prepare('SELECT COUNT(*) AS count FROM learning_prompt_versions').get()).toEqual({ count: 0 })
     expect(queue.feedbackIds).toEqual([feedback.id])
     expect(queue.sourceIds).toEqual([feedbackSourceId])
+    expect(await contextRepository.findSessionExchange('feedback', feedback.id)).toMatchObject({
+      sourceType: 'feedback',
+      sourceId: feedback.id,
+    })
+    expect(await contextRepository.listPendingSessionSources()).toContainEqual({
+      sourceType: 'feedback',
+      sourceId: feedback.id,
+    })
     expect(model.requests[0]?.parameters.temperature).toBe(0.9)
     expect(database.getClient().prepare(`
       SELECT parameter_snapshot_json FROM feedback_suggestions WHERE feedback_id = ?

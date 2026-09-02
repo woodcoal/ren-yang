@@ -1,8 +1,10 @@
+import { createHash } from 'node:crypto'
 import type { Database as BetterSqliteDatabase } from 'better-sqlite3'
 import type { AiPromptDraftView, AiPromptVariableView, AiPromptVersionView } from '../../../shared/types/aiPrompt'
 import type {
   AiPromptDefinitionRecord,
   AiPromptRepository,
+  AiPromptVersionRecord,
   SaveAiPromptDraftRecord,
 } from '../../ports/AiPromptRepository'
 
@@ -43,9 +45,9 @@ export class SqliteAiPromptRepository implements AiPromptRepository {
   }
 
   /** @param versionId 版本 UUID。 @returns 指定不可变版本或 null。 */
-  async findVersion(versionId: string): Promise<AiPromptVersionView | null> {
+  async findVersion(versionId: string): Promise<AiPromptVersionRecord | null> {
     const row = this.client.prepare('SELECT * FROM ai_prompt_versions WHERE id = ?').get(versionId)
-    return row ? toVersion(row) : null
+    return row ? toVersionRecord(row) : null
   }
 
   /** @param record 完整草稿记录。 @returns 保存后的草稿。 */
@@ -99,7 +101,7 @@ export class SqliteAiPromptRepository implements AiPromptRepository {
       const draft = this.client.prepare(`
         SELECT * FROM ai_prompt_drafts WHERE prompt_code = ? AND updated_at = ?
       `).get(code, expectedDraftUpdatedAt) as Record<string, unknown> | undefined
-      const definition = this.client.prepare('SELECT active_version_id FROM ai_prompts WHERE code = ?').get(code) as Record<string, unknown> | undefined
+      const definition = this.client.prepare('SELECT active_version_id, variables_json FROM ai_prompts WHERE code = ?').get(code) as Record<string, unknown> | undefined
       if (!draft || !definition || nullableString(definition.active_version_id) !== nullableString(draft.base_version_id)) return false
       const next = this.client.prepare(`
         SELECT COALESCE(MAX(version_no), 0) + 1 AS version_no
@@ -108,14 +110,16 @@ export class SqliteAiPromptRepository implements AiPromptRepository {
       this.client.prepare(`
         INSERT INTO ai_prompt_versions (
           id, prompt_code, version_no, system_prompt_template, user_prompt_template,
-          change_summary, published_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+          variable_contract_json, variable_contract_hash, change_summary, published_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         versionId,
         code,
         next.version_no,
         draft.system_prompt_template,
         draft.user_prompt_template,
+        String(definition.variables_json),
+        hashContract(String(definition.variables_json)),
         draft.change_summary,
         timestamp,
       )
@@ -126,7 +130,8 @@ export class SqliteAiPromptRepository implements AiPromptRepository {
       return true
     })
     if (!transaction()) return null
-    return await this.findVersion(versionId)
+    const published = this.client.prepare('SELECT * FROM ai_prompt_versions WHERE id = ?').get(versionId)
+    return published ? toVersion(published) : null
   }
 }
 
@@ -183,6 +188,31 @@ function toVersion(value: unknown): AiPromptVersionView {
     changeSummary: String(row.change_summary),
     publishedAt: Number(row.published_at),
   }
+}
+
+/**
+ * 把 SQLite 版本行转换为包含发布时变量契约的内部记录。
+ * @param value SQLite 查询行。
+ * @returns 可用于历史版本渲染的不可变版本记录。
+ */
+function toVersionRecord(value: unknown): AiPromptVersionRecord {
+  const row = value as Record<string, unknown>
+  const contractJson = nullableString(row.variable_contract_json)
+  if (!contractJson) throw new Error('AI 提示词历史版本缺少变量契约快照')
+  const contractHash = nullableString(row.variable_contract_hash)
+  if (contractHash && contractHash !== hashContract(contractJson)) {
+    throw new Error('AI 提示词历史版本变量契约哈希不匹配')
+  }
+  return {
+    ...toVersion(row),
+    variables: JSON.parse(contractJson) as AiPromptVariableView[],
+    variableContractHash: contractHash,
+  }
+}
+
+/** @param contractJson 稳定变量契约 JSON。 @returns SHA-256 十六进制哈希。 */
+function hashContract(contractJson: string): string {
+  return createHash('sha256').update(contractJson, 'utf8').digest('hex')
 }
 
 /**

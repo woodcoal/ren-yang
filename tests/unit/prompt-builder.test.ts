@@ -3,6 +3,7 @@ import { buildSoulPromptAnalysisVariables, soulAnalysisPromptCode } from '../../
 import {
   buildDocumentPlanPromptVariables,
   buildInterestBatchPromptVariables,
+  buildImagePromptVariables,
   buildWorldDraftPromptVariables,
   GENERATION_PROMPT_CODES,
 } from '../../server/application/generation/PromptBuilder'
@@ -47,6 +48,24 @@ describe('提示词变量契约', () => {
       maximumBlocks: '4',
       allowImages: 'true',
     })
+  })
+
+  it('图片生成只携带视觉身份、简报、必要前文和负面约束', () => {
+    const variables = buildImagePromptVariables(PROMPT_CONTEXT, {
+      theme: '清晨河港', subject: '河港中的人物', composition: '中景', colorPalette: '蓝灰色',
+      texture: '写实摄影', aspectRatio: '16:9', altText: '人物走入清晨河港', negativePrompt: '文字与水印',
+    }, [{ key: 'intro', text: '人物走入河港。' }])
+
+    expect(variables).toEqual({
+      personaPromptJson: '"测试人物"',
+      worldPromptJson: 'null',
+      briefJson: expect.stringContaining('河港中的人物'),
+      previousOutputsJson: '[{"key":"intro","text":"人物走入河港。"}]',
+      negativePromptJson: '"文字与水印"',
+    })
+    expect(variables).not.toHaveProperty('worldGrowthEvidenceJson')
+    expect(variables).not.toHaveProperty('personaMemoryEvidenceJson')
+    expect(variables).not.toHaveProperty('sourceEvidenceJson')
   })
 
   it('世界快速初始化只提供经过 JSON 隔离的用户描述', () => {

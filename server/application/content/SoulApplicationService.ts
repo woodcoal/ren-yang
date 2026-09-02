@@ -347,6 +347,10 @@ export class SoulApplicationService {
       buildSoulPromptAnalysisVariables(promptText),
       'soul_prompt_analysis',
       'json_object',
+      {
+        limits: SOUL_ANALYSIS_PARAMETERS,
+        validateStructuredOutput: value => { analyzedSoulPromptSchema.parse(value) },
+      },
     )
   }
 

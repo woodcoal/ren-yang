@@ -1,5 +1,5 @@
 import type { PublishAiPromptDraftInput, SaveAiPromptDraftInput } from '../../../shared/schemas/aiPrompt'
-import type { AiPromptVersionView, AiPromptWorkspaceView, RenderedAiPrompt, RenderedAiPromptForTest } from '../../../shared/types/aiPrompt'
+import type { AiPromptVariableView, AiPromptVersionView, AiPromptWorkspaceView, RenderedAiPrompt, RenderedAiPromptForTest } from '../../../shared/types/aiPrompt'
 import type { AiPromptDefinitionRecord, AiPromptRepository } from '../../ports/AiPromptRepository'
 import type { Clock } from '../../ports/Clock'
 import type { IdentifierGenerator } from '../../ports/IdentifierGenerator'
@@ -124,7 +124,7 @@ export class AiPromptApplicationService {
     if (!version || version.promptCode !== code) {
       throw new ApplicationError('AI_PROMPT_VERSION_MISSING', `提示词“${definition.name}”的固定版本不存在`, 409)
     }
-    validateRenderVariables(definition, variables)
+    validateRenderVariables(definition.name, version.variables, variables)
     return {
       code,
       versionId: version.id,
@@ -143,9 +143,9 @@ export class AiPromptApplicationService {
    */
   async renderDraftPreferred(code: string, variables: Record<string, string>): Promise<RenderedAiPromptForTest> {
     const definition = await this.requireDefinition(code)
-    validateRenderVariables(definition, variables)
     const draft = await this.dependencies.repository.findDraft(code)
     if (draft) {
+      validateRenderVariables(definition.name, definition.variables, variables)
       return {
         code,
         source: 'draft',
@@ -233,6 +233,25 @@ function validateTemplateContract(
       missingVariables: missing,
     })
   }
+  for (const variable of definition.variables) {
+    const inSystem = extractTemplateVariables(systemPromptTemplate ?? '').includes(variable.name)
+    const inUser = extractTemplateVariables(userPromptTemplate).includes(variable.name)
+    const placementInvalid = variable.placement === 'system'
+      ? !inSystem || inUser
+      : variable.placement === 'user'
+        ? inSystem || !inUser
+        : false
+    const cacheRoleInvalid = variable.cacheRole === 'stable'
+      ? definition.kind !== 'text' || variable.placement !== 'system'
+      : definition.kind === 'text' && variable.placement === 'system'
+    if (placementInvalid || cacheRoleInvalid) {
+      throw new ApplicationError('AI_PROMPT_TEMPLATE_INVALID', '提示词变量位置或缓存角色与固定契约不一致', 400, {
+        variable: variable.name,
+        placement: variable.placement,
+        cacheRole: variable.cacheRole,
+      })
+    }
+  }
 }
 
 /**
@@ -241,15 +260,32 @@ function validateTemplateContract(
  * @param variables 业务模块提供的变量。
  * @returns 契约有效时无返回值。
  */
-function validateRenderVariables(definition: AiPromptDefinitionRecord, variables: Record<string, string>): void {
-  const declared = new Set(definition.variables.map(variable => variable.name))
+function validateRenderVariables(promptName: string, contract: AiPromptVariableView[], variables: Record<string, string>): void {
+  const declared = new Set(contract.map(variable => variable.name))
   const provided = new Set(Object.keys(variables))
   const missing = [...declared].filter(name => !provided.has(name))
   const unknown = [...provided].filter(name => !declared.has(name))
   if (missing.length > 0 || unknown.length > 0 || Object.values(variables).some(value => typeof value !== 'string')) {
-    throw new ApplicationError('AI_PROMPT_VARIABLE_INVALID', `提示词“${definition.name}”的运行变量不完整`, 500, {
+    throw new ApplicationError('AI_PROMPT_VARIABLE_INVALID', `提示词“${promptName}”的运行变量不完整`, 500, {
       missingVariables: missing,
       unknownVariables: unknown,
+    })
+  }
+  const invalidJson = contract
+    .filter(variable => variable.encoding === 'json_string')
+    .map(variable => variable.name)
+    .filter((name) => {
+      try {
+        JSON.parse(variables[name]!)
+        return false
+      }
+      catch {
+        return true
+      }
+    })
+  if (invalidJson.length > 0) {
+    throw new ApplicationError('AI_PROMPT_VARIABLE_INVALID', `提示词“${promptName}”的 JSON 运行变量无效`, 500, {
+      invalidJsonVariables: invalidJson,
     })
   }
 }

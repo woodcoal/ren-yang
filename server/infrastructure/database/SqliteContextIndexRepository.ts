@@ -161,7 +161,8 @@ export class SqliteContextIndexRepository implements ContextIndexRepository {
   async findRemoteSearchScope(personaId: string, worldId: string | null) {
     const persona = this.client.prepare('SELECT world_id FROM personas WHERE id = ?').get(personaId) as { world_id: string | null } | undefined
     if (!persona) return null
-    const effectiveWorldId = worldId ?? persona.world_id
+    // 调用方已经根据世界启用状态计算有效世界；null 必须保持“明确无有效世界”，不能回退数据库关联。
+    const effectiveWorldId = worldId
     const userId = effectiveWorldId ? `world-${effectiveWorldId}` : 'default'
     const peerId = `persona-${personaId}`
     const sourceTargets = this.client.prepare(`
@@ -185,6 +186,7 @@ export class SqliteContextIndexRepository implements ContextIndexRepository {
         AND context_sync_records.operation = 'upsert'
         AND context_sync_records.status = 'synchronized'
         AND source_materials.is_enabled = 1
+        AND context_sync_records.content_hash = source_materials.content_hash
         AND (context_sync_records.user_id = ? OR (context_sync_records.scope_type = 'global' AND context_sync_records.user_id = 'default'))
         AND context_sync_records.remote_uri IS NOT NULL
         AND ((context_sync_records.scope_type = 'persona' AND context_sync_records.scope_id = ? AND persona_sources.source_id IS NOT NULL)
@@ -220,8 +222,13 @@ export class SqliteContextIndexRepository implements ContextIndexRepository {
     return { userId, peerId, complete: synchronizedSourceCount === expectedSourceCount, targets: sourceTargets }
   }
 
-  /** @param personaId 人物 UUID。 @returns 没有远端 URI但必须参与提示的有效成长和记忆。 */
-  async listActiveLocalLearning(personaId: string): Promise<ActiveLocalLearning[]> {
+  /**
+   * 返回没有远端 URI 但必须参与提示的有效成长和记忆。
+   * @param personaId 人物 UUID。
+   * @param worldId 调用方已经解析的有效世界 UUID；null 表示明确排除世界成长。
+   * @returns 当前人物及有效世界范围内的活动成长和记忆。
+   */
+  async listActiveLocalLearning(personaId: string, worldId: string | null): Promise<ActiveLocalLearning[]> {
     return this.client.prepare(`
       SELECT memory_records.id, 'persona_memory' AS entity_type, 'memory' AS role,
         memory_revisions.content, memory_revisions.content_hash, memory_revisions.importance, memory_records.updated_at
@@ -237,12 +244,11 @@ export class SqliteContextIndexRepository implements ContextIndexRepository {
       UNION ALL
       SELECT growth_records.id, 'world_growth' AS entity_type, 'growth' AS role,
         growth_revisions.content, growth_revisions.content_hash, growth_revisions.importance, growth_records.updated_at
-      FROM personas
-      INNER JOIN growth_records ON growth_records.world_id = personas.world_id
+      FROM growth_records
       INNER JOIN growth_revisions ON growth_revisions.id = growth_records.current_revision_id
-      WHERE personas.id = ? AND growth_records.status = 'active'
+      WHERE growth_records.world_id = ? AND growth_records.status = 'active'
       ORDER BY importance DESC, updated_at DESC, id
-    `).all(personaId, personaId, personaId).map((value) => {
+    `).all(personaId, personaId, worldId ?? '').map((value) => {
       const data = row(value)
       return {
         id: String(data.id),
@@ -276,6 +282,7 @@ export class SqliteContextIndexRepository implements ContextIndexRepository {
           SELECT feedback_events.id, feedback_events.content, feedback_events.edited_output,
             personas.id AS persona_id, personas.world_id
           FROM feedback_events
+          INNER JOIN feedback_resolutions ON feedback_resolutions.feedback_id = feedback_events.id
           INNER JOIN generation_runs ON generation_runs.id = feedback_events.run_id
           INNER JOIN soul_versions ON soul_versions.id = generation_runs.persona_version_id
           INNER JOIN personas ON personas.id = soul_versions.persona_id
@@ -318,6 +325,7 @@ export class SqliteContextIndexRepository implements ContextIndexRepository {
       UNION ALL
       SELECT 'feedback' AS source_type, feedback_events.id AS source_id
       FROM feedback_events
+      INNER JOIN feedback_resolutions ON feedback_resolutions.feedback_id = feedback_events.id
       WHERE NOT EXISTS (
         SELECT 1 FROM openviking_session_records
         WHERE source_type = 'feedback' AND source_id = feedback_events.id AND status = 'synchronized'

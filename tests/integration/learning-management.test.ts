@@ -195,7 +195,7 @@ describe('成长素材与学习提示词闭环', () => {
     expect((await learning.getPersonaGrowthWorkspace(persona.id)).prompt.versions.map(version => version.versionNo)).toEqual([3, 2, 1])
   })
 
-  it('历史任务可分页使用的事实包含输入结果正文，并支持启停和逐条评分', async () => {
+  it('历史任务分析素材只包含输入、稳定摘要和决策，不包含人物完整输出', async () => {
     const persona = await createPersona()
     const version = await souls.publishDraft('persona', persona.id)
     const runId = '30000000-0000-4000-8000-000000000001'
@@ -218,6 +218,8 @@ describe('成长素材与学习提示词闭环', () => {
       id: operationId, title: '兴趣判断任务', importance: 3, isEnabled: true,
       content: expect.stringContaining('是否阅读事实型文章？'),
     })
+    expect(initial.operationRecords[0]?.content).toContain('选择阅读事实型文章')
+    expect(initial.operationRecords[0]?.content).not.toContain('"decision":"interested"')
     await learning.updateOperationRecordImportance(persona.id, operationId, { importance: 5 })
     await learning.updateOperationRecordStates(persona.id, { ids: [operationId], isEnabled: false })
     expect((await learning.getPersonaMemoryWorkspace(persona.id)).operationRecords[0]).toMatchObject({ importance: 5, isEnabled: false })

@@ -74,6 +74,11 @@ class AnalysisTextModel implements TextModelPort {
 class TwoStageGrowthAlgorithms {
   /** 综合步骤收到的程序校验后结论。 */
   public synthesizedFacts: unknown[] = []
+  /** 综合步骤实际调用次数。 */
+  public synthesizeCallCount = 0
+
+  /** @param emptyExtraction 是否让提取步骤返回明确的空事实集合。 */
+  constructor(private readonly emptyExtraction = false) {}
 
   /** @param code 世界或人物成长算法编码。 @returns 固定非敏感配置快照。 */
   async prepare(code: 'world_growth' | 'persona_growth'): Promise<AiAlgorithmSnapshot> {
@@ -114,6 +119,12 @@ class TwoStageGrowthAlgorithms {
     variables: Record<string, string>,
   ): Promise<TextModelResponse> {
     if (stepKey === 'extract') {
+      if (this.emptyExtraction) {
+        return {
+          structuredOutput: { facts: [] },
+          usage: { inputTokens: 10, outputTokens: 2, totalTokens: 12 },
+        }
+      }
       const input = (JSON.parse(variables.inputsJson!) as Array<{ id: string, inputId?: string }>)[0]!
       // 模拟模型优先复制与输出字段同名的 inputId；输入中不应暴露容易误引的原资料 UUID。
       const evidenceInputId = input.inputId ?? input.id
@@ -125,6 +136,7 @@ class TwoStageGrowthAlgorithms {
         usage: { inputTokens: 10, outputTokens: 10, totalTokens: 20 },
       }
     }
+    this.synthesizeCallCount += 1
     this.synthesizedFacts = JSON.parse(variables.factsJson!) as unknown[]
     return {
       structuredOutput: '进行城邦规划时，优先保障稳定水运。',
@@ -137,6 +149,11 @@ class TwoStageGrowthAlgorithms {
 class TwoStageMemoryAlgorithms {
   /** 记忆编译步骤收到的事实。 */
   public synthesizedFacts: unknown[] = []
+  /** 记忆编译步骤实际调用次数。 */
+  public synthesizeCallCount = 0
+
+  /** @param conflicts 提取事实携带的未裁决冲突。 */
+  constructor(private readonly conflicts: string[] = []) {}
 
   /** @param code 人物记忆算法编码。 @returns 固定两阶段配置快照。 */
   async prepare(code: 'persona_memory'): Promise<AiAlgorithmSnapshot> {
@@ -184,13 +201,14 @@ class TwoStageMemoryAlgorithms {
         structuredOutput: { facts: [{
           statement: '完成过一次小说人物关系校对。',
           memoryType: 'experience',
-          evidence: [{ inputId: evidenceInputId, signalType: 'external_record' }],
+          evidence: [{ inputId: evidenceInputId }],
           confidence: 0.9,
-          conflicts: [],
+          conflicts: this.conflicts,
         }] },
         usage: { inputTokens: 10, outputTokens: 10, totalTokens: 20 },
       }
     }
+    this.synthesizeCallCount += 1
     this.synthesizedFacts = JSON.parse(variables.factsJson!) as unknown[]
     return {
       structuredOutput: '处理小说相关任务时，可参考其已完成过人物关系校对的经历。',
@@ -348,6 +366,49 @@ describe('AI 综合提炼学习提示词', () => {
       promptText: '进行城邦规划时，优先保障稳定水运。',
       sourceAnalysisBatchId: queued.id,
     })
+    expect(database.getClient().prepare(`
+      SELECT extraction_result_json, validated_facts_json FROM analysis_batches WHERE id = ?
+    `).get(queued.id)).toEqual({
+      extraction_result_json: expect.stringContaining('优先保障稳定水运。'),
+      validated_facts_json: expect.stringContaining('"evidenceCount":1'),
+    })
+  })
+
+  it('提取结果没有新事实时直接完成批次且不调用综合或创建草稿', async () => {
+    const algorithms = new TwoStageGrowthAlgorithms(true)
+    analysis = new AnalysisApplicationService({
+      content: contentRepository,
+      souls: contentRepository,
+      learning: learningRepository,
+      analysis: analysisRepository,
+      model,
+      prompts,
+      identifiers,
+      clock,
+      algorithms,
+    })
+    worker = new WorkerApplicationService({
+      taskJobRepository: new SqliteTaskJobRepository(database.getClient()),
+      taskHandler: analysis,
+      clock,
+      leaseDurationMs: 60_000,
+    })
+
+    const queued = await analysis.createBatch('world_growth', worldId, { mode: 'incremental' })
+    await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: true })
+
+    expect(algorithms.synthesizeCallCount).toBe(0)
+    expect(await analysis.getBatch(queued.id)).toMatchObject({
+      status: 'completed',
+      resultSummary: '没有形成新事实。',
+    })
+    expect((await learning.getWorldGrowthWorkspace(worldId)).prompt.draft).toBeNull()
+    expect(database.getClient().prepare(`
+      SELECT extraction_result_json, validated_facts_json FROM analysis_batches WHERE id = ?
+    `).get(queued.id)).toEqual({
+      extraction_result_json: '{"facts":[]}',
+      validated_facts_json: '[]',
+    })
   })
 
   it('增量提炼不会重复消费同正文同评分素材，完整重建仍可发起', async () => {
@@ -430,6 +491,43 @@ describe('AI 综合提炼学习提示词', () => {
     })
   })
 
+  it('批次创建后当前学习提示词变化时拒绝覆盖新版本和草稿', async () => {
+    await learning.saveLearningPromptDraft('world_growth', worldId, {
+      promptText: '初始水运规则。', baseVersionId: null,
+    })
+    const initial = await learning.publishLearningPromptDraft('world_growth', worldId, { changeSummary: '建立初始规则' })
+    const batch = await analysis.createBatch('world_growth', worldId, { mode: 'incremental' })
+
+    await learning.saveLearningPromptDraft('world_growth', worldId, {
+      promptText: '管理员刚发布的新规则。', baseVersionId: initial.id,
+    })
+    const current = await learning.publishLearningPromptDraft('world_growth', worldId, { changeSummary: '人工更新规则' })
+
+    await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: false })
+    expect(await analysis.getBatch(batch.id)).toMatchObject({ status: 'failed', errorCode: 'VERSION_CONFLICT' })
+    expect((await learning.getWorldGrowthWorkspace(worldId)).prompt).toMatchObject({
+      activeVersion: { id: current.id, promptText: '管理员刚发布的新规则。' },
+      draft: null,
+    })
+  })
+
+  it('批次创建后出现人工草稿时拒绝覆盖该草稿', async () => {
+    await learning.saveLearningPromptDraft('world_growth', worldId, {
+      promptText: '初始水运规则。', baseVersionId: null,
+    })
+    const initial = await learning.publishLearningPromptDraft('world_growth', worldId, { changeSummary: '建立初始规则' })
+    const batch = await analysis.createBatch('world_growth', worldId, { mode: 'incremental' })
+    await learning.saveLearningPromptDraft('world_growth', worldId, {
+      promptText: '尚未发布的人工草稿。', baseVersionId: initial.id,
+    })
+
+    await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: false })
+    expect(await analysis.getBatch(batch.id)).toMatchObject({ status: 'failed', errorCode: 'VERSION_CONFLICT' })
+    expect((await learning.getWorldGrowthWorkspace(worldId)).prompt.draft).toMatchObject({
+      promptText: '尚未发布的人工草稿。', createdBy: 'user',
+    })
+  })
+
   it('人物记忆专用算法会固定第三方记录，校验证据门槛后编译待发布草稿', async () => {
     const persona = await content.createPersona({
       name: '外部经历人物', worldId: null, sourceIds: [],
@@ -474,6 +572,46 @@ describe('AI 综合提炼学习提示词', () => {
     await expect(learning.getPersonaMemoryWorkspace(persona.persona.id)).resolves.toMatchObject({
       inputStatistics: { enabledCount: 1, pendingCount: 0 },
       prompt: { draft: { promptText: '处理小说相关任务时，可参考其已完成过人物关系校对的经历。' } },
+    })
+  })
+
+  it('人物记忆事实仍有冲突时禁止自动综合发布', async () => {
+    const persona = await content.createPersona({
+      name: '冲突经历人物', worldId: null, sourceIds: [],
+      snapshot: { promptText: '只使用已核对的经历。' }, changeSummary: '建立人物',
+    })
+    await learning.createExternalRecord(persona.persona.id, {
+      occurredOn: '2026-09-01', content: '完成了一次人物关系校对。',
+      references: [{ name: '待复核笔记', address: '笔记库/冲突记录' }], importance: 5,
+    })
+    const algorithms = new TwoStageMemoryAlgorithms(['经历来源仍有冲突'])
+    analysis = new AnalysisApplicationService({
+      content: contentRepository,
+      souls: contentRepository,
+      learning: learningRepository,
+      analysis: analysisRepository,
+      model,
+      prompts,
+      identifiers,
+      clock,
+      algorithms,
+      tokenCounter: new ConservativeTokenCounter(),
+      promptTokenBudgets: { world_growth: 2_500, persona_growth: 2_500, persona_memory: 3_000 },
+    })
+    worker = new WorkerApplicationService({
+      taskJobRepository: new SqliteTaskJobRepository(database.getClient()),
+      taskHandler: analysis,
+      clock,
+      leaseDurationMs: 60_000,
+    })
+
+    const batch = await analysis.createBatch('persona_memory', persona.persona.id, { mode: 'incremental' }, { autoPublish: true })
+    await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: false })
+
+    expect(algorithms.synthesizeCallCount).toBe(0)
+    expect(await analysis.getBatch(batch.id)).toMatchObject({ status: 'failed', errorCode: 'ANALYSIS_FACT_CONFLICT' })
+    expect((await learning.getPersonaMemoryWorkspace(persona.persona.id)).prompt).toMatchObject({
+      activeVersion: null, draft: null,
     })
   })
 })

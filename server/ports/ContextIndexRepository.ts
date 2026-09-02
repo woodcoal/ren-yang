@@ -133,8 +133,8 @@ export interface ContextIndexRepository {
   listSourceScopes(personaId: string, worldId: string | null): Promise<ContextSourceScope[]>
   /** @param personaId 人物 UUID。 @param worldId 可选世界 UUID。 @returns 同一 User 下可检索的精确远端范围。 */
   findRemoteSearchScope(personaId: string, worldId: string | null): Promise<ContextRemoteSearchScope | null>
-  /** @param personaId 人物 UUID。 @returns 尚无远端投影但已生效的成长和记忆。 */
-  listActiveLocalLearning(personaId: string): Promise<ActiveLocalLearning[]>
+  /** @param personaId 人物 UUID。 @param worldId 已解析的有效世界 UUID；null 明确排除世界成长。 @returns 尚无远端投影但已生效的成长和记忆。 */
+  listActiveLocalLearning(personaId: string, worldId: string | null): Promise<ActiveLocalLearning[]>
   /** @param sourceType 本地交流类型。 @param sourceId 本地 UUID。 @returns 完整交流事实或 null。 */
   findSessionExchange(sourceType: 'run' | 'feedback', sourceId: string): Promise<ContextSessionExchange | null>
   /** @returns 尚未成功写入 OpenViking 的全部终态运行和反馈来源。 */

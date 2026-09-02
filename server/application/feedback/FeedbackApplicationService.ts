@@ -116,6 +116,10 @@ export class FeedbackApplicationService {
           variables,
           'feedback_classification',
           'json_object',
+          {
+            limits: parameters,
+            validateStructuredOutput: value => { feedbackClassificationSuggestionSchema.parse(value) },
+          },
         )
       }
       else {
@@ -157,14 +161,6 @@ export class FeedbackApplicationService {
       },
     )
     if (!created) throw new ApplicationError('RESOURCE_NOT_FOUND', '反馈目标产物块不属于当前运行', 404)
-    if (this.dependencies.contextSyncQueue) {
-      await this.dependencies.contextSyncQueue.enqueueSessionSynchronization(
-        'feedback',
-        feedbackId,
-        this.dependencies.identifiers.create(),
-        this.dependencies.clock.now(),
-      )
-    }
     return toFeedbackView((await this.dependencies.repository.findFeedback(feedbackId))!)
   }
 
@@ -224,6 +220,8 @@ export class FeedbackApplicationService {
       await this.enqueueFeedbackSourceSynchronization(feedbackSourceId)
     }
 
+    await this.enqueueFeedbackSessionSynchronization(feedbackId)
+
     return toFeedbackView((await this.dependencies.repository.findFeedback(feedbackId))!)
   }
 
@@ -242,6 +240,17 @@ export class FeedbackApplicationService {
       this.dependencies.identifiers.create(),
       this.dependencies.clock.now(),
       'persona_feedback_source',
+    )
+  }
+
+  /** @param feedbackId 已确认反馈 UUID。 @returns 能力关闭时直接结束，否则保存反馈 Session 投影同步意图。 */
+  private async enqueueFeedbackSessionSynchronization(feedbackId: string): Promise<void> {
+    if (!this.dependencies.contextSyncQueue) return
+    await this.dependencies.contextSyncQueue.enqueueSessionSynchronization(
+      'feedback',
+      feedbackId,
+      this.dependencies.identifiers.create(),
+      this.dependencies.clock.now(),
     )
   }
 

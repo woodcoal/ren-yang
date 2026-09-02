@@ -31,6 +31,7 @@ import { createTestAiPromptService } from '../support/createTestAiPromptService'
 import type { AiAlgorithmApplicationService } from '../../server/application/aiConfiguration/AiAlgorithmApplicationService'
 import type { AiAlgorithmSnapshot } from '../../server/domain/ai/AiAlgorithmModels'
 import type { AiAlgorithmCode } from '../../shared/types/aiConfiguration'
+import type { ContextProvider, EvidenceCandidate } from '../../server/ports/ContextProvider'
 
 /** 测试固定时钟。 */
 class TestClock implements Clock {
@@ -55,6 +56,8 @@ class FixedTextModel implements TextModelPort {
   public invalidInterestAlways = false
   /** 批量兴趣响应中需要故意遗漏的客户端条目标识。 */
   public omittedInterestItemId: string | null = null
+  /** 是否在批量兴趣响应中追加请求之外的条目标识。 */
+  public appendUnknownInterestItem = false
   /** 是否让第一次人物草稿错误地包含创建流程元话术。 */
   public invalidPersonaMetaOnce = false
   /** 是否让第一次世界草稿错误地包含创建流程元话术。 */
@@ -135,7 +138,8 @@ class FixedTextModel implements TextModelPort {
       const evidence = readEvidence(request.userPrompt)
       const fact = evidence.find(item => item.role === 'canon_fact')
       const result = response({
-        results: items
+        results: [
+          ...items
           .filter(item => item.itemId !== this.omittedInterestItemId)
           .map(item => ({
             itemId: item.itemId,
@@ -148,6 +152,16 @@ class FixedTextModel implements TextModelPort {
             unknowns: [],
             reasoningSummary: `人物会关注：${item.text}`,
           })),
+          ...(this.appendUnknownInterestItem
+            ? [{
+                itemId: 'unexpected', probability: 0.5, confidence: 0.5,
+                decision: 'insufficient_information',
+                factors: [{ dimension: 'topic', score: 0, explanation: '未知条目。' }],
+                supportingEvidenceIds: [], opposingEvidenceIds: [], unknowns: ['请求中不存在'],
+                reasoningSummary: '请求中不存在的条目。',
+              }]
+            : []),
+        ],
       }, this.usage)
       if (this.afterInterestResponse) await this.afterInterestResponse()
       return result
@@ -200,6 +214,26 @@ class FixedTextModel implements TextModelPort {
 class DisabledTextModel extends FixedTextModel {
   /** @returns 始终返回 null。 */
   override getConfiguredModel(): null { return null }
+}
+
+/** 为运行创建返回固定候选的上下文提供器测试适配器。 */
+class FixedEvidenceContextProvider implements ContextProvider {
+  /**
+   * 创建固定候选提供器。
+   * @param candidates 已按检索相关性排列的候选。
+   */
+  constructor(private readonly candidates: EvidenceCandidate[]) {}
+
+  /** @returns 固定使用 OpenViking 路径，以覆盖远端候选二次校验。 */
+  getProvider() { return 'openviking' as const }
+
+  /** @returns 固定启用且已配置的 OpenViking 能力。 */
+  getOpenVikingCapability() {
+    return { configured: true, enabled: true, provider: 'openviking' as const, endpointOrigin: 'https://ov.test' }
+  }
+
+  /** @returns 创建时传入的候选副本。 */
+  async search() { return { provider: 'openviking' as const, candidates: [...this.candidates] } }
 }
 
 /** 返回固定 PNG 或稳定失败的免费测试图片模型。 */
@@ -524,6 +558,52 @@ describe('阶段三纯文本运行', () => {
     })
   })
 
+  it('全局资料通过当前范围与切片哈希校验后进入运行证据', async () => {
+    const global = await contentService.createPastedSource({
+      name: '全局共同规则', role: 'canon_fact', content: '所有人物都必须优先说明资料中的明确限制。',
+    })
+    await contentService.replaceGlobalSources({ sourceIds: [global.source.id] })
+
+    const created = await generation.createInterestRun({ personaId, content: '资料中的明确限制是什么？' })
+    const details = await generation.getRun(created.runId)
+
+    expect(details.run.promptContext.selected).toEqual(expect.arrayContaining([
+      expect.objectContaining({ category: 'source', contentHash: global.chunks[0]?.contentHash }),
+    ]))
+    expect(details.evidence).toEqual(expect.arrayContaining([
+      expect.objectContaining({ sourceId: global.source.id, chunkId: global.chunks[0]?.id }),
+    ]))
+  })
+
+  it('当前人物的有效成长候选通过修订正文和哈希校验后进入运行证据', async () => {
+    await learningService.createGrowth('persona', personaId, {
+      content: '人物会优先研究具有可靠档案依据的课程。', importance: 5, sourceIds: [],
+    })
+    const repository = new SqliteLearningRepository(database.getClient())
+    const growth = (await repository.listGrowth('persona', personaId))[0]!
+    await learningService.updateGrowthStates('persona', personaId, { ids: [growth.id], status: 'active' })
+    const identifiers = new SystemIdentifierGenerator()
+    const processor = new NodeSourceContentProcessor(identifiers)
+    const service = new GenerationApplicationService({
+      runs: new SqliteRunRepository(database.getClient()), content: new SqliteContentRepository(database.getClient()),
+      context: new FixedEvidenceContextProvider([{
+        entityType: 'persona_growth', entityId: growth.id, sourceId: null, chunkId: null,
+        role: 'growth', heading: '有效成长', content: growth.content,
+        contentHash: processor.hash(growth.content), priority: 0,
+      }]),
+      model, prompts: aiPrompts, imageModel, imageAssets, identifiers, clock: testClock,
+      sourceProcessor: processor, tokenCounter: new ConservativeTokenCounter(), learning: repository,
+      algorithms: createGenerationAlgorithms(aiPrompts, model, imageModel),
+    })
+
+    const created = await service.createInterestRun({ personaId, content: '档案课程' })
+    const details = await service.getRun(created.runId)
+
+    expect(details.run.promptContext.selected).toEqual(expect.arrayContaining([
+      expect.objectContaining({ entityId: growth.id, category: 'persona_growth', skippedReason: null }),
+    ]))
+  })
+
   it('同一人物多条文本只调用一次模型并按输入顺序独立保存结果', async () => {
     const created = await generation.createInterestBatch({
       personaId,
@@ -586,6 +666,19 @@ describe('阶段三纯文本运行', () => {
     expect(interestRequests[1]?.userPrompt).not.toBe(interestRequests[0]?.userPrompt)
     expect(interestRequests[1]?.userPrompt)
       .toContain('<附加提示词>"失败条目重试时继续使用这条附加要求。"</附加提示词>')
+  })
+
+  it('批量结果出现请求之外的条目标识时拒绝整次模型响应', async () => {
+    model.appendUnknownInterestItem = true
+    const created = await generation.createInterestBatch({
+      personaId,
+      items: [{ itemId: 'first', text: '第一条文本' }, { itemId: 'second', text: '第二条文本' }],
+    })
+
+    await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: false })
+    const failed = await generation.getInterestBatch(created.batchId)
+    expect(failed.items.map(item => item.status)).toEqual(['failed', 'failed'])
+    expect(failed.items.every(item => item.error?.code === 'MODEL_OUTPUT_INVALID')).toBe(true)
   })
 
   it('批量兴趣输入拒绝重复编号、空文本和超过固定批量上限', async () => {
@@ -698,7 +791,7 @@ describe('阶段三纯文本运行', () => {
       .toEqual({ parameter_profile_id: null })
   })
 
-  it.each([0, 1_000_000])('兴趣算法输出 Token 为 %i 时保留运行快照并不触发参数校验上限', async (maxOutputTokens) => {
+  it.each([0, 4_096])('兴趣算法输出 Token 为 %i 时保留合法运行快照', async (maxOutputTokens) => {
     configuredAlgorithmMaxOutputTokens = maxOutputTokens
 
     const created = await generation.createInterestRun({ personaId, content: '魔法学院课程' })
@@ -712,6 +805,13 @@ describe('阶段三纯文本运行', () => {
     })
     await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: true })
     expect(model.requests.get('interest_batch_assessment')?.parameters.maxOutputTokens).toBe(maxOutputTokens)
+  })
+
+  it('兴趣算法正数输出 Token 超过预留输出时拒绝创建运行', async () => {
+    configuredAlgorithmMaxOutputTokens = 4_097
+
+    await expect(generation.createInterestRun({ personaId, content: '魔法学院课程' }))
+      .rejects.toThrow('最大输出 Token 不能超过预留输出 Token')
   })
 
   it('兴趣分析不会继承图文生成设置的总 Token 上限', async () => {
@@ -1128,6 +1228,10 @@ describe('直接图文生成与导出', () => {
     expect(imageModel.calls).toBe(1)
     expect(imageModel.lastRequest).toMatchObject({ aspectRatio: '16:9' })
     expect(imageModel.lastRequest?.prompt).toContain('古代文献图书馆')
+    expect(imageModel.lastRequest?.prompt).not.toContain('<当前世界成长提示词>')
+    expect(imageModel.lastRequest?.prompt).not.toContain('<当前人物成长提示词>')
+    expect(imageModel.lastRequest?.prompt).not.toContain('<当前人物记忆提示词>')
+    expect(imageModel.lastRequest?.prompt).not.toContain('<不可信参考资料>')
     expect(existsSync(resolve(directory, 'artifacts', runId, asset.relativePath))).toBe(true)
     expect(asset.original).not.toBeNull()
     if (!asset.original) throw new Error('裁剪图片缺少原图资产')

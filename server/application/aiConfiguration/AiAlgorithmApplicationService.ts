@@ -1,4 +1,6 @@
+import { createHash } from 'node:crypto'
 import type { AiAlgorithmStepParameters } from '../../../shared/schemas/aiConfiguration'
+import { textModelParametersSchema, type TextModelParameters } from '../../../shared/schemas/generation'
 import type { AiAlgorithmCode } from '../../../shared/types/aiConfiguration'
 import type { AiAlgorithmSnapshot, AiAlgorithmStepSnapshot } from '../../domain/ai/AiAlgorithmModels'
 import { getAiAlgorithmDefinition } from '../../domain/ai/AiAlgorithmDefinitions'
@@ -9,6 +11,8 @@ import type { SystemAiSettingsRepository } from '../../ports/SystemAiSettingsRep
 import type { TextModelResponse } from '../../ports/TextModelPort'
 import { TextModelError } from '../../ports/TextModelPort'
 import type { ImageModelResponse, ImageModelRequest } from '../../ports/ImageModelPort'
+import type { TokenCounter } from '../../ports/TokenCounter'
+import type { TextModelUsage } from '../../domain/generation/GenerationModels'
 import type { AiPromptApplicationService } from '../aiPrompts/AiPromptApplicationService'
 import { ApplicationError } from '../errors/ApplicationError'
 import { connectionSecretContext } from './AiConfigurationApplicationService'
@@ -31,6 +35,18 @@ export interface AiAlgorithmTestStepExecution {
   durationMs: number
   /** 已脱敏模型错误；成功时为空。 */
   error: string | null
+}
+
+/** 配置算法单步骤可选的运行预算、结构校验和缓存亲和要求。 */
+export interface AiAlgorithmStepExecutionOptions {
+  /** 稳定系统提示词是否进入同键串行调度并发送缓存路由键。 */
+  useCacheAffinity?: boolean
+  /** 本次运行创建时固定的完整预算；省略时使用算法硬默认值。 */
+  limits?: TextModelParameters
+  /** 本次运行此前已经产生的供应商用量。 */
+  priorUsage?: TextModelUsage | null
+  /** 首次输出失败时触发一次不携带旧回答的结构修正调用。 */
+  validateStructuredOutput?: (value: unknown) => void
 }
 
 /** 算法步骤参数之外由代码固定的安全预算。 */
@@ -66,6 +82,8 @@ export interface AiAlgorithmApplicationServiceDependencies {
   secretCipher: SecretCipher
   /** 动态模型适配器工厂。 */
   modelFactory: AiModelFactory
+  /** 按模型名称保守或精确计算最终提示 Token。 */
+  tokenCounter: TokenCounter
   /** 进程内文本模型缓存亲和调度器；默认由服务独占创建。 */
   cacheAffinityScheduler?: Pick<AiCacheAffinityScheduler, 'run'>
 }
@@ -157,8 +175,8 @@ export class AiAlgorithmApplicationService {
    * @param variables 提示词模板的完整变量。
    * @param responseSchemaName 供应商诊断使用的结构名称。
    * @param responseFormat JSON 对象或纯文本输出。
-   * @param useCacheAffinity 系统提示词已固定且适合缓存时为 true；默认直接执行。
-   * @returns 模型输出和用量。
+   * @param options 可选运行预算、结构校验和缓存亲和要求。
+   * @returns 模型输出和本步骤全部调用的累计用量。
    */
   async executeStep(
     snapshot: AiAlgorithmSnapshot,
@@ -166,28 +184,53 @@ export class AiAlgorithmApplicationService {
     variables: Record<string, string>,
     responseSchemaName: string,
     responseFormat: 'json_object' | 'text',
-    useCacheAffinity = false,
+    options: AiAlgorithmStepExecutionOptions = {},
   ): Promise<TextModelResponse> {
     const { step, connection } = await this.resolveStep(snapshot, stepKey, 'text')
     const prompt = await this.dependencies.prompts.render(step.promptCode, variables, step.promptVersionId)
-    this.validatePromptLength(prompt.systemPrompt, prompt.userPrompt)
-    if (!useCacheAffinity) return await this.generate(step, connection, prompt, responseSchemaName, responseFormat)
+    const parameters = textModelParametersSchema.parse({
+      ...(options.limits ?? ALGORITHM_PARAMETER_DEFAULTS),
+      ...step.parameters,
+    })
+    this.validatePromptBudget(prompt, step.model, parameters, options.priorUsage ?? null)
     const key = buildAiCacheAffinityKey({
       systemPrompt: prompt.systemPrompt,
       algorithmCode: snapshot.algorithmCode,
       promptVersionId: step.promptVersionId,
       modelDeploymentId: step.modelDeploymentId,
       fixedParameters: {
-        ...buildTextModelParameters(step.parameters),
+        ...parameters,
         thinkingDisableMode: step.thinkingDisableMode ?? 'none',
         responseSchemaName,
         responseFormat,
       },
     })
-    return await this.cacheAffinityScheduler.run(
-      key,
-      async () => await this.generate(step, connection, prompt, responseSchemaName, responseFormat, key),
-    )
+    const execute = async (currentPrompt: typeof prompt) => {
+      if (!options.useCacheAffinity) {
+        return await this.generate(step, connection, currentPrompt, parameters, responseSchemaName, responseFormat)
+      }
+      return await this.cacheAffinityScheduler.run(
+        key,
+        async () => await this.generate(step, connection, currentPrompt, parameters, responseSchemaName, responseFormat, key),
+      )
+    }
+    const first = await execute(prompt)
+    if (!options.validateStructuredOutput) return first
+    try {
+      options.validateStructuredOutput(first.structuredOutput)
+      return first
+    }
+    catch (error: unknown) {
+      const repairPrompt = buildStructuredRepairPrompt(prompt, error)
+      this.validatePromptBudget(
+        repairPrompt,
+        step.model,
+        parameters,
+        aggregateTextModelUsage(options.priorUsage ? [options.priorUsage, first.usage] : [first.usage]),
+      )
+      const repaired = await execute(repairPrompt)
+      return { ...repaired, usage: aggregateTextModelUsage([first.usage, repaired.usage]) }
+    }
   }
 
 
@@ -207,7 +250,7 @@ export class AiAlgorithmApplicationService {
   ): Promise<ImageModelResponse> {
     const { step, connection } = await this.resolveStep(snapshot, stepKey, 'image')
     const prompt = await this.dependencies.prompts.render(step.promptCode, variables, step.promptVersionId)
-    this.validatePromptLength(prompt.systemPrompt, prompt.userPrompt)
+    this.validatePromptLength(prompt.systemPrompt, prompt.userPrompt, ALGORITHM_PARAMETER_DEFAULTS.maxPromptCharacters)
     const model = this.dependencies.modelFactory.createImageModel({
       endpoint: connection.endpoint,
       apiKey: this.dependencies.secretCipher.decrypt(connection.apiKeyCiphertext, connectionSecretContext(connection.id)),
@@ -242,10 +285,17 @@ export class AiAlgorithmApplicationService {
   ): Promise<AiAlgorithmTestStepExecution> {
     const { step, connection } = await this.resolveStep(snapshot, stepKey, 'text')
     const prompt = await this.dependencies.prompts.renderDraftPreferred(step.promptCode, variables)
-    this.validatePromptLength(prompt.systemPrompt, prompt.userPrompt)
+    this.validatePromptLength(prompt.systemPrompt, prompt.userPrompt, ALGORITHM_PARAMETER_DEFAULTS.maxPromptCharacters)
     const startedAt = performance.now()
     try {
-      const response = await this.generate(step, connection, prompt, responseSchemaName, responseFormat)
+      const response = await this.generate(
+        step,
+        connection,
+        prompt,
+        textModelParametersSchema.parse({ ...ALGORITHM_PARAMETER_DEFAULTS, ...step.parameters }),
+        responseSchemaName,
+        responseFormat,
+      )
       return {
         step,
         prompt,
@@ -304,6 +354,7 @@ export class AiAlgorithmApplicationService {
    * @param step 已校验的算法步骤快照。
    * @param connection 已校验且启用的连接记录。
    * @param prompt 已完成变量替换的系统与用户提示词。
+   * @param parameters 已解析且通过预算关系校验的完整模型参数。
    * @param responseSchemaName 供应商诊断使用的结构名称。
    * @param responseFormat JSON 对象或纯文本输出。
    * @param promptCacheKey 可选 GPT-5.6 缓存路由键。
@@ -313,6 +364,7 @@ export class AiAlgorithmApplicationService {
     step: AiAlgorithmStepSnapshot,
     connection: AiConnectionSecretRecord,
     prompt: { systemPrompt: string, userPrompt: string },
+    parameters: TextModelParameters,
     responseSchemaName: string,
     responseFormat: 'json_object' | 'text',
     promptCacheKey?: string,
@@ -326,7 +378,7 @@ export class AiAlgorithmApplicationService {
     return await model.generateStructured({
       systemPrompt: prompt.systemPrompt,
       userPrompt: prompt.userPrompt,
-      parameters: buildTextModelParameters(step.parameters),
+      parameters,
       thinkingDisableMode: step.thinkingDisableMode ?? 'none',
       responseSchemaName,
       responseFormat,
@@ -340,9 +392,35 @@ export class AiAlgorithmApplicationService {
    * @param userPrompt 实际用户提示词。
    * @returns 长度有效时无返回值。
    */
-  private validatePromptLength(systemPrompt: string, userPrompt: string): void {
-    if (systemPrompt.length + userPrompt.length > ALGORITHM_PARAMETER_DEFAULTS.maxPromptCharacters) {
+  private validatePromptLength(systemPrompt: string, userPrompt: string, maxPromptCharacters: number): void {
+    if (systemPrompt.length + userPrompt.length > maxPromptCharacters) {
       throw new ApplicationError('TASK_LIMIT_EXCEEDED', '算法输入超过固定提示长度限制，请减少资料或分批处理', 422)
+    }
+  }
+
+  /**
+   * 在每次供应商调用前校验最终消息、输出预留和运行累计用量。
+   * @param prompt 实际发送的系统与用户消息。
+   * @param model 当前步骤固定的模型名称。
+   * @param parameters 本次运行固定的完整预算。
+   * @param priorUsage 本次调用之前已经产生的供应商用量。
+   * @returns 预算允许时无返回值。
+   */
+  private validatePromptBudget(
+    prompt: { systemPrompt: string, userPrompt: string },
+    model: string,
+    parameters: TextModelParameters,
+    priorUsage: TextModelUsage | null,
+  ): void {
+    this.validatePromptLength(prompt.systemPrompt, prompt.userPrompt, parameters.maxPromptCharacters)
+    const availableInputTokens = parameters.contextWindowTokens - parameters.reservedOutputTokens - parameters.safetyMarginTokens
+    const inputTokens = this.dependencies.tokenCounter.count(model, `${prompt.systemPrompt}\n${prompt.userPrompt}`).tokens
+    if (inputTokens > availableInputTokens) {
+      throw new ApplicationError('PROMPT_BUDGET_EXCEEDED', '当前算法步骤的最终提示超过可用输入 Token', 422)
+    }
+    const consumedTokens = usageTotalTokens(priorUsage)
+    if (consumedTokens !== null && consumedTokens >= parameters.maxTotalTokens) {
+      throw new ApplicationError('TASK_LIMIT_EXCEEDED', '模型已报告的运行总 Token 达到上限', 422)
     }
   }
 
@@ -371,12 +449,46 @@ export class AiAlgorithmApplicationService {
 }
 
 /**
- * 合并管理员可调步骤参数与代码固定安全预算。
- * @param parameters 当前配置版本固定的三个模型参数。
- * @returns 文本模型端口要求的完整参数。
+ * 构建不携带旧模型回答、且保持系统消息逐字不变的单次结构修正提示。
+ * @param prompt 首次调用的实际提示。
+ * @param error 首次结构校验错误。
+ * @returns 仅在用户消息末尾追加固定修正要求的新提示。
  */
-function buildTextModelParameters(parameters: AiAlgorithmStepParameters) {
-  return { ...ALGORITHM_PARAMETER_DEFAULTS, ...parameters }
+function buildStructuredRepairPrompt(
+  prompt: { systemPrompt: string, userPrompt: string },
+  error: unknown,
+): { systemPrompt: string, userPrompt: string } {
+  const message = error instanceof Error ? error.message.slice(0, 2_000) : '结构化输出不符合约束'
+  const inputHash = createHash('sha256').update(prompt.userPrompt).digest('hex')
+  return {
+    systemPrompt: prompt.systemPrompt,
+    userPrompt: `${prompt.userPrompt}\n\n<结构修正要求>上次响应未通过结构校验。请重新根据原始输入生成完整结果，不要解释，不要引用或复述上次回答。输入哈希：${inputHash}；校验错误：${message}</结构修正要求>`,
+  }
+}
+
+/** @param usages 一次步骤内的供应商用量。 @returns 所有已知字段的严格累计结果。 */
+function aggregateTextModelUsage(usages: TextModelUsage[]): TextModelUsage {
+  const cached = usages.map(usage => usage.cachedInputTokens)
+  return {
+    inputTokens: sumKnownUsageValues(usages.map(usage => usage.inputTokens)),
+    outputTokens: sumKnownUsageValues(usages.map(usage => usage.outputTokens)),
+    totalTokens: sumKnownUsageValues(usages.map(usage => usage.totalTokens)),
+    ...(cached.some(value => value !== undefined) ? { cachedInputTokens: sumKnownUsageValues(cached.map(value => value ?? null)) } : {}),
+  }
+}
+
+/** @param values 同一用量字段的全部供应商返回值。 @returns 全部已知时返回总和，任一未知时返回 null。 */
+function sumKnownUsageValues(values: Array<number | null>): number | null {
+  return values.every((value): value is number => value !== null)
+    ? values.reduce((total, value) => total + value, 0)
+    : null
+}
+
+/** @param usage 可选模型用量。 @returns 总 Token；供应商未报告足够字段时返回 null。 */
+function usageTotalTokens(usage: TextModelUsage | null): number | null {
+  if (!usage) return null
+  if (usage.totalTokens !== null) return usage.totalTokens
+  return usage.inputTokens !== null && usage.outputTokens !== null ? usage.inputTokens + usage.outputTokens : null
 }
 
 /**

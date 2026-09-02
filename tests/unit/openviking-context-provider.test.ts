@@ -20,8 +20,17 @@ class FixedContextIndexRepository implements ContextIndexRepository {
   /** @returns 当前测试不需要完整资料列表。 */
   async listSourceDocuments() { return [] }
 
-  /** @returns 当前测试不需要单项完整资料。 */
-  async findSourceDocument() { return null }
+  /** @param sourceId 待读取资料 UUID。 @returns 供远端结果执行当前版本校验的固定 SQLite 资料。 */
+  async findSourceDocument(sourceId: string) {
+    return {
+      entityType: 'source_material' as const,
+      id: sourceId,
+      name: '固定资料',
+      role: 'canon_fact' as const,
+      contentHash: createHash('sha256').update('固定资料正文').digest('hex'),
+      contentText: '固定资料正文',
+    }
+  }
 
   /** @returns 当前测试不需要资料投影列表。 */
   async listSourceProjections() { return [] }

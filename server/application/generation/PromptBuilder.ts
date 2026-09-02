@@ -167,7 +167,8 @@ export function buildImagePromptVariables(
   previousOutputs: Array<{ key: string, text: string }>,
 ): Record<string, string> {
   return {
-    ...buildContextVariables(context),
+    personaPromptJson: JSON.stringify(context.persona.promptText),
+    worldPromptJson: JSON.stringify(context.world?.promptText ?? null),
     briefJson: JSON.stringify(brief),
     previousOutputsJson: JSON.stringify(previousOutputs),
     negativePromptJson: JSON.stringify(brief.negativePrompt),

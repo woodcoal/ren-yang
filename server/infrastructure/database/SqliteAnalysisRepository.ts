@@ -44,11 +44,13 @@ export class SqliteAnalysisRepository implements AnalysisRepository {
       this.client.prepare(`
         INSERT INTO analysis_batches (
           id, analysis_type, world_id, persona_id, mode, baseline_soul_version_id,
+          baseline_learning_prompt_version_id, baseline_learning_prompt_hash,
           baseline_json, model_snapshot_json, parameter_snapshot_json, prompt_version,
           algorithm_snapshot_json, auto_publish, status, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?)
       `).run(
         record.id, record.analysisType, worldId, personaId, record.mode, record.baselineSoulVersionId,
+        record.baselineLearningPromptVersionId, record.baselineLearningPromptHash,
         JSON.stringify(record.baseline), JSON.stringify(record.model), JSON.stringify(record.parameters),
         record.promptVersion, record.algorithmSnapshot ? JSON.stringify(record.algorithmSnapshot) : null,
         record.autoPublish ? 1 : 0, record.timestamp, record.timestamp,
@@ -144,6 +146,8 @@ export class SqliteAnalysisRepository implements AnalysisRepository {
       return {
         batch: this.toBatchView(row),
         baseline: JSON.parse(String(row.baseline_json)) as unknown[],
+        baselineLearningPromptVersionId: nullableString(row.baseline_learning_prompt_version_id),
+        baselineLearningPromptHash: nullableString(row.baseline_learning_prompt_hash),
         model: JSON.parse(String(row.model_snapshot_json)) as TextModelSnapshot,
         parameters: textModelParametersSchema.parse(JSON.parse(String(row.parameter_snapshot_json))),
         promptVersion: String(row.prompt_version),
@@ -192,6 +196,24 @@ export class SqliteAnalysisRepository implements AnalysisRepository {
     }).immediate()
   }
 
+  /** @param batchId 批次 UUID。 @param extraction 模型原始提取结果。 @param validatedFacts 程序校验后的事实。 @param timestamp 保存时间。 @returns 批次仍在运行时为 true。 */
+  async saveExtractionSnapshot(batchId: string, extraction: unknown, validatedFacts: unknown[], timestamp: number): Promise<boolean> {
+    return this.client.prepare(`
+      UPDATE analysis_batches
+      SET extraction_result_json = ?, validated_facts_json = ?, updated_at = ?
+      WHERE id = ? AND status = 'running'
+    `).run(JSON.stringify(extraction), JSON.stringify(validatedFacts), timestamp, batchId).changes === 1
+  }
+
+  /** @param batchId 批次 UUID。 @param summary 无变化说明。 @param timestamp 完成时间。 @returns 批次仍在运行并完成时为 true。 */
+  async completeWithoutChanges(batchId: string, summary: string, timestamp: number): Promise<boolean> {
+    return this.client.prepare(`
+      UPDATE analysis_batches
+      SET raw_result_json = ?, status = 'completed', completed_at = ?, updated_at = ?
+      WHERE id = ? AND status = 'running'
+    `).run(JSON.stringify({ summary }), timestamp, timestamp, batchId).changes === 1
+  }
+
   /**
    * 原子完成分析批次，并把 AI 返回的完整提示词保存为不生效草稿。
    * @param batchId 正在运行的分析批次 UUID。
@@ -200,7 +222,7 @@ export class SqliteAnalysisRepository implements AnalysisRepository {
    * @param draftId 当前对象尚无草稿时使用的 UUID。
    * @param timestamp 分析完成和草稿更新时间。
    * @param publication 存在时在同一事务内直接创建并启用不可变版本。
-   * @returns 批次仍处于运行状态并成功保存时为 true。
+   * @returns 保存结果；基线或草稿变化时返回冲突。
    */
   async saveLearningPromptResult(
     batchId: string,
@@ -209,17 +231,36 @@ export class SqliteAnalysisRepository implements AnalysisRepository {
     draftId: string,
     timestamp: number,
     publication?: { versionId: string, changeSummary: string },
-  ): Promise<boolean> {
+  ): Promise<'saved' | 'batch_changed' | 'version_conflict'> {
     return this.client.transaction(() => {
       const batch = this.client.prepare(`
         SELECT * FROM analysis_batches WHERE id = ? AND status = 'running'
       `).get(batchId) as Record<string, unknown> | undefined
-      if (!batch) return false
+      if (!batch) return 'batch_changed' as const
       const promptType = String(batch.analysis_type) as AnalysisType
       const worldId = promptType === 'world_growth' ? String(batch.world_id) : null
       const personaId = promptType === 'world_growth' ? null : String(batch.persona_id)
       const scopeColumn = promptType === 'world_growth' ? 'world_id' : 'persona_id'
       const subjectId = promptType === 'world_growth' ? worldId! : personaId!
+      const existingPrompt = this.client.prepare(`
+        SELECT id, active_version_id FROM learning_prompts
+        WHERE prompt_type = ? AND ${scopeColumn} = ?
+      `).get(promptType, subjectId) as { id: string, active_version_id: string | null } | undefined
+      const baselineVersionId = nullableString(batch.baseline_learning_prompt_version_id)
+      const currentVersionId = existingPrompt?.active_version_id ?? null
+      if (currentVersionId !== baselineVersionId) return 'version_conflict' as const
+      if (currentVersionId) {
+        const currentVersion = this.client.prepare(`
+          SELECT content_hash FROM learning_prompt_versions WHERE id = ?
+        `).get(currentVersionId) as { content_hash: string } | undefined
+        if (!currentVersion || currentVersion.content_hash !== nullableString(batch.baseline_learning_prompt_hash)) {
+          return 'version_conflict' as const
+        }
+      }
+      if (existingPrompt) {
+        const draft = this.client.prepare(`SELECT 1 FROM learning_prompt_drafts WHERE prompt_id = ?`).get(existingPrompt.id)
+        if (draft) return 'version_conflict' as const
+      }
       this.client.prepare(`
         INSERT OR IGNORE INTO learning_prompts (
           id, prompt_type, world_id, persona_id, active_version_id, created_at, updated_at
@@ -234,13 +275,6 @@ export class SqliteAnalysisRepository implements AnalysisRepository {
           id, prompt_id, base_version_id, prompt_text, content_hash,
           source_analysis_batch_id, created_by, created_at, updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, 'analysis', ?, ?)
-        ON CONFLICT(prompt_id) DO UPDATE SET
-          base_version_id = excluded.base_version_id,
-          prompt_text = excluded.prompt_text,
-          content_hash = excluded.content_hash,
-          source_analysis_batch_id = excluded.source_analysis_batch_id,
-          created_by = 'analysis',
-          updated_at = excluded.updated_at
       `).run(
         draftId, prompt.id, prompt.active_version_id, result.promptText, hashContent(result.promptText),
         batchId, timestamp, timestamp,
@@ -275,7 +309,7 @@ export class SqliteAnalysisRepository implements AnalysisRepository {
         targetType: 'analysis_batch', targetId: batchId, timestamp,
         details: { promptType, autoPublished: Boolean(publication) },
       })
-      return true
+      return 'saved' as const
     }).immediate()
   }
 

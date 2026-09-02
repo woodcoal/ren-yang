@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { modelGrowthExtractionResultSchema, modelLearningPromptResultSchema, modelMemoryExtractionResultSchema } from '../../../shared/schemas/analysis'
 import type { CreateAnalysisBatchInput, ListAnalysisBatchesInput, ReviewIterationProposalsInput } from '../../../shared/schemas/analysis'
 import type { TextModelParameters } from '../../../shared/schemas/generation'
@@ -24,6 +25,8 @@ import { validateAndMergeMemoryFacts } from './MemoryFactValidator'
 
 /** 纯文本提炼不再要求模型额外生成摘要，任务页展示固定结果说明。 */
 const LEARNING_PROMPT_RESULT_SUMMARY = 'AI 已根据全部启用素材生成完整提示词草稿。'
+/** 提取阶段明确没有形成新事实时使用的稳定批次说明。 */
+const NO_ANALYSIS_CHANGE_SUMMARY = '没有形成新事实。'
 
 /** 分析任务固定参数，独立于用户内容生成参数。 */
 const ANALYSIS_PARAMETERS: TextModelParameters = {
@@ -109,6 +112,8 @@ export class AnalysisApplicationService implements TaskHandler {
       subjectId,
       mode: input.mode,
       baselineSoulVersionId: prepared.soul.id,
+      baselineLearningPromptVersionId: prepared.baselineLearningPromptVersionId,
+      baselineLearningPromptHash: prepared.baselineLearningPromptHash,
       baseline: [
         { type: 'soul', id: prepared.soul.id, promptText: prepared.soul.snapshot.promptText },
         ...prepared.baseline,
@@ -200,12 +205,11 @@ export class AnalysisApplicationService implements TaskHandler {
         summary: LEARNING_PROMPT_RESULT_SUMMARY,
       })
       this.validateAutomaticPublication(runtime.batch.analysisType, result.promptText, runtime.autoPublish)
-      if (!await this.dependencies.analysis.saveLearningPromptResult(
+      const saveStatus = await this.dependencies.analysis.saveLearningPromptResult(
         batchId, result, this.dependencies.identifiers.create(), this.dependencies.identifiers.create(), this.dependencies.clock.now(),
         runtime.autoPublish ? { versionId: this.dependencies.identifiers.create(), changeSummary: '系统定时提炼并自动发布' } : undefined,
-      )) {
-        throw new Error('分析批次保存时状态已变化')
-      }
+      )
+      this.requireLearningPromptSave(saveStatus)
     }
     catch (error: unknown) {
       const normalized = normalizeAnalysisError(error)
@@ -236,15 +240,31 @@ export class AnalysisApplicationService implements TaskHandler {
       buildAnalysisPromptVariables(baseline, inputs),
       'growth_atomic_facts',
       'json_object',
+      {
+        limits: { ...ANALYSIS_PARAMETERS, ...snapshot.steps.find(step => step.stepKey === 'extract')?.parameters },
+        validateStructuredOutput: value => { modelGrowthExtractionResultSchema.parse(value) },
+      },
     )
     const extracted = modelGrowthExtractionResultSchema.parse(extractResponse.structuredOutput)
     const facts = validateAndMergeGrowthFacts(extracted.facts, inputs)
+    await this.saveExtractionSnapshot(batchId, extracted, facts)
+    if (facts.length === 0) {
+      await this.completeWithoutChanges(batchId)
+      return
+    }
     const synthesizeResponse = await this.dependencies.algorithms!.executeStep(
       snapshot,
       'synthesize',
       { baselineJson: JSON.stringify(baseline), factsJson: JSON.stringify(facts) },
       'learning_prompt',
       'text',
+      {
+        limits: { ...ANALYSIS_PARAMETERS, ...snapshot.steps.find(step => step.stepKey === 'synthesize')?.parameters },
+        priorUsage: extractResponse.usage,
+        validateStructuredOutput: value => {
+          modelLearningPromptResultSchema.parse({ promptText: value, summary: LEARNING_PROMPT_RESULT_SUMMARY })
+        },
+      },
     )
     const result = modelLearningPromptResultSchema.parse({
       promptText: synthesizeResponse.structuredOutput,
@@ -252,12 +272,11 @@ export class AnalysisApplicationService implements TaskHandler {
     })
     const analysisType = snapshot.algorithmCode === 'world_growth' ? 'world_growth' : 'persona_growth'
     this.validateAutomaticPublication(analysisType, result.promptText, autoPublish)
-    if (!await this.dependencies.analysis.saveLearningPromptResult(
+    const saveStatus = await this.dependencies.analysis.saveLearningPromptResult(
       batchId, result, this.dependencies.identifiers.create(), this.dependencies.identifiers.create(), this.dependencies.clock.now(),
       autoPublish ? { versionId: this.dependencies.identifiers.create(), changeSummary: '系统定时提炼并自动发布' } : undefined,
-    )) {
-      throw new Error('分析批次保存时状态已变化')
-    }
+    )
+    this.requireLearningPromptSave(saveStatus)
   }
 
   /**
@@ -282,27 +301,81 @@ export class AnalysisApplicationService implements TaskHandler {
       buildAnalysisPromptVariables(baseline, inputs),
       'memory_evidence_facts',
       'json_object',
+      {
+        limits: { ...ANALYSIS_PARAMETERS, ...snapshot.steps.find(step => step.stepKey === 'extract')?.parameters },
+        validateStructuredOutput: value => { modelMemoryExtractionResultSchema.parse(value) },
+      },
     )
     const extracted = modelMemoryExtractionResultSchema.parse(extractResponse.structuredOutput)
     const facts = validateAndMergeMemoryFacts(extracted.facts, inputs)
+    await this.saveExtractionSnapshot(batchId, extracted, facts)
+    if (facts.length === 0) {
+      await this.completeWithoutChanges(batchId)
+      return
+    }
+    if (autoPublish && facts.some(fact => fact.conflicts.length > 0)) {
+      throw new ApplicationError('ANALYSIS_FACT_CONFLICT', '人物记忆事实仍有未裁决冲突，不能自动发布', 409)
+    }
     const synthesizeResponse = await this.dependencies.algorithms!.executeStep(
       snapshot,
       'synthesize',
       { baselineJson: JSON.stringify(baseline), factsJson: JSON.stringify(facts) },
       'learning_prompt',
       'text',
+      {
+        limits: { ...ANALYSIS_PARAMETERS, ...snapshot.steps.find(step => step.stepKey === 'synthesize')?.parameters },
+        priorUsage: extractResponse.usage,
+        validateStructuredOutput: value => {
+          modelLearningPromptResultSchema.parse({ promptText: value, summary: LEARNING_PROMPT_RESULT_SUMMARY })
+        },
+      },
     )
     const result = modelLearningPromptResultSchema.parse({
       promptText: synthesizeResponse.structuredOutput,
       summary: `AI 已依据 ${facts.length} 条达到独立证据门槛的记忆事实生成完整提示词草稿。`,
     })
     this.validateAutomaticPublication('persona_memory', result.promptText, autoPublish)
-    if (!await this.dependencies.analysis.saveLearningPromptResult(
+    const saveStatus = await this.dependencies.analysis.saveLearningPromptResult(
       batchId, result, this.dependencies.identifiers.create(), this.dependencies.identifiers.create(), this.dependencies.clock.now(),
       autoPublish ? { versionId: this.dependencies.identifiers.create(), changeSummary: '系统定时提炼并自动发布' } : undefined,
-    )) {
-      throw new Error('分析批次保存时状态已变化')
+    )
+    this.requireLearningPromptSave(saveStatus)
+  }
+
+  /**
+   * 保存提取原始输出和程序校验后的事实快照。
+   * @param batchId 正在运行的分析批次 UUID。
+   * @param extraction 模型提取阶段的结构化输出。
+   * @param facts 程序完成引用、去重和门槛校验后的事实。
+   * @returns 快照持久化完成时结束。
+   */
+  private async saveExtractionSnapshot(batchId: string, extraction: unknown, facts: unknown[]): Promise<void> {
+    const saved = await this.dependencies.analysis.saveExtractionSnapshot(
+      batchId, extraction, facts, this.dependencies.clock.now(),
+    )
+    if (!saved) throw new ApplicationError('VERSION_CONFLICT', '分析批次状态已经变化', 409)
+  }
+
+  /** @param batchId 正在运行的分析批次 UUID。 @returns 无新事实批次完成时结束。 */
+  private async completeWithoutChanges(batchId: string): Promise<void> {
+    const completed = await this.dependencies.analysis.completeWithoutChanges(
+      batchId, NO_ANALYSIS_CHANGE_SUMMARY, this.dependencies.clock.now(),
+    )
+    if (!completed) throw new ApplicationError('VERSION_CONFLICT', '分析批次状态已经变化', 409)
+  }
+
+  /**
+   * 把仓储保存结果转换为稳定应用错误。
+   * @param status 草稿或自动发布的原子保存结果。
+   * @returns 保存成功时结束。
+   * @throws 当前学习提示词或草稿已变化时抛出版本冲突。
+   */
+  private requireLearningPromptSave(status: 'saved' | 'batch_changed' | 'version_conflict'): void {
+    if (status === 'saved') return
+    if (status === 'version_conflict') {
+      throw new ApplicationError('VERSION_CONFLICT', '分析期间当前学习提示词或草稿已经变化，结果未覆盖现有内容', 409)
     }
+    throw new ApplicationError('VERSION_CONFLICT', '分析批次状态已经变化', 409)
   }
 
   /**
@@ -335,36 +408,47 @@ export class AnalysisApplicationService implements TaskHandler {
     if (!soul) throw new ApplicationError('VERSION_CONFLICT', '当前灵魂版本不存在', 409)
     const analyzedKeys = new Set(await this.dependencies.analysis.listAnalyzedInputKeys(analysisType, subjectId))
     let baseline: Array<{ type: 'learning_prompt', promptText: string }>
+    let baselineLearningPromptVersionId: string | null
+    let baselineLearningPromptHash: string | null
     let sourceInputs: Array<Omit<CreateAnalysisBatchInputRecord, 'id' | 'isNew'>>
     if (analysisType === 'world_growth') {
-      const [materials, activePrompt] = await Promise.all([
+      const [materials, promptWorkspace] = await Promise.all([
         this.dependencies.learning.listGrowthMaterials('world', subjectId),
-        this.dependencies.learning.findActiveLearningPromptText('world_growth', subjectId),
+        this.dependencies.learning.findLearningPromptWorkspace('world_growth', subjectId),
       ])
-      baseline = activePrompt ? [{ type: 'learning_prompt', promptText: activePrompt }] : []
+      const activePrompt = promptWorkspace?.activeVersion ?? null
+      baseline = activePrompt ? [{ type: 'learning_prompt', promptText: activePrompt.promptText }] : []
+      baselineLearningPromptVersionId = activePrompt?.id ?? null
+      baselineLearningPromptHash = activePrompt ? hashPromptText(activePrompt.promptText) : null
       sourceInputs = materials.filter(item => item.isEnabled).map(item => ({
         inputType: 'growth_material', inputId: item.id, title: item.title,
         content: item.content, contentHash: item.contentHash, importance: item.importance,
       }))
     }
     else if (analysisType === 'persona_growth') {
-      const [materials, activePrompt] = await Promise.all([
+      const [materials, promptWorkspace] = await Promise.all([
         this.dependencies.learning.listGrowthMaterials('persona', subjectId),
-        this.dependencies.learning.findActiveLearningPromptText('persona_growth', subjectId),
+        this.dependencies.learning.findLearningPromptWorkspace('persona_growth', subjectId),
       ])
-      baseline = activePrompt ? [{ type: 'learning_prompt', promptText: activePrompt }] : []
+      const activePrompt = promptWorkspace?.activeVersion ?? null
+      baseline = activePrompt ? [{ type: 'learning_prompt', promptText: activePrompt.promptText }] : []
+      baselineLearningPromptVersionId = activePrompt?.id ?? null
+      baselineLearningPromptHash = activePrompt ? hashPromptText(activePrompt.promptText) : null
       sourceInputs = materials.filter(item => item.isEnabled).map(item => ({
         inputType: 'growth_material', inputId: item.id, title: item.title,
         content: item.content, contentHash: item.contentHash, importance: item.importance,
       }))
     }
     else {
-      const [operations, externalRecords, activePrompt] = await Promise.all([
+      const [operations, externalRecords, promptWorkspace] = await Promise.all([
         this.dependencies.learning.listPersonaOperationRecords(subjectId),
         this.dependencies.learning.listPersonaExternalRecords(subjectId),
-        this.dependencies.learning.findActiveLearningPromptText('persona_memory', subjectId),
+        this.dependencies.learning.findLearningPromptWorkspace('persona_memory', subjectId),
       ])
-      baseline = activePrompt ? [{ type: 'learning_prompt', promptText: activePrompt }] : []
+      const activePrompt = promptWorkspace?.activeVersion ?? null
+      baseline = activePrompt ? [{ type: 'learning_prompt', promptText: activePrompt.promptText }] : []
+      baselineLearningPromptVersionId = activePrompt?.id ?? null
+      baselineLearningPromptHash = activePrompt ? hashPromptText(activePrompt.promptText) : null
       sourceInputs = [
         ...operations.filter(item => item.isEnabled).map(item => ({
           inputType: 'persona_operation_record' as const, inputId: item.id,
@@ -385,6 +469,8 @@ export class AnalysisApplicationService implements TaskHandler {
     return {
       soul,
       baseline,
+      baselineLearningPromptVersionId,
+      baselineLearningPromptHash,
       inputs: sourceInputs.map(item => ({
         ...item,
         id: this.dependencies.identifiers.create(),
@@ -472,4 +558,9 @@ function normalizeAnalysisError(error: unknown): { code: string, message: string
   if (error instanceof TextModelError) return { code: error.code, message: error.message, retryable: error.retryable }
   if (error instanceof ApplicationError) return { code: error.code, message: error.message, retryable: false }
   return { code: 'MODEL_OUTPUT_INVALID', message: '模型返回的完整提示词不符合业务约束', retryable: false }
+}
+
+/** @param promptText 已发布学习提示词正文。 @returns 用于批次 CAS 的 SHA-256 十六进制哈希。 */
+function hashPromptText(promptText: string): string {
+  return createHash('sha256').update(promptText, 'utf8').digest('hex')
 }

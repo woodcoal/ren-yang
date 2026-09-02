@@ -196,7 +196,7 @@ export interface PersonaOperationRecordView {
   operationType: 'interest_assessment' | 'artifact_generation' | 'content_analysis'
   /** 便于识别任务的标题。 */
   title: string
-  /** 供记忆提炼使用的任务输入与结果快照。 */
+  /** 供记忆提炼使用的任务输入、稳定结果摘要与结构化决策，不含人物完整输出。 */
   content: string
   /** 任务素材正文 SHA-256。 */
   contentHash: string

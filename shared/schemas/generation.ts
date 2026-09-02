@@ -36,6 +36,9 @@ export const textModelParametersSchema = z.object({
   if (availableInputTokens <= 0) {
     context.addIssue({ code: 'custom', path: ['contextWindowTokens'], message: '模型上下文必须大于预留输出与安全余量之和' })
   }
+  if (value.maxOutputTokens > 0 && value.maxOutputTokens > value.reservedOutputTokens) {
+    context.addIssue({ code: 'custom', path: ['maxOutputTokens'], message: '最大输出 Token 不能超过预留输出 Token' })
+  }
   if (value.worldSoulBudgetTokens + value.worldGrowthBudgetTokens > value.worldBudgetTokens) {
     context.addIssue({ code: 'custom', path: ['worldBudgetTokens'], message: '世界灵魂与世界成长预算之和不能超过世界总预算' })
   }

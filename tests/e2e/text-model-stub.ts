@@ -52,7 +52,7 @@ function createModelOutput(body: string): string {
       facts: [{
         statement: '曾完成学院课程介绍。',
         memoryType: 'experience',
-        evidence: [{ inputId: evidenceId, signalType: 'task_result' }],
+        evidence: [{ inputId: evidenceId }],
         confidence: 0.95,
         conflicts: [],
       }],

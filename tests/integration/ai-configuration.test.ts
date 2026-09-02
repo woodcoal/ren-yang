@@ -19,6 +19,8 @@ import { TextModelError } from '../../server/ports/TextModelPort'
 import type { ImageModelPort, ImageModelRequest, ImageModelResponse } from '../../server/ports/ImageModelPort'
 import type { AiPromptApplicationService } from '../../server/application/aiPrompts/AiPromptApplicationService'
 import { createTestAiPromptService } from '../support/createTestAiPromptService'
+import { ConservativeTokenCounter } from '../../server/infrastructure/model/ConservativeTokenCounter'
+import { DEFAULT_TEXT_PARAMETERS } from '../../server/application/generation/GenerationApplicationService'
 
 /** 当前测试独占的临时数据目录。 */
 let directory: string
@@ -94,7 +96,7 @@ class FixedTextModel implements TextModelPort {
           ? { facts: [{
               statement: '完成过一次人物关系校对。',
               memoryType: 'experience',
-              evidence: [{ inputId: '00000000-0000-4000-8000-000000000001', signalType: 'external_record' }],
+              evidence: [{ inputId: '00000000-0000-4000-8000-000000000001' }],
               confidence: 0.9,
               conflicts: [],
             }] }
@@ -291,11 +293,11 @@ describe('AI 接口、模型部署与算法配置', () => {
 
     await algorithms.executeStep(
       snapshot, 'organize', { promptTextJson: '"第一次输入"' }, 'soul_prompt_analysis', 'json_object',
-      true,
+      { useCacheAffinity: true },
     )
     await algorithms.executeStep(
       snapshot, 'organize', { promptTextJson: '"变化后的输入"' }, 'soul_prompt_analysis', 'json_object',
-      true,
+      { useCacheAffinity: true },
     )
     await algorithms.executeTestStep(
       snapshot, 'organize', { promptTextJson: '"后台诊断"' }, 'soul_prompt_analysis', 'json_object',
@@ -306,6 +308,55 @@ describe('AI 接口、模型部署与算法配置', () => {
     expect(modelFactory.requests[0]?.promptCacheKey).toBe(affinityKeys[0])
     expect(modelFactory.requests[1]?.promptCacheKey).toBe(affinityKeys[1])
     expect(modelFactory.requests[2]?.promptCacheKey).toBeUndefined()
+  })
+
+  it('结构校验首次失败时保持系统提示不变并仅修正用户消息', async () => {
+    const { service, algorithms, modelFactory } = createServices()
+    await configureSoulAlgorithm(service)
+    const snapshot = await algorithms.prepare('persona_soul')
+    let validations = 0
+
+    const response = await algorithms.executeStep(
+      snapshot,
+      'organize',
+      { promptTextJson: '"需要整理的资料"' },
+      'soul_prompt_analysis',
+      'json_object',
+      {
+        useCacheAffinity: true,
+        limits: { ...DEFAULT_TEXT_PARAMETERS },
+        priorUsage: null,
+        validateStructuredOutput: () => {
+          validations += 1
+          if (validations === 1) throw new Error('缺少必需字段 promptText')
+        },
+      },
+    )
+
+    expect(modelFactory.requests).toHaveLength(2)
+    expect(modelFactory.requests[0]?.systemPrompt).toBe(modelFactory.requests[1]?.systemPrompt)
+    expect(modelFactory.requests[1]?.userPrompt).not.toBe(modelFactory.requests[0]?.userPrompt)
+    expect(modelFactory.requests[1]?.userPrompt).toContain('结构修正要求')
+    expect(response.usage).toEqual({ inputTokens: 2, outputTokens: 2, totalTokens: 4 })
+  })
+
+  it('配置算法在供应商调用前拒绝超过运行快照的最终提示', async () => {
+    const { service, algorithms, modelFactory } = createServices()
+    await configureSoulAlgorithm(service)
+    const snapshot = await algorithms.prepare('persona_soul')
+
+    await expect(algorithms.executeStep(
+      snapshot,
+      'organize',
+      { promptTextJson: JSON.stringify('超长输入'.repeat(10_000)) },
+      'soul_prompt_analysis',
+      'json_object',
+      {
+        limits: { ...DEFAULT_TEXT_PARAMETERS },
+        priorUsage: null,
+      },
+    )).rejects.toMatchObject({ code: 'PROMPT_BUDGET_EXCEEDED', statusCode: 422 })
+    expect(modelFactory.requests).toHaveLength(0)
   })
 
   it('文章生成与文章配图分析作为两个独立固定算法配置', async () => {
@@ -609,7 +660,8 @@ function createServices(cacheAffinityScheduler?: Pick<AiCacheAffinityScheduler, 
     clock,
   })
   const algorithms = new AiAlgorithmApplicationService({
-    repository, defaultModels: defaultModelsRepository, secretCipher, modelFactory, prompts, cacheAffinityScheduler,
+    repository, defaultModels: defaultModelsRepository, secretCipher, modelFactory, prompts,
+    tokenCounter: new ConservativeTokenCounter(), cacheAffinityScheduler,
   })
   return {
     service: new AiConfigurationApplicationService({ repository, secretCipher, modelFactory, prompts, identifiers, clock }),

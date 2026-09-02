@@ -15,7 +15,7 @@ function candidate(overrides: Partial<MemoryFactCandidate> = {}): MemoryFactCand
   return {
     statement: '完成过一次小说人物关系校对。',
     memoryType: 'experience',
-    evidence: [{ inputId: EXTERNAL_ONE, signalType: 'external_record' }],
+    evidence: [{ inputId: EXTERNAL_ONE }],
     confidence: 0.8,
     conflicts: [],
     ...overrides,
@@ -39,8 +39,8 @@ describe('人物记忆证据校验与形成门槛', () => {
       statement: '偏好先核对人物关系再润色文本。',
       memoryType: 'preference',
       evidence: [
-        { inputId: EXTERNAL_ONE, signalType: 'external_record' },
-        { inputId: EXTERNAL_TWO, signalType: 'external_record' },
+        { inputId: EXTERNAL_ONE },
+        { inputId: EXTERNAL_TWO },
       ],
     })
     expect(validateAndMergeMemoryFacts([fact], externalInputs(EXTERNAL_ONE, EXTERNAL_TWO))[0])
@@ -49,8 +49,7 @@ describe('人物记忆证据校验与形成门槛', () => {
 
   it('单条普通证据不能形成偏好记忆', () => {
     const fact = candidate({ memoryType: 'preference' })
-    expect(() => validateAndMergeMemoryFacts([fact], externalInputs(EXTERNAL_ONE)))
-      .toThrowError(expect.objectContaining({ code: 'MEMORY_EVIDENCE_INSUFFICIENT' }))
+    expect(validateAndMergeMemoryFacts([fact], externalInputs(EXTERNAL_ONE))).toEqual([])
   })
 
   it('三条独立证据可以形成判断记忆', () => {
@@ -58,40 +57,19 @@ describe('人物记忆证据校验与形成门槛', () => {
       statement: '判断人物关系一致性比辞藻丰富更重要。',
       memoryType: 'judgment',
       evidence: [EXTERNAL_ONE, EXTERNAL_TWO, EXTERNAL_THREE]
-        .map(inputId => ({ inputId, signalType: 'external_record' as const })),
+        .map(inputId => ({ inputId })),
     })
     expect(validateAndMergeMemoryFacts([fact], externalInputs(EXTERNAL_ONE, EXTERNAL_TWO, EXTERNAL_THREE))[0])
       .toMatchObject({ memoryType: 'judgment', independentEvidenceCount: 3 })
   })
 
-  it('人物自己的模型输出不计入独立证据', () => {
+  it('任务记录的信号由程序固定派生为任务结果', () => {
     const fact = candidate({
       memoryType: 'experience',
-      evidence: [{ inputId: OPERATION_ONE, signalType: 'self_output' }],
-    })
-    expect(() => validateAndMergeMemoryFacts([fact], [{ id: OPERATION_ONE, inputType: 'persona_operation_record' }]))
-      .toThrowError(expect.objectContaining({ code: 'MEMORY_EVIDENCE_INSUFFICIENT' }))
-  })
-
-  it('明确用户反馈单条即可形成任意类型记忆', () => {
-    const fact = candidate({
-      memoryType: 'judgment',
-      evidence: [{ inputId: OPERATION_ONE, signalType: 'user_feedback' }],
+      evidence: [{ inputId: OPERATION_ONE }],
     })
     expect(validateAndMergeMemoryFacts([fact], [{ id: OPERATION_ONE, inputType: 'persona_operation_record' }])[0])
-      .toMatchObject({ memoryType: 'judgment', independentEvidenceCount: 1 })
-  })
-
-  it('同一任务记录含多种信号时只计一次并优先保留明确用户反馈', () => {
-    const fact = candidate({
-      memoryType: 'judgment',
-      evidence: [
-        { inputId: OPERATION_ONE, signalType: 'user_feedback' },
-        { inputId: OPERATION_ONE, signalType: 'task_result' },
-      ],
-    })
-    expect(validateAndMergeMemoryFacts([fact], [{ id: OPERATION_ONE, inputType: 'persona_operation_record' }])[0])
-      .toMatchObject({ independentEvidenceCount: 1, evidence: [{ inputId: OPERATION_ONE, signalType: 'user_feedback' }] })
+      .toMatchObject({ independentEvidenceCount: 1, evidence: [{ inputId: OPERATION_ONE, signalType: 'task_result' }] })
   })
 
   it('引用当前批次不存在的输入时拒绝整个模型结果', () => {
@@ -99,9 +77,9 @@ describe('人物记忆证据校验与形成门槛', () => {
       .toThrowError(expect.objectContaining({ code: 'MODEL_OUTPUT_INVALID' }))
   })
 
-  it('第三方经历和任务记录的信号类型不匹配时拒绝整个模型结果', () => {
-    const fact = candidate({ evidence: [{ inputId: OPERATION_ONE, signalType: 'external_record' }] })
-    expect(() => validateAndMergeMemoryFacts([fact], [{ id: OPERATION_ONE, inputType: 'persona_operation_record' }]))
+  it('不支持的批次输入类型不能被模型引用', () => {
+    const fact = candidate({ evidence: [{ inputId: OPERATION_ONE }] })
+    expect(() => validateAndMergeMemoryFacts([fact], [{ id: OPERATION_ONE, inputType: 'growth_material' }]))
       .toThrowError(expect.objectContaining({ code: 'MODEL_OUTPUT_INVALID' }))
   })
 
@@ -112,8 +90,8 @@ describe('人物记忆证据校验与形成门槛', () => {
         statement: '  完成过一次小说人物关系校对。 ',
         memoryType: 'interest',
         evidence: [
-          { inputId: EXTERNAL_ONE, signalType: 'external_record' },
-          { inputId: EXTERNAL_TWO, signalType: 'external_record' },
+          { inputId: EXTERNAL_ONE },
+          { inputId: EXTERNAL_TWO },
         ],
         confidence: 0.9,
         conflicts: ['适用范围待确认', '题材偏差待确认'],

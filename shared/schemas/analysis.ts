@@ -62,18 +62,12 @@ export const modelGrowthAtomicFactSchema = z.object({
 
 /** 成长算法提取阶段的完整结构化输出。 */
 export const modelGrowthExtractionResultSchema = z.object({
-  facts: z.array(modelGrowthAtomicFactSchema).min(1).max(200),
+  facts: z.array(modelGrowthAtomicFactSchema).max(200),
 })
-
-/** 人物记忆候选证据的业务信号类型。 */
-export const memoryEvidenceSignalSchema = z.enum([
-  'external_record', 'user_feedback', 'user_decision', 'task_result', 'self_output',
-])
 
 /** 人物记忆算法提取阶段返回的一项证据引用。 */
 export const modelMemoryEvidenceSchema = z.object({
   inputId: z.string().uuid(),
-  signalType: memoryEvidenceSignalSchema,
 })
 
 /** 人物记忆算法提取阶段返回的一项原子候选。 */
@@ -87,7 +81,7 @@ export const modelMemoryAtomicFactSchema = z.object({
 
 /** 人物记忆算法提取阶段的完整结构化输出。 */
 export const modelMemoryExtractionResultSchema = z.object({
-  facts: z.array(modelMemoryAtomicFactSchema).min(1).max(200),
+  facts: z.array(modelMemoryAtomicFactSchema).max(200),
 })
 
 /** 用户对一项提案的审核决定。 */

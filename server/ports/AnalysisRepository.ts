@@ -38,6 +38,10 @@ export interface CreateAnalysisBatchRecord {
   mode: 'incremental' | 'full_rebuild'
   /** 当前灵魂版本 UUID。 */
   baselineSoulVersionId: string
+  /** 创建批次时当前学习提示词版本 UUID；尚未发布时为空。 */
+  baselineLearningPromptVersionId: string | null
+  /** 创建批次时当前学习提示词正文 SHA-256；尚未发布时为空。 */
+  baselineLearningPromptHash: string | null
   /** 当前有效成长或记忆快照。 */
   baseline: unknown[]
   /** 固定模型快照。 */
@@ -62,6 +66,10 @@ export interface AnalysisBatchRuntimeRecord {
   batch: AnalysisBatchView
   /** 当前有效成长或记忆快照。 */
   baseline: unknown[]
+  /** 创建批次时当前学习提示词版本 UUID。 */
+  baselineLearningPromptVersionId: string | null
+  /** 创建批次时当前学习提示词正文 SHA-256。 */
+  baselineLearningPromptHash: string | null
   /** 固定模型快照。 */
   model: TextModelSnapshot
   /** 固定参数快照。 */
@@ -90,8 +98,12 @@ export interface AnalysisRepository {
   startBatch(batchId: string, timestamp: number): Promise<AnalysisBatchRuntimeRecord | null>
   /** @param batchId 批次 UUID。 @param result 已校验模型结果。 @param timestamp 完成时间。 @returns 是否保存成功。 */
   saveAnalysisResult(batchId: string, result: ModelIterationResult, timestamp: number): Promise<boolean>
-  /** @param batchId 批次 UUID。 @param result 完整提示词提炼结果。 @param promptId 首次提示词容器 UUID。 @param draftId 草稿 UUID。 @param timestamp 完成时间。 @param publication 可选自动发布版本信息。 @returns 是否原子保存批次及草稿或当前版本。 */
-  saveLearningPromptResult(batchId: string, result: ModelLearningPromptResult, promptId: string, draftId: string, timestamp: number, publication?: { versionId: string, changeSummary: string }): Promise<boolean>
+  /** @param batchId 批次 UUID。 @param extraction 模型原始提取结果。 @param validatedFacts 程序校验后的事实。 @param timestamp 保存时间。 @returns 批次仍在运行时为 true。 */
+  saveExtractionSnapshot(batchId: string, extraction: unknown, validatedFacts: unknown[], timestamp: number): Promise<boolean>
+  /** @param batchId 批次 UUID。 @param summary 无变化说明。 @param timestamp 完成时间。 @returns 批次仍在运行并完成时为 true。 */
+  completeWithoutChanges(batchId: string, summary: string, timestamp: number): Promise<boolean>
+  /** @param batchId 批次 UUID。 @param result 完整提示词提炼结果。 @param promptId 首次提示词容器 UUID。 @param draftId 草稿 UUID。 @param timestamp 完成时间。 @param publication 可选自动发布版本信息。 @returns 保存结果；基线或草稿变化时返回冲突。 */
+  saveLearningPromptResult(batchId: string, result: ModelLearningPromptResult, promptId: string, draftId: string, timestamp: number, publication?: { versionId: string, changeSummary: string }): Promise<'saved' | 'batch_changed' | 'version_conflict'>
   /** @param batchId 批次 UUID。 @param code 稳定错误码。 @param message 脱敏错误。 @param timestamp 失败时间。 @returns 无返回值。 */
   failBatch(batchId: string, code: string, message: string, timestamp: number): Promise<void>
   /** @param batchId 批次 UUID。 @param input 审核决定。 @param timestamp 审核时间。 @returns 审核并幂等应用后的批次或 null。 */

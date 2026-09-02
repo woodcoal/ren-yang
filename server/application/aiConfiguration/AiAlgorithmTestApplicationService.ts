@@ -34,7 +34,7 @@ const memoryTestFactsSchema = z.array(z.object({
   memoryType: z.enum(['interest', 'judgment', 'experience', 'preference']),
   evidence: z.array(z.object({
     inputId: z.string().uuid(),
-    signalType: z.enum(['external_record', 'user_feedback', 'user_decision', 'task_result']),
+    signalType: z.enum(['external_record', 'task_result']),
   })).min(1).max(200),
   independentEvidenceCount: z.number().int().positive(),
   confidence: z.number().min(0).max(1),

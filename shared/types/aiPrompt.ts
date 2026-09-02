@@ -9,6 +9,14 @@ export interface AiPromptVariableView {
   label: string
   /** 变量值的来源和格式说明。 */
   description: string
+  /** 变量只允许出现的消息位置；图片提示词使用 either。 */
+  placement: 'system' | 'user' | 'either'
+  /** 变量内容是否来自系统可信事实。 */
+  trust: 'trusted' | 'untrusted'
+  /** 运行时变量采用 JSON 文本还是普通标量。 */
+  encoding: 'json_string' | 'scalar'
+  /** 变量是否属于供应商可复用的稳定前缀。 */
+  cacheRole: 'stable' | 'volatile'
 }
 
 /** 已发布且不可变的 AI 提示词版本。 */
