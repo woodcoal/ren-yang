@@ -57,7 +57,7 @@ describe('SqliteDatabase', () => {
     ])
     expect(current.getClient().prepare(`
       SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations
-    `).get()).toEqual({ count: 18, version: 1790755200000 })
+    `).get()).toEqual({ count: 19, version: 1790841600000 })
     expect(current.getClient().prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name IN (
       'api_keys', 'public_api_idempotency_records', 'public_api_audit_events'
     ) ORDER BY name`).all()).toEqual([
@@ -149,6 +149,12 @@ describe('SqliteDatabase', () => {
       { name: 'memory_records_learning_fts_delete' },
       { name: 'memory_records_learning_fts_insert' },
       { name: 'memory_records_learning_fts_update' },
+      { name: 'persona_distillation_evidence_run_insert_check' },
+      { name: 'persona_distillation_evidence_run_update_check' },
+      { name: 'persona_distillation_run_task_delete' },
+      { name: 'persona_distillation_source_delete' },
+      { name: 'persona_distillation_task_insert_check' },
+      { name: 'persona_distillation_task_update_check' },
       { name: 'source_chunks_fts' },
       { name: 'source_chunks_fts_delete' },
       { name: 'source_chunks_fts_insert' },
@@ -207,6 +213,18 @@ describe('SqliteDatabase', () => {
     client.prepare('ALTER TABLE analysis_batches DROP COLUMN baseline_learning_prompt_version_id').run()
     client.prepare('ALTER TABLE ai_prompt_versions DROP COLUMN variable_contract_hash').run()
     client.prepare('ALTER TABLE ai_prompt_versions DROP COLUMN variable_contract_json').run()
+    client.prepare('DROP TRIGGER persona_distillation_task_insert_check').run()
+    client.prepare('DROP TRIGGER persona_distillation_task_update_check').run()
+    client.prepare('DROP TRIGGER persona_distillation_source_delete').run()
+    client.prepare('DROP TABLE persona_distillation_evaluations').run()
+    client.prepare('DROP TABLE persona_distillation_evidence').run()
+    client.prepare('DROP TABLE persona_distillation_claims').run()
+    client.prepare('DROP TABLE persona_distillation_inputs').run()
+    client.prepare('DROP TABLE persona_distillation_runs').run()
+    client.prepare('ALTER TABLE source_materials DROP COLUMN original_source_key').run()
+    client.prepare('ALTER TABLE source_materials DROP COLUMN published_at').run()
+    client.prepare('ALTER TABLE source_materials DROP COLUMN author_name').run()
+    client.prepare('ALTER TABLE source_materials DROP COLUMN origin_url').run()
     client.prepare(`DELETE FROM __drizzle_migrations`).run()
     client.prepare(`INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)`).run(
       'legacy-latest-before-stable-persona-system-prompts',
@@ -222,7 +240,7 @@ describe('SqliteDatabase', () => {
     database = new SqliteDatabase({ dataDirectory, migrationsDirectory: resolve(process.cwd(), 'drizzle') })
     expect(database.getClient().prepare(`
       SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations
-    `).get()).toEqual({ count: 8, version: 1790755200000 })
+    `).get()).toEqual({ count: 9, version: 1790841600000 })
     expect(database.getClient().prepare(`
       SELECT p.code,
         instr(v.system_prompt_template, '{{personaPromptJson}}') > 0 AS persona_in_system,
@@ -240,7 +258,7 @@ describe('SqliteDatabase', () => {
     database = new SqliteDatabase({ dataDirectory, migrationsDirectory: resolve(process.cwd(), 'drizzle') })
     expect(database.getClient().prepare(`
       SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations
-    `).get()).toEqual({ count: 8, version: 1790755200000 })
+    `).get()).toEqual({ count: 9, version: 1790841600000 })
     expect(database.getClient().prepare('PRAGMA integrity_check').get()).toEqual({ integrity_check: 'ok' })
   })
 
@@ -424,7 +442,7 @@ describe('SqliteDatabase', () => {
     database = new SqliteDatabase({ dataDirectory, migrationsDirectory: resolve(process.cwd(), 'drizzle') })
     expect(database.getClient().prepare(`
       SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations
-    `).get()).toEqual({ count: 18, version: 1790755200000 })
+    `).get()).toEqual({ count: 19, version: 1790841600000 })
     expect(database.getClient().prepare(`SELECT COUNT(*) AS count FROM ai_algorithms`).get()).toEqual({ count: 14 })
     expect(database.getClient().prepare('PRAGMA foreign_key_check').all()).toEqual([])
     expect(database.getClient().prepare('PRAGMA integrity_check').get()).toEqual({ integrity_check: 'ok' })
@@ -500,7 +518,7 @@ describe('SqliteDatabase', () => {
     `).get()).toEqual({ name: '旧资料', content_text: '压平前正文。', is_enabled: 1 })
     expect(database.getClient().prepare(`
       SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations
-    `).get()).toEqual({ count: 33, version: 1790755200000 })
+    `).get()).toEqual({ count: 34, version: 1790841600000 })
     expect(database.getClient().prepare(`SELECT COUNT(*) AS count FROM ai_algorithms`).get()).toEqual({ count: 14 })
     expect(database.getClient().prepare(`PRAGMA table_info(generation_runs)`).all()).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'algorithm_snapshot_json', notnull: 0 }),

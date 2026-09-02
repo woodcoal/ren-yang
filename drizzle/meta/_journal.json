@@ -127,6 +127,13 @@
       "when": 1790755200000,
       "tag": "0017_prompt_variable_contracts",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "6",
+      "when": 1790841600000,
+      "tag": "0018_persona_distillation",
+      "breakpoints": true
     }
   ]
 }

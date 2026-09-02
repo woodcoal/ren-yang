@@ -1,4 +1,5 @@
 import { check, index, integer, primaryKey, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core'
+import type { AnySQLiteColumn } from 'drizzle-orm/sqlite-core'
 import { sql } from 'drizzle-orm'
 
 /** 唯一管理员表；固定主键约束从数据库层阻止多管理员。 */
@@ -391,6 +392,10 @@ export const sourceMaterials = sqliteTable(
     contentHash: text('content_hash').notNull(),
     contentText: text('content_text').notNull(),
     originalFilePath: text('original_file_path'),
+    originUrl: text('origin_url'),
+    authorName: text('author_name'),
+    publishedAt: integer('published_at'),
+    originalSourceKey: text('original_source_key'),
     isEnabled: integer('is_enabled').notNull().default(1),
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull(),
@@ -471,6 +476,182 @@ export const globalSources = sqliteTable(
   },
   table => [
     check('global_sources_priority_check', sql`${table.priority} >= 0`),
+  ],
+)
+
+/** 人物创建前的可审计蒸馏运行。 */
+export const personaDistillationRuns = sqliteTable(
+  'persona_distillation_runs',
+  {
+    id: text('id').primaryKey(),
+    retryOfRunId: text('retry_of_run_id').references((): AnySQLiteColumn => personaDistillationRuns.id, { onDelete: 'set null' }),
+    status: text('status').notNull().default('assessing_sources'),
+    requestedName: text('requested_name').notNull(),
+    objective: text('objective').notNull(),
+    worldId: text('world_id').references(() => worlds.id, { onDelete: 'set null' }),
+    provider: text('provider').notNull(),
+    coverageSnapshotJson: text('coverage_snapshot_json'),
+    algorithmSnapshotJson: text('algorithm_snapshot_json').notNull(),
+    rawExtractionJson: text('raw_extraction_json'),
+    validatedExtractionJson: text('validated_extraction_json'),
+    qualityGateJson: text('quality_gate_json'),
+    candidateName: text('candidate_name'),
+    candidatePromptText: text('candidate_prompt_text'),
+    candidatePromptHash: text('candidate_prompt_hash'),
+    evaluatedPromptHash: text('evaluated_prompt_hash'),
+    reviewedPromptText: text('reviewed_prompt_text'),
+    createdPersonaId: text('created_persona_id').references(() => personas.id, { onDelete: 'set null' }),
+    errorCode: text('error_code'),
+    errorMessage: text('error_message'),
+    sourceReviewedAt: integer('source_reviewed_at'),
+    canceledAt: integer('canceled_at'),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+    completedAt: integer('completed_at'),
+  },
+  table => [
+    index('persona_distillation_runs_status_updated_index').on(table.status, table.updatedAt),
+    index('persona_distillation_runs_created_persona_index').on(table.createdPersonaId),
+    check('persona_distillation_runs_status_check', sql`${table.status} IN ('assessing_sources', 'awaiting_source_review', 'extracting', 'synthesizing', 'evaluating', 'awaiting_candidate_review', 'completed', 'failed', 'canceled')`),
+    check('persona_distillation_runs_name_check', sql`length(trim(${table.requestedName})) BETWEEN 1 AND 100`),
+    check('persona_distillation_runs_objective_check', sql`length(trim(${table.objective})) BETWEEN 1 AND 20000`),
+    check('persona_distillation_runs_provider_check', sql`${table.provider} IN ('sqlite_fts5', 'openviking')`),
+    check('persona_distillation_runs_coverage_json_check', sql`${table.coverageSnapshotJson} IS NULL OR json_valid(${table.coverageSnapshotJson})`),
+    check('persona_distillation_runs_algorithm_json_check', sql`json_valid(${table.algorithmSnapshotJson})`),
+    check('persona_distillation_runs_raw_json_check', sql`${table.rawExtractionJson} IS NULL OR json_valid(${table.rawExtractionJson})`),
+    check('persona_distillation_runs_validated_json_check', sql`${table.validatedExtractionJson} IS NULL OR json_valid(${table.validatedExtractionJson})`),
+    check('persona_distillation_runs_quality_json_check', sql`${table.qualityGateJson} IS NULL OR json_valid(${table.qualityGateJson})`),
+    check('persona_distillation_runs_candidate_hash_check', sql`${table.candidatePromptHash} IS NULL OR length(${table.candidatePromptHash}) = 64`),
+    check('persona_distillation_runs_evaluated_hash_check', sql`${table.evaluatedPromptHash} IS NULL OR length(${table.evaluatedPromptHash}) = 64`),
+    check('persona_distillation_runs_candidate_check', sql`(${table.candidatePromptText} IS NULL AND ${table.candidatePromptHash} IS NULL) OR (length(trim(${table.candidatePromptText})) > 0 AND length(${table.candidatePromptHash}) = 64)`),
+    check('persona_distillation_runs_completed_check', sql`${table.status} <> 'completed' OR (${table.createdPersonaId} IS NOT NULL AND ${table.completedAt} IS NOT NULL)`),
+    check('persona_distillation_runs_canceled_check', sql`${table.status} <> 'canceled' OR ${table.canceledAt} IS NOT NULL`),
+  ],
+)
+
+/** 人物蒸馏实际使用的资料或用户要求快照。 */
+export const personaDistillationInputs = sqliteTable(
+  'persona_distillation_inputs',
+  {
+    id: text('id').primaryKey(),
+    runId: text('run_id').notNull().references(() => personaDistillationRuns.id, { onDelete: 'cascade' }),
+    inputType: text('input_type').notNull(),
+    sourceId: text('source_id').references(() => sourceMaterials.id, { onDelete: 'set null' }),
+    name: text('name').notNull(),
+    sourceRole: text('source_role'),
+    sourceRelation: text('source_relation'),
+    coverageDimensionsJson: text('coverage_dimensions_json').notNull().default('[]'),
+    independentSourceKey: text('independent_source_key'),
+    contentHash: text('content_hash').notNull(),
+    contentSnapshot: text('content_snapshot'),
+    sourceAvailable: integer('source_available').notNull().default(1),
+    accepted: integer('accepted').notNull().default(1),
+    originUrl: text('origin_url'),
+    authorName: text('author_name'),
+    publishedAt: integer('published_at'),
+    createdAt: integer('created_at').notNull(),
+  },
+  table => [
+    index('persona_distillation_inputs_run_created_index').on(table.runId, table.createdAt),
+    index('persona_distillation_inputs_source_index').on(table.sourceId),
+    check('persona_distillation_inputs_type_check', sql`${table.inputType} IN ('source_material', 'user_statement')`),
+    check('persona_distillation_inputs_name_check', sql`length(trim(${table.name})) > 0`),
+    check('persona_distillation_inputs_role_check', sql`${table.sourceRole} IS NULL OR ${table.sourceRole} IN ('canon_fact', 'reference', 'style_sample')`),
+    check('persona_distillation_inputs_relation_check', sql`${table.sourceRelation} IS NULL OR ${table.sourceRelation} IN ('subject_authored', 'direct_conversation', 'observed_decision', 'subject_social', 'third_party', 'user_statement')`),
+    check('persona_distillation_inputs_dimensions_check', sql`json_valid(${table.coverageDimensionsJson}) AND json_type(${table.coverageDimensionsJson}) = 'array'`),
+    check('persona_distillation_inputs_hash_check', sql`length(${table.contentHash}) = 64`),
+    check('persona_distillation_inputs_available_check', sql`${table.sourceAvailable} IN (0, 1)`),
+    check('persona_distillation_inputs_accepted_check', sql`${table.accepted} IN (0, 1)`),
+    check('persona_distillation_inputs_shape_check', sql`(
+      (${table.inputType} = 'user_statement' AND ${table.sourceId} IS NULL AND ${table.sourceRole} IS NULL AND ${table.sourceRelation} = 'user_statement' AND ${table.contentSnapshot} IS NOT NULL AND ${table.sourceAvailable} = 1)
+      OR (${table.inputType} = 'source_material' AND ${table.sourceRole} IS NOT NULL AND ((${table.sourceId} IS NOT NULL AND ${table.contentSnapshot} IS NOT NULL AND ${table.sourceAvailable} = 1) OR (${table.sourceId} IS NULL AND ${table.contentSnapshot} IS NULL AND ${table.sourceAvailable} = 0)))
+    )`),
+  ],
+)
+
+/** 通过程序校验的人物认知候选。 */
+export const personaDistillationClaims = sqliteTable(
+  'persona_distillation_claims',
+  {
+    id: text('id').primaryKey(),
+    runId: text('run_id').notNull().references(() => personaDistillationRuns.id, { onDelete: 'cascade' }),
+    category: text('category').notNull(),
+    statement: text('statement').notNull(),
+    applicability: text('applicability').notNull(),
+    limitations: text('limitations').notNull().default(''),
+    basis: text('basis').notNull(),
+    confidenceMillionths: integer('confidence_millionths').notNull(),
+    independentSourceCount: integer('independent_source_count').notNull(),
+    crossContextCount: integer('cross_context_count').notNull(),
+    status: text('status').notNull(),
+    rejectionReasonsJson: text('rejection_reasons_json').notNull().default('[]'),
+    warningsJson: text('warnings_json').notNull().default('[]'),
+    conflictsJson: text('conflicts_json').notNull().default('[]'),
+    createdAt: integer('created_at').notNull(),
+  },
+  table => [
+    index('persona_distillation_claims_run_category_index').on(table.runId, table.category),
+    check('persona_distillation_claims_category_check', sql`${table.category} IN ('mental_model', 'decision_heuristic', 'expression', 'value', 'anti_pattern', 'tension', 'honesty_boundary', 'timeline')`),
+    check('persona_distillation_claims_statement_check', sql`length(trim(${table.statement})) > 0`),
+    check('persona_distillation_claims_applicability_check', sql`length(trim(${table.applicability})) > 0`),
+    check('persona_distillation_claims_basis_check', sql`${table.basis} IN ('explicit', 'observed', 'inferred')`),
+    check('persona_distillation_claims_confidence_check', sql`${table.confidenceMillionths} BETWEEN 0 AND 1000000`),
+    check('persona_distillation_claims_counts_check', sql`${table.independentSourceCount} >= 0 AND ${table.crossContextCount} >= 0`),
+    check('persona_distillation_claims_status_check', sql`${table.status} IN ('valid', 'warning', 'rejected')`),
+    check('persona_distillation_claims_rejections_json_check', sql`json_valid(${table.rejectionReasonsJson}) AND json_type(${table.rejectionReasonsJson}) = 'array'`),
+    check('persona_distillation_claims_warnings_json_check', sql`json_valid(${table.warningsJson}) AND json_type(${table.warningsJson}) = 'array'`),
+    check('persona_distillation_claims_conflicts_json_check', sql`json_valid(${table.conflictsJson}) AND json_type(${table.conflictsJson}) = 'array'`),
+  ],
+)
+
+/** 人物认知候选引用的精确输入片段。 */
+export const personaDistillationEvidence = sqliteTable(
+  'persona_distillation_evidence',
+  {
+    id: text('id').primaryKey(),
+    claimId: text('claim_id').notNull().references(() => personaDistillationClaims.id, { onDelete: 'cascade' }),
+    inputId: text('input_id').notNull().references(() => personaDistillationInputs.id, { onDelete: 'restrict' }),
+    relation: text('relation').notNull(),
+    quote: text('quote').notNull(),
+    quoteHash: text('quote_hash').notNull(),
+    createdAt: integer('created_at').notNull(),
+  },
+  table => [
+    uniqueIndex('persona_distillation_evidence_unique').on(table.claimId, table.inputId, table.relation, table.quoteHash),
+    check('persona_distillation_evidence_relation_check', sql`${table.relation} IN ('supporting', 'opposing')`),
+    check('persona_distillation_evidence_quote_check', sql`length(trim(${table.quote})) > 0`),
+    check('persona_distillation_evidence_hash_check', sql`length(${table.quoteHash}) = 64`),
+  ],
+)
+
+/** 与候选正文哈希绑定且只追加的人物蒸馏评测结果。 */
+export const personaDistillationEvaluations = sqliteTable(
+  'persona_distillation_evaluations',
+  {
+    id: text('id').primaryKey(),
+    runId: text('run_id').notNull().references(() => personaDistillationRuns.id, { onDelete: 'cascade' }),
+    roundNo: integer('round_no').notNull(),
+    evaluationType: text('evaluation_type').notNull(),
+    candidatePromptHash: text('candidate_prompt_hash').notNull(),
+    inputJson: text('input_json').notNull(),
+    expectedJson: text('expected_json').notNull(),
+    outputJson: text('output_json').notNull(),
+    status: text('status').notNull(),
+    scoreMillionths: integer('score_millionths'),
+    failureReasonsJson: text('failure_reasons_json').notNull().default('[]'),
+    createdAt: integer('created_at').notNull(),
+  },
+  table => [
+    uniqueIndex('persona_distillation_evaluations_run_round_type_unique').on(table.runId, table.roundNo, table.evaluationType),
+    check('persona_distillation_evaluations_round_check', sql`${table.roundNo} > 0`),
+    check('persona_distillation_evaluations_type_check', sql`${table.evaluationType} IN ('known_fact', 'decision_tendency', 'unknown_boundary', 'expression', 'counterfactual', 'conflict_handling')`),
+    check('persona_distillation_evaluations_hash_check', sql`length(${table.candidatePromptHash}) = 64`),
+    check('persona_distillation_evaluations_input_json_check', sql`json_valid(${table.inputJson})`),
+    check('persona_distillation_evaluations_expected_json_check', sql`json_valid(${table.expectedJson})`),
+    check('persona_distillation_evaluations_output_json_check', sql`json_valid(${table.outputJson})`),
+    check('persona_distillation_evaluations_status_check', sql`${table.status} IN ('passed', 'warning', 'failed')`),
+    check('persona_distillation_evaluations_score_check', sql`${table.scoreMillionths} IS NULL OR ${table.scoreMillionths} BETWEEN 0 AND 1000000`),
+    check('persona_distillation_evaluations_failures_json_check', sql`json_valid(${table.failureReasonsJson}) AND json_type(${table.failureReasonsJson}) = 'array'`),
   ],
 )
 
@@ -1492,6 +1673,11 @@ export const databaseSchema = {
   personaSources,
   worldSources,
   globalSources,
+  personaDistillationRuns,
+  personaDistillationInputs,
+  personaDistillationClaims,
+  personaDistillationEvidence,
+  personaDistillationEvaluations,
   personaFeedbackSources,
   growthMaterials,
   growthRecords,

@@ -33,6 +33,7 @@ const IDS = {
   originalAsset: '00000000-0000-4000-8000-000000000012',
   orphanPersona: '00000000-0000-4000-8000-000000000013',
   sync: '00000000-0000-4000-8000-000000000011',
+  distillation: '00000000-0000-4000-8000-000000000014',
 } as const
 
 /** 资料原文件内容。 */
@@ -91,7 +92,7 @@ describe('SQLite 与引用文件备份恢复', () => {
     expect(validation.fileCount).toBe(6)
     expect(validation.manifest.version).toBe(2)
     if (validation.manifest.version !== 2) throw new Error('新建备份应使用第二版清单')
-    expect(validation.manifest.migrationVersion).toBe(1790755200000)
+    expect(validation.manifest.migrationVersion).toBe(1790841600000)
     expect(existsSync(resolve(backupDirectory, 'app.sqlite-wal'))).toBe(false)
     expect(existsSync(resolve(backupDirectory, 'app.sqlite-shm'))).toBe(false)
     for (const file of validation.manifest.files) {
@@ -270,6 +271,10 @@ describe('SQLite 与引用文件备份恢复', () => {
         error: '数据恢复后需要全量重建 OpenViking 索引',
       })
       expect(restored.prepare(`SELECT COUNT(*) AS count FROM source_chunks_fts WHERE source_chunks_fts MATCH '魔法学院'`).get()).toEqual({ count: 1 })
+      expect(restored.prepare(`SELECT status, created_persona_id FROM persona_distillation_runs WHERE id = ?`).get(IDS.distillation)).toEqual({
+        status: 'completed',
+        created_persona_id: IDS.persona,
+      })
       expect(restored.prepare(`SELECT actor, action, target_id FROM audit_events WHERE action = 'data_restored'`).get()).toEqual({
         actor: 'maintenance',
         action: 'data_restored',
@@ -358,6 +363,12 @@ function seedReferencedData(): void {
       runtime_token_count, token_counter, change_summary, status, published_at, created_at
     ) VALUES (?, 'persona', NULL, ?, NULL, ?, 12, 'test', '初始版本', 'published', 1000, 1000)
   `).run(IDS.version, IDS.persona, '谨慎的学院档案员。')
+  client.prepare(`
+    INSERT INTO persona_distillation_runs (
+      id, status, requested_name, objective, world_id, provider, algorithm_snapshot_json,
+      created_persona_id, created_at, updated_at, completed_at
+    ) VALUES (?, 'completed', '档案员', '提炼谨慎的档案判断方式。', NULL, 'sqlite_fts5', '{}', ?, 1000, 1000, 1000)
+  `).run(IDS.distillation, IDS.persona)
   client.prepare(`
     INSERT INTO generation_runs (
       id, kind, persona_version_id, status, input_json, parameter_snapshot_json, model_snapshot_json,
