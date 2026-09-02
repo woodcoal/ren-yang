@@ -11,7 +11,7 @@ const RETRY_DELAYS_MS = [60_000, 300_000, 1_800_000, 7_200_000, 21_600_000] as c
  */
 export function calculateOpenVikingRetryDelay(failureCount: number): number {
   const index = Math.max(0, Math.min(Math.trunc(failureCount) - 1, RETRY_DELAYS_MS.length - 1))
-  return RETRY_DELAYS_MS[index]!
+  return RETRY_DELAYS_MS[index] ?? RETRY_DELAYS_MS[0]
 }
 
 /**

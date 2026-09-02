@@ -168,10 +168,10 @@ export class ContextSynchronizationApplicationService implements TaskHandler {
     const entities = new Map<string, { entityType: ContextProjectionEntityType, sourceId: string, notBefore: number }>()
     for (const [key, projection] of desiredByKey) {
       const record = recordsByKey.get(key)
-      const definitionChanged = Boolean(record) && (
-        record!.contentHash !== projection.source.contentHash
-        || record!.operation !== projection.operation
-        || projectionIdentityChanged(record!, projection)
+      const definitionChanged = record !== undefined && (
+        record.contentHash !== projection.source.contentHash
+        || record.operation !== projection.operation
+        || projectionIdentityChanged(record, projection)
       )
       const requiresSync = !record || record.status !== 'synchronized' || definitionChanged
       const needsAttention = record?.status === 'failed' && record.nextRetryAt === null && !definitionChanged
@@ -488,9 +488,10 @@ export class ContextSynchronizationApplicationService implements TaskHandler {
       await this.dependencies.repository.markSyncHealthy(this.dependencies.clock.now())
     }
     else {
-      const nextRetryAt = records
-        .filter(record => record.status === 'failed' && record.nextRetryAt !== null)
-        .reduce<number | null>((earliest, record) => earliest === null ? record.nextRetryAt : Math.min(earliest, record.nextRetryAt!), null)
+      const nextRetryAt = records.reduce<number | null>((earliest, record) => {
+        if (record.status !== 'failed' || record.nextRetryAt === null) return earliest
+        return earliest === null ? record.nextRetryAt : Math.min(earliest, record.nextRetryAt)
+      }, null)
       await this.dependencies.repository.markSyncDegraded(
         records.find(record => record.status === 'failed')?.error ?? 'OpenViking 全量重建存在失败投影',
         nextRetryAt,

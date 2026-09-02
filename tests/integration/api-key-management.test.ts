@@ -180,6 +180,36 @@ describe('公共 API 幂等与审计', () => {
     })).rejects.toMatchObject({ code: 'IDEMPOTENCY_CONFLICT', statusCode: 409 })
   })
 
+  it('业务成功但幂等结果保存失败时保留占位，禁止重试重复写入', async () => {
+    const apiKeys = createService()
+    const created = await apiKeys.create({ name: '故障保护', scopes: ['persona:write'], expiresAt: null })
+    const repository = new SqlitePublicApiRepository(database.getClient())
+    let releases = 0
+    repository.completeIdempotency = async () => false
+    repository.releaseIdempotency = async () => { releases += 1 }
+    const service = new PublicApiApplicationService({
+      repository,
+      identifiers: { create: () => `30000000-0000-4000-8000-${String(++identifierOrdinal).padStart(12, '0')}` },
+      clock: { now: () => timestamp },
+    })
+    let executions = 0
+    const input = {
+      apiKeyId: created.key.id,
+      method: 'POST',
+      path: '/api/v2/personas',
+      idempotencyKey: 'completion-failure',
+      payload: { name: '不可重复人物' },
+      action: async () => ({ id: `persona-${++executions}` }),
+    }
+
+    await expect(service.executeIdempotent(input)).rejects.toMatchObject({
+      code: 'IDEMPOTENCY_COMPLETION_FAILED', statusCode: 503,
+    })
+    await expect(service.executeIdempotent(input)).rejects.toMatchObject({ code: 'IDEMPOTENCY_IN_PROGRESS', statusCode: 409 })
+    expect(executions).toBe(1)
+    expect(releases).toBe(0)
+  })
+
   it('公共写操作审计不包含 Key 明文和业务正文', async () => {
     const apiKeys = createService()
     const created = await apiKeys.create({ name: '资料维护', scopes: ['library:write'], expiresAt: null })

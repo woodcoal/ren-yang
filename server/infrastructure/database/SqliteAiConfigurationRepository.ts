@@ -46,7 +46,9 @@ export class SqliteAiConfigurationRepository implements AiConfigurationRepositor
         targetId: record.id, timestamp: record.timestamp,
       })
     }).immediate()
-    return (await this.findConnection(record.id))!
+    const created = await this.findConnection(record.id)
+    if (!created) throw new Error('AI 接口连接写入后无法读取')
+    return created
   }
 
   /** @param record 替换连接记录。 @returns 更新后的脱敏连接或 null。 */
@@ -66,7 +68,10 @@ export class SqliteAiConfigurationRepository implements AiConfigurationRepositor
       })
       return true
     }).immediate()
-    return changed ? (await this.findConnection(record.id))! : null
+    if (!changed) return null
+    const updated = await this.findConnection(record.id)
+    if (!updated) throw new Error('AI 接口连接更新后无法读取')
+    return updated
   }
 
   /** @returns 按创建时间与 UUID 稳定排序的全部模型部署。 */
@@ -97,7 +102,9 @@ export class SqliteAiConfigurationRepository implements AiConfigurationRepositor
         targetId: record.id, timestamp: record.timestamp,
       })
     }).immediate()
-    return (await this.findModelDeployment(record.id))!
+    const created = await this.findModelDeployment(record.id)
+    if (!created) throw new Error('AI 模型部署写入后无法读取')
+    return created
   }
 
   /** @param record 替换部署记录。 @returns 更新后的模型部署或 null。 */
@@ -117,7 +124,10 @@ export class SqliteAiConfigurationRepository implements AiConfigurationRepositor
       })
       return true
     }).immediate()
-    return changed ? (await this.findModelDeployment(record.id))! : null
+    if (!changed) return null
+    const updated = await this.findModelDeployment(record.id)
+    if (!updated) throw new Error('AI 模型部署更新后无法读取')
+    return updated
   }
 
   /** @param code 算法编码。 @returns 当前生效的完整配置或 null。 */
@@ -171,7 +181,9 @@ export class SqliteAiConfigurationRepository implements AiConfigurationRepositor
         details: { configurationVersion: Number(versionRow.version_no) },
       })
     }).immediate()
-    return (await this.findActiveAlgorithmConfiguration(record.algorithmCode))!
+    const published = await this.findActiveAlgorithmConfiguration(record.algorithmCode)
+    if (!published) throw new Error('AI 算法配置发布后无法读取')
+    return published
   }
 
   /**

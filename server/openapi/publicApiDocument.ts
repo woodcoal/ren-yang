@@ -182,7 +182,7 @@ export function createPublicOpenApiDocument(): PublicOpenApiDocument {
       '/api/v2/personas/{personaId}': {
         get: readOperation('人物', 'getPersona', '查询人物详情', 'persona:read', [personaId]),
         patch: writeOperation('人物', 'updatePersona', '修改人物名称和世界关系', 'persona:write', [personaId], '#/components/schemas/UpdatePersona'),
-        delete: writeOperation('人物', 'deletePersona', '受控删除人物', 'persona:write', [personaId]),
+        delete: writeOperation('人物', 'deletePersona', '受控删除人物', 'persona:write', [personaId], undefined, 204),
       },
       '/api/v2/personas/{personaId}/status': {
         patch: writeOperation('人物', 'updatePersonaStatus', '启用或停用人物', 'persona:write', [personaId], '#/components/schemas/StatusInput'),
@@ -210,7 +210,7 @@ export function createPublicOpenApiDocument(): PublicOpenApiDocument {
       '/api/v2/worlds/{worldId}': {
         get: readOperation('世界', 'getWorld', '查询世界详情', 'world:read', [worldId]),
         patch: writeOperation('世界', 'updateWorld', '修改世界名称和摘要', 'world:write', [worldId], '#/components/schemas/UpdateWorld'),
-        delete: writeOperation('世界', 'deleteWorld', '受控删除世界', 'world:write', [worldId]),
+        delete: writeOperation('世界', 'deleteWorld', '受控删除世界', 'world:write', [worldId], undefined, 204),
       },
       '/api/v2/worlds/{worldId}/status': {
         patch: writeOperation('世界', 'updateWorldStatus', '启用或停用世界', 'world:write', [worldId], '#/components/schemas/StatusInput'),
@@ -237,7 +237,7 @@ export function createPublicOpenApiDocument(): PublicOpenApiDocument {
       '/api/v2/sources/{sourceId}': {
         get: readOperation('资料库', 'getSource', '查询资料正文和关系', 'library:read', [sourceId]),
         patch: writeOperation('资料库', 'updateSource', '修改资料元数据和正文', 'library:write', [sourceId], '#/components/schemas/UpdateSource'),
-        delete: writeOperation('资料库', 'deleteSource', '受控删除资料', 'library:write', [sourceId]),
+        delete: writeOperation('资料库', 'deleteSource', '受控删除资料', 'library:write', [sourceId], undefined, 204),
       },
       '/api/v2/sources/{sourceId}/status': {
         patch: writeOperation('资料库', 'updateSourceStatus', '启用或停用资料', 'library:write', [sourceId], '#/components/schemas/StatusInput'),
@@ -403,7 +403,7 @@ function operation(
   mediaType = 'application/json',
 ): OpenApiOperation {
   const responses: Record<string, OpenApiResponse> = {
-    [String(status)]: successResponse(summary, operationId),
+    [String(status)]: status === 204 ? { description: `${summary}成功，无响应体。` } : successResponse(summary, operationId),
     '401': { $ref: '#/components/responses/Unauthorized' },
     '403': { $ref: '#/components/responses/Forbidden' },
     '404': { $ref: '#/components/responses/NotFound' },

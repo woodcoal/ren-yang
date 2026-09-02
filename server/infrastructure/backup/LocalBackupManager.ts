@@ -19,7 +19,7 @@ const MANIFEST_NAME = 'manifest.json'
 /** 备份内固定数据库文件名。 */
 const DATABASE_NAME = 'app.sqlite'
 /** 允许进入备份的受控相对路径。 */
-const FILE_PATH_PATTERN = /^(sources\/[0-9a-f-]{36}\.(txt|md)|artifacts\/[0-9a-f-]{36}\/assets\/[0-9a-f-]{36}\.(png|jpg|webp))$/i
+const FILE_PATH_PATTERN = /^(sources\/[0-9a-f-]{36}\.(txt|md)|artifacts\/[0-9a-f-]{36}\/assets\/[0-9a-f-]{36}\.(png|jpg|webp)|avatars\/[0-9a-f-]{36}\/(avatar|avatar-original))$/i
 /** 公共 API 增量迁移前的压平基线版本。 */
 const PREVIOUS_CURRENT_MIGRATION_VERSION = 1789113600000
 /** 公共 API 增量迁移前的单基线迁移条数。 */
@@ -75,7 +75,11 @@ export class LocalBackupManager implements BackupPort {
         source.close()
       }
       await normalizeBackupDatabase(resolve(pending, DATABASE_NAME))
-      const references = inspectDatabase(resolve(pending, DATABASE_NAME), this.currentMigrationIdentity())
+      const backupDatabasePath = resolve(pending, DATABASE_NAME)
+      const references = inspectDatabase(backupDatabasePath, this.currentMigrationIdentity())
+      for (const [path, mediaType] of await inspectPersonaAvatarFiles(backupDatabasePath, this.dataDirectory)) {
+        references.set(path, mediaType)
+      }
       const files: BackupManifestFile[] = [await describeFile(resolve(pending, DATABASE_NAME), DATABASE_NAME, 'application/vnd.sqlite3')]
       for (const [relativePath, mediaType] of references) {
         const sourcePath = resolveControlled(this.dataDirectory, relativePath)
@@ -128,7 +132,11 @@ export class LocalBackupManager implements BackupPort {
     if (actualPaths.size !== declaredPaths.size || [...actualPaths].some(path => !declaredPaths.has(path))) {
       throw new Error('备份目录包含未列入清单的额外文件')
     }
-    const references = inspectDatabase(resolve(root, DATABASE_NAME), this.currentMigrationIdentity())
+    const backupDatabasePath = resolve(root, DATABASE_NAME)
+    const references = inspectDatabase(backupDatabasePath, this.currentMigrationIdentity())
+    for (const [path, mediaType] of await inspectPersonaAvatarFiles(backupDatabasePath, root)) {
+      references.set(path, mediaType)
+    }
     const expectedMediaTypes = new Map([[DATABASE_NAME, 'application/vnd.sqlite3'], ...references.entries()])
     const expected = new Set(expectedMediaTypes.keys())
     if (expected.size !== paths.size || [...expected].some(path => !paths.has(path))) {
@@ -155,7 +163,7 @@ export class LocalBackupManager implements BackupPort {
         await mkdir(dirname(target), { recursive: true })
         await copyFile(resolveControlled(absolute(backupDirectory), file.path), target)
       }
-      for (const directory of ['sources', 'artifacts', 'exports', 'backups', 'logs']) {
+      for (const directory of ['sources', 'artifacts', 'avatars', 'exports', 'backups', 'logs']) {
         await mkdir(resolve(staging, directory), { recursive: true })
       }
       prepareRestoredDatabase(resolve(staging, DATABASE_NAME), validation.manifest.backupId)
@@ -288,6 +296,65 @@ function inspectDatabase(databasePath: string, expectedMigration: MigrationIdent
   finally {
     database.close()
   }
+}
+
+/**
+ * 读取备份数据库中的有效人物，并发现其实际存在的结果头像和裁剪前原图。
+ * @param databasePath 已完成一致性复制的 SQLite 数据库路径。
+ * @param filesRoot 当前数据目录或待验证备份目录。
+ * @returns 只属于现存人物且媒体类型由文件头确认的头像引用。
+ */
+async function inspectPersonaAvatarFiles(databasePath: string, filesRoot: string): Promise<Map<string, string>> {
+  const database = new Database(databasePath, { readonly: true, fileMustExist: true })
+  let personaIds: string[]
+  try {
+    personaIds = (database.prepare(`SELECT id FROM personas ORDER BY id`).all() as Array<{ id: string }>).map(row => row.id)
+  }
+  finally {
+    database.close()
+  }
+  const references = new Map<string, string>()
+  for (const personaId of personaIds) {
+    for (const fileName of ['avatar', 'avatar-original'] as const) {
+      const relativePath = `avatars/${personaId}/${fileName}`
+      const path = resolveControlled(filesRoot, relativePath)
+      let information
+      try {
+        information = await lstat(path)
+      }
+      catch (error: unknown) {
+        if (isMissingFileError(error)) continue
+        throw error
+      }
+      if (!information.isFile() || information.isSymbolicLink()) throw new Error(`备份拒绝非普通文件：${path}`)
+      references.set(relativePath, detectImageMediaType(await readFile(path), relativePath))
+    }
+  }
+  return references
+}
+
+/**
+ * 判断文件系统异常是否表示目标不存在。
+ * @param error 文件系统抛出的未知异常。
+ * @returns 仅在错误码为 ENOENT 时返回 true。
+ */
+function isMissingFileError(error: unknown): boolean {
+  return error instanceof Error && 'code' in error && error.code === 'ENOENT'
+}
+
+/**
+ * 根据受信文件头识别备份头像媒体类型，禁止依赖扩展名或清单自报类型。
+ * @param bytes 完整头像字节。
+ * @param relativePath 用于错误定位的受控相对路径。
+ * @returns PNG、JPEG 或 WebP 的标准媒体类型。
+ */
+function detectImageMediaType(bytes: Uint8Array, relativePath: string): 'image/png' | 'image/jpeg' | 'image/webp' {
+  if (bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47
+    && bytes[4] === 0x0D && bytes[5] === 0x0A && bytes[6] === 0x1A && bytes[7] === 0x0A) return 'image/png'
+  if (bytes.length >= 3 && bytes[0] === 0xFF && bytes[1] === 0xD8 && bytes[2] === 0xFF) return 'image/jpeg'
+  if (bytes.length >= 12 && bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x46
+    && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50) return 'image/webp'
+  throw new Error(`备份头像媒体类型无效：${relativePath}`)
 }
 
 /**

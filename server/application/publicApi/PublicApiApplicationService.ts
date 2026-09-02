@@ -65,15 +65,23 @@ export class PublicApiApplicationService {
       return this.replay<TData>(concurrent.requestHash, requestHash, concurrent.response)
     }
 
+    let data: TData
     try {
-      const data = await input.action()
-      await this.dependencies.repository.completeIdempotency(id, data, this.dependencies.clock.now())
-      return { data, replayed: false }
+      data = await input.action()
     }
     catch (error: unknown) {
       await this.dependencies.repository.releaseIdempotency(id)
       throw error
     }
+    // 业务写入已经成功后绝不能释放占位，否则重试会再次执行不可逆动作。
+    try {
+      const completed = await this.dependencies.repository.completeIdempotency(id, data, this.dependencies.clock.now())
+      if (!completed) throw new Error('幂等完成记录状态已变化')
+    }
+    catch {
+      throw new ApplicationError('IDEMPOTENCY_COMPLETION_FAILED', '业务操作已完成，但幂等结果保存失败；请停止重试并由管理员核查', 503)
+    }
+    return { data, replayed: false }
   }
 
   /** @param input 已脱敏写操作结果。 @returns 审计写入完成时结束。 */

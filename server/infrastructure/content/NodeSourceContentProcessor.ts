@@ -146,7 +146,7 @@ function splitIntoSections(content: string): SourceSection[] {
     const match = /^(#{1,6})\s+(.+)$/.exec(line)
     if (match) {
       flush()
-      heading = match[2]!.trim()
+      heading = match[2]?.trim() ?? null
     }
     else {
       lines.push(line)

@@ -16,6 +16,7 @@ import type {
   AiModelDeploymentView,
 } from '../../../shared/types/aiConfiguration'
 import { AI_ALGORITHM_DEFINITIONS, getAiAlgorithmDefinition } from '../../domain/ai/AiAlgorithmDefinitions'
+import { connectionSecretContext } from '../../domain/ai/AiConnectionSecret'
 import type { AiConfigurationRepository } from '../../ports/AiConfigurationRepository'
 import type { AiModelFactory } from '../../ports/AiModelFactory'
 import type { Clock } from '../../ports/Clock'
@@ -228,7 +229,8 @@ export class AiConfigurationApplicationService {
     }
     await this.dependencies.prompts.snapshotPublishedVersions(definition.steps.map(step => step.promptCode))
     const steps = await Promise.all(definition.steps.map(async (definitionStep) => {
-      const inputStep = inputs.get(definitionStep.key)!
+      const inputStep = inputs.get(definitionStep.key)
+      if (!inputStep) throw new ApplicationError('VALIDATION_FAILED', `缺少算法步骤“${definitionStep.name}”`, 400)
       if (definitionStep.modality === 'image' && inputStep.parameters.disableThinking) {
         throw new ApplicationError('VALIDATION_FAILED', `图片步骤“${definitionStep.name}”不支持关闭思考`, 400)
       }
@@ -257,7 +259,9 @@ export class AiConfigurationApplicationService {
     await this.dependencies.repository.publishAlgorithmConfiguration({
       id: this.dependencies.identifiers.create(), algorithmCode: code, steps, timestamp: this.dependencies.clock.now(),
     })
-    return (await this.listAlgorithms()).find(item => item.code === code)!
+    const published = (await this.listAlgorithms()).find(item => item.code === code)
+    if (!published) throw new Error(`AI 算法“${code}”发布后无法读取`)
+    return published
   }
 
   /** @param id 连接 UUID。 @returns 存在的服务端连接记录。 */
@@ -290,9 +294,4 @@ export class AiConfigurationApplicationService {
       throw error
     }
   }
-}
-
-/** @param connectionId AI 连接 UUID。 @returns AES-GCM 附加认证数据使用的稳定上下文。 */
-export function connectionSecretContext(connectionId: string): string {
-  return `ai_connection:${connectionId}`
 }

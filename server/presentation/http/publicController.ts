@@ -48,14 +48,14 @@ export interface PublicApiResponse<TData> {
  * @param scope 接口要求的写权限。
  * @param options 请求载荷、目标类型、状态码和可选目标标识提取器。
  * @param action 只调用一个应用服务用例并返回 JSON 数据的动作。
- * @returns 带追踪和幂等元数据的统一响应。
+ * @returns 带追踪和幂等元数据的统一响应；204 成功时无响应体。
  */
 export async function executePublicWriteController<TData extends PublicApiJsonValue>(
   event: H3Event,
   scope: ApiKeyScope,
   options: PublicWriteControllerOptions<TData>,
   action: () => Promise<TData>,
-): Promise<PublicApiResponse<PublicApiJsonValue> | PublicApiErrorResponse> {
+): Promise<PublicApiResponse<PublicApiJsonValue> | PublicApiErrorResponse | undefined> {
   const principal = event.context.apiKeyPrincipal
   const method = getMethod(event).toUpperCase()
   const path = getRequestURL(event).pathname
@@ -87,6 +87,7 @@ export async function executePublicWriteController<TData extends PublicApiJsonVa
       statusCode: resolved.statusCode,
       errorCode: null,
     })
+    if (resolved.statusCode === 204) return undefined
     return {
       data: resolved.data,
       meta: { requestId: requireRequestId(event), idempotencyReplayed: result.replayed },

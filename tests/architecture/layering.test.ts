@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { readFileSync, readdirSync } from 'node:fs'
 import { extname, resolve } from 'node:path'
+import ts from 'typescript'
 
 /**
  * 递归收集指定目录中的 TypeScript 源文件。
@@ -29,6 +30,26 @@ function expectNoForbiddenDependencies(files: string[], forbiddenPatterns: RegEx
       expect(source, `${file} 不得匹配 ${pattern}`).not.toMatch(pattern)
     }
   }
+}
+
+/**
+ * 使用 TypeScript 语法树定位非空断言，避免正则把字符串中的感叹号误判为运算符。
+ * @param source 待检查的 TypeScript 源码。
+ * @param fileName 诊断使用的文件名。
+ * @returns 每个非空断言的行列位置。
+ */
+function findNonNullAssertions(source: string, fileName: string): string[] {
+  const sourceFile = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+  const positions: string[] = []
+  const visit = (node: ts.Node): void => {
+    if (ts.isNonNullExpression(node)) {
+      const position = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile))
+      positions.push(`${fileName}:${position.line + 1}:${position.character + 1}`)
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(sourceFile)
+  return positions
 }
 
 describe('严格分层依赖', () => {
@@ -63,5 +84,20 @@ describe('严格分层依赖', () => {
       /better-sqlite3/,
       /\bh3\b/,
     ])
+  })
+
+  it('基础设施层不反向依赖应用层', () => {
+    const files = collectTypeScriptFiles(resolve(process.cwd(), 'server/infrastructure'))
+      .filter(file => !file.includes(`${resolve(process.cwd(), 'server/infrastructure/composition')}/`))
+    expectNoForbiddenDependencies(files, [/(?:\.\.\/)+application\//])
+  })
+
+  it('生产 TypeScript 不使用掩盖不变量的非空断言', () => {
+    const files = [
+      ...collectTypeScriptFiles(resolve(process.cwd(), 'server')),
+      ...collectTypeScriptFiles(resolve(process.cwd(), 'shared')),
+    ]
+    const assertions = files.flatMap((file) => findNonNullAssertions(readFileSync(file, 'utf8'), file))
+    expect(assertions).toEqual([])
   })
 })

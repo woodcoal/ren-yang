@@ -6,7 +6,7 @@ import type { SecretCipher } from '../../ports/SecretCipher'
 import type { TextModelPort, TextModelRequest, TextModelResponse } from '../../ports/TextModelPort'
 import { TextModelError } from '../../ports/TextModelPort'
 import type { ImageModelSnapshot, TextModelSnapshot } from '../../domain/generation/GenerationModels'
-import { connectionSecretContext } from '../../application/aiConfiguration/AiConfigurationApplicationService'
+import { connectionSecretContext } from '../../domain/ai/AiConnectionSecret'
 import { OpenAiCompatibleImageModel } from './OpenAiCompatibleImageModel'
 import { OpenAiCompatibleTextModel } from './OpenAiCompatibleTextModel'
 

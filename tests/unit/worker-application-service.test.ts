@@ -32,9 +32,12 @@ class ObservableTaskRepository implements TaskJobRepository {
   public failed = 0
   /** 最近一次失败是否允许重试。 */
   public lastRetryable: boolean | null = null
+  /** 恢复过期租约的调用次数。 */
+  public recovered = 0
 
   /** @returns 固定恢复数量。 */
   async recoverExpired(): Promise<number> {
+    this.recovered += 1
     return 2
   }
 
@@ -67,11 +70,12 @@ class ObservableTaskRepository implements TaskJobRepository {
 function createService(
   repository: ObservableTaskRepository,
   handler: TaskHandler,
+  serviceClock: Clock = clock,
 ): WorkerApplicationService {
   return new WorkerApplicationService({
     taskJobRepository: repository,
     taskHandler: handler,
-    clock,
+    clock: serviceClock,
     leaseDurationMs: 60_000,
   })
 }
@@ -91,6 +95,7 @@ describe('WorkerApplicationService', () => {
     await expect(service.executeNext()).resolves.toEqual({ handled: true, jobId: 'job-1', succeeded: true })
     expect(repository.succeeded).toBe(1)
     expect(repository.failed).toBe(0)
+    expect(repository.recovered).toBe(1)
   })
 
   it('捕获处理器错误并标记任务失败', async () => {
@@ -125,5 +130,27 @@ describe('WorkerApplicationService', () => {
     await expect(service.executeNext()).resolves.toEqual({ handled: false, jobId: null, succeeded: null })
     expect(repository.succeeded).toBe(0)
     expect(repository.failed).toBe(0)
+    expect(repository.recovered).toBe(1)
+  })
+
+  it('重启时尚未到期的运行任务会在后续轮询到期后恢复', async () => {
+    let timestamp = 5_000
+    const repository = new ObservableTaskRepository()
+    repository.next = null
+    repository.recoverExpired = async () => {
+      repository.recovered += 1
+      if (timestamp >= 6_000) repository.next = job
+      return repository.next ? 1 : 0
+    }
+    const service = createService(
+      repository,
+      { execute: async () => undefined },
+      { now: () => timestamp },
+    )
+
+    await expect(service.executeNext()).resolves.toMatchObject({ handled: false })
+    timestamp = 6_000
+    await expect(service.executeNext()).resolves.toEqual({ handled: true, jobId: 'job-1', succeeded: true })
+    expect(repository.recovered).toBe(2)
   })
 })

@@ -45,8 +45,6 @@ const personaPage = computed<PersonaPageView>(() => data.value?.data ?? {
   items: [], total: 0, page: requestedPage.value, pageSize: requestedPageSize.value, totalPages: 1,
 })
 const personas = computed(() => personaPage.value.items)
-const usablePersonaCount = computed(() => personas.value.filter(persona => persona.isEnabled).length)
-const disabledPersonaCount = computed(() => personas.value.filter(persona => !persona.isEnabled).length)
 const showCreate = shallowRef(false)
 const createLoading = shallowRef(false)
 const personaFilterInput = shallowRef(requestedPersonaFilter.value)

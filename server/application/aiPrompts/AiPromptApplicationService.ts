@@ -275,8 +275,10 @@ function validateRenderVariables(promptName: string, contract: AiPromptVariableV
     .filter(variable => variable.encoding === 'json_string')
     .map(variable => variable.name)
     .filter((name) => {
+      const value = variables[name]
+      if (value === undefined) return true
       try {
-        JSON.parse(variables[name]!)
+        JSON.parse(value)
         return false
       }
       catch {
@@ -296,7 +298,9 @@ function validateRenderVariables(promptName: string, contract: AiPromptVariableV
  * @returns 按出现顺序去重后的变量名。
  */
 function extractTemplateVariables(template: string): string[] {
-  const names = [...template.matchAll(/\{\{([a-z][a-zA-Z0-9_]*)\}\}/g)].map(match => match[1]!)
+  const names = [...template.matchAll(/\{\{([a-z][a-zA-Z0-9_]*)\}\}/g)]
+    .map(match => match[1])
+    .filter((name): name is string => name !== undefined)
   const stripped = template.replace(/\{\{[a-z][a-zA-Z0-9_]*\}\}/g, '')
   if (stripped.includes('{{') || stripped.includes('}}')) {
     throw new ApplicationError('AI_PROMPT_TEMPLATE_INVALID', '提示词模板包含无效或未闭合的变量占位符', 400)
@@ -311,5 +315,9 @@ function extractTemplateVariables(template: string): string[] {
  * @returns 最终发送给模型的文本。
  */
 function renderTemplate(template: string, variables: Record<string, string>): string {
-  return template.replace(/\{\{([a-z][a-zA-Z0-9_]*)\}\}/g, (_placeholder, name: string) => variables[name]!)
+  return template.replace(/\{\{([a-z][a-zA-Z0-9_]*)\}\}/g, (_placeholder, name: string) => {
+    const value = variables[name]
+    if (value === undefined) throw new ApplicationError('AI_PROMPT_VARIABLE_INVALID', `提示词变量“${name}”缺失`, 500)
+    return value
+  })
 }

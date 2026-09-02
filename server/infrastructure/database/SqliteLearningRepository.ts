@@ -78,9 +78,11 @@ export class SqliteLearningRepository implements LearningRepository {
         }
         this.insertGrowthMaterial(record)
       }
+      const firstRecord = records[0]
+      if (!firstRecord) return
       insertAuditEvent(this.client, {
         actor: 'administrator', action: 'growth_materials_imported',
-        targetType: 'growth_material', targetId: records[0]!.subjectId, timestamp: records[0]!.timestamp,
+        targetType: 'growth_material', targetId: firstRecord.subjectId, timestamp: firstRecord.timestamp,
         details: { count: records.length },
       })
     }).immediate()
@@ -214,7 +216,9 @@ export class SqliteLearningRepository implements LearningRepository {
         targetType: 'learning_prompt', targetId: prompt.id, timestamp: record.timestamp,
       })
     }).immediate()
-    return (await this.findLearningPromptWorkspace(record.promptType, record.subjectId))!
+    const workspace = await this.findLearningPromptWorkspace(record.promptType, record.subjectId)
+    if (!workspace) throw new Error('学习提示词草稿写入后无法读取')
+    return workspace
   }
 
   /** @param promptType 提示词类型。 @param subjectId 对象 UUID。 @returns 删除数量。 */

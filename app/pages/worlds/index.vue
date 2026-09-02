@@ -45,8 +45,6 @@ const worldPage = computed<WorldPageView>(() => data.value?.data ?? {
   items: [], total: 0, page: requestedPage.value, pageSize: requestedPageSize.value, totalPages: 1,
 })
 const worlds = computed(() => worldPage.value.items)
-const usableWorldCount = computed(() => worlds.value.filter(world => world.isEnabled).length)
-const disabledWorldCount = computed(() => worlds.value.filter(world => !world.isEnabled).length)
 const showCreate = shallowRef(false)
 const loading = shallowRef(false)
 const worldFilterInput = shallowRef(requestedWorldFilter.value)

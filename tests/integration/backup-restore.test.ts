@@ -31,6 +31,7 @@ const IDS = {
   attempt: '00000000-0000-4000-8000-000000000009',
   asset: '00000000-0000-4000-8000-000000000010',
   originalAsset: '00000000-0000-4000-8000-000000000012',
+  orphanPersona: '00000000-0000-4000-8000-000000000013',
   sync: '00000000-0000-4000-8000-000000000011',
 } as const
 
@@ -40,6 +41,10 @@ const SOURCE_BYTES = Buffer.from('# 魔法学院\n档案保存于北塔。', 'ut
 const IMAGE_BYTES = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 1])
 /** 裁剪前原图的最小 PNG 文件头和测试正文。 */
 const ORIGINAL_IMAGE_BYTES = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 1, 2])
+/** 人物头像结果文件。 */
+const AVATAR_BYTES = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 3])
+/** 人物头像裁剪前原图。 */
+const ORIGINAL_AVATAR_BYTES = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10, 4])
 
 let rootDirectory: string
 let dataDirectory: string
@@ -67,6 +72,8 @@ describe('SQLite 与引用文件备份恢复', () => {
     mkdirSync(resolve(dataDirectory, 'openviking'), { recursive: true })
     writeFileSync(resolve(dataDirectory, 'openviking', 'token'), '不得备份外部索引')
     writeFileSync(resolve(dataDirectory, 'sources', 'unreferenced.txt'), '未引用文件')
+    mkdirSync(resolve(dataDirectory, 'avatars', IDS.orphanPersona), { recursive: true })
+    writeFileSync(resolve(dataDirectory, 'avatars', IDS.orphanPersona, 'avatar'), AVATAR_BYTES)
     expect(existsSync(resolve(dataDirectory, 'app.sqlite-wal'))).toBe(true)
 
     const backupDirectory = await service.create()
@@ -77,9 +84,11 @@ describe('SQLite 与引用文件备份恢复', () => {
       'app.sqlite',
       `artifacts/${IDS.run}/assets/${IDS.asset}.png`,
       `artifacts/${IDS.run}/assets/${IDS.originalAsset}.png`,
+      `avatars/${IDS.persona}/avatar`,
+      `avatars/${IDS.persona}/avatar-original`,
       `sources/${IDS.source}.md`,
     ])
-    expect(validation.fileCount).toBe(4)
+    expect(validation.fileCount).toBe(6)
     expect(validation.manifest.version).toBe(2)
     if (validation.manifest.version !== 2) throw new Error('新建备份应使用第二版清单')
     expect(validation.manifest.migrationVersion).toBe(1790755200000)
@@ -92,6 +101,7 @@ describe('SQLite 与引用文件备份恢复', () => {
     }
     expect(JSON.stringify(validation.manifest)).not.toContain('MODEL_API_KEY')
     expect(paths.some(path => path.includes('logs') || path.includes('openviking') || path.includes('unreferenced'))).toBe(false)
+    expect(paths.some(path => path.includes(IDS.orphanPersona))).toBe(false)
   })
 
   it('拒绝被篡改的文件和包含路径穿越的清单', async () => {
@@ -252,6 +262,8 @@ describe('SQLite 与引用文件备份恢复', () => {
     const restored = new Database(resolve(dataDirectory, 'app.sqlite'), { readonly: true, fileMustExist: true })
     try {
       expect(readFileSync(resolve(dataDirectory, `sources/${IDS.source}.md`))).toEqual(SOURCE_BYTES)
+      expect(readFileSync(resolve(dataDirectory, `avatars/${IDS.persona}/avatar`))).toEqual(AVATAR_BYTES)
+      expect(readFileSync(resolve(dataDirectory, `avatars/${IDS.persona}/avatar-original`))).toEqual(ORIGINAL_AVATAR_BYTES)
       expect(restored.prepare(`SELECT credential_version FROM administrators WHERE id = 'administrator'`).get()).toEqual({ credential_version: 5 })
       expect(restored.prepare(`SELECT status, error FROM context_sync_records WHERE id = ?`).get(IDS.sync)).toEqual({
         status: 'pending',
@@ -316,9 +328,12 @@ function seedReferencedData(): void {
   const client = database.getClient()
   mkdirSync(resolve(dataDirectory, 'sources'), { recursive: true })
   mkdirSync(resolve(dataDirectory, 'artifacts', IDS.run, 'assets'), { recursive: true })
+  mkdirSync(resolve(dataDirectory, 'avatars', IDS.persona), { recursive: true })
   writeFileSync(resolve(dataDirectory, `sources/${IDS.source}.md`), SOURCE_BYTES)
   writeFileSync(resolve(dataDirectory, `artifacts/${IDS.run}/assets/${IDS.asset}.png`), IMAGE_BYTES)
   writeFileSync(resolve(dataDirectory, `artifacts/${IDS.run}/assets/${IDS.originalAsset}.png`), ORIGINAL_IMAGE_BYTES)
+  writeFileSync(resolve(dataDirectory, `avatars/${IDS.persona}/avatar`), AVATAR_BYTES)
+  writeFileSync(resolve(dataDirectory, `avatars/${IDS.persona}/avatar-original`), ORIGINAL_AVATAR_BYTES)
 
   client.prepare(`
     INSERT INTO administrators (id, username, password_hash, credential_version, created_at, updated_at)

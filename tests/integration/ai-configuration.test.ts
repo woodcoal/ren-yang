@@ -12,7 +12,7 @@ import { SqliteAiConfigurationRepository } from '../../server/infrastructure/dat
 import { SqliteDatabase } from '../../server/infrastructure/database/SqliteDatabase'
 import { SqliteSystemAiSettingsRepository } from '../../server/infrastructure/database/SqliteSystemAiSettingsRepository'
 import { AesGcmSecretCipher } from '../../server/infrastructure/security/AesGcmSecretCipher'
-import { saveAiModelDeploymentSchema } from '../../shared/schemas/aiConfiguration'
+import { createAiConnectionSchema, saveAiModelDeploymentSchema } from '../../shared/schemas/aiConfiguration'
 import type { AiModelFactory, AiTextModelOptions } from '../../server/ports/AiModelFactory'
 import type { TextModelPort, TextModelRequest, TextModelResponse } from '../../server/ports/TextModelPort'
 import { TextModelError } from '../../server/ports/TextModelPort'
@@ -121,6 +121,15 @@ afterEach(() => {
 })
 
 describe('AI 接口、模型部署与算法配置', () => {
+  it('接口地址只接受不携带凭据和查询参数的 HTTP(S) URL', () => {
+    expect(() => createAiConnectionSchema.parse({
+      name: '非法协议', endpoint: 'ftp://model.example/v1', apiKey: 'secret', isEnabled: true,
+    })).toThrow('接口地址仅支持 HTTP 或 HTTPS')
+    expect(() => createAiConnectionSchema.parse({
+      name: '查询密钥', endpoint: 'https://model.example/v1?key=secret', apiKey: 'secret', isEnabled: true,
+    })).toThrow('接口地址不能包含账号、密码、查询参数或片段')
+  })
+
   it('加密保存密钥、编辑时保留原密文并只在检测阶段解密', async () => {
     const { service, modelFactory } = createServices()
     const connection = await service.createConnection({
@@ -276,6 +285,38 @@ describe('AI 接口、模型部署与算法配置', () => {
     expect(database.getClient().prepare(`
       SELECT action FROM audit_events WHERE target_id = 'persona_growth' ORDER BY created_at DESC LIMIT 1
     `).get()).toEqual({ action: 'ai_algorithm_configuration_published' })
+  })
+
+  it('配置编辑或停用后旧任务仍使用原模型快照和当前密钥执行', async () => {
+    const { service, algorithms, modelFactory } = createServices()
+    const connection = await service.createConnection({
+      name: '快照接口', protocol: 'openai_compatible', endpoint: 'https://snapshot.example/v1',
+      userAgent: 'Snapshot/1.0', apiKey: 'snapshot-secret', isEnabled: true,
+    })
+    const deployment = await service.createModelDeployment({
+      connectionId: connection.id, name: '快照模型', model: 'snapshot-model', modality: 'text', isEnabled: true,
+    })
+    await service.publishAlgorithmConfiguration('persona_soul', {
+      steps: [{
+        stepKey: 'organize', modelDeploymentId: deployment.id,
+        parameters: { temperature: 0.2, maxOutputTokens: 2_048, timeoutMs: 30_000 },
+      }],
+    })
+    const snapshot = await algorithms.prepare('persona_soul')
+
+    await service.updateConnection(connection.id, {
+      name: '已编辑快照接口', protocol: 'openai_compatible', endpoint: 'https://changed.example/v1',
+      userAgent: 'Changed/2.0', apiKey: 'rotated-secret', isEnabled: false,
+    })
+    await service.updateModelDeployment(deployment.id, {
+      connectionId: connection.id, name: '已编辑快照模型', model: 'changed-model', modality: 'text', isEnabled: false,
+    })
+
+    await algorithms.executeStep(snapshot, 'organize', { promptTextJson: '"旧任务"' }, 'soul_prompt_analysis', 'json_object')
+    expect(modelFactory.options.at(-1)).toEqual({
+      endpoint: 'https://snapshot.example/v1', apiKey: 'rotated-secret', model: 'snapshot-model',
+      userAgent: 'Snapshot/1.0',
+    })
   })
 
   it('文本调用按实际系统提示词进入缓存亲和队列且诊断调用绕过队列', async () => {

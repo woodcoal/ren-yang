@@ -313,13 +313,17 @@ export class SoulApplicationService {
    */
   async analyzePrompt(subjectType: SoulSubjectType, promptText: string): Promise<SoulSnapshot> {
     const model = this.dependencies.model
-    if (!this.dependencies.algorithms && !model?.getConfiguredModel()) {
+    const algorithms = this.dependencies.algorithms
+    if (!algorithms && !model?.getConfiguredModel()) {
       throw new ApplicationError('CAPABILITY_DISABLED', '文本模型尚未配置，不能自动分析灵魂提示词', 422)
     }
     try {
-      const response = this.dependencies.algorithms
-        ? await this.executeConfiguredSoulAlgorithm(subjectType, promptText)
-        : await this.executeLegacySoulAnalysis(model!, subjectType, promptText)
+      let response
+      if (algorithms) response = await this.executeConfiguredSoulAlgorithm(subjectType, promptText)
+      else {
+        if (!model) throw new ApplicationError('CAPABILITY_DISABLED', '文本模型尚未配置，不能自动分析灵魂提示词', 422)
+        response = await this.executeLegacySoulAnalysis(model, subjectType, promptText)
+      }
       return normalizeSoulSnapshot(analyzedSoulPromptSchema.parse(response.structuredOutput))
     }
     catch (error: unknown) {
@@ -340,8 +344,10 @@ export class SoulApplicationService {
    */
   private async executeConfiguredSoulAlgorithm(subjectType: SoulSubjectType, promptText: string) {
     const algorithmCode = subjectType === 'world' ? 'world_soul' : 'persona_soul'
-    const snapshot = await this.dependencies.algorithms!.prepare(algorithmCode)
-    return await this.dependencies.algorithms!.executeStep(
+    const algorithms = this.dependencies.algorithms
+    if (!algorithms) throw new ApplicationError('CAPABILITY_DISABLED', '灵魂整理算法不可用', 422)
+    const snapshot = await algorithms.prepare(algorithmCode)
+    return await algorithms.executeStep(
       snapshot,
       'organize',
       buildSoulPromptAnalysisVariables(promptText),

@@ -97,12 +97,16 @@ export class AnalysisApplicationService implements TaskHandler {
       : this.dependencies.model.getConfiguredModel()
     if (!model) throw new ApplicationError('CAPABILITY_DISABLED', '文本模型尚未配置，不能分析成长或记忆', 422)
     const prepared = await this.prepareBatch(analysisType, subjectId, input.mode)
-    const promptCode = algorithmSnapshot ? algorithmSnapshot.steps[0]!.promptCode : analysisPromptCode(analysisType)
-    const promptVersion = algorithmSnapshot
-      ? algorithmSnapshot.steps[0]!.promptVersionId
-      : (await this.dependencies.prompts.snapshotPublishedVersions([promptCode]))[promptCode]!
-    const parameters = algorithmSnapshot
-      ? { ...ANALYSIS_PARAMETERS, ...algorithmSnapshot.steps[0]!.parameters }
+    const algorithmStep = algorithmSnapshot?.steps[0]
+    if (algorithmSnapshot && !algorithmStep) {
+      throw new ApplicationError('AI_ALGORITHM_CONFIGURATION_INVALID', '分析算法快照缺少首个步骤', 409)
+    }
+    const promptCode = algorithmStep?.promptCode ?? analysisPromptCode(analysisType)
+    const promptVersions = algorithmStep ? null : await this.dependencies.prompts.snapshotPublishedVersions([promptCode])
+    const promptVersion = algorithmStep?.promptVersionId ?? promptVersions?.[promptCode]
+    if (!promptVersion) throw new ApplicationError('AI_PROMPT_NOT_PUBLISHED', '分析提示词尚未发布', 409)
+    const parameters = algorithmStep
+      ? { ...ANALYSIS_PARAMETERS, ...algorithmStep.parameters }
       : { ...ANALYSIS_PARAMETERS }
     const batchId = this.dependencies.identifiers.create()
     const created = await this.dependencies.analysis.createBatch({
@@ -234,7 +238,9 @@ export class AnalysisApplicationService implements TaskHandler {
     inputs: AnalysisBatchView['inputs'],
     autoPublish: boolean,
   ): Promise<void> {
-    const extractResponse = await this.dependencies.algorithms!.executeStep(
+    const algorithms = this.dependencies.algorithms
+    if (!algorithms) throw new ApplicationError('CAPABILITY_DISABLED', '成长分析算法不可用', 422)
+    const extractResponse = await algorithms.executeStep(
       snapshot,
       'extract',
       buildAnalysisPromptVariables(baseline, inputs),
@@ -252,7 +258,7 @@ export class AnalysisApplicationService implements TaskHandler {
       await this.completeWithoutChanges(batchId)
       return
     }
-    const synthesizeResponse = await this.dependencies.algorithms!.executeStep(
+    const synthesizeResponse = await algorithms.executeStep(
       snapshot,
       'synthesize',
       { baselineJson: JSON.stringify(baseline), factsJson: JSON.stringify(facts) },
@@ -295,7 +301,9 @@ export class AnalysisApplicationService implements TaskHandler {
     inputs: AnalysisBatchView['inputs'],
     autoPublish: boolean,
   ): Promise<void> {
-    const extractResponse = await this.dependencies.algorithms!.executeStep(
+    const algorithms = this.dependencies.algorithms
+    if (!algorithms) throw new ApplicationError('CAPABILITY_DISABLED', '人物记忆算法不可用', 422)
+    const extractResponse = await algorithms.executeStep(
       snapshot,
       'extract',
       buildAnalysisPromptVariables(baseline, inputs),
@@ -316,7 +324,7 @@ export class AnalysisApplicationService implements TaskHandler {
     if (autoPublish && facts.some(fact => fact.conflicts.length > 0)) {
       throw new ApplicationError('ANALYSIS_FACT_CONFLICT', '人物记忆事实仍有未裁决冲突，不能自动发布', 409)
     }
-    const synthesizeResponse = await this.dependencies.algorithms!.executeStep(
+    const synthesizeResponse = await algorithms.executeStep(
       snapshot,
       'synthesize',
       { baselineJson: JSON.stringify(baseline), factsJson: JSON.stringify(facts) },
@@ -513,7 +521,8 @@ function learningAlgorithmCode(analysisType: AnalysisType): 'world_growth' | 'pe
  * @returns 旧查询和历史页面仍可读取的文本模型快照。
  */
 function algorithmTextModelSnapshot(snapshot: AiAlgorithmSnapshot) {
-  const step = snapshot.steps[0]!
+  const step = snapshot.steps[0]
+  if (!step) throw new ApplicationError('AI_ALGORITHM_CONFIGURATION_INVALID', '分析算法快照缺少模型步骤', 409)
   return {
     provider: 'openai_compatible' as const,
     model: step.model,

@@ -48,4 +48,7 @@ export const updateOpenVikingSettingsSchema = z.object({
   }
 })
 
+/** HTTP 控制器使用的外部上下文设置边界 Schema。 */
+export const updateContextProviderSettingsSchema = updateOpenVikingSettingsSchema
+
 export type UpdateOpenVikingSettingsInput = z.infer<typeof updateOpenVikingSettingsSchema>

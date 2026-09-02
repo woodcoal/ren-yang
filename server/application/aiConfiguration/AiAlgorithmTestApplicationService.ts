@@ -232,7 +232,8 @@ export class AiAlgorithmTestApplicationService {
     parser: (output: unknown) => unknown,
     nextStepInput: unknown,
   ): AiAlgorithmTestStepResult {
-    const definition = getAiAlgorithmDefinition(snapshot.algorithmCode).steps.find(step => step.key === execution.step.stepKey)!
+    const definition = getAiAlgorithmDefinition(snapshot.algorithmCode).steps.find(step => step.key === execution.step.stepKey)
+    if (!definition) throw new ApplicationError('AI_ALGORITHM_CONFIGURATION_INVALID', '测试步骤不属于当前算法', 409)
     let parsedOutput: unknown = null
     let error = execution.error
     if (execution.response && error === null) {
@@ -281,7 +282,7 @@ export class AiAlgorithmTestApplicationService {
       algorithmCode: snapshot.algorithmCode,
       configurationVersion: snapshot.configurationVersion,
       steps,
-      succeeded: steps.length === 1 && steps[0]!.status === 'succeeded',
+      succeeded: steps.length === 1 && steps[0]?.status === 'succeeded',
     }
   }
 }

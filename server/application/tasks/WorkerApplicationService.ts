@@ -49,6 +49,8 @@ export class WorkerApplicationService {
    */
   async executeNext(): Promise<WorkerTickResult> {
     await this.dependencies.learningAutomation?.runDueCycle()
+    // 每轮领取前恢复已经到期的租约，覆盖进程在租约到期前重启的场景。
+    await this.recoverExpiredJobs()
     const job = await this.dependencies.taskJobRepository.claimNext(
       this.dependencies.clock.now(),
       this.dependencies.leaseDurationMs,

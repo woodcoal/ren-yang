@@ -44,7 +44,9 @@ export class SqliteOpenVikingSettingsRepository implements OpenVikingSettingsRep
         details: { enabled: record.enabled },
       })
     }).immediate()
-    return toView(this.findCurrent()!)
+    const saved = this.findCurrent()
+    if (!saved) throw new Error('OpenViking 设置写入后无法读取')
+    return toView(saved)
   }
 }
 

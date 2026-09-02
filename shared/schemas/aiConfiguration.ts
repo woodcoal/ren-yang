@@ -6,9 +6,12 @@ export const DEFAULT_AI_MODEL_TIMEOUT_MS = 60_000
 /** 当前平台支持的 AI 接口协议。 */
 export const aiConnectionProtocolSchema = z.enum(['openai_compatible'], { error: 'AI 接口协议无效' })
 
-/** 不允许在地址中夹带认证信息、查询密钥或片段的 AI 接口地址。 */
+/** 只允许 HTTP(S)，且不允许夹带认证信息、查询密钥或片段的 AI 接口地址。 */
 const aiEndpointSchema = z.url('接口地址无效').max(2_000).superRefine((value, context) => {
   const endpoint = new URL(value)
+  if (endpoint.protocol !== 'http:' && endpoint.protocol !== 'https:') {
+    context.addIssue({ code: 'custom', message: '接口地址仅支持 HTTP 或 HTTPS' })
+  }
   if (endpoint.username || endpoint.password || endpoint.search || endpoint.hash) {
     context.addIssue({ code: 'custom', message: '接口地址不能包含账号、密码、查询参数或片段' })
   }

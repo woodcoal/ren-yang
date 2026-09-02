@@ -49,8 +49,6 @@ const selectedAlgorithm = computed(() => algorithms.value.find(algorithm => algo
 const activeCategory = computed<AiAlgorithmCategory>(() => algorithmCategory(selectedAlgorithm.value?.code ?? 'persona_soul'))
 const categoryAlgorithms = computed(() => algorithms.value.filter(algorithm => algorithmCategory(algorithm.code) === activeCategory.value))
 const selectedPrompt = computed(() => prompts.value.find(prompt => prompt.code === selectedPromptCode.value) ?? null)
-const configuredCount = computed(() => algorithms.value.filter(item => item.activeConfigurationVersion !== null).length)
-const enabledTextDeploymentCount = computed(() => deployments.value.filter(item => item.modality === 'text' && item.isEnabled).length)
 
 /**
  * 根据地址栏的算法或提示词编码确定首次展示的算法。

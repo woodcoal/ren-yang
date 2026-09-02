@@ -203,8 +203,10 @@ export class GenerationApplicationService implements TaskHandler {
    * @returns 可执行算法快照；算法尚未配置或当前依赖失效时返回 null。
    */
   private async prepareCapabilityAlgorithm(code: AiAlgorithmSnapshot['algorithmCode']): Promise<AiAlgorithmSnapshot | null> {
+    const algorithms = this.dependencies.algorithms
+    if (!algorithms) return null
     try {
-      return await this.dependencies.algorithms!.prepare(code)
+      return await algorithms.prepare(code)
     }
     catch (error: unknown) {
       if (error instanceof ApplicationError) return null
@@ -261,7 +263,7 @@ export class GenerationApplicationService implements TaskHandler {
           )).structuredOutput)
         : (await this.generateValidated(
             await this.dependencies.prompts.render(GENERATION_PROMPT_CODES.personaDraft, variables),
-            (await this.dependencies.prompts.snapshotPublishedVersions([GENERATION_PROMPT_CODES.jsonRetry]))[GENERATION_PROMPT_CODES.jsonRetry]!,
+            await this.requirePublishedPromptVersion(GENERATION_PROMPT_CODES.jsonRetry),
             { ...DEFAULT_TEXT_PARAMETERS },
             'persona_draft',
             value => personaDraftSchema.parse(value),
@@ -294,7 +296,7 @@ export class GenerationApplicationService implements TaskHandler {
           )).structuredOutput)
         : (await this.generateValidated(
             await this.dependencies.prompts.render(GENERATION_PROMPT_CODES.worldDraft, variables),
-            (await this.dependencies.prompts.snapshotPublishedVersions([GENERATION_PROMPT_CODES.jsonRetry]))[GENERATION_PROMPT_CODES.jsonRetry]!,
+            await this.requirePublishedPromptVersion(GENERATION_PROMPT_CODES.jsonRetry),
             { ...DEFAULT_TEXT_PARAMETERS },
             'world_draft',
             value => worldDraftSchema.parse(value),
@@ -305,6 +307,17 @@ export class GenerationApplicationService implements TaskHandler {
       const statusCode = normalized.code === 'CAPABILITY_DISABLED' ? 422 : normalized.code === 'MODEL_OUTPUT_INVALID' ? 502 : 503
       throw new ApplicationError(normalized.code, normalized.message, statusCode)
     }
+  }
+
+  /**
+   * 固定并读取一个已发布提示词版本。
+   * @param code 固定提示词编码。
+   * @returns 当前已发布版本 UUID。
+   */
+  private async requirePublishedPromptVersion(code: string): Promise<string> {
+    const version = (await this.dependencies.prompts.snapshotPublishedVersions([code]))[code]
+    if (!version) throw new ApplicationError('AI_PROMPT_NOT_PUBLISHED', `提示词“${code}”尚未发布`, 409)
+    return version
   }
 
   /** @returns 全部参数方案版本。 */

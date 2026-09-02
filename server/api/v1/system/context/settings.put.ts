@@ -1,5 +1,6 @@
 import type { H3Event } from 'h3'
 import { readBody } from 'h3'
+import { updateContextProviderSettingsSchema } from '#shared/schemas/context'
 import { executeController } from '../../../../presentation/http/controller'
 
 /**
@@ -9,8 +10,7 @@ import { executeController } from '../../../../presentation/http/controller'
  */
 async function handleUpdateContextProviderSettings(event: H3Event) {
   return await executeController(event, async () => {
-    // 应用服务统一执行共享 Schema 校验；控制器只负责传递已认证请求正文。
-    const input = await readBody<Parameters<typeof event.context.applicationServices.contextSynchronization.updateSettings>[0]>(event)
+    const input = updateContextProviderSettingsSchema.parse(await readBody(event))
     return await event.context.applicationServices.contextSynchronization.updateSettings(input)
   })
 }

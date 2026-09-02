@@ -63,9 +63,12 @@ describe('公共 OpenAPI 契约', () => {
         expect(operation.responses['404']).toBeTruthy()
         expect(operation.responses['422']).toBeTruthy()
         expect(operation.responses['429']).toBeTruthy()
-        const success = operation.responses['200'] ?? operation.responses['201'] ?? operation.responses['202']
+        const success = operation.responses['200'] ?? operation.responses['201'] ?? operation.responses['202'] ?? operation.responses['204']
         if (operation.operationId === 'getRunAsset' || operation.operationId === 'exportRun') {
           expect(success?.description).toContain('二进制')
+        }
+        else if (operation.responses['204']) {
+          expect(success?.content).toBeUndefined()
         }
         else {
           expect(success?.content?.['application/json']?.examples?.success).toBeTruthy()
@@ -79,6 +82,9 @@ describe('公共 OpenAPI 契约', () => {
       .toMatchObject({ properties: { data: { $ref: '#/components/schemas/PersonaPage' } } })
     expect(document.paths['/api/v2/sources/{sourceId}']?.get?.responses['200']?.content?.['application/json']?.schema)
       .toMatchObject({ properties: { data: { $ref: '#/components/schemas/SourceDetails' } } })
+    expect(document.paths['/api/v2/personas/{personaId}']?.delete?.responses['204']?.content).toBeUndefined()
+    expect(document.paths['/api/v2/worlds/{worldId}']?.delete?.responses['204']?.content).toBeUndefined()
+    expect(document.paths['/api/v2/sources/{sourceId}']?.delete?.responses['204']?.content).toBeUndefined()
     expect(document.paths['/api/v2/generation-runs']?.post?.responses['202']?.content?.['application/json']?.schema)
       .toMatchObject({ properties: { data: { $ref: '#/components/schemas/CreatedRun' } } })
     expect(document.paths['/api/v2/interest-batches']?.post?.responses['202']?.content?.['application/json']?.schema)

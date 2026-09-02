@@ -136,6 +136,8 @@ export class SqliteContextSyncTaskQueue implements ContextSyncTaskQueue, TaskJob
    * @returns 兼容通用 Worker 的运行中意图；无可执行项时返回 null。
    */
   async claimNext(timestamp: number, leaseDurationMs: number): Promise<TaskJob | null> {
+    // 关闭外部投影时不得消费既有同步意图，重新开启后仍可继续补偿。
+    if (!this.isEnabled()) return null
     return this.client.transaction((): TaskJob | null => {
       const row = this.client.prepare(`
         SELECT id, type, payload_json, attempt_count, max_attempts, lease_until

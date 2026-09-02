@@ -4,6 +4,7 @@ import { textModelParametersSchema, type TextModelParameters } from '../../../sh
 import type { AiAlgorithmCode } from '../../../shared/types/aiConfiguration'
 import type { AiAlgorithmSnapshot, AiAlgorithmStepSnapshot } from '../../domain/ai/AiAlgorithmModels'
 import { getAiAlgorithmDefinition } from '../../domain/ai/AiAlgorithmDefinitions'
+import { connectionSecretContext } from '../../domain/ai/AiConnectionSecret'
 import type { AiConfigurationRepository, AiConnectionSecretRecord } from '../../ports/AiConfigurationRepository'
 import type { AiModelFactory } from '../../ports/AiModelFactory'
 import type { SecretCipher } from '../../ports/SecretCipher'
@@ -15,7 +16,6 @@ import type { TokenCounter } from '../../ports/TokenCounter'
 import type { TextModelUsage } from '../../domain/generation/GenerationModels'
 import type { AiPromptApplicationService } from '../aiPrompts/AiPromptApplicationService'
 import { ApplicationError } from '../errors/ApplicationError'
-import { connectionSecretContext } from './AiConfigurationApplicationService'
 import {
   AiCacheAffinityScheduler,
   buildAiCacheAffinityKey,
@@ -143,6 +143,10 @@ export class AiAlgorithmApplicationService {
           422,
         )
       }
+      const promptVersionId = promptVersions[definitionStep.promptCode]
+      if (!promptVersionId) {
+        throw new ApplicationError('AI_PROMPT_NOT_PUBLISHED', `算法步骤“${definitionStep.name}”的提示词尚未发布`, 422)
+      }
       return {
         stepKey: definitionStep.key,
         ordinal: definitionStep.ordinal,
@@ -154,7 +158,7 @@ export class AiAlgorithmApplicationService {
         model: deployment.model,
         modality: definitionStep.modality,
         promptCode: definitionStep.promptCode,
-        promptVersionId: promptVersions[definitionStep.promptCode]!,
+        promptVersionId,
         parameters: resolveStepParameters(configuredStep.parameters, deployment.defaultTimeoutMs),
         thinkingDisableMode,
       }
@@ -169,7 +173,7 @@ export class AiAlgorithmApplicationService {
   }
 
   /**
-   * 使用已固定快照执行一个步骤，并拒绝连接或模型被编辑后的隐式漂移。
+   * 使用已固定快照执行一个步骤；当前数据库仅提供可轮换的连接密文。
    * @param snapshot 创建任务时保存的非敏感算法快照。
    * @param stepKey 待执行的固定步骤标识。
    * @param variables 提示词模板的完整变量。
@@ -235,7 +239,7 @@ export class AiAlgorithmApplicationService {
 
 
   /**
-   * 使用已固定的图片算法步骤生成一张图片，并拒绝接口或模型配置漂移。
+   * 使用已固定的图片算法步骤生成一张图片；当前数据库仅提供可轮换的连接密文。
    * @param snapshot 调用开始前固定的非敏感算法快照。
    * @param stepKey 待执行的固定图片步骤标识。
    * @param variables 由业务代码组装的完整提示词变量。
@@ -252,7 +256,7 @@ export class AiAlgorithmApplicationService {
     const prompt = await this.dependencies.prompts.render(step.promptCode, variables, step.promptVersionId)
     this.validatePromptLength(prompt.systemPrompt, prompt.userPrompt, ALGORITHM_PARAMETER_DEFAULTS.maxPromptCharacters)
     const model = this.dependencies.modelFactory.createImageModel({
-      endpoint: connection.endpoint,
+      endpoint: step.endpoint,
       apiKey: this.dependencies.secretCipher.decrypt(connection.apiKeyCiphertext, connectionSecretContext(connection.id)),
       model: step.model,
       userAgent: step.userAgent ?? '',
@@ -318,10 +322,10 @@ export class AiAlgorithmApplicationService {
   }
 
   /**
-   * 校验算法实现与步骤快照，并拒绝接口或模型配置漂移。
+   * 校验算法实现与步骤快照，并读取执行时所需的当前连接密文。
    * @param snapshot 创建任务或测试时固定的算法快照。
    * @param stepKey 待解析的固定步骤标识。
-   * @returns 已校验步骤和当前启用连接。
+   * @returns 已校验步骤和仍存在的连接密文记录。
    */
   private async resolveStep(snapshot: AiAlgorithmSnapshot, stepKey: string, modality: 'text' | 'image') {
     const definition = getAiAlgorithmDefinition(snapshot.algorithmCode)
@@ -337,15 +341,8 @@ export class AiAlgorithmApplicationService {
     if (stepDefinition.modality !== modality || (step.modality ?? 'text') !== modality) {
       throw new ApplicationError('AI_ALGORITHM_CONFIGURATION_INVALID', '算法步骤的模型类型与调用方式不一致', 409)
     }
-    const deployment = await this.requireDeployment(step.modelDeploymentId, modality)
-    const connection = await this.requireEnabledConnection(step.connectionId)
-    if (deployment.connectionId !== step.connectionId || deployment.model !== step.model
-      || connection.endpoint !== step.endpoint || connection.protocol !== step.protocol
-      || connection.userAgent !== (step.userAgent ?? '')
-      || (step.thinkingDisableMode !== undefined && step.thinkingDisableMode !== 'none'
-        && step.thinkingDisableMode !== deployment.thinkingControl)) {
-      throw new ApplicationError('AI_ALGORITHM_CONFIGURATION_CHANGED', '算法使用的接口或模型已被编辑，请重新创建任务', 409)
-    }
+    const connection = await this.dependencies.repository.findConnection(step.connectionId)
+    if (!connection) throw new ApplicationError('CAPABILITY_DISABLED', '算法快照引用的 AI 接口连接不存在', 422)
     return { step, connection }
   }
 
@@ -370,7 +367,7 @@ export class AiAlgorithmApplicationService {
     promptCacheKey?: string,
   ): Promise<TextModelResponse> {
     const model = this.dependencies.modelFactory.createTextModel({
-      endpoint: connection.endpoint,
+      endpoint: step.endpoint,
       apiKey: this.dependencies.secretCipher.decrypt(connection.apiKeyCiphertext, connectionSecretContext(connection.id)),
       model: step.model,
       userAgent: step.userAgent ?? '',

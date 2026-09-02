@@ -727,7 +727,7 @@ export class ContentApplicationService {
   async deleteWorld(worldId: string): Promise<void> {
     const impact = await this.getWorldDeletionImpact(worldId)
     if (!impact.canDelete) {
-      throw new ApplicationError('RESOURCE_IN_USE', impact.blockers[0]!, 409, { impact })
+      throw new ApplicationError('RESOURCE_IN_USE', impact.blockers[0] ?? '世界仍被其他资源引用', 409, { impact })
     }
     const sources = await this.dependencies.repository.listWorldSources(worldId)
     await this.dependencies.repository.deleteWorld(worldId, this.dependencies.clock.now())
@@ -1055,7 +1055,7 @@ export class ContentApplicationService {
     const source = await this.requireSource(sourceId)
     const impact = await this.getSourceDeletionImpact(sourceId)
     if (!impact.canDelete) {
-      throw new ApplicationError('RESOURCE_IN_USE', impact.blockers[0]!, 409, { impact })
+      throw new ApplicationError('RESOURCE_IN_USE', impact.blockers[0] ?? '资料仍被其他资源引用', 409, { impact })
     }
     await this.dependencies.repository.deleteSource(sourceId, this.dependencies.clock.now())
     // 本地事实删除成功后再排队；Worker 通过资料不存在这一事实执行远端删除并负责失败重试。

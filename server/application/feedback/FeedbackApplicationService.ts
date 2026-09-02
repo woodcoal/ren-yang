@@ -161,7 +161,7 @@ export class FeedbackApplicationService {
       },
     )
     if (!created) throw new ApplicationError('RESOURCE_NOT_FOUND', '反馈目标产物块不属于当前运行', 404)
-    return toFeedbackView((await this.dependencies.repository.findFeedback(feedbackId))!)
+    return toFeedbackView(await this.requireFeedback(feedbackId))
   }
 
   /**
@@ -222,7 +222,7 @@ export class FeedbackApplicationService {
 
     await this.enqueueFeedbackSessionSynchronization(feedbackId)
 
-    return toFeedbackView((await this.dependencies.repository.findFeedback(feedbackId))!)
+    return toFeedbackView(await this.requireFeedback(feedbackId))
   }
 
   /** @param feedbackId 反馈 UUID。 @returns 存在的反馈聚合。 */

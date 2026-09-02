@@ -238,10 +238,11 @@ export class SqliteAnalysisRepository implements AnalysisRepository {
       `).get(batchId) as Record<string, unknown> | undefined
       if (!batch) return 'batch_changed' as const
       const promptType = String(batch.analysis_type) as AnalysisType
-      const worldId = promptType === 'world_growth' ? String(batch.world_id) : null
-      const personaId = promptType === 'world_growth' ? null : String(batch.persona_id)
+      const worldId = promptType === 'world_growth' ? nullableString(batch.world_id) : null
+      const personaId = promptType === 'world_growth' ? null : nullableString(batch.persona_id)
       const scopeColumn = promptType === 'world_growth' ? 'world_id' : 'persona_id'
-      const subjectId = promptType === 'world_growth' ? worldId! : personaId!
+      const subjectId = promptType === 'world_growth' ? worldId : personaId
+      if (!subjectId) throw new Error('分析批次缺少所属对象标识')
       const existingPrompt = this.client.prepare(`
         SELECT id, active_version_id FROM learning_prompts
         WHERE prompt_type = ? AND ${scopeColumn} = ?
@@ -338,7 +339,8 @@ export class SqliteAnalysisRepository implements AnalysisRepository {
       if (proposalRows.length !== decisionIds.length) return false
       const proposalMap = new Map(proposalRows.map(row => [String(row.id), row]))
       for (const decision of input.decisions) {
-        const proposal = proposalMap.get(decision.proposalId)!
+        const proposal = proposalMap.get(decision.proposalId)
+        if (!proposal) return false
         if (decision.action === 'reject') {
           this.client.prepare(`
             UPDATE iteration_proposals SET status = 'rejected', review_reason = ?, reviewed_at = ? WHERE id = ?
@@ -395,7 +397,9 @@ export class SqliteAnalysisRepository implements AnalysisRepository {
     if (!proposed) throw new Error('已接受提案缺少最终内容')
     if (operation === 'revise') {
       if (targetIds.length !== 1) throw new Error('修订提案必须只有一个目标')
-      this.reviseTarget(batch, targetType, targetIds[0]!, proposed, proposal, timestamp)
+      const targetId = targetIds[0]
+      if (!targetId) throw new Error('修订提案缺少目标')
+      this.reviseTarget(batch, targetType, targetId, proposed, proposal, timestamp)
       return
     }
     const newId = this.createActiveRecord(batch, targetType, proposed, proposal, timestamp)

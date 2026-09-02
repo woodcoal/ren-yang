@@ -20,6 +20,24 @@ afterEach(() => {
 })
 
 describe('OpenViking 专属同步意图', () => {
+  it('关闭期间保留已排队意图，重新开启后继续领取', async () => {
+    const client = database.getClient()
+    let enabled = true
+    const outbox = new SqliteContextSyncTaskQueue(client, () => enabled)
+    await outbox.enqueueSourceSynchronization('source-1', 'openviking-source-job', 1_000)
+
+    enabled = false
+    await expect(outbox.claimNext(2_000, 60_000)).resolves.toBeNull()
+    expect(client.prepare(`SELECT status, attempt_count FROM openviking_sync_outbox`).get()).toEqual({
+      status: 'queued', attempt_count: 0,
+    })
+
+    enabled = true
+    await expect(outbox.claimNext(3_000, 60_000)).resolves.toMatchObject({
+      id: 'openviking-source-job', status: 'running', attemptCount: 1,
+    })
+  })
+
   it('OpenViking 意图不进入业务任务表且与业务 Worker 独立领取', async () => {
     const client = database.getClient()
     const outbox = new SqliteContextSyncTaskQueue(client)

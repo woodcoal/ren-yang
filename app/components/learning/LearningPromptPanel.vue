@@ -192,7 +192,7 @@ watch(
       <UAlert
         v-else-if="analysisPending"
         color="info"
-        :title="analysisStatusLabel(batch!.status)"
+        :title="batch ? analysisStatusLabel(batch.status) : ''"
         description="当前生成完成前不能重复提交；可刷新状态查看最新结果。"
       />
       <UAlert

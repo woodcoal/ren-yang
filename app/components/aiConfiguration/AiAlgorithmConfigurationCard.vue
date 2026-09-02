@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { reactive, shallowRef } from 'vue'
+import { computed, reactive, shallowRef } from 'vue'
 import {
   publishAiAlgorithmConfigurationSchema,
   type PublishAiAlgorithmConfigurationInput,
@@ -48,6 +48,11 @@ const form = reactive<PublishAiAlgorithmConfigurationInput>({
     }
   }),
 })
+/** 只展示同时存在固定定义和可编辑表单数据的算法步骤。 */
+const formRows = computed(() => props.algorithm.stepDefinitions.flatMap((definition, index) => {
+  const step = form.steps[index]
+  return step ? [{ definition, step, index }] : []
+}))
 
 /**
  * 返回一个固定算法步骤可选择的同类型模型部署。
@@ -79,7 +84,9 @@ function deploymentSelectValue(deploymentId: string): string {
  * @returns 无返回值；直接更新对应步骤模型选择。
  */
 function updateDeployment(index: number, value: string): void {
-  form.steps[index]!.modelDeploymentId = value === DEFAULT_MODEL_OPTION ? '' : value
+  const step = form.steps[index]
+  if (!step) return
+  step.modelDeploymentId = value === DEFAULT_MODEL_OPTION ? '' : value
 }
 
 /**
@@ -139,43 +146,43 @@ function submit(): void {
     </div>
     <UAlert v-if="validationError" class="mb-4" color="error" title="配置无效" :description="validationError" />
     <form class="space-y-5" data-ai-algorithm-form @submit.prevent="submit">
-      <section v-for="(definition, index) in algorithm.stepDefinitions" :key="definition.key"
+      <section v-for="row in formRows" :key="row.definition.key"
         class="rounded-lg border border-default p-4">
         <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h3 class="font-medium text-highlighted">{{ index + 1 }}. {{ definition.name }}</h3>
-            <p class="mt-1 text-sm text-muted">{{ definition.description }}</p>
+            <h3 class="font-medium text-highlighted">{{ row.index + 1 }}. {{ row.definition.name }}</h3>
+            <p class="mt-1 text-sm text-muted">{{ row.definition.description }}</p>
           </div>
           <UButton type="button" size="xs" color="neutral" variant="soft" icon="i-lucide-braces"
-            @click="emit('editPrompt', definition.promptCode)">编辑该步骤提示词</UButton>
+            @click="emit('editPrompt', row.definition.promptCode)">编辑该步骤提示词</UButton>
         </div>
-        <p class="mb-4 break-all text-xs text-muted">固定编码：<code>{{ definition.promptCode }}</code></p>
+        <p class="mb-4 break-all text-xs text-muted">固定编码：<code>{{ row.definition.promptCode }}</code></p>
         <div class="grid gap-4 md:grid-cols-4">
-          <UFormField :label="definition.modality === 'text' ? '文本模型' : '图片模型'">
-            <USelect :model-value="deploymentSelectValue(form.steps[index]!.modelDeploymentId)" class="w-full"
-              :items="deploymentItems(definition.modality)" @update:model-value="updateDeployment(index, $event)" />
+          <UFormField :label="row.definition.modality === 'text' ? '文本模型' : '图片模型'">
+            <USelect :model-value="deploymentSelectValue(row.step.modelDeploymentId)" class="w-full"
+              :items="deploymentItems(row.definition.modality)" @update:model-value="updateDeployment(row.index, $event)" />
           </UFormField>
-          <UFormField v-if="definition.modality === 'text'" label="温度" required>
-            <UInput v-model.number="form.steps[index]!.parameters.temperature" class="w-full" type="number" min="0"
+          <UFormField v-if="row.definition.modality === 'text'" label="温度" required>
+            <UInput v-model.number="row.step.parameters.temperature" class="w-full" type="number" min="0"
               max="2" step="0.1" />
           </UFormField>
-          <UFormField v-if="definition.modality === 'text'" label="输出 Token" required>
-            <UInput v-model.number="form.steps[index]!.parameters.maxOutputTokens" class="w-full" type="number" min="0"
+          <UFormField v-if="row.definition.modality === 'text'" label="输出 Token" required>
+            <UInput v-model.number="row.step.parameters.maxOutputTokens" class="w-full" type="number" min="0"
               step="64" />
           </UFormField>
-          <UFormField v-if="definition.modality === 'text'" label="思考模式" description="仅在所选模型部署已配置关闭思考字段时生效。">
-            <UCheckbox v-model="form.steps[index]!.parameters.disableThinking" label="关闭思考" />
+          <UFormField v-if="row.definition.modality === 'text'" label="思考模式" description="仅在所选模型部署已配置关闭思考字段时生效。">
+            <UCheckbox v-model="row.step.parameters.disableThinking" label="关闭思考" />
           </UFormField>
-          <UFormField v-if="definition.modality === 'image'" label="最大宽度（像素）" required>
-            <UInput :model-value="imageDimension(index, 'maxImageWidth')" class="w-full" type="number" min="64"
-              max="8192" step="64" @update:model-value="updateImageDimension(index, 'maxImageWidth', $event)" />
+          <UFormField v-if="row.definition.modality === 'image'" label="最大宽度（像素）" required>
+            <UInput :model-value="imageDimension(row.index, 'maxImageWidth')" class="w-full" type="number" min="64"
+              max="8192" step="64" @update:model-value="updateImageDimension(row.index, 'maxImageWidth', $event)" />
           </UFormField>
-          <UFormField v-if="definition.modality === 'image'" label="最大高度（像素）" required>
-            <UInput :model-value="imageDimension(index, 'maxImageHeight')" class="w-full" type="number" min="64"
-              max="8192" step="64" @update:model-value="updateImageDimension(index, 'maxImageHeight', $event)" />
+          <UFormField v-if="row.definition.modality === 'image'" label="最大高度（像素）" required>
+            <UInput :model-value="imageDimension(row.index, 'maxImageHeight')" class="w-full" type="number" min="64"
+              max="8192" step="64" @update:model-value="updateImageDimension(row.index, 'maxImageHeight', $event)" />
           </UFormField>
           <UFormField label="超时（毫秒）" description="0 表示使用模型默认超时。" required>
-            <UInput v-model.number="form.steps[index]!.parameters.timeoutMs" class="w-full" type="number" min="0"
+            <UInput v-model.number="row.step.parameters.timeoutMs" class="w-full" type="number" min="0"
               max="120000" step="1000" />
           </UFormField>
         </div>
