@@ -42,6 +42,8 @@ class TestClock implements Clock {
 class FixedPersonaDistillationAlgorithms {
   /** 实际执行的步骤顺序。 */
   readonly executedSteps: string[] = []
+  /** 是否在没有资料输入时模拟模型虚构返回一项资料分类。 */
+  hallucinateEmptySourceAssessment = false
 
   /** @returns 固定的四步非敏感算法快照。 */
   async prepare(): Promise<AiAlgorithmSnapshot> {
@@ -82,8 +84,16 @@ class FixedPersonaDistillationAlgorithms {
       ? JSON.parse(variables.inputsJson) as Array<{ id: string, inputType: string }>
       : []
     const requirement = inputs.find(input => input.inputType === 'user_statement')
+    const sourceInputs = inputs.filter(input => input.inputType === 'source_material')
     const structuredOutput = stepKey === 'classify_sources'
-      ? { sources: inputs.filter(input => input.inputType === 'source_material').map(input => ({
+      ? { sources: sourceInputs.length === 0 && this.hallucinateEmptySourceAssessment
+          ? [{
+              inputId: '90000000-0000-4000-8000-000000000099',
+              sourceRelation: 'third_party',
+              coverageDimensions: ['external_views'],
+              independentSourceKey: 'hallucinated-source',
+            }]
+          : sourceInputs.map(input => ({
           inputId: input.id,
           sourceRelation: 'third_party',
           coverageDimensions: ['conversations'],
@@ -160,6 +170,23 @@ afterEach(() => {
 })
 
 describe('人物蒸馏应用闭环', () => {
+  it('没有资料时由程序直接形成零覆盖，不调用可能虚构输入的资料分类模型', async () => {
+    algorithms.hallucinateEmptySourceAssessment = true
+    const created = await service.createRun({
+      requestedName: '顾岚',
+      objective: '仅依据用户明确设定创建人物。',
+      worldId: null,
+      sourceIds: [],
+    })
+
+    await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: true })
+    await expect(service.getRun(created.id)).resolves.toMatchObject({
+      status: 'awaiting_source_review',
+      coverageSnapshot: { sourceCount: 0, independentSourceCount: 0 },
+    })
+    expect(algorithms.executedSteps).toEqual([])
+  })
+
   it('创建运行时固定资料来源元数据并按原始来源键进行同源分组', async () => {
     const sourceId = '70000000-0000-4000-8000-000000000001'
     database.getClient().prepare(`
@@ -193,7 +220,7 @@ describe('人物蒸馏应用闭环', () => {
     })
   })
 
-  it('无资料人物经过两个检查点、四步算法和哈希门禁后创建当前灵魂版本', async () => {
+  it('无资料人物经过程序零覆盖、两个检查点和哈希门禁后创建当前灵魂版本', async () => {
     const created = await service.createRun({
       requestedName: '顾岚',
       objective: '提炼判断方式并保持未知边界。',
@@ -223,7 +250,6 @@ describe('人物蒸馏应用闭环', () => {
       candidatePromptHash: candidate.evaluatedPromptHash,
     })
     expect(algorithms.executedSteps).toEqual([
-      'classify_sources',
       'extract_claims',
       'synthesize_soul',
       'evaluate_soul',

@@ -319,6 +319,16 @@ export class PersonaDistillationApplicationService implements TaskHandler {
   /** @param run 当前资料评估运行。 @returns 覆盖快照保存完成时结束。 */
   private async executeSourceAssessment(run: PersonaDistillationRunRecord): Promise<void> {
     const sources = run.inputs.filter(input => input.inputType === 'source_material' && input.contentSnapshot !== null)
+    if (sources.length === 0) {
+      const saved = await this.dependencies.distillations.saveSourceAssessment({
+        runId: run.id,
+        assessment: { sources: [] },
+        coverage: buildPersonaDistillationCoverage([]),
+        timestamp: this.dependencies.clock.now(),
+      })
+      if (!saved) throw new ApplicationError('DISTILLATION_STATE_CONFLICT', '人物蒸馏资料评估状态已经变化', 409)
+      return
+    }
     const response = await this.dependencies.algorithms.executeStep(
       run.algorithmSnapshot as AiAlgorithmSnapshot,
       'classify_sources',
