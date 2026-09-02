@@ -335,7 +335,6 @@ export class ApplicationRuntime {
     const taskJobRepository = new SqliteTaskJobRepository(this.sqlite.getClient())
     const taskHandler = new TaskRoutingApplicationService(
       this.generationService,
-      this.contextSynchronizationService,
       this.analysisService,
     )
     const foregroundWorkerService = new WorkerApplicationService({
@@ -343,15 +342,13 @@ export class ApplicationRuntime {
       taskHandler,
       clock: this.clock,
       leaseDurationMs: options.workerLeaseDurationMs ?? 60_000,
-      lane: 'foreground',
       learningAutomation: this.learningAutomationService,
     })
     const openVikingWorkerService = new WorkerApplicationService({
-      taskJobRepository,
-      taskHandler,
+      taskJobRepository: contextSyncQueue,
+      taskHandler: this.contextSynchronizationService,
       clock: this.clock,
       leaseDurationMs: options.workerLeaseDurationMs ?? 60_000,
-      lane: 'openviking',
     })
     const workerPollIntervalMs = options.workerPollIntervalMs ?? 1_000
     this.worker = new InternalWorkerGroup([

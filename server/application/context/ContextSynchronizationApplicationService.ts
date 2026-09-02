@@ -1,7 +1,7 @@
 import { updateOpenVikingSettingsSchema, type UpdateOpenVikingSettingsInput } from '../../../shared/schemas/context'
-import type { ContextReindexResult, ContextSyncRecordPageView, ContextSyncRecordView, OpenVikingSettingsView } from '../../../shared/types/context'
+import type { ContextReindexResult, ContextSyncRecordView, OpenVikingSettingsView, OpenVikingTaskView } from '../../../shared/types/context'
 import type { Clock } from '../../ports/Clock'
-import type { ContextIndexRepository, ListSyncRecordPageInput } from '../../ports/ContextIndexRepository'
+import type { ContextIndexRepository } from '../../ports/ContextIndexRepository'
 import type { ContextProjectionEntityType, ContextSourceProjection } from '../../ports/ContextIndexRepository'
 import type { ContextSyncTaskQueue } from '../../ports/ContextSyncTaskQueue'
 import type { IdentifierGenerator } from '../../ports/IdentifierGenerator'
@@ -36,7 +36,7 @@ export interface ContextSynchronizationApplicationServiceDependencies {
   identifiers: IdentifierGenerator
   /** 可测试时钟。 */
   clock: Clock
-  /** OpenViking 启用时用于启动补偿的持久任务队列。 */
+  /** OpenViking 启用时用于启动补偿的专属同步意图端口。 */
   taskQueue?: ContextSyncTaskQueue
 }
 
@@ -100,9 +100,15 @@ export class ContextSynchronizationApplicationService implements TaskHandler {
     return await this.dependencies.repository.listSyncRecords()
   }
 
-  /** @param input 分页参数。 @returns 当前同步日志分页结果。 */
-  async listSyncRecordsPage(input: ListSyncRecordPageInput): Promise<ContextSyncRecordPageView> {
-    return await this.dependencies.repository.listSyncRecordsPage(input)
+  /** @param limit 最多返回的远端记录数。 @returns OpenViking 官方任务日志。 */
+  async listRemoteTasks(limit: number): Promise<OpenVikingTaskView[]> {
+    this.requireConfigured(false)
+    try {
+      return await this.dependencies.openViking.listTasks(limit)
+    }
+    catch (error: unknown) {
+      throw toApplicationError(error)
+    }
   }
 
   /** @returns 当前同步失败记录数。 */
@@ -129,8 +135,8 @@ export class ContextSynchronizationApplicationService implements TaskHandler {
   }
 
   /**
-   * 从 SQLite 当前事实补回进程退出窗口中可能缺失的资料与 Session 任务。
-   * @returns 新任务检查和幂等入队完成时结束；能力关闭时直接结束。
+   * 从 SQLite 当前事实补回进程退出窗口中可能缺失的资料与 Session 同步意图。
+   * @returns 新意图检查和幂等保存完成时结束；能力关闭时直接结束。
    */
   async recoverPendingTasks(): Promise<void> {
     const queue = this.dependencies.taskQueue
@@ -207,8 +213,8 @@ export class ContextSynchronizationApplicationService implements TaskHandler {
   }
 
   /**
-   * 执行 Worker 已领取的单资料同步任务。
-   * @param job 类型为 sync_context_source 的持久任务。
+   * 执行 Worker 已领取的 OpenViking 专属同步意图。
+   * @param job 从 OpenViking outbox 领取的意图快照。
    * @returns SQLite 当前资料写入远端并保存同步事实后结束。
    */
   async execute(job: TaskJob): Promise<void> {
@@ -510,7 +516,7 @@ export class ContextSynchronizationApplicationService implements TaskHandler {
     this.requireConfigured(true)
     const timestamp = this.dependencies.clock.now()
     const queue = this.dependencies.taskQueue
-    if (!queue) throw new ApplicationError('CAPABILITY_DISABLED', 'OpenViking 同步任务队列尚未配置', 503)
+    if (!queue) throw new ApplicationError('CAPABILITY_DISABLED', 'OpenViking 同步意图存储尚未配置', 503)
     const records = (await this.dependencies.repository.listSyncRecords()).filter(record => {
       if (record.status !== 'failed') return false
       return !target || (record.entityType === target.entityType && record.sourceId === target.sourceId)
@@ -673,10 +679,10 @@ function toProjectionFailure(
 function normalizeTaskError(error: unknown): TaskExecutionError {
   if (error instanceof TaskExecutionError) return error
   if (error instanceof OpenVikingError) return new TaskExecutionError(error.message.slice(0, 500), error.retryable)
-  return new TaskExecutionError('OpenViking 同步任务执行失败', true)
+  return new TaskExecutionError('OpenViking 同步意图执行失败', true)
 }
 
-/** @param payloadJson 持久任务 JSON。 @returns 已校验投影实体类型和 UUID。 */
+/** @param payloadJson 同步意图 JSON。 @returns 已校验投影实体类型和 UUID。 */
 function readProjectionSource(payloadJson: string): { entityType: ContextProjectionEntityType, sourceId: string } {
   try {
     const payload = JSON.parse(payloadJson) as { entityType?: unknown, sourceId?: unknown }
@@ -689,10 +695,10 @@ function readProjectionSource(payloadJson: string): { entityType: ContextProject
   catch {
     // 统一在下方转为不可重试的安全任务错误。
   }
-  throw new TaskExecutionError('OpenViking 同步任务缺少有效资料标识', false)
+  throw new TaskExecutionError('OpenViking 同步意图缺少有效资料标识', false)
 }
 
-/** @param payloadJson 持久任务 JSON。 @returns 有效 Session 本地来源。 */
+/** @param payloadJson 同步意图 JSON。 @returns 有效 Session 本地来源。 */
 function readSessionSource(payloadJson: string): { sourceType: 'run' | 'feedback', sourceId: string } {
   try {
     const payload = JSON.parse(payloadJson) as { sourceType?: unknown, sourceId?: unknown }
@@ -704,5 +710,5 @@ function readSessionSource(payloadJson: string): { sourceType: 'run' | 'feedback
   catch {
     // 统一在下方转换为不可重试的安全任务错误。
   }
-  throw new TaskExecutionError('OpenViking Session 同步任务缺少有效来源', false)
+  throw new TaskExecutionError('OpenViking Session 同步意图缺少有效来源', false)
 }

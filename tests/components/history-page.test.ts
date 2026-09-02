@@ -1,14 +1,12 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { DOMWrapper, flushPromises } from '@vue/test-utils'
+import { beforeEach, describe, expect, it } from 'vitest'
+import { flushPromises } from '@vue/test-utils'
 import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
-import { getQuery, readBody } from 'h3'
+import { getQuery } from 'h3'
 import HistoryPage from '../../app/pages/history.vue'
 
-const clearHistoryRequests: unknown[] = []
 let historyRequestCount = 0
 
 beforeEach(() => {
-  clearHistoryRequests.length = 0
   historyRequestCount = 0
 })
 
@@ -56,13 +54,6 @@ registerEndpoint('/api/v1/history', (event) => {
         subjectName: '林默', subjectExists: true, status: 'failed', description: '1 项原始素材',
         secondary: '结合新增素材', errorCode: null, errorMessage: null, createdAt: 500,
       },
-      {
-        sourceType: 'task',
-        id: '70000000-0000-4000-8000-000000000004',
-        kind: 'openviking_source_sync', subjectType: 'system', subjectId: 'openviking',
-        subjectName: 'OpenViking', subjectExists: true, status: 'queued', description: '学院档案',
-        secondary: '已尝试 1 / 3 次', errorCode: null, errorMessage: 'OpenViking 请求超时', createdAt: 250,
-      },
     ],
     total: 6,
     page,
@@ -70,14 +61,6 @@ registerEndpoint('/api/v1/history', (event) => {
     totalPages: 2,
   } }
 })
-registerEndpoint('/api/v1/history/openviking', {
-  method: 'DELETE',
-  handler: async (event) => {
-    clearHistoryRequests.push(await readBody(event))
-    return { data: { deleted: 688 } }
-  },
-})
-
 describe('统一任务记录页', () => {
   it('展示后台人物记忆提炼批次及排队状态', async () => {
     const wrapper = await mountSuspended(HistoryPage, { route: '/history' })
@@ -113,37 +96,11 @@ describe('统一任务记录页', () => {
     expect(wrapper.text()).toContain('未记录失败原因')
   })
 
-  it('OpenViking 排队任务显示类型、尝试次数和最近错误', async () => {
+  it('不显示 OpenViking 任务类型或历史清理入口', async () => {
     const wrapper = await mountSuspended(HistoryPage, { route: '/history' })
     await flushPromises()
 
-    expect(wrapper.text()).toContain('OpenViking 资料同步')
-    expect(wrapper.text()).toContain('已尝试 1 / 3 次')
-    expect(wrapper.text()).toContain('OpenViking 请求超时')
-    expect(wrapper.get('a[href="/system-records"]').exists()).toBe(true)
-  })
-
-  it('确认后清理终态 OpenViking 历史并刷新列表', async () => {
-    const wrapper = await mountSuspended(HistoryPage, { route: '/history' })
-    await flushPromises()
-    const initialHistoryRequestCount = historyRequestCount
-
-    await wrapper.findAllComponents({ name: 'UButton' })
-      .find(button => button.text() === '清理 OpenViking 历史')!.trigger('click')
-    await flushPromises()
-    expect(clearHistoryRequests).toHaveLength(0)
-    expect(document.body.textContent).toContain('只会删除成功、失败或已取消的 OpenViking 后台任务')
-
-    const confirm = [...document.querySelectorAll<HTMLButtonElement>('button')]
-      .find(button => button.textContent?.trim() === '确认清理')
-    expect(confirm).toBeDefined()
-    await new DOMWrapper(confirm!).trigger('click')
-    await flushPromises()
-
-    expect(clearHistoryRequests).toEqual([{ confirmed: true }])
-    await vi.waitFor(() => expect(document.body.textContent).not.toContain('确认清理 OpenViking 历史任务'))
-    expect(historyRequestCount).toBeGreaterThan(initialHistoryRequestCount)
-    wrapper.unmount()
-    document.body.innerHTML = ''
+    expect(wrapper.text()).not.toContain('OpenViking')
+    expect(wrapper.text()).not.toContain('清理历史')
   })
 })

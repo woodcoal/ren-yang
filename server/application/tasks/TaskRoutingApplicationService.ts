@@ -7,12 +7,10 @@ export class TaskRoutingApplicationService implements TaskHandler {
   /**
    * 创建任务路由应用服务。
    * @param generation 生成业务任务处理器。
-   * @param contextSynchronization OpenViking 增量同步任务处理器。
    * @param analysis 可选成长与记忆分析任务处理器。
    */
   constructor(
     private readonly generation: TaskHandler,
-    private readonly contextSynchronization: TaskHandler,
     private readonly analysis?: TaskHandler,
   ) {}
 
@@ -25,9 +23,6 @@ export class TaskRoutingApplicationService implements TaskHandler {
     if (job.type === 'analyze_learning') {
       if (!this.analysis) throw new TaskExecutionError('学习分析任务处理器未配置', false)
       await this.analysis.execute(job)
-    }
-    else if (job.type === 'sync_openviking_users' || job.type === 'sync_context_source' || job.type === 'sync_openviking_session') {
-      await this.contextSynchronization.execute(job)
     }
     else await this.generation.execute(job)
   }

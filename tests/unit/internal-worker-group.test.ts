@@ -16,7 +16,7 @@ function createDeferredExecution(): {
 }
 
 describe('内部 Worker 分组', () => {
-  it('OpenViking 通道阻塞时前台通道仍能独立轮询', async () => {
+  it('OpenViking 同步请求阻塞时业务 Worker 仍能独立轮询', async () => {
     const openVikingExecution = createDeferredExecution()
     let foregroundPolls = 0
     let openVikingStarted = false

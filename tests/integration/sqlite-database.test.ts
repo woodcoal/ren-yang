@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { DrizzleAdministratorRepository } from '../../server/infrastructure/database/DrizzleAdministratorRepository'
@@ -46,17 +46,18 @@ describe('SqliteDatabase', () => {
 
     const tables = current.getClient().prepare(`
       SELECT name FROM sqlite_master
-      WHERE type = 'table' AND name IN ('administrators', 'openviking_sync_runtime', 'task_jobs')
+      WHERE type = 'table' AND name IN ('administrators', 'openviking_sync_outbox', 'openviking_sync_runtime', 'task_jobs')
       ORDER BY name
     `).all()
     expect(tables).toEqual([
       { name: 'administrators' },
+      { name: 'openviking_sync_outbox' },
       { name: 'openviking_sync_runtime' },
       { name: 'task_jobs' },
     ])
     expect(current.getClient().prepare(`
       SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations
-    `).get()).toEqual({ count: 15, version: 1790496000000 })
+    `).get()).toEqual({ count: 16, version: 1790582400000 })
     expect(current.getClient().prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name IN (
       'api_keys', 'public_api_idempotency_records', 'public_api_audit_events'
     ) ORDER BY name`).all()).toEqual([
@@ -174,6 +175,7 @@ describe('SqliteDatabase', () => {
     client.prepare('DROP TABLE learning_automation_settings').run()
     client.prepare('ALTER TABLE openviking_settings DROP COLUMN account_id').run()
     client.prepare('ALTER TABLE ai_model_deployments DROP COLUMN default_timeout_ms').run()
+    client.prepare('DROP TABLE openviking_sync_outbox').run()
     client.prepare(`DELETE FROM __drizzle_migrations`).run()
     client.prepare(`INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)`).run(
       'legacy-latest-before-stable-persona-system-prompts',
@@ -189,7 +191,7 @@ describe('SqliteDatabase', () => {
     database = new SqliteDatabase({ dataDirectory, migrationsDirectory: resolve(process.cwd(), 'drizzle') })
     expect(database.getClient().prepare(`
       SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations
-    `).get()).toEqual({ count: 5, version: 1790496000000 })
+    `).get()).toEqual({ count: 6, version: 1790582400000 })
     expect(database.getClient().prepare(`
       SELECT p.code,
         instr(v.system_prompt_template, '{{personaPromptJson}}') > 0 AS persona_in_system,
@@ -207,7 +209,61 @@ describe('SqliteDatabase', () => {
     database = new SqliteDatabase({ dataDirectory, migrationsDirectory: resolve(process.cwd(), 'drizzle') })
     expect(database.getClient().prepare(`
       SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations
-    `).get()).toEqual({ count: 5, version: 1790496000000 })
+    `).get()).toEqual({ count: 6, version: 1790582400000 })
+    expect(database.getClient().prepare('PRAGMA integrity_check').get()).toEqual({ integrity_check: 'ok' })
+  })
+
+  it('既有数据库升级时迁移活动 OpenViking 意图并移除全部旧队列历史', () => {
+    temporaryDirectory = mkdtempSync(resolve(tmpdir(), 'ren-yang-openviking-outbox-upgrade-'))
+    const dataDirectory = resolve(temporaryDirectory, 'data')
+    const migrationsDirectory = resolve(temporaryDirectory, 'migrations')
+    mkdirSync(resolve(migrationsDirectory, 'meta'), { recursive: true })
+    const migrationFiles = Array.from({ length: 15 }, (_, index) => `${String(index).padStart(4, '0')}_${[
+      'schema', 'public_api_keys', 'public_api_idempotency_audit', 'direct_artifact_generation', 'generation_algorithms',
+      'interest_batches', 'unified_ai_algorithms', 'interest_additional_prompt', 'default_model_fallback',
+      'retain_cropped_image_original', 'model_deployment_thinking_control', 'stable_persona_system_prompts',
+      'learning_automation', 'openviking_account', 'model_default_timeout',
+    ][index]}.sql`)
+    for (const migration of migrationFiles) {
+      copyFileSync(resolve(process.cwd(), 'drizzle', migration), resolve(migrationsDirectory, migration))
+    }
+    const journal = JSON.parse(readFileSync(resolve(process.cwd(), 'drizzle/meta/_journal.json'), 'utf8')) as {
+      version: string
+      dialect: string
+      entries: unknown[]
+    }
+    writeFileSync(resolve(migrationsDirectory, 'meta/_journal.json'), `${JSON.stringify({
+      ...journal,
+      entries: journal.entries.slice(0, 15),
+    }, null, 2)}\n`)
+    database = new SqliteDatabase({ dataDirectory, migrationsDirectory })
+    const insert = database.getClient().prepare(`
+      INSERT INTO task_jobs (
+        id, type, payload_json, status, attempt_count, max_attempts,
+        available_at, lease_until, last_error, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, 1, 3, 1000, ?, ?, 1000, 1000)
+    `)
+    insert.run('source-sync', 'sync_context_source', '{"sourceId":"source-1"}', 'queued', null, '等待处理')
+    insert.run('session-sync', 'sync_openviking_session', '{"sourceType":"run","sourceId":"run-1"}', 'running', 60_000, null)
+    insert.run('users-history', 'sync_openviking_users', '{}', 'succeeded', null, null)
+    database.close()
+    database = null
+
+    database = new SqliteDatabase({ dataDirectory, migrationsDirectory: resolve(process.cwd(), 'drizzle') })
+    expect(database.getClient().prepare(`
+      SELECT id, type, status, lease_until FROM openviking_sync_outbox ORDER BY id
+    `).all()).toEqual([
+      { id: 'session-sync', type: 'sync_openviking_session', status: 'queued', lease_until: null },
+      { id: 'source-sync', type: 'sync_context_source', status: 'queued', lease_until: null },
+    ])
+    expect(database.getClient().prepare(`
+      SELECT COUNT(*) AS count FROM task_jobs
+      WHERE type IN ('sync_context_source', 'sync_openviking_users', 'sync_openviking_session')
+    `).get()).toEqual({ count: 0 })
+    database.close()
+    database = new SqliteDatabase({ dataDirectory, migrationsDirectory: resolve(process.cwd(), 'drizzle') })
+    expect(database.getClient().prepare(`SELECT COUNT(*) AS count FROM openviking_sync_outbox`).get()).toEqual({ count: 2 })
+    expect(database.getClient().prepare('PRAGMA foreign_key_check').all()).toEqual([])
     expect(database.getClient().prepare('PRAGMA integrity_check').get()).toEqual({ integrity_check: 'ok' })
   })
 
@@ -337,7 +393,7 @@ describe('SqliteDatabase', () => {
     database = new SqliteDatabase({ dataDirectory, migrationsDirectory: resolve(process.cwd(), 'drizzle') })
     expect(database.getClient().prepare(`
       SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations
-    `).get()).toEqual({ count: 15, version: 1790496000000 })
+    `).get()).toEqual({ count: 16, version: 1790582400000 })
     expect(database.getClient().prepare(`SELECT COUNT(*) AS count FROM ai_algorithms`).get()).toEqual({ count: 14 })
     expect(database.getClient().prepare('PRAGMA foreign_key_check').all()).toEqual([])
     expect(database.getClient().prepare('PRAGMA integrity_check').get()).toEqual({ integrity_check: 'ok' })
@@ -413,7 +469,7 @@ describe('SqliteDatabase', () => {
     `).get()).toEqual({ name: '旧资料', content_text: '压平前正文。', is_enabled: 1 })
     expect(database.getClient().prepare(`
       SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations
-    `).get()).toEqual({ count: 30, version: 1790496000000 })
+    `).get()).toEqual({ count: 31, version: 1790582400000 })
     expect(database.getClient().prepare(`SELECT COUNT(*) AS count FROM ai_algorithms`).get()).toEqual({ count: 14 })
     expect(database.getClient().prepare(`PRAGMA table_info(generation_runs)`).all()).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'algorithm_snapshot_json', notnull: 0 }),
@@ -470,7 +526,7 @@ describe('SqliteDatabase', () => {
     client.prepare(`
       INSERT INTO task_jobs (id, type, payload_json, status, attempt_count, max_attempts, created_at, updated_at)
       VALUES (?, ?, ?, 'queued', 0, 2, ?, ?)
-    `).run('job-1', 'test', '{}', 1_000, 1_000)
+    `).run('job-1', 'analyze_learning', '{}', 1_000, 1_000)
     const repository = new SqliteTaskJobRepository(client)
 
     await expect(repository.claimNext(2_000, 60_000)).resolves.toMatchObject({
@@ -498,28 +554,30 @@ describe('SqliteDatabase', () => {
 
     await expect(new SqliteTaskJobRepository(client).getPendingSummary()).resolves.toEqual({
       userQueued: 1,
-      queued: 2,
+      queued: 1,
       running: 1,
       cancelRequested: 1,
-      total: 4,
+      total: 3,
     })
   })
 
-  it('按最大尝试次数恢复或终止过期租约', async () => {
+  it('按最大尝试次数恢复或终止过期业务任务租约', async () => {
     const current = createDatabase()
     const client = current.getClient()
     const insert = client.prepare(`
       INSERT INTO task_jobs (
         id, type, status, attempt_count, max_attempts, lease_until, heartbeat_at, created_at, updated_at
-      ) VALUES (?, 'test', 'running', ?, 2, 1_000, 900, 500, 900)
+      ) VALUES (?, ?, 'running', ?, 2, 1_000, 900, 500, 900)
     `)
-    insert.run('retry-job', 1)
-    insert.run('failed-job', 2)
+    insert.run('retry-job', 'analyze_learning', 1)
+    insert.run('failed-job', 'analyze_learning', 2)
+    insert.run('legacy-openviking-job', 'sync_context_source', 1)
     const repository = new SqliteTaskJobRepository(client)
 
     await expect(repository.recoverExpired(2_000)).resolves.toBe(2)
     expect(client.prepare('SELECT id, status FROM task_jobs ORDER BY id').all()).toEqual([
       { id: 'failed-job', status: 'failed' },
+      { id: 'legacy-openviking-job', status: 'running' },
       { id: 'retry-job', status: 'queued' },
     ])
   })
@@ -529,7 +587,7 @@ describe('SqliteDatabase', () => {
     const client = current.getClient()
     client.prepare(`
       INSERT INTO task_jobs (id, type, status, attempt_count, max_attempts, created_at, updated_at)
-      VALUES ('job-retry', 'test', 'queued', 0, 2, 500, 500)
+      VALUES ('job-retry', 'analyze_learning', 'queued', 0, 2, 500, 500)
     `).run()
     const repository = new SqliteTaskJobRepository(client)
 

@@ -5,7 +5,6 @@ import { resolve } from 'node:path'
 import { ContextSynchronizationApplicationService, OPEN_VIKING_SECRET_CONTEXT } from '../../server/application/context/ContextSynchronizationApplicationService'
 import { ContentApplicationService } from '../../server/application/content/ContentApplicationService'
 import { LearningApplicationService } from '../../server/application/learning/LearningApplicationService'
-import { TaskRoutingApplicationService } from '../../server/application/tasks/TaskRoutingApplicationService'
 import { WorkerApplicationService } from '../../server/application/tasks/WorkerApplicationService'
 import { LocalSourceFileStorage } from '../../server/infrastructure/content/LocalSourceFileStorage'
 import { NodeSourceContentProcessor } from '../../server/infrastructure/content/NodeSourceContentProcessor'
@@ -19,7 +18,6 @@ import { SqliteOpenVikingSettingsRepository } from '../../server/infrastructure/
 import { ConservativeTokenCounter } from '../../server/infrastructure/model/ConservativeTokenCounter'
 import { OpenVikingHttpContextProvider } from '../../server/infrastructure/context/OpenVikingHttpContextProvider'
 import { SqliteContextProvider } from '../../server/infrastructure/context/SqliteContextProvider'
-import { SqliteTaskJobRepository } from '../../server/infrastructure/database/SqliteTaskJobRepository'
 import { AesGcmSecretCipher } from '../../server/infrastructure/security/AesGcmSecretCipher'
 import type { Clock } from '../../server/ports/Clock'
 import { createTestAiPromptService } from '../support/createTestAiPromptService'
@@ -78,6 +76,9 @@ class InMemoryOpenViking implements OpenVikingPort {
 
   /** @returns 固定健康状态。 */
   async checkHealth() { return { healthy: true, version: 'test', authMode: 'api_key' as const, queueHealthy: true } }
+
+  /** @returns 内存替身不产生远端任务日志。 */
+  async listTasks() { return [] }
 
   /** @returns 内存替身始终允许写入。 */
   async checkWriteHealth() {}
@@ -426,7 +427,7 @@ describe('OpenViking 可关闭索引与 SQLite 重建', () => {
     expect(database.getClient().prepare(`SELECT COUNT(*) AS count FROM openviking_derived_memories`).get())
       .toEqual({ count: 1 })
     expect(database.getClient().prepare(`
-      SELECT type, status FROM task_jobs
+      SELECT type, status FROM openviking_sync_outbox
       WHERE type = 'sync_openviking_session' AND json_extract(payload_json, '$.sourceId') = ?
     `).get(runId)).toEqual({ type: 'sync_openviking_session', status: 'queued' })
   })
@@ -445,12 +446,12 @@ describe('OpenViking 可关闭索引与 SQLite 重建', () => {
     await service.recoverPendingTasks()
 
     expect(database.getClient().prepare(`
-      SELECT COUNT(*) AS count FROM task_jobs WHERE type = 'sync_openviking_users' AND status = 'queued'
+      SELECT COUNT(*) AS count FROM openviking_sync_outbox WHERE type = 'sync_openviking_users' AND status = 'queued'
     `).get()).toEqual({ count: 1 })
 
     expect(database.getClient().prepare(`
       SELECT type, status, json_extract(payload_json, '$.sourceId') AS source_id
-      FROM task_jobs WHERE type = 'sync_context_source'
+      FROM openviking_sync_outbox WHERE type = 'sync_context_source'
     `).all()).toEqual([{
       type: 'sync_context_source',
       status: 'queued',
@@ -498,10 +499,9 @@ describe('OpenViking 可关闭索引与 SQLite 重建', () => {
       prompts: createTestAiPromptService(database, identifiers, clock),
       contextSyncQueue,
     })
-    const ignoredHandler = { /** @returns 本测试不应调用该处理器。 */ execute: async () => { throw new Error('路由错误') } }
     const worker = new WorkerApplicationService({
-      taskJobRepository: new SqliteTaskJobRepository(database.getClient()),
-      taskHandler: new TaskRoutingApplicationService(ignoredHandler, contextService),
+      taskJobRepository: contextSyncQueue,
+      taskHandler: contextService,
       clock,
       leaseDurationMs: 60_000,
     })
@@ -510,7 +510,7 @@ describe('OpenViking 可关闭索引与 SQLite 重建', () => {
     await content.linkSource(created.source.id, {
       targetType: 'world', targetId: '00000000-0000-4000-8000-000000000100', priority: 10,
     })
-    expect(database.getClient().prepare(`SELECT type, status FROM task_jobs WHERE type = 'sync_context_source'`).all())
+    expect(database.getClient().prepare(`SELECT type, status FROM openviking_sync_outbox WHERE type = 'sync_context_source'`).all())
       .toHaveLength(1)
     expect(openViking.resources.size).toBe(0)
 
@@ -538,7 +538,7 @@ describe('OpenViking 可关闭索引与 SQLite 重建', () => {
     openViking.deleteFailuresRemaining = 1
     await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: false })
     expect(database.getClient().prepare(`
-      SELECT status, attempt_count FROM task_jobs WHERE type = 'sync_context_source' AND status = 'queued'
+      SELECT status, attempt_count FROM openviking_sync_outbox WHERE type = 'sync_context_source' AND status = 'queued'
     `).get()).toEqual({ status: 'queued', attempt_count: 1 })
     expect(openViking.resources.has(`viking://~/resources/world-source/${created.source.id}.md`)).toBe(true)
 
@@ -554,7 +554,7 @@ describe('OpenViking 可关闭索引与 SQLite 重建', () => {
     await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: true })
   })
 
-  it('能力关闭时资料保存不创建 OpenViking 同步任务', async () => {
+  it('能力关闭时资料保存不创建 OpenViking 同步意图', async () => {
     database.getClient().prepare('DELETE FROM world_sources').run()
     database.getClient().prepare('DELETE FROM source_materials').run()
     const identifiers = new SequentialIdentifierGenerator()
@@ -571,7 +571,7 @@ describe('OpenViking 可关闭索引与 SQLite 重建', () => {
     })
 
     await content.createPastedSource({ name: '本地资料', role: 'reference', content: '只保存到 SQLite。' })
-    expect(database.getClient().prepare(`SELECT COUNT(*) AS count FROM task_jobs WHERE type = 'sync_context_source'`).get())
+    expect(database.getClient().prepare(`SELECT COUNT(*) AS count FROM openviking_sync_outbox WHERE type = 'sync_context_source'`).get())
       .toEqual({ count: 0 })
   })
 

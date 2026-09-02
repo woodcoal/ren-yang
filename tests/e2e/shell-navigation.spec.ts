@@ -104,14 +104,8 @@ test('任务列表直接显示失败原因', async ({ page }) => {
               subjectExists: true, status: 'failed', description: '生成一篇人物小传', secondary: '测试模型',
               errorCode: 'PROVIDER_UNAVAILABLE', errorMessage: '模型服务暂时不可用', createdAt: 1_000,
             },
-            {
-              sourceType: 'task', id: '70000000-0000-4000-8000-000000000002', kind: 'openviking_source_sync',
-              subjectType: 'system', subjectId: 'openviking', subjectName: 'OpenViking', subjectExists: true,
-              status: 'queued', description: '学院档案', secondary: '已尝试 1 / 3 次', errorCode: null,
-              errorMessage: 'OpenViking 请求超时', createdAt: 900,
-            },
           ],
-          total: 2, page: 1, pageSize: 10, totalPages: 1,
+          total: 1, page: 1, pageSize: 10, totalPages: 1,
         },
       }),
     })
@@ -120,7 +114,5 @@ test('任务列表直接显示失败原因', async ({ page }) => {
   await page.getByRole('link', { name: '任务记录', exact: true }).click()
   await expect(page).toHaveURL(/\/history/)
   await expect(page.getByText('PROVIDER_UNAVAILABLE：模型服务暂时不可用', { exact: true })).toBeVisible()
-  await expect(page.getByRole('link', { name: 'OpenViking 资料同步', exact: true })).toBeVisible()
-  await expect(page.getByText('已尝试 1 / 3 次', { exact: true })).toBeVisible()
-  await expect(page.getByText('OpenViking 请求超时', { exact: true })).toBeVisible()
+  await expect(page.getByText('OpenViking')).toHaveCount(0)
 })

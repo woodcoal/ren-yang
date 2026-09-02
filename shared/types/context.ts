@@ -93,18 +93,26 @@ export interface ContextSyncSummaryView {
   runtime: OpenVikingSyncRuntimeView
 }
 
-/** 管理界面使用的 OpenViking 同步日志分页结果。 */
-export interface ContextSyncRecordPageView {
-  /** 当前页同步日志。 */
-  items: ContextSyncRecordView[]
-  /** 同步日志总数。 */
-  total: number
-  /** 实际返回页码；请求越界时收敛到最后一页。 */
-  page: number
-  /** 当前每页数量。 */
-  pageSize: 5 | 10 | 20 | 50 | 100
-  /** 总页数；无记录时为 1。 */
-  totalPages: number
+/** OpenViking 官方任务接口返回的一项非敏感日志。 */
+export interface OpenVikingTaskView {
+  /** OpenViking 任务 UUID。 */
+  taskId: string
+  /** OpenViking 官方任务类型。 */
+  taskType: string
+  /** 官方任务生命周期状态。 */
+  status: 'pending' | 'running' | 'cancelling' | 'completed' | 'failed' | 'cancelled'
+  /** 任务所属的 OpenViking User。 */
+  ownerUserId: string
+  /** 可选资源或 Session 标识。 */
+  resourceId: string | null
+  /** 可选处理阶段。 */
+  stage: string | null
+  /** OpenViking 已脱敏错误。 */
+  error: string | null
+  /** 创建时间，UTC Unix 毫秒。 */
+  createdAt: number
+  /** 最后更新时间，UTC Unix 毫秒。 */
+  updatedAt: number
 }
 
 /** OpenViking 全量重建结果。 */

@@ -1,7 +1,6 @@
 import type { Database as BetterSqliteDatabase, RunResult } from 'better-sqlite3'
 import type { TaskJob } from '../../domain/tasks/TaskJob'
-import type { TaskJobRepository, TaskQueueLane, TaskQueueStatusReader } from '../../ports/TaskPorts'
-import { calculateOpenVikingRetryDelay } from '../../domain/context/OpenVikingRetryPolicy'
+import type { TaskJobRepository, TaskQueueStatusReader } from '../../ports/TaskPorts'
 
 /** SQLite 查询返回的任务行。 */
 interface TaskJobRow {
@@ -38,6 +37,7 @@ export class SqliteTaskJobRepository implements TaskJobRepository, TaskQueueStat
         COUNT(*) FILTER (WHERE status = 'cancel_requested') AS cancel_requested
       FROM task_jobs
       WHERE status IN ('queued', 'running', 'cancel_requested')
+        AND type IN ('assess_interest', 'plan_document', 'execute_document', 'execute_block', 'analyze_learning')
     `).get() as { user_queued: number, queued: number, running: number, cancel_requested: number }
     return {
       userQueued: row.user_queued,
@@ -58,6 +58,7 @@ export class SqliteTaskJobRepository implements TaskJobRepository, TaskQueueStat
       const canceled = this.client.prepare(`
         SELECT DISTINCT run_id FROM task_jobs
         WHERE status = 'cancel_requested' AND lease_until IS NOT NULL AND lease_until <= ? AND run_id IS NOT NULL
+          AND type IN ('assess_interest', 'plan_document', 'execute_document', 'execute_block', 'analyze_learning')
       `).all(timestamp) as Array<{ run_id: string }>
       for (const item of canceled) {
         const batch = this.findInterestBatchId(item.run_id)
@@ -79,10 +80,12 @@ export class SqliteTaskJobRepository implements TaskJobRepository, TaskQueueStat
         UPDATE task_jobs SET status = 'canceled', lease_until = NULL, heartbeat_at = NULL,
           last_error = '进程退出时任务已请求取消', updated_at = ?
         WHERE status = 'cancel_requested' AND lease_until IS NOT NULL AND lease_until <= ?
+          AND type IN ('assess_interest', 'plan_document', 'execute_document', 'execute_block', 'analyze_learning')
       `).run(timestamp, timestamp)
       const expired = this.client.prepare(`
         SELECT run_id, type, attempt_count, max_attempts FROM task_jobs
         WHERE status = 'running' AND lease_until IS NOT NULL AND lease_until <= ? AND run_id IS NOT NULL
+          AND type IN ('assess_interest', 'plan_document', 'execute_document', 'execute_block', 'analyze_learning')
       `).all(timestamp) as Array<{ run_id: string, type: string, attempt_count: number, max_attempts: number }>
       for (const item of expired) {
         const batch = item.type === 'assess_interest' ? this.findInterestBatchId(item.run_id) : null
@@ -127,6 +130,7 @@ export class SqliteTaskJobRepository implements TaskJobRepository, TaskQueueStat
             END,
             updated_at = ?
         WHERE status = 'running' AND lease_until IS NOT NULL AND lease_until <= ?
+          AND type IN ('assess_interest', 'plan_document', 'execute_document', 'execute_block', 'analyze_learning')
       `).run(timestamp, timestamp)
       return canceledJobs.changes + recoveredJobs.changes
     }).immediate()
@@ -146,31 +150,18 @@ export class SqliteTaskJobRepository implements TaskJobRepository, TaskQueueStat
    * 在 SQLite 立即事务中领取最早的排队任务。
    * @param timestamp 当前 UTC Unix 毫秒。
    * @param leaseDurationMs 租约持续时间。
-   * @param lane 允许领取的任务通道；OpenViking 通道只包含三类同步任务。
    * @returns 已领取任务或 null。
    */
-  async claimNext(timestamp: number, leaseDurationMs: number, lane: TaskQueueLane = 'all'): Promise<TaskJob | null> {
+  async claimNext(timestamp: number, leaseDurationMs: number): Promise<TaskJob | null> {
     const claimTransaction = this.client.transaction((): TaskJob | null => {
       const row = this.client.prepare(`
         SELECT id, type, payload_json, status, attempt_count, max_attempts, lease_until
         FROM task_jobs
         WHERE status = 'queued' AND attempt_count < max_attempts AND available_at <= ?
-          AND (
-            ? = 'all'
-            OR (? = 'foreground' AND type NOT IN ('sync_context_source', 'sync_openviking_users', 'sync_openviking_session'))
-            OR (? = 'openviking' AND type IN ('sync_context_source', 'sync_openviking_users', 'sync_openviking_session'))
-          )
-          AND (
-            type NOT IN ('sync_context_source', 'sync_openviking_users', 'sync_openviking_session')
-            OR NOT EXISTS (
-              SELECT 1 FROM openviking_sync_runtime
-              WHERE id = 'openviking_sync_runtime' AND state = 'degraded'
-                AND (retry_after IS NULL OR retry_after > ?)
-            )
-          )
+          AND type IN ('assess_interest', 'plan_document', 'execute_document', 'execute_block', 'analyze_learning')
         ORDER BY available_at ASC, created_at ASC, id ASC
         LIMIT 1
-      `).get(timestamp, lane, lane, lane, timestamp) as TaskJobRow | undefined
+      `).get(timestamp) as TaskJobRow | undefined
 
       if (!row) {
         return null
@@ -234,20 +225,12 @@ export class SqliteTaskJobRepository implements TaskJobRepository, TaskQueueStat
       `).get(jobId) as { type: string, attempt_count: number, max_attempts: number } | undefined
       if (!job) return false
       const willRetry = retryable && job.attempt_count < job.max_attempts
-      const retryAt = willRetry && isOpenVikingTask(job.type)
-        ? timestamp + calculateOpenVikingRetryDelay(job.attempt_count)
-        : timestamp
       this.client.prepare(`
         UPDATE task_jobs
         SET status = ?, available_at = ?, lease_until = NULL, heartbeat_at = NULL, last_error = ?, updated_at = ?
         WHERE id = ? AND status = 'running'
-      `).run(willRetry ? 'queued' : 'failed', retryAt, error.slice(0, 1000), timestamp, jobId)
+      `).run(willRetry ? 'queued' : 'failed', timestamp, error.slice(0, 1000), timestamp, jobId)
       return willRetry
     }).immediate()
   }
-}
-
-/** @param type 持久任务类型。 @returns 是否属于 OpenViking 外部同步任务。 */
-function isOpenVikingTask(type: string): boolean {
-  return type === 'sync_context_source' || type === 'sync_openviking_users' || type === 'sync_openviking_session'
 }

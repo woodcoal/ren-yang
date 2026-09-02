@@ -3,7 +3,7 @@ import {
   isOpenVikingDirectoryDeleteModeError,
   isOpenVikingInputLimitError,
 } from '../../domain/context/OpenVikingRetryPolicy'
-import type { OpenVikingCapabilityView } from '../../../shared/types/context'
+import type { OpenVikingCapabilityView, OpenVikingTaskView } from '../../../shared/types/context'
 import type {
   ContextIndexRepository,
   ContextSessionExchange,
@@ -89,6 +89,29 @@ export class OpenVikingHttpContextProvider implements ContextProvider, OpenVikin
     const state = await this.ensureAdminState()
     await this.checkWriteHealth(true)
     return { healthy: true, version: state.version, authMode: 'api_key', queueHealthy: true }
+  }
+
+  /**
+   * 从每个受管 User 读取 OpenViking 官方任务日志并按时间合并。
+   * @param limit 合并后最多返回的记录数，范围 1—200。
+   * @returns 不含凭据、模型用量和原始结果的任务日志。
+   */
+  async listTasks(limit: number): Promise<OpenVikingTaskView[]> {
+    if (!Number.isInteger(limit) || limit < 1 || limit > 200) {
+      throw new OpenVikingError('PROVIDER_OUTPUT_INVALID', 'OpenViking 任务日志数量必须在 1 到 200 之间')
+    }
+    const state = await this.ensureAdminState()
+    const targetUserIds = await this.options.repository.listTargetUserIds()
+    const ownerUserIds = ['default', ...targetUserIds.filter(userId => state.userIds.has(userId))]
+    const groups = await Promise.all(ownerUserIds.map(async (ownerUserId) => {
+      const payload = await this.requestData(`/api/v1/tasks?limit=${limit}`, { method: 'GET' }, {
+        userId: ownerUserId,
+        peerId: null,
+      })
+      return readOkArrayResult(payload, 'OpenViking 任务日志响应结构无效')
+        .map(value => toOpenVikingTask(value, ownerUserId))
+    }))
+    return groups.flat().sort((left, right) => right.createdAt - left.createdAt || right.taskId.localeCompare(left.taskId)).slice(0, limit)
   }
 
   /** @param force 是否绕过三十秒成功缓存。 @returns 队列接口当前可达时结束。 */
@@ -957,6 +980,37 @@ function readEntryName(value: unknown): string {
 /** @param value OpenViking 文件目录项。 @returns 安全 URI 或 null。 */
 function readEntryUri(value: unknown): string | null {
   return isRecord(value) && typeof value.uri === 'string' && value.uri.startsWith('viking://') ? value.uri : null
+}
+
+/**
+ * 校验并收窄 OpenViking 官方任务记录，不传递任务结果和用量。
+ * @param value OpenViking `/api/v1/tasks` 中的单项未知值。
+ * @param ownerUserId 发起该查询的 OpenViking User。
+ * @returns 可在管理界面安全展示的任务日志。
+ */
+function toOpenVikingTask(value: unknown, ownerUserId: string): OpenVikingTaskView {
+  if (!isRecord(value)
+    || typeof value.task_id !== 'string'
+    || typeof value.task_type !== 'string'
+    || typeof value.status !== 'string'
+    || !['pending', 'running', 'cancelling', 'completed', 'failed', 'cancelled'].includes(value.status)
+    || typeof value.created_at !== 'number'
+    || !Number.isFinite(value.created_at)
+    || typeof value.updated_at !== 'number'
+    || !Number.isFinite(value.updated_at)) {
+    throw new OpenVikingError('PROVIDER_OUTPUT_INVALID', 'OpenViking 任务日志响应结构无效')
+  }
+  return {
+    taskId: value.task_id,
+    taskType: value.task_type,
+    status: value.status as OpenVikingTaskView['status'],
+    ownerUserId,
+    resourceId: typeof value.resource_id === 'string' ? value.resource_id : null,
+    stage: typeof value.stage === 'string' ? value.stage : null,
+    error: typeof value.error === 'string' ? sanitizeProviderMessage(value.error) : null,
+    createdAt: Math.round(value.created_at * 1_000),
+    updatedAt: Math.round(value.updated_at * 1_000),
+  }
 }
 
 /** @param value 未知 JSON。 @returns 是否为普通键值对象。 */

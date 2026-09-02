@@ -11,11 +11,11 @@ class FixedContextIndexRepository implements ContextIndexRepository {
   /** 可变同步记录。 */
   public records: ContextSyncRecordView[] = []
 
-  /** @param scopes 允许检索的固定资料范围。 */
-  constructor(private readonly scopes: ContextSourceScope[]) {}
+  /** @param scopes 允许检索的固定资料范围。 @param targetUserIds 需要读取任务日志的世界 User。 */
+  constructor(private readonly scopes: ContextSourceScope[], private readonly targetUserIds: string[] = []) {}
 
   /** @returns 当前测试没有需要主动对账的 User。 */
-  async listTargetUserIds() { return [] }
+  async listTargetUserIds() { return this.targetUserIds }
 
   /** @returns 当前测试不需要完整资料列表。 */
   async listSourceDocuments() { return [] }
@@ -68,20 +68,6 @@ class FixedContextIndexRepository implements ContextIndexRepository {
 
   /** @returns 同步记录副本。 */
   async listSyncRecords() { return [...this.records] }
-
-  /** @param input 分页参数。 @returns 当前测试同步记录的分页结果。 */
-  async listSyncRecordsPage(input: { page: number, pageSize: 5 | 10 | 20 | 50 | 100 }) {
-    const total = this.records.length
-    const totalPages = Math.max(1, Math.ceil(total / input.pageSize))
-    const page = Math.min(input.page, totalPages)
-    return {
-      items: this.records.slice((page - 1) * input.pageSize, page * input.pageSize),
-      total,
-      page,
-      pageSize: input.pageSize,
-      totalPages,
-    }
-  }
 
   /** @returns 当前测试同步失败记录数。 */
   async countFailedSyncRecords() { return this.records.filter(record => record.status === 'failed').length }
@@ -170,6 +156,58 @@ describe('OpenViking 原生 HTTP 上下文适配器', () => {
       '/health', '/api/v1/admin/accounts/xxx/users', '/api/v1/observer/queue',
     ])
     expect(new Headers(requests[1]!.init.headers).get('x-api-key')).toBe('admin-key')
+  })
+
+  it('按受管 User 合并 OpenViking 官方任务日志且不暴露原始结果', async () => {
+    const requests: Array<{ url: string, init: RequestInit }> = []
+    const provider = new OpenVikingHttpContextProvider({
+      enabled: true, endpoint: 'https://ov.test', apiKey: 'admin-key', timeoutMs: 5_000,
+      repository: new FixedContextIndexRepository([], ['world-a']),
+      fetcher: vi.fn(async (input: URL | RequestInfo, init?: RequestInit) => {
+        requests.push({ url: String(input), init: init ?? {} })
+        const url = new URL(String(input))
+        if (url.pathname === '/health') {
+          return new Response(JSON.stringify({ status: 'ok', healthy: true, version: '0.4.17', auth_mode: 'api_key' }))
+        }
+        if (url.pathname === '/api/v1/admin/accounts/ren-yang/users/world-a/key' && init?.method === 'POST') {
+          return new Response(JSON.stringify({ status: 'ok', result: { user_key: 'world-key' } }))
+        }
+        if (url.pathname === '/api/v1/admin/accounts/ren-yang/users') {
+          return new Response(JSON.stringify({ status: 'ok', result: [
+            { user_id: 'default', role: 'admin' }, { user_id: 'world-a', role: 'user' },
+          ] }))
+        }
+        const apiKey = new Headers(init?.headers).get('x-api-key')
+        return new Response(JSON.stringify({ status: 'ok', result: [apiKey === 'world-key' ? {
+          task_id: 'world-task', task_type: 'session_commit', status: 'failed',
+          resource_id: 'session-a', stage: 'processing_queue', result: { private: true },
+          error: 'x-api-key=secret-key 处理失败',
+          created_at: 30, updated_at: 40,
+        } : {
+          task_id: 'default-task', task_type: 'add_resource', status: 'completed',
+          resource_id: 'resource-default', stage: null, result: { token_usage: { total_tokens: 99 } }, error: null,
+          created_at: 10, updated_at: 20,
+        }] }))
+      }) as unknown as typeof fetch,
+    })
+
+    await expect(provider.listTasks(50)).resolves.toEqual([
+      {
+        taskId: 'world-task', taskType: 'session_commit', status: 'failed', ownerUserId: 'world-a',
+        resourceId: 'session-a', stage: 'processing_queue', error: 'x-api-key=[凭据已隐藏] 处理失败', createdAt: 30_000, updatedAt: 40_000,
+      },
+      {
+        taskId: 'default-task', taskType: 'add_resource', status: 'completed', ownerUserId: 'default',
+        resourceId: 'resource-default', stage: null, error: null, createdAt: 10_000, updatedAt: 20_000,
+      },
+    ])
+    expect(requests.map(item => `${item.init.method ?? 'GET'} ${new URL(item.url).pathname}`)).toEqual([
+      'GET /health', 'GET /api/v1/admin/accounts/ren-yang/users',
+      'POST /api/v1/admin/accounts/ren-yang/users/world-a/key', 'GET /api/v1/tasks', 'GET /api/v1/tasks',
+    ])
+    expect(new URL(requests[3]!.url).searchParams.get('limit')).toBe('50')
+    expect(new Headers(requests[3]!.init.headers).get('x-api-key')).toBe('admin-key')
+    expect(new Headers(requests[4]!.init.headers).get('x-api-key')).toBe('world-key')
   })
 
   it('队列累计错误不阻断当前可达的 OpenViking 服务', async () => {

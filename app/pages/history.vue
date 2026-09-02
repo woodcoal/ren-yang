@@ -1,19 +1,15 @@
 <script setup lang="ts">
-import { computed, reactive, shallowRef, watch } from 'vue'
+import { computed, reactive, watch } from 'vue'
 import type { ApiResponse } from '#shared/types/api'
 import type { PersonaSummary } from '#shared/types/content'
 import type { HistoryKind, HistoryStatus } from '#shared/schemas/history'
-import type { ClearOpenVikingHistoryResult, HistoryItemView, HistoryPageView } from '#shared/types/history'
+import type { HistoryItemView, HistoryPageView } from '#shared/types/history'
 
 const route = useRoute()
-const { notifyError, notifySuccess } = useOperationNotifications()
-const clearConfirmationOpen = shallowRef(false)
-const clearingHistory = shallowRef(false)
 
 /** 任务记录页允许的任务类型。 */
 const historyKinds: readonly HistoryKind[] = [
   'interest_assessment', 'artifact_generation', 'world_growth', 'persona_growth', 'persona_memory',
-  'openviking_source_sync', 'openviking_session_sync', 'openviking_user_sync',
 ]
 
 /** 任务记录页允许的统一状态。 */
@@ -95,8 +91,6 @@ const statusLabels: Record<HistoryStatus, string> = {
 const kindLabels: Record<HistoryKind, string> = {
   interest_assessment: '兴趣判断', artifact_generation: '图文创作',
   world_growth: '世界成长提炼', persona_growth: '人物成长提炼', persona_memory: '人物记忆提炼',
-  openviking_source_sync: 'OpenViking 资料同步', openviking_session_sync: 'OpenViking Session 同步',
-  openviking_user_sync: 'OpenViking 用户校准',
 }
 
 /** 可选择的每页任务数量。 */
@@ -135,7 +129,6 @@ function descriptionPreview(value: string): string {
 
 /** @param item 统一任务记录。 @returns 任务详情或所属对象详情地址。 */
 function detailsPath(item: HistoryItemView): string {
-  if (item.sourceType === 'task') return '/system-records'
   if (item.sourceType === 'interest_batch') return `/interest-batches/${item.id}`
   if (item.sourceType === 'run') return `/runs/${item.id}`
   return item.subjectType === 'world' ? `/worlds/${item.subjectId}` : `/personas/${item.subjectId}`
@@ -144,7 +137,6 @@ function detailsPath(item: HistoryItemView): string {
 /** @param item 统一任务记录。 @returns 当前对象存在时的详情地址，否则返回 null。 */
 function subjectPath(item: HistoryItemView): string | null {
   if (!item.subjectExists) return null
-  if (item.subjectType === 'system') return '/system-records'
   return item.subjectType === 'world' ? `/worlds/${item.subjectId}` : `/personas/${item.subjectId}`
 }
 
@@ -164,26 +156,6 @@ function failureDescription(item: HistoryItemView): string {
 /** @returns 重新读取生成运行、后台提炼和对象名称。 */
 async function refreshAll(): Promise<void> {
   await Promise.all([refreshHistory(), refreshPersonas()])
-}
-
-/** @returns 清理终态 OpenViking 任务、关闭确认框并刷新当前历史页。 */
-async function clearOpenVikingHistory(): Promise<void> {
-  if (clearingHistory.value) return
-  clearingHistory.value = true
-  try {
-    const response = await $fetch<ApiResponse<ClearOpenVikingHistoryResult>>('/api/v1/history/openviking', {
-      method: 'DELETE', body: { confirmed: true },
-    })
-    clearConfirmationOpen.value = false
-    await refreshHistory()
-    notifySuccess(`已清理 ${response.data.deleted} 条 OpenViking 历史任务。`, '历史任务已清理')
-  }
-  catch (requestError: unknown) {
-    notifyError(getApiErrorMessage(requestError, 'OpenViking 历史任务清理失败'), '清理失败')
-  }
-  finally {
-    clearingHistory.value = false
-  }
 }
 
 /** @param page 新页码。 @param pageSize 新每页数量。 @returns 路由导航完成时结束。 */
@@ -210,7 +182,6 @@ function formatTime(timestamp: number): string {
 <template>
   <div>
     <ContentPageHeader title="在可追溯的记录中继续工作" description="统一查看生成任务、后台成长提炼和记忆提炼，并按对象、类型和状态定位记录。">
-      <UButton color="neutral" variant="outline" icon="i-lucide-trash-2" @click="clearConfirmationOpen = true">清理 OpenViking 历史</UButton>
       <UButton to="/workbench" icon="i-lucide-plus">创建新任务</UButton>
     </ContentPageHeader>
 
@@ -231,9 +202,6 @@ function formatTime(timestamp: number): string {
               <option value="world_growth">世界成长提炼</option>
               <option value="persona_growth">人物成长提炼</option>
               <option value="persona_memory">人物记忆提炼</option>
-              <option value="openviking_source_sync">OpenViking 资料同步</option>
-              <option value="openviking_session_sync">OpenViking Session 同步</option>
-              <option value="openviking_user_sync">OpenViking 用户校准</option>
             </select>
             <select v-model="filters.status" class="native-control min-w-0 flex-1" aria-label="按状态筛选">
               <option value="">全部状态</option>
@@ -302,17 +270,5 @@ function formatTime(timestamp: number): string {
         </div>
       </div>
     </section>
-
-    <UModal v-model:open="clearConfirmationOpen" title="确认清理 OpenViking 历史任务" description="活动同步任务和业务历史不会被删除。">
-      <template #body>
-        <p class="text-sm text-muted">只会删除成功、失败或已取消的 OpenViking 后台任务。该操作无法撤销。</p>
-      </template>
-      <template #footer>
-        <div class="flex w-full justify-end gap-2">
-          <UButton color="neutral" variant="ghost" :disabled="clearingHistory" @click="clearConfirmationOpen = false">取消</UButton>
-          <UButton color="error" :loading="clearingHistory" @click="clearOpenVikingHistory">确认清理</UButton>
-        </div>
-      </template>
-    </UModal>
   </div>
 </template>

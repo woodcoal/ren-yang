@@ -142,60 +142,18 @@ describe('统一任务记录分页', () => {
     expect(result.items.map(item => item.id)).not.toEqual(expect.arrayContaining(runIds))
   })
 
-  it('把三类 OpenViking 后台任务合并到可筛选的任务记录', async () => {
+  it('任务历史不读取旧版遗留的 OpenViking 后台任务', async () => {
     const client = database.getClient()
-    const insert = client.prepare(`
+    client.prepare(`
       INSERT INTO task_jobs (
         id, type, payload_json, status, attempt_count, max_attempts, last_error, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, 3, ?, ?, ?)
-    `)
-    insert.run('50000000-0000-4000-8000-000000000001', 'sync_context_source',
-      JSON.stringify({ entityType: 'source_material', sourceId: 'missing-source' }),
-      'queued', 1, 'OpenViking 请求超时', 900, 900)
-    insert.run('50000000-0000-4000-8000-000000000002', 'sync_openviking_session',
-      JSON.stringify({ sourceType: 'run', sourceId: 'missing-run' }),
-      'running', 1, null, 1_000, 1_000)
-    insert.run('50000000-0000-4000-8000-000000000003', 'sync_openviking_users', '{}',
-      'succeeded', 1, null, 1_100, 1_100)
+      ) VALUES ('50000000-0000-4000-8000-000000000001', 'sync_context_source', '{}',
+        'queued', 1, 3, 'OpenViking 请求超时', 900, 900)
+    `).run()
 
-    const allTasks = await repository.listPage({ page: 1, pageSize: 5 })
-    const failedRetry = await repository.listPage({
-      page: 1, pageSize: 5, kind: 'openviking_source_sync', status: 'queued',
-    })
+    const allTasks = await repository.listPage({ page: 1, pageSize: 20 })
 
-    expect(allTasks.items.slice(0, 3).map(item => item.kind)).toEqual([
-      'openviking_user_sync', 'openviking_session_sync', 'openviking_source_sync',
-    ])
-    expect(failedRetry.items).toEqual([
-      expect.objectContaining({
-        sourceType: 'task', subjectType: 'system', subjectName: 'OpenViking',
-        description: '已删除或未知资料', secondary: '已尝试 1 / 3 次', errorMessage: 'OpenViking 请求超时',
-      }),
-    ])
-  })
-
-  it('只清理终态 OpenViking 后台任务并保留活动任务与业务历史', async () => {
-    const insert = database.getClient().prepare(`
-      INSERT INTO task_jobs (
-        id, type, payload_json, status, attempt_count, max_attempts, created_at, updated_at
-      ) VALUES (?, 'sync_context_source', ?, ?, 1, 3, ?, ?)
-    `)
-    const statuses = ['succeeded', 'failed', 'canceled', 'queued', 'running', 'cancel_requested'] as const
-    statuses.forEach((status, index) => insert.run(
-      `51000000-0000-4000-8000-${String(index + 1).padStart(12, '0')}`,
-      JSON.stringify({ entityType: 'source_material', sourceId: `source-${index + 1}` }),
-      status,
-      1_200 + index,
-      1_200 + index,
-    ))
-
-    await expect(repository.clearTerminalOpenVikingTasks()).resolves.toEqual({ deleted: 3 })
-    const history = await repository.listPage({ page: 1, pageSize: 20 })
-
-    expect(history).toMatchObject({ total: 9 })
-    expect(history.items.filter(item => item.sourceType === 'task').map(item => item.status)).toEqual([
-      'cancel_requested', 'running', 'queued',
-    ])
-    expect(history.items.filter(item => item.sourceType !== 'task')).toHaveLength(6)
+    expect(allTasks).toMatchObject({ total: 6 })
+    expect(allTasks.items.every(item => item.sourceType !== ('task' as typeof item.sourceType))).toBe(true)
   })
 })

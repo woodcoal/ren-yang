@@ -1,6 +1,6 @@
 import type { Database as BetterSqliteDatabase } from 'better-sqlite3'
 import type { ListHistoryPageInput } from '../../../shared/schemas/history'
-import type { ClearOpenVikingHistoryResult, HistoryItemView, HistoryPageView } from '../../../shared/types/history'
+import type { HistoryItemView, HistoryPageView } from '../../../shared/types/history'
 import type { HistoryRepository } from '../../ports/HistoryRepository'
 
 /** 参数化 SQL 及按占位符顺序排列的绑定参数。 */
@@ -9,7 +9,7 @@ interface HistoryQuery {
   parameters: unknown[]
 }
 
-/** 使用 SQLite 合并生成运行、分析批次与 OpenViking 后台任务，并提供准确分页。 */
+/** 使用 SQLite 合并生成运行与分析批次，并提供准确分页。 */
 export class SqliteHistoryRepository implements HistoryRepository {
   /**
    * 创建任务记录仓储。
@@ -37,22 +37,10 @@ export class SqliteHistoryRepository implements HistoryRepository {
     return { items, total, page, pageSize: input.pageSize, totalPages }
   }
 
-  /**
-   * 删除成功、失败或已取消的 OpenViking 后台任务。
-   * @returns 实际删除数量；排队、运行和取消中的任务不受影响。
-   */
-  async clearTerminalOpenVikingTasks(): Promise<ClearOpenVikingHistoryResult> {
-    const result = this.client.prepare(`
-      DELETE FROM task_jobs
-      WHERE type IN ('sync_context_source', 'sync_openviking_session', 'sync_openviking_users')
-        AND status IN ('succeeded', 'failed', 'canceled')
-    `).run()
-    return { deleted: result.changes }
-  }
 }
 
 /**
- * 为生成运行、分析批次与 OpenViking 后台任务构造使用相同筛选语义的 UNION 查询。
+ * 为生成运行与分析批次构造使用相同筛选语义的 UNION 查询。
  * @param input 已校验的分页与筛选参数。
  * @returns 不含排序和分页、可复用于计数与取页的参数化查询。
  */
@@ -63,15 +51,6 @@ function buildHistoryQuery(input: ListHistoryPageInput): HistoryQuery {
   const batchParameters: unknown[] = []
   const analysisClauses: string[] = []
   const analysisParameters: unknown[] = []
-  const taskClauses: string[] = [
-    `task_jobs.type IN ('sync_context_source', 'sync_openviking_session', 'sync_openviking_users')`,
-  ]
-  const taskParameters: unknown[] = []
-  const taskKindExpression = `CASE task_jobs.type
-    WHEN 'sync_context_source' THEN 'openviking_source_sync'
-    WHEN 'sync_openviking_session' THEN 'openviking_session_sync'
-    ELSE 'openviking_user_sync'
-  END`
   const batchStatusExpression = `CASE
     WHEN SUM(CASE WHEN generation_runs.status = 'running' THEN 1 ELSE 0 END) > 0 THEN 'running'
     WHEN SUM(CASE WHEN generation_runs.status IN ('planning', 'awaiting_confirmation', 'queued') THEN 1 ELSE 0 END) > 0 THEN 'queued'
@@ -88,7 +67,6 @@ function buildHistoryQuery(input: ListHistoryPageInput): HistoryQuery {
     batchParameters.push(input.personaId)
     analysisClauses.push('analysis_batches.persona_id = ?')
     analysisParameters.push(input.personaId)
-    taskClauses.push('1 = 0')
   }
   if (input.kind) {
     runClauses.push('generation_runs.kind = ?')
@@ -96,8 +74,6 @@ function buildHistoryQuery(input: ListHistoryPageInput): HistoryQuery {
     if (input.kind !== 'interest_assessment') batchClauses.push('1 = 0')
     analysisClauses.push('analysis_batches.analysis_type = ?')
     analysisParameters.push(input.kind)
-    taskClauses.push(`${taskKindExpression} = ?`)
-    taskParameters.push(input.kind)
   }
   if (input.status) {
     runClauses.push('generation_runs.status = ?')
@@ -106,13 +82,10 @@ function buildHistoryQuery(input: ListHistoryPageInput): HistoryQuery {
     batchParameters.push(input.status)
     analysisClauses.push('analysis_batches.status = ?')
     analysisParameters.push(input.status)
-    taskClauses.push('task_jobs.status = ?')
-    taskParameters.push(input.status)
   }
   const runWhere = runClauses.length ? `WHERE ${runClauses.join(' AND ')}` : ''
   const batchWhere = batchClauses.length ? `WHERE ${batchClauses.join(' AND ')}` : ''
   const analysisWhere = analysisClauses.length ? `WHERE ${analysisClauses.join(' AND ')}` : ''
-  const taskWhere = `WHERE ${taskClauses.join(' AND ')}`
 
   return {
     sql: `
@@ -189,38 +162,8 @@ function buildHistoryQuery(input: ListHistoryPageInput): HistoryQuery {
       LEFT JOIN worlds ON worlds.id = analysis_batches.world_id
       LEFT JOIN personas ON personas.id = analysis_batches.persona_id
       ${analysisWhere}
-      UNION ALL
-      SELECT
-        'task' AS source_type,
-        task_jobs.id AS id,
-        ${taskKindExpression} AS kind,
-        'system' AS subject_type,
-        'openviking' AS subject_id,
-        'OpenViking' AS subject_name,
-        1 AS subject_exists,
-        task_jobs.status AS status,
-        CASE task_jobs.type
-          WHEN 'sync_context_source' THEN COALESCE(
-            (SELECT name FROM source_materials
-              WHERE id = json_extract(task_jobs.payload_json, '$.sourceId')),
-            (SELECT title FROM persona_feedback_sources
-              WHERE id = json_extract(task_jobs.payload_json, '$.sourceId')),
-            '已删除或未知资料'
-          )
-          WHEN 'sync_openviking_session' THEN CASE json_extract(task_jobs.payload_json, '$.sourceType')
-            WHEN 'run' THEN '生成任务 Session 同步'
-            ELSE '反馈 Session 同步'
-          END
-          ELSE '校准世界用户与人物 Peer'
-        END AS description,
-        '已尝试 ' || task_jobs.attempt_count || ' / ' || task_jobs.max_attempts || ' 次' AS secondary,
-        NULL AS error_code,
-        task_jobs.last_error AS error_message,
-        task_jobs.created_at AS created_at
-      FROM task_jobs
-      ${taskWhere}
     `,
-    parameters: [...runParameters, ...batchParameters, ...analysisParameters, ...taskParameters],
+    parameters: [...runParameters, ...batchParameters, ...analysisParameters],
   }
 }
 

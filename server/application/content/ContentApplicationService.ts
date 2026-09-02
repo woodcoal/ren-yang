@@ -863,7 +863,7 @@ export class ContentApplicationService {
   }
 
   /**
-   * 原子修改多项资料状态，再为每项资料分别创建可重试的 OpenViking 同步任务。
+   * 原子修改多项资料状态，再为每项资料分别保存可重试的 OpenViking 同步意图。
    * @param input 已校验的资料 UUID 集合和统一状态。
    * @returns 去重后的处理对象与新状态。
    */
@@ -885,7 +885,7 @@ export class ContentApplicationService {
   }
 
   /**
-   * 替换当前 Account 全局资料集合，并只为差异资料创建可重试同步任务。
+   * 替换当前 Account 全局资料集合，并只为差异资料保存可重试同步意图。
    * @param input 已校验的最终资料 UUID 集合。
    * @returns 最终集合及本次新增、移除差异。
    */
@@ -913,9 +913,9 @@ export class ContentApplicationService {
   }
 
   /**
-   * 仅在组合根启用 OpenViking 时创建持久同步任务，不在资料请求中联网。
+   * 仅在组合根启用 OpenViking 时保存持久同步意图，不在资料请求中联网。
    * @param sourceId 已成功保存、更新或删除的资料 UUID。
-   * @returns 排队完成时结束；能力关闭时直接结束。
+   * @returns 意图保存完成时结束；能力关闭时直接结束。
    */
   private async enqueueSourceSynchronization(sourceId: string): Promise<void> {
     if (!this.dependencies.contextSyncQueue) return
@@ -926,12 +926,12 @@ export class ContentApplicationService {
     )
   }
 
-  /** @param sourceIds 需要重新展开投影的资料 UUID。 @returns 全部持久任务创建完成时结束。 */
+  /** @param sourceIds 需要重新展开投影的资料 UUID。 @returns 全部同步意图保存完成时结束。 */
   private async enqueueSourceSynchronizations(sourceIds: string[]): Promise<void> {
     for (const sourceId of new Set(sourceIds)) await this.enqueueSourceSynchronization(sourceId)
   }
 
-  /** @returns OpenViking User 对账任务写入持久队列后结束；能力关闭时直接结束。 */
+  /** @returns OpenViking User 对账意图写入专属 outbox 后结束；能力关闭时直接结束。 */
   private async enqueueUserReconciliation(): Promise<void> {
     if (!this.dependencies.contextSyncQueue) return
     await this.dependencies.contextSyncQueue.enqueueUserReconciliation(

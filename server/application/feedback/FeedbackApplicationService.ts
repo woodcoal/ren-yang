@@ -234,7 +234,7 @@ export class FeedbackApplicationService {
     return value
   }
 
-  /** @param sourceId 人物反馈资料 UUID。 @returns 能力关闭时直接结束，否则排队投影任务。 */
+  /** @param sourceId 人物反馈资料 UUID。 @returns 能力关闭时直接结束，否则保存投影同步意图。 */
   private async enqueueFeedbackSourceSynchronization(sourceId: string): Promise<void> {
     if (!this.dependencies.contextSyncQueue) return
     await this.dependencies.contextSyncQueue.enqueueSourceSynchronization(

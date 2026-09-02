@@ -1,5 +1,5 @@
 import type { SourceRole } from '../domain/content/ContentModels'
-import type { ContextSyncRecordPageView, ContextSyncRecordView, ContextSyncSummaryView, OpenVikingSyncRuntimeView } from '../../shared/types/context'
+import type { ContextSyncRecordView, ContextSyncSummaryView, OpenVikingSyncRuntimeView } from '../../shared/types/context'
 
 /** OpenViking 同步使用的完整 SQLite 资料事实。 */
 export interface ContextSourceDocument {
@@ -39,7 +39,7 @@ export interface ContextSourceProjection {
   remoteUri: string
 }
 
-/** 可由持久任务定位的 OpenViking Resource 投影实体。 */
+/** 可由持久同步意图定位的 OpenViking Resource 投影实体。 */
 export type ContextProjectionEntityType = ContextSourceDocument['entityType']
 
 /** 一次人物检索允许访问的精确远端目标。 */
@@ -119,14 +119,6 @@ export interface PendingContextSessionSource {
   sourceId: string
 }
 
-/** 同步日志分页查询参数。 */
-export interface ListSyncRecordPageInput {
-  /** 从 1 开始的页码。 */
-  page: number
-  /** 每页记录数。 */
-  pageSize: 5 | 10 | 20 | 50 | 100
-}
-
 /** SQLite 上下文同步记录和资料目录端口。 */
 export interface ContextIndexRepository {
   /** @returns SQLite 当前全部世界 User；无世界人物统一使用 default，不创建额外 User。 */
@@ -159,8 +151,6 @@ export interface ContextIndexRepository {
   finalizePersonaFeedbackSourceDeletion(sourceId: string, timestamp: number): Promise<void>
   /** @returns 全部 OpenViking 同步记录。 */
   listSyncRecords(): Promise<ContextSyncRecordView[]>
-  /** @param input 分页参数。 @returns 最近更新在前的同步日志分页结果。 */
-  listSyncRecordsPage(input: ListSyncRecordPageInput): Promise<ContextSyncRecordPageView>
   /** @returns 当前同步失败记录数。 */
   countFailedSyncRecords(): Promise<number>
   /** @returns 当前失败分类和全局降级状态。 */

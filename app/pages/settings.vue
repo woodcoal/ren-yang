@@ -151,13 +151,13 @@ async function reindex(): Promise<void> {
   })
 }
 
-/** @returns 把全部需要处理的失败资料重新安排到持久队列。 */
+/** @returns 把全部需要处理的失败资料重新安排为可恢复同步意图。 */
 async function retryAllFailed(): Promise<void> {
   await executeAction(async () => {
     const response = await $fetch<ApiResponse<{ enqueued: number }>>('/api/v1/system/context/retry', {
       method: 'POST', body: { scope: 'all' },
     })
-    notifySuccess(`已重新安排 ${response.data.enqueued} 项资料；队列健康后会自动继续`, 'OpenViking 重试已安排')
+    notifySuccess(`已重新安排 ${response.data.enqueued} 项资料；OpenViking 恢复后会自动继续`, 'OpenViking 重试已安排')
   })
 }
 
@@ -240,7 +240,7 @@ async function executeAction(action: () => Promise<void>): Promise<void> {
           </div>
         </dl>
         <UAlert class="mt-5" color="neutral" title="SQLite 始终保存原始数据"
-          description="OpenViking 不可用时，新任务会改用本地全文搜索；远端同步任务会保留并在服务恢复后重试。已经创建的任务不会中途更换搜索方式。" />
+          description="OpenViking 不可用时，新任务会改用本地全文搜索；尚未送达的同步意图会在服务恢复后重试。已经创建的任务不会中途更换搜索方式。" />
         <UAlert v-if="syncRuntime?.state === 'degraded'" class="mt-4" color="warning" title="OpenViking 已进入自动降级"
           :description="syncRuntime.retryAfter === null
             ? `自动重试已停止：${syncRuntime.lastError ?? '需要管理员检查 OpenViking'}`
@@ -265,7 +265,7 @@ async function executeAction(action: () => Promise<void>): Promise<void> {
         <template #header>
           <h2 class="font-semibold text-highlighted">日志与审计</h2>
         </template>
-        <p class="text-sm text-muted">同步日志和关键管理动作已迁移到独立页面，通过服务端分页查看，避免系统中心堆积长列表。</p>
+        <p class="text-sm text-muted">OpenViking 操作直接读取其官方任务日志；关键管理动作使用本系统审计记录。</p>
         <dl class="mt-5 grid gap-3 text-sm">
           <div>
             <dt class="text-muted">当前同步失败</dt>
@@ -273,7 +273,7 @@ async function executeAction(action: () => Promise<void>): Promise<void> {
           </div>
           <div>
             <dt class="text-muted">记录范围</dt>
-            <dd class="mt-1">OpenViking 同步与系统审计</dd>
+            <dd class="mt-1">OpenViking 官方任务与系统审计</dd>
           </div>
         </dl>
         <UButton class="mt-5" to="/system-records" color="neutral" variant="soft" icon="i-lucide-scroll-text">查看日志与审计

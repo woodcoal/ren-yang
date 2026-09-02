@@ -3,7 +3,6 @@ import { z } from 'zod'
 /** 任务记录页支持的任务类型。 */
 export const historyKindSchema = z.enum([
   'interest_assessment', 'artifact_generation', 'world_growth', 'persona_growth', 'persona_memory',
-  'openviking_source_sync', 'openviking_session_sync', 'openviking_user_sync',
 ])
 
 /** 任务记录页支持的统一状态。 */
@@ -21,11 +20,6 @@ export const listHistoryPageSchema = z.object({
   personaId: z.string().uuid('人物标识无效').optional(),
   kind: historyKindSchema.optional(),
   status: historyStatusSchema.optional(),
-})
-
-/** 清理外部上下文终态任务前必须由管理员明确确认。 */
-export const clearContextHistorySchema = z.object({
-  confirmed: z.literal(true, { error: '清理 OpenViking 历史任务前必须明确确认' }),
 })
 
 /** 任务记录页查询输入。 */

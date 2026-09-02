@@ -635,7 +635,7 @@ export class LearningApplicationService {
     else await this.requirePersona(subjectId)
   }
 
-  /** @param sourceId 人物反馈资料 UUID。 @returns 能力关闭时直接结束，否则持久任务入队后结束。 */
+  /** @param sourceId 人物反馈资料 UUID。 @returns 能力关闭时直接结束，否则同步意图保存后结束。 */
   private async enqueueFeedbackSourceSynchronization(sourceId: string): Promise<void> {
     if (!this.dependencies.contextSyncQueue) return
     await this.dependencies.contextSyncQueue.enqueueSourceSynchronization(

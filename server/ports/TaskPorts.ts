@@ -1,8 +1,5 @@
 import type { TaskJob } from '../domain/tasks/TaskJob'
 
-/** Worker 领取任务时使用的固定执行通道。 */
-export type TaskQueueLane = 'all' | 'foreground' | 'openviking'
-
 /** 任务数据访问端口。 */
 export interface TaskJobRepository {
   /**
@@ -16,10 +13,9 @@ export interface TaskJobRepository {
    * 原子领取下一项可运行任务。
    * @param timestamp 当前 UTC Unix 毫秒。
    * @param leaseDurationMs 租约持续时间。
-   * @param lane 允许领取的任务通道；默认保留全部任务的既有行为。
    * @returns 成功领取的任务；无任务时返回 null。
    */
-  claimNext(timestamp: number, leaseDurationMs: number, lane?: TaskQueueLane): Promise<TaskJob | null>
+  claimNext(timestamp: number, leaseDurationMs: number): Promise<TaskJob | null>
 
   /**
    * 标记任务成功完成。

@@ -1,4 +1,4 @@
-/** OpenViking 同步任务在转入人工处理前允许的最大领取次数。 */
+/** OpenViking 同步意图在停止自动重试前允许的最大领取次数。 */
 export const OPEN_VIKING_SYNC_MAX_ATTEMPTS = 10
 
 /** 按连续失败次数递增的持久重试间隔。 */

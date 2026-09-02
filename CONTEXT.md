@@ -122,6 +122,10 @@ _避免使用_：年龄地点表单、人物记忆、长期人物设定
 在 SQLite 有效状态边界内检索任务相关参考资料的能力，可使用本地 FTS5 或 OpenViking；当前学习提示词不依赖检索。
 _避免使用_：事实源、记忆数据库、向量库
 
+**OpenViking 同步意图（OpenViking Sync Intent）**：
+SQLite 业务事实提交后、还没有成功送达 OpenViking 的最小可恢复请求。它只存在于 OpenViking 专属 outbox，不是业务任务或历史；成功或终止后立即移除。已被 OpenViking 受理的操作以其官方任务日志为状态记录。
+_避免使用_：OpenViking 业务任务、本地 OpenViking 历史、可清理队列
+
 ## 运行与产物
 
 **兴趣判断（Interest Assessment）**：

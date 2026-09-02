@@ -1,15 +1,15 @@
 import type { HistoryKind, HistoryStatus } from '../schemas/history'
 
-/** 任务记录页统一展示的一项生成运行、分析批次或 OpenViking 后台任务。 */
+/** 任务记录页统一展示的一项生成运行或分析批次。 */
 export interface HistoryItemView {
-  /** 三类任务记录的来源。 */
-  sourceType: 'run' | 'interest_batch' | 'analysis' | 'task'
-  /** 生成运行、分析批次或后台任务 UUID。 */
+  /** 三类业务记录的来源。 */
+  sourceType: 'run' | 'interest_batch' | 'analysis'
+  /** 生成运行或分析批次 UUID。 */
   id: string
   /** 任务类型。 */
   kind: HistoryKind
-  /** 任务所属人物、世界或系统能力。 */
-  subjectType: 'persona' | 'world' | 'system'
+  /** 任务所属人物或世界。 */
+  subjectType: 'persona' | 'world'
   /** 任务所属对象 UUID。 */
   subjectId: string
   /** 当前对象名称；对象已删除时返回稳定占位名称。 */
@@ -42,10 +42,4 @@ export interface HistoryPageView {
   pageSize: 5 | 10 | 20 | 50 | 100
   /** 总页数；空列表时仍为 1。 */
   totalPages: number
-}
-
-/** 清理 OpenViking 终态后台任务的结果。 */
-export interface ClearOpenVikingHistoryResult {
-  /** 实际删除的成功、失败或已取消任务数量。 */
-  deleted: number
 }

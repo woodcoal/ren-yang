@@ -231,6 +231,32 @@ export const taskJobs = sqliteTable(
   ],
 )
 
+/** 仅保存尚未送达 OpenViking 的可恢复同步意图；成功或终止后立即删除。 */
+export const openVikingSyncOutbox = sqliteTable(
+  'openviking_sync_outbox',
+  {
+    id: text('id').primaryKey(),
+    type: text('type').notNull(),
+    payloadJson: text('payload_json').notNull().default('{}'),
+    status: text('status').notNull().default('queued'),
+    attemptCount: integer('attempt_count').notNull().default(0),
+    maxAttempts: integer('max_attempts').notNull(),
+    availableAt: integer('available_at').notNull().default(0),
+    leaseUntil: integer('lease_until'),
+    lastError: text('last_error'),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  table => [
+    index('openviking_sync_outbox_status_available_index').on(table.status, table.availableAt, table.createdAt),
+    index('openviking_sync_outbox_lease_index').on(table.leaseUntil),
+    check('openviking_sync_outbox_type_check', sql`${table.type} IN ('sync_context_source', 'sync_openviking_users', 'sync_openviking_session')`),
+    check('openviking_sync_outbox_status_check', sql`${table.status} IN ('queued', 'running')`),
+    check('openviking_sync_outbox_attempt_check', sql`${table.attemptCount} >= 0`),
+    check('openviking_sync_outbox_max_attempts_check', sql`${table.maxAttempts} > 0`),
+  ],
+)
+
 /** OpenViking 写入异常时跨进程共享的熔断和恢复时间。 */
 export const openVikingSyncRuntime = sqliteTable(
   'openviking_sync_runtime',
@@ -1442,6 +1468,7 @@ export const databaseSchema = {
   systemAiSettings,
   openVikingSettings,
   openVikingSyncRuntime,
+  openVikingSyncOutbox,
   aiConnections,
   aiModelDeployments,
   taskJobs,

@@ -1,4 +1,4 @@
-import type { OpenVikingCapabilityView } from '../../shared/types/context'
+import type { OpenVikingCapabilityView, OpenVikingTaskView } from '../../shared/types/context'
 import type {
   ContextSessionExchange,
   ContextSourceProjection,
@@ -22,6 +22,8 @@ export interface OpenVikingPort {
   getCapability(): OpenVikingCapabilityView
   /** @returns 远端健康状态。 */
   checkHealth(): Promise<OpenVikingHealthResult>
+  /** @param limit 合并各受管 User 后最多返回的日志数。 @returns OpenViking 官方任务记录，新记录在前。 */
+  listTasks(limit: number): Promise<OpenVikingTaskView[]>
   /** @param force 是否绕过短期健康缓存。 @returns 处理队列可写时结束。 */
   checkWriteHealth(force?: boolean): Promise<void>
   /** @param userIds SQLite 当前应存在的世界 User。 @returns 创建缺失 User、删除孤立 User 后结束。 */
