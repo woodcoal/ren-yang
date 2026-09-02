@@ -63,10 +63,10 @@ test('侧栏分组可收缩、滚动条隐藏且页面具有浏览器标题', as
   await expect(page.locator('.sidebar-navigation')).toHaveCSS('scrollbar-width', 'none')
 })
 
-test('顶部与侧栏显示包含 OpenViking 在内的全部排队任务数量', async ({ page }) => {
+test('顶部与侧栏显示排队、执行和取消中的全部活动任务数量', async ({ page }) => {
   await enterApplication(page)
 
-  // 模拟健康摘要中同时存在排队、执行中和取消中的任务，验证顶部不会显示未终止任务总数。
+  // 模拟健康摘要中同时存在排队、执行中和取消中的任务，验证两个入口使用相同的未终止任务总数。
   await page.route('**/api/v1/system/health', async (route) => {
     await route.fulfill({
       contentType: 'application/json',
@@ -83,9 +83,9 @@ test('顶部与侧栏显示包含 OpenViking 在内的全部排队任务数量',
   })
 
   await page.waitForResponse(response => response.url().endsWith('/api/v1/system/health'))
-  await expect(page.locator('.topbar-status-link')).toHaveText('12 项待处理')
+  await expect(page.locator('.topbar-status-link')).toHaveText('16 项活动任务')
   await expect(page.locator('.topbar-status-dot')).toHaveClass(/topbar-status-dot--active/)
-  await expect(page.locator('a[href="/history"] .sidebar-navigation-count')).toHaveText('12')
+  await expect(page.locator('a[href="/history"] .sidebar-navigation-count')).toHaveText('16')
 })
 
 test('任务列表直接显示失败原因', async ({ page }) => {

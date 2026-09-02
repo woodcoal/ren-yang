@@ -94,8 +94,8 @@ function toggleNavigationGroup(label: string): void {
           >
             <UIcon :name="item.icon" class="sidebar-navigation-icon" aria-hidden="true" />
             <span class="sidebar-navigation-copy">{{ item.label }}</span>
-            <span v-if="item.to === '/history' && taskQueue?.queued" class="sidebar-navigation-count">
-              {{ taskQueue.queued }}
+            <span v-if="item.to === '/history' && taskQueue?.total" class="sidebar-navigation-count">
+              {{ taskQueue.total }}
             </span>
           </NuxtLink>
         </div>

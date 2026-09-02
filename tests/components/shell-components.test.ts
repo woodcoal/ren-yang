@@ -50,7 +50,7 @@ describe('后台品牌与主题组件', () => {
     expect(wrapper.find('.topbar-account').exists()).toBe(false)
   })
 
-  it('顶部栏显示包含 OpenViking 在内的全部排队任务数量', async () => {
+  it('顶部栏显示包含排队、执行和取消中状态的全部活动任务数量', async () => {
     const wrapper = await mountSuspended(AppTopbar, {
       props: {
         sidebarCollapsed: false,
@@ -60,7 +60,7 @@ describe('后台品牌与主题组件', () => {
       },
     })
 
-    expect(wrapper.get('.topbar-status-link').text()).toBe('12 项待处理')
+    expect(wrapper.get('.topbar-status-link').text()).toBe('16 项活动任务')
     expect(wrapper.get('.topbar-status-dot').classes()).toContain('topbar-status-dot--active')
   })
 
@@ -85,7 +85,7 @@ describe('后台品牌与主题组件', () => {
     expect(wrapper.findAll('.sidebar-navigation-items--expanded')).toHaveLength(2)
   })
 
-  it('侧栏任务记录显示包含 OpenViking 在内的全部排队任务数量', async () => {
+  it('侧栏任务记录显示包含排队、执行和取消中状态的全部活动任务数量', async () => {
     const wrapper = await mountSuspended(AppSidebar, {
       props: {
         collapsed: false,
@@ -96,7 +96,7 @@ describe('后台品牌与主题组件', () => {
       },
     })
 
-    expect(wrapper.get('a[href="/history"] .sidebar-navigation-count').text()).toBe('12')
+    expect(wrapper.get('a[href="/history"] .sidebar-navigation-count').text()).toBe('16')
   })
 
   it('页面标题保留面包屑但不再显示路由代码', async () => {
