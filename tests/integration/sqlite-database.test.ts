@@ -56,7 +56,7 @@ describe('SqliteDatabase', () => {
     ])
     expect(current.getClient().prepare(`
       SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations
-    `).get()).toEqual({ count: 14, version: 1790409600000 })
+    `).get()).toEqual({ count: 15, version: 1790496000000 })
     expect(current.getClient().prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name IN (
       'api_keys', 'public_api_idempotency_records', 'public_api_audit_events'
     ) ORDER BY name`).all()).toEqual([
@@ -104,6 +104,7 @@ describe('SqliteDatabase', () => {
     ]))
     expect(current.getClient().prepare(`PRAGMA table_info(ai_model_deployments)`).all()).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'thinking_control', notnull: 1, dflt_value: "'none'" }),
+      expect.objectContaining({ name: 'default_timeout_ms', notnull: 1, dflt_value: '60000' }),
     ]))
     expect(current.getClient().prepare(`PRAGMA table_info(image_assets)`).all()).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'original_relative_path', notnull: 0 }),
@@ -172,6 +173,7 @@ describe('SqliteDatabase', () => {
     client.prepare('ALTER TABLE analysis_batches DROP COLUMN auto_publish').run()
     client.prepare('DROP TABLE learning_automation_settings').run()
     client.prepare('ALTER TABLE openviking_settings DROP COLUMN account_id').run()
+    client.prepare('ALTER TABLE ai_model_deployments DROP COLUMN default_timeout_ms').run()
     client.prepare(`DELETE FROM __drizzle_migrations`).run()
     client.prepare(`INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)`).run(
       'legacy-latest-before-stable-persona-system-prompts',
@@ -187,7 +189,7 @@ describe('SqliteDatabase', () => {
     database = new SqliteDatabase({ dataDirectory, migrationsDirectory: resolve(process.cwd(), 'drizzle') })
     expect(database.getClient().prepare(`
       SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations
-    `).get()).toEqual({ count: 4, version: 1790409600000 })
+    `).get()).toEqual({ count: 5, version: 1790496000000 })
     expect(database.getClient().prepare(`
       SELECT p.code,
         instr(v.system_prompt_template, '{{personaPromptJson}}') > 0 AS persona_in_system,
@@ -205,7 +207,7 @@ describe('SqliteDatabase', () => {
     database = new SqliteDatabase({ dataDirectory, migrationsDirectory: resolve(process.cwd(), 'drizzle') })
     expect(database.getClient().prepare(`
       SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations
-    `).get()).toEqual({ count: 4, version: 1790409600000 })
+    `).get()).toEqual({ count: 5, version: 1790496000000 })
     expect(database.getClient().prepare('PRAGMA integrity_check').get()).toEqual({ integrity_check: 'ok' })
   })
 
@@ -281,11 +283,15 @@ describe('SqliteDatabase', () => {
     database = new SqliteDatabase({ dataDirectory, migrationsDirectory: resolve(process.cwd(), 'drizzle') })
     expect(database.getClient().prepare(`SELECT COUNT(*) AS count FROM ai_algorithms`).get()).toEqual({ count: 14 })
     expect(database.getClient().prepare(`
-      SELECT thinking_control FROM ai_model_deployments
+      SELECT thinking_control, default_timeout_ms FROM ai_model_deployments
       WHERE id = '10000000-0000-4000-8000-000000000002'
-    `).get()).toEqual({ thinking_control: 'none' })
+    `).get()).toEqual({ thinking_control: 'none', default_timeout_ms: 60_000 })
     expect(() => database.getClient().prepare(`
       UPDATE ai_model_deployments SET thinking_control = 'reasoning_effort_object'
+      WHERE id = '10000000-0000-4000-8000-000000000002'
+    `).run()).toThrow('CHECK constraint failed')
+    expect(() => database.getClient().prepare(`
+      UPDATE ai_model_deployments SET default_timeout_ms = 0
       WHERE id = '10000000-0000-4000-8000-000000000002'
     `).run()).toThrow('CHECK constraint failed')
     expect(database.getClient().prepare(`PRAGMA table_info(generation_runs)`).all()).toEqual(expect.arrayContaining([
@@ -331,7 +337,7 @@ describe('SqliteDatabase', () => {
     database = new SqliteDatabase({ dataDirectory, migrationsDirectory: resolve(process.cwd(), 'drizzle') })
     expect(database.getClient().prepare(`
       SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations
-    `).get()).toEqual({ count: 14, version: 1790409600000 })
+    `).get()).toEqual({ count: 15, version: 1790496000000 })
     expect(database.getClient().prepare(`SELECT COUNT(*) AS count FROM ai_algorithms`).get()).toEqual({ count: 14 })
     expect(database.getClient().prepare('PRAGMA foreign_key_check').all()).toEqual([])
     expect(database.getClient().prepare('PRAGMA integrity_check').get()).toEqual({ integrity_check: 'ok' })
@@ -407,7 +413,7 @@ describe('SqliteDatabase', () => {
     `).get()).toEqual({ name: '旧资料', content_text: '压平前正文。', is_enabled: 1 })
     expect(database.getClient().prepare(`
       SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations
-    `).get()).toEqual({ count: 29, version: 1790409600000 })
+    `).get()).toEqual({ count: 30, version: 1790496000000 })
     expect(database.getClient().prepare(`SELECT COUNT(*) AS count FROM ai_algorithms`).get()).toEqual({ count: 14 })
     expect(database.getClient().prepare(`PRAGMA table_info(generation_runs)`).all()).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'algorithm_snapshot_json', notnull: 0 }),

@@ -30,7 +30,7 @@ const validationError = shallowRef<string | null>(null)
 const form = reactive<PublishAiAlgorithmConfigurationInput>({
   steps: props.algorithm.stepDefinitions.map((definition) => {
     const active = props.algorithm.steps.find(step => step.key === definition.key)
-    const parameters = active?.parameters ?? { temperature: 0.2, maxOutputTokens: 4_096, timeoutMs: 60_000 }
+    const parameters = active?.parameters ?? { temperature: 0.2, maxOutputTokens: 4_096, timeoutMs: 0 }
     const textParameters = {
       ...parameters,
       disableThinking: parameters.disableThinking ?? false,
@@ -174,8 +174,8 @@ function submit(): void {
             <UInput :model-value="imageDimension(index, 'maxImageHeight')" class="w-full" type="number" min="64"
               max="8192" step="64" @update:model-value="updateImageDimension(index, 'maxImageHeight', $event)" />
           </UFormField>
-          <UFormField label="超时（毫秒）" required>
-            <UInput v-model.number="form.steps[index]!.parameters.timeoutMs" class="w-full" type="number" min="1000"
+          <UFormField label="超时（毫秒）" description="0 表示使用模型默认超时。" required>
+            <UInput v-model.number="form.steps[index]!.parameters.timeoutMs" class="w-full" type="number" min="0"
               max="120000" step="1000" />
           </UFormField>
         </div>

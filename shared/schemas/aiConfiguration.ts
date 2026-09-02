@@ -1,5 +1,8 @@
 import { z } from 'zod'
 
+/** 新建模型部署采用的默认请求超时毫秒数。 */
+export const DEFAULT_AI_MODEL_TIMEOUT_MS = 60_000
+
 /** 当前平台支持的 AI 接口协议。 */
 export const aiConnectionProtocolSchema = z.enum(['openai_compatible'], { error: 'AI 接口协议无效' })
 
@@ -54,6 +57,7 @@ export const saveAiModelDeploymentSchema = z.object({
   model: z.string().trim().min(1, '供应商模型标识不能为空').max(300),
   modality: aiModelModalitySchema,
   thinkingControl: aiThinkingControlModeSchema.optional(),
+  defaultTimeoutMs: z.number().int().min(1_000).max(120_000).default(DEFAULT_AI_MODEL_TIMEOUT_MS),
   isEnabled: z.boolean().default(true),
 })
 
@@ -61,7 +65,7 @@ export const saveAiModelDeploymentSchema = z.object({
 export const aiAlgorithmStepParametersSchema = z.object({
   temperature: z.number().min(0).max(2),
   maxOutputTokens: z.number().int().min(0),
-  timeoutMs: z.number().int().min(1_000).max(120_000),
+  timeoutMs: z.number().int().min(0).max(120_000),
   disableThinking: z.boolean().optional(),
   maxImageWidth: z.number().int().min(64).max(8_192).optional(),
   maxImageHeight: z.number().int().min(64).max(8_192).optional(),
@@ -81,7 +85,10 @@ export const publishAiAlgorithmConfigurationSchema = z.object({
 
 export type CreateAiConnectionInput = z.infer<typeof createAiConnectionSchema>
 export type UpdateAiConnectionInput = z.infer<typeof updateAiConnectionSchema>
-export type SaveAiModelDeploymentInput = z.infer<typeof saveAiModelDeploymentSchema>
+/** 模型部署接口允许省略带默认值的字段。 */
+export type SaveAiModelDeploymentInput = z.input<typeof saveAiModelDeploymentSchema>
+/** 模型部署表单和持久层使用的完整校验结果。 */
+export type ValidatedAiModelDeploymentInput = z.output<typeof saveAiModelDeploymentSchema>
 export type AiAlgorithmStepParameters = z.infer<typeof aiAlgorithmStepParametersSchema>
 export type AiThinkingControlMode = z.infer<typeof aiThinkingControlModeSchema>
 export type PublishAiAlgorithmConfigurationInput = z.infer<typeof publishAiAlgorithmConfigurationSchema>

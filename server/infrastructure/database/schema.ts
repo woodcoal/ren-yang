@@ -183,6 +183,7 @@ export const aiModelDeployments = sqliteTable(
     model: text('model').notNull(),
     modality: text('modality').notNull(),
     thinkingControl: text('thinking_control').notNull().default('none'),
+    defaultTimeoutMs: integer('default_timeout_ms').notNull().default(60_000),
     isEnabled: integer('is_enabled').notNull().default(1),
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull(),
@@ -194,6 +195,7 @@ export const aiModelDeployments = sqliteTable(
     check('ai_model_deployments_model_check', sql`length(trim(${table.model})) > 0`),
     check('ai_model_deployments_modality_check', sql`${table.modality} IN ('text', 'image')`),
     check('ai_model_deployments_thinking_control_check', sql`${table.thinkingControl} IN ('none', 'enable_thinking', 'reasoning_effort', 'reasoning')`),
+    check('ai_model_deployments_default_timeout_check', sql`${table.defaultTimeoutMs} BETWEEN 1000 AND 120000`),
     check('ai_model_deployments_enabled_check', sql`${table.isEnabled} IN (0, 1)`),
   ],
 )

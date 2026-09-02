@@ -41,6 +41,8 @@ export interface SaveAiModelDeploymentRecord {
   modality: 'text' | 'image'
   /** 文本步骤请求关闭思考时采用的供应商格式；图片部署固定为 none。 */
   thinkingControl: AiThinkingControlMode
+  /** 算法步骤未明确设置超时时使用的默认请求超时毫秒数。 */
+  defaultTimeoutMs: number
   /** 是否启用。 */
   isEnabled: boolean
   /** 本次写入时间。 */

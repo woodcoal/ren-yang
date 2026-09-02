@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, reactive, shallowRef } from 'vue'
 import {
+  DEFAULT_AI_MODEL_TIMEOUT_MS,
   saveAiModelDeploymentSchema,
   type AiThinkingControlMode,
   type SaveAiModelDeploymentInput,
+  type ValidatedAiModelDeploymentInput,
 } from '#shared/schemas/aiConfiguration'
 import type { AiConnectionView, AiModelDeploymentView } from '#shared/types/aiConfiguration'
 
@@ -28,12 +30,13 @@ const connectionItems = computed(() => props.connections.map(connection => ({
   label: connection.isEnabled ? connection.name : `${connection.name}（未启用）`,
   value: connection.id,
 })))
-const form = reactive<SaveAiModelDeploymentInput>({
+const form = reactive<ValidatedAiModelDeploymentInput>({
   connectionId: props.deployment?.connectionId ?? props.connections.find(item => item.isEnabled)?.id ?? '',
   name: props.deployment?.name ?? '',
   model: props.deployment?.model ?? '',
   modality: props.deployment?.modality ?? 'text',
   thinkingControl: props.deployment?.thinkingControl ?? 'none',
+  defaultTimeoutMs: props.deployment?.defaultTimeoutMs ?? DEFAULT_AI_MODEL_TIMEOUT_MS,
   isEnabled: props.deployment?.isEnabled ?? true,
 })
 /** 文本模型关闭思考字段始终向下拉框提供有效选项值，避免可选 API 输入破坏双向绑定。 */
@@ -80,6 +83,10 @@ function submit(): void {
           { label: 'reasoning_effort: none', value: 'reasoning_effort' },
           { label: 'reasoning: { enabled: false }', value: 'reasoning' },
         ]" />
+      </UFormField>
+      <UFormField label="默认超时（毫秒）" description="算法步骤超时为 0 时使用此值。" required>
+        <UInput v-model.number="form.defaultTimeoutMs" class="w-full" type="number" min="1000" max="120000"
+          step="1000" />
       </UFormField>
       <UCheckbox v-model="form.isEnabled" label="允许新算法配置使用此模型" />
       <div class="flex flex-wrap gap-2">

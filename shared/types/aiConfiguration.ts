@@ -42,6 +42,8 @@ export interface AiModelDeploymentView {
   modality: 'text' | 'image'
   /** 文本算法关闭思考时发送的供应商请求格式；图片模型始终为 none。 */
   thinkingControl: AiThinkingControlMode
+  /** 算法步骤超时为零时使用的默认请求超时毫秒数。 */
+  defaultTimeoutMs: number
   /** 是否允许新算法配置使用。 */
   isEnabled: boolean
   /** 创建时间。 */

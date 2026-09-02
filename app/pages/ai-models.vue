@@ -299,6 +299,7 @@ async function checkDeployment(deployment: AiModelDeploymentView): Promise<void>
               <span class="log-row-meta">{{ deployment.modality === 'text' ? '文本模型' : '图片模型' }}</span>
               <div class="log-row-main"><strong class="log-row-title">{{ deployment.name }}</strong>
                 <p class="text-sm text-muted">{{ connectionName(deployment.connectionId) }} · {{ deployment.model }}</p>
+                <p class="text-xs text-muted">默认超时：{{ deployment.defaultTimeoutMs }} 毫秒</p>
               </div>
               <div class="log-row-end flex flex-wrap items-center justify-end gap-2">
                 <UBadge :color="deployment.isEnabled ? 'success' : 'neutral'" variant="subtle">{{ deployment.isEnabled ?

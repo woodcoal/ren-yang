@@ -11,6 +11,7 @@ import type { SystemAiSettingsValues } from '../../shared/schemas/systemAi'
 import AiAlgorithmsPage from '../../app/pages/ai-algorithms.vue'
 import AiModelsPage from '../../app/pages/ai-models.vue'
 import AiModelDeploymentEditor from '../../app/components/aiConfiguration/AiModelDeploymentEditor.vue'
+import AiAlgorithmConfigurationCard from '../../app/components/aiConfiguration/AiAlgorithmConfigurationCard.vue'
 
 /** 页面测试使用的脱敏接口连接。 */
 const connection: AiConnectionView = {
@@ -24,6 +25,7 @@ const connection: AiConnectionView = {
 const deployment: AiModelDeploymentView = {
   id: '10000000-0000-4000-8000-000000000002', connectionId: connection.id,
   name: '成长模型', model: 'growth-model', modality: 'text', thinkingControl: 'reasoning_effort', isEnabled: true,
+  defaultTimeoutMs: 60_000,
   createdAt: 1_000, updatedAt: 1_000,
 }
 
@@ -31,6 +33,7 @@ const deployment: AiModelDeploymentView = {
 const imageDeployment: AiModelDeploymentView = {
   id: '10000000-0000-4000-8000-000000000003', connectionId: connection.id,
   name: '图片模型', model: 'image-model', modality: 'image', thinkingControl: 'none', isEnabled: true,
+  defaultTimeoutMs: 60_000,
   createdAt: 1_000, updatedAt: 1_000,
 }
 
@@ -358,14 +361,46 @@ describe('AI 模型与算法配置页面', () => {
     expect(editor.text()).not.toContain('reasoning: { effort: none }')
     editor.vm.$emit('save', {
       connectionId: connection.id, name: '关闭思考模型', model: 'reasoning-model', modality: 'text',
-      thinkingControl: 'reasoning_effort', isEnabled: true,
+      thinkingControl: 'reasoning_effort', defaultTimeoutMs: 90_000, isEnabled: true,
     })
     await flushPromises()
 
     expect(savedDeployment).toEqual({
       connectionId: connection.id, name: '关闭思考模型', model: 'reasoning-model', modality: 'text',
-      thinkingControl: 'reasoning_effort', isEnabled: true,
+      thinkingControl: 'reasoning_effort', defaultTimeoutMs: 90_000, isEnabled: true,
     })
+  })
+
+  it('新模型部署默认使用六十秒超时并允许单独设置', async () => {
+    const wrapper = await mountSuspended(AiModelDeploymentEditor, {
+      props: { connections: [connection], deployment: null, loading: false },
+    })
+    const textInputs = wrapper.findAll('input[type="text"]')
+    await textInputs[0]!.setValue('新模型')
+    await textInputs[1]!.setValue('new-model')
+    const timeoutInput = wrapper.get('input[type="number"]')
+    expect(timeoutInput.element.value).toBe('60000')
+    await timeoutInput.setValue(90_000)
+    await wrapper.get('form[data-ai-deployment-form]').trigger('submit')
+
+    expect(wrapper.emitted('save')?.[0]?.[0]).toEqual(expect.objectContaining({ defaultTimeoutMs: 90_000 }))
+  })
+
+  it('未配置算法的新步骤默认以零超时继承模型设置', async () => {
+    const wrapper = await mountSuspended(AiAlgorithmConfigurationCard, {
+      props: {
+        algorithm: { ...algorithm, activeConfigurationVersion: null, configurationVersionCount: 0, steps: [] },
+        deployments: [deployment], loading: false,
+      },
+    })
+    const timeoutInput = wrapper.findAll('input[type="number"]').at(-1)!
+    expect(timeoutInput.element.value).toBe('0')
+    expect(timeoutInput.attributes('min')).toBe('0')
+    expect(wrapper.text()).toContain('0 表示使用模型默认超时')
+    await wrapper.get('form[data-ai-algorithm-form]').trigger('submit')
+
+    const input = wrapper.emitted('save')?.[0]?.[0] as PublishAiAlgorithmConfigurationInput | undefined
+    expect(input?.steps.every(step => step.parameters.timeoutMs === 0)).toBe(true)
   })
 
   it('展示固定步骤和提示词绑定，并提交全部模型与参数作为新版本', async () => {

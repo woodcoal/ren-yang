@@ -137,7 +137,7 @@ export class AiAlgorithmApplicationService {
         modality: definitionStep.modality,
         promptCode: definitionStep.promptCode,
         promptVersionId: promptVersions[definitionStep.promptCode]!,
-        parameters: configuredStep.parameters,
+        parameters: resolveStepParameters(configuredStep.parameters, deployment.defaultTimeoutMs),
         thinkingDisableMode,
       }
     }))
@@ -377,6 +377,22 @@ export class AiAlgorithmApplicationService {
  */
 function buildTextModelParameters(parameters: AiAlgorithmStepParameters) {
   return { ...ALGORITHM_PARAMETER_DEFAULTS, ...parameters }
+}
+
+/**
+ * 在任务快照创建时把零超时解析为模型部署默认值，避免后续配置变化影响旧任务。
+ * @param parameters 当前算法配置版本保存的步骤参数。
+ * @param modelDefaultTimeoutMs 当前模型部署的默认请求超时毫秒数。
+ * @returns 已固定实际超时的步骤参数副本。
+ */
+function resolveStepParameters(
+  parameters: AiAlgorithmStepParameters,
+  modelDefaultTimeoutMs: number,
+): AiAlgorithmStepParameters {
+  return {
+    ...parameters,
+    timeoutMs: parameters.timeoutMs === 0 ? modelDefaultTimeoutMs : parameters.timeoutMs,
+  }
 }
 
 /**

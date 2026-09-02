@@ -158,6 +158,41 @@ describe('AI 接口、模型部署与算法配置', () => {
     }).success).toBe(false)
   })
 
+  it('算法超时为零时继承模型默认值，正数仍显式覆盖', async () => {
+    const { service, algorithms, modelFactory } = createServices()
+    const connection = await service.createConnection({
+      name: '超时配置接口', protocol: 'openai_compatible', endpoint: 'https://timeout.example/v1',
+      apiKey: 'timeout-secret', isEnabled: true,
+    })
+    const deployment = await service.createModelDeployment({
+      connectionId: connection.id, name: '超时配置模型', model: 'timeout-model', modality: 'text',
+      defaultTimeoutMs: 75_000, isEnabled: true,
+    })
+    expect(deployment.defaultTimeoutMs).toBe(75_000)
+
+    await service.publishAlgorithmConfiguration('persona_soul', {
+      steps: [{
+        stepKey: 'organize', modelDeploymentId: deployment.id,
+        parameters: { temperature: 0.2, maxOutputTokens: 4_096, timeoutMs: 0 },
+      }],
+    })
+    const inheritedSnapshot = await algorithms.prepare('persona_soul')
+    expect(inheritedSnapshot.steps[0]?.parameters.timeoutMs).toBe(75_000)
+    await algorithms.executeStep(
+      inheritedSnapshot, 'organize', { promptTextJson: '"继承超时"' }, 'soul_prompt_analysis', 'json_object',
+    )
+    expect(modelFactory.requests.at(-1)?.parameters.timeoutMs).toBe(75_000)
+
+    await service.publishAlgorithmConfiguration('persona_soul', {
+      steps: [{
+        stepKey: 'organize', modelDeploymentId: deployment.id,
+        parameters: { temperature: 0.2, maxOutputTokens: 4_096, timeoutMs: 30_000 },
+      }],
+    })
+    const overriddenSnapshot = await algorithms.prepare('persona_soul')
+    expect(overriddenSnapshot.steps[0]?.parameters.timeoutMs).toBe(30_000)
+  })
+
   it('把关闭思考格式和零输出 Token 固定到文本算法步骤快照', async () => {
     const { service, algorithms, modelFactory } = createServices()
     const connection = await service.createConnection({

@@ -200,7 +200,7 @@ export class AiConfigurationApplicationService {
             ...step,
             modelDeploymentId: active.steps.find(item => item.stepKey === step.key)?.modelDeploymentId ?? '',
             parameters: active.steps.find(item => item.stepKey === step.key)?.parameters
-              ?? { temperature: 0.2, maxOutputTokens: 4_096, timeoutMs: 60_000 },
+              ?? { temperature: 0.2, maxOutputTokens: 4_096, timeoutMs: 0 },
           }))
           : [],
         configurationVersionCount: versionCount,
