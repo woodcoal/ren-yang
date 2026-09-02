@@ -83,7 +83,12 @@ class FixedPersonaDistillationAlgorithms {
       : []
     const requirement = inputs.find(input => input.inputType === 'user_statement')
     const structuredOutput = stepKey === 'classify_sources'
-      ? { sources: [] }
+      ? { sources: inputs.filter(input => input.inputType === 'source_material').map(input => ({
+          inputId: input.id,
+          sourceRelation: 'third_party',
+          coverageDimensions: ['conversations'],
+          independentSourceKey: `model:${input.id}`,
+        })) }
       : stepKey === 'extract_claims'
         ? { claims: [{
             category: 'mental_model',
@@ -155,6 +160,39 @@ afterEach(() => {
 })
 
 describe('人物蒸馏应用闭环', () => {
+  it('创建运行时固定资料来源元数据并按原始来源键进行同源分组', async () => {
+    const sourceId = '70000000-0000-4000-8000-000000000001'
+    database.getClient().prepare(`
+      INSERT INTO source_materials (
+        id, name, role, input_type, content_hash, content_text, original_file_path,
+        origin_url, author_name, published_at, original_source_key, created_at, updated_at
+      ) VALUES (?, '人物访谈转载', 'reference', 'paste', ?, '完整访谈正文。', NULL, ?, ?, ?, ?, 1000, 1000)
+    `).run(
+      sourceId,
+      'd'.repeat(64),
+      'https://example.com/interview-copy',
+      '受访者',
+      1_700_000_000_000,
+      'interview:original:2023',
+    )
+
+    const created = await service.createRun({
+      requestedName: '顾岚',
+      objective: '提炼判断方式。',
+      worldId: null,
+      sourceIds: [sourceId],
+    })
+
+    await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: true })
+    const assessed = await service.getRun(created.id)
+    expect(assessed.inputs.find(input => input.sourceId === sourceId)).toMatchObject({
+      independentSourceKey: 'interview:original:2023',
+      originUrl: 'https://example.com/interview-copy',
+      authorName: '受访者',
+      publishedAt: 1_700_000_000_000,
+    })
+  })
+
   it('无资料人物经过两个检查点、四步算法和哈希门禁后创建当前灵魂版本', async () => {
     const created = await service.createRun({
       requestedName: '顾岚',

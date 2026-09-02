@@ -687,8 +687,9 @@ export class SqliteContentRepository implements ContentRepository, SoulRepositor
     this.client.transaction(() => {
       this.client.prepare(`
         INSERT INTO source_materials (
-          id, name, role, input_type, content_hash, content_text, original_file_path, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          id, name, role, input_type, content_hash, content_text, original_file_path,
+          origin_url, author_name, published_at, original_source_key, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         record.id,
         record.name,
@@ -697,6 +698,10 @@ export class SqliteContentRepository implements ContentRepository, SoulRepositor
         record.contentHash,
         record.contentText,
         record.originalFilePath,
+        record.originUrl,
+        record.authorName,
+        record.publishedAt,
+        record.originalSourceKey,
         record.timestamp,
         record.timestamp,
       )
@@ -721,7 +726,8 @@ export class SqliteContentRepository implements ContentRepository, SoulRepositor
       const updated = this.client.prepare(`
         UPDATE source_materials
         SET name = ?, role = ?, input_type = ?, content_hash = ?, content_text = ?,
-            original_file_path = ?, updated_at = ?
+            original_file_path = ?, origin_url = ?, author_name = ?, published_at = ?,
+            original_source_key = ?, updated_at = ?
         WHERE id = ?
       `).run(
         record.name,
@@ -730,6 +736,10 @@ export class SqliteContentRepository implements ContentRepository, SoulRepositor
         record.contentHash,
         record.contentText,
         record.originalFilePath,
+        record.originUrl,
+        record.authorName,
+        record.publishedAt,
+        record.originalSourceKey,
         record.timestamp,
         record.id,
       )
@@ -1169,6 +1179,10 @@ function toSource(value: unknown): SourceMaterialRecord {
     contentHash: String(row.content_hash),
     contentText: String(row.content_text),
     originalFilePath: row.original_file_path === null ? null : String(row.original_file_path),
+    originUrl: row.origin_url === null ? null : String(row.origin_url),
+    authorName: row.author_name === null ? null : String(row.author_name),
+    publishedAt: row.published_at === null ? null : Number(row.published_at),
+    originalSourceKey: row.original_source_key === null ? null : String(row.original_source_key),
     isEnabled: Number(row.is_enabled) === 1,
     createdAt: Number(row.created_at),
     updatedAt: Number(row.updated_at),

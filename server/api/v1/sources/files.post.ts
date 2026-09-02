@@ -23,6 +23,10 @@ async function handleImportSourceFile(event: H3Event) {
       name: readTextPart(parts, 'name'),
       role: readTextPart(parts, 'role'),
       targets: readJsonPart(parts, 'targets'),
+      originUrl: readTextPart(parts, 'originUrl'),
+      authorName: readTextPart(parts, 'authorName'),
+      publishedAt: readTextPart(parts, 'publishedAt'),
+      originalSourceKey: readTextPart(parts, 'originalSourceKey'),
     })
     const files = parts.filter(part => part.name === 'file' && part.filename)
     const file = files[0]

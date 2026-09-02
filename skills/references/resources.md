@@ -98,11 +98,17 @@
   "name": "资料名称",
   "role": "reference",
   "content": "资料正文",
+  "originUrl": "https://example.com/interviews/original",
+  "authorName": "作者或发言者",
+  "publishedAt": "2026-09-03T08:00:00Z",
+  "originalSourceKey": "interview:original:2026-09-03",
   "targets": [
     { "targetType": "persona", "targetId": "<人物用户名、邮箱或 UUID>" }
   ]
 }
 ```
+
+四个来源字段均可省略或传 `null`。能够定位原始页面时填写 `originUrl`；`authorName` 保存作者或发言者；`publishedAt` 使用带时区的 ISO 8601 时间。`originalSourceKey` 标识原始作品、访谈或事件，同一内容的转载、节选和分段必须复用同一稳定值，使人物蒸馏按一个独立来源计数。修改资料时省略来源字段会保留现值，显式传 `null` 才会清除。
 
 建立单条关系时可增加 `priority`（0–10000，默认 100）：
 
@@ -123,8 +129,12 @@ curl --fail-with-body \
   -F 'file=@/absolute/path/material.md;type=text/markdown' \
   -F 'name=资料名称' \
   -F 'role=reference' \
+  -F 'originUrl=https://example.com/interviews/original' \
+  -F 'authorName=作者或发言者' \
+  -F 'publishedAt=2026-09-03T08:00:00Z' \
+  -F 'originalSourceKey=interview:original:2026-09-03' \
   -F 'targets=[{"targetType":"persona","targetId":"<人物用户名、邮箱或 UUID>"}]' \
   "${REN_YANG_API_BASE_URL%/}/api/v2/sources/files"
 ```
 
-只上传 `.txt` 或 `.md`，`targets` 是 JSON 数组字符串。不要把人物灵魂、成长提示词或记忆提示词误建成普通资料。
+只上传 `.txt` 或 `.md`，`targets` 是 JSON 数组字符串；四个来源字段按需添加。人物灵魂、成长提示词和记忆提示词使用各自专用接口，普通资料只保存可追溯的外部正文。

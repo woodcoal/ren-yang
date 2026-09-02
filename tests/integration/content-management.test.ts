@@ -713,9 +713,21 @@ describe('人物、世界与资料管理闭环', () => {
       fileName: 'canon.md',
       mediaType: 'text/markdown',
       bytes: new TextEncoder().encode('# 校规\n\n魔法学院禁止在夜间施法。\n\n# 地点\n\n图书馆位于北塔。'),
+      originUrl: 'https://example.com/canon',
+      authorName: '学院档案室',
+      publishedAt: 1_700_000_000_000,
+      originalSourceKey: 'academy:canon:v1',
     })
     const originalPath = imported.source.originalFilePath!
-    expect(imported.source).toMatchObject({ inputType: 'markdown', chunkCount: 2, linkCount: 0 })
+    expect(imported.source).toMatchObject({
+      inputType: 'markdown',
+      chunkCount: 2,
+      linkCount: 0,
+      originUrl: 'https://example.com/canon',
+      authorName: '学院档案室',
+      publishedAt: 1_700_000_000_000,
+      originalSourceKey: 'academy:canon:v1',
+    })
     expect(existsSync(resolve(temporaryDirectory, originalPath))).toBe(true)
 
     await expect(service.searchSources('魔法学院', 10)).resolves.toEqual([
@@ -732,7 +744,14 @@ describe('人物、世界与资料管理闭环', () => {
       role: 'canon_fact',
       content: '# 新校规\n\n魔法学院允许在导师监督下夜间施法。',
     })
-    expect(updated.source).toMatchObject({ inputType: 'paste', originalFilePath: null })
+    expect(updated.source).toMatchObject({
+      inputType: 'paste',
+      originalFilePath: null,
+      originUrl: 'https://example.com/canon',
+      authorName: '学院档案室',
+      publishedAt: 1_700_000_000_000,
+      originalSourceKey: 'academy:canon:v1',
+    })
     expect(existsSync(resolve(temporaryDirectory, originalPath))).toBe(false)
     await expect(service.searchSources('禁止在夜间', 10)).resolves.toEqual([])
 

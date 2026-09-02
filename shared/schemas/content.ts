@@ -204,11 +204,43 @@ export const createSoulDraftFromVersionSchema = z.object({
   versionId: z.string().uuid('历史版本标识无效'),
 })
 
+/** 可选资料来源地址；空字符串按显式空值处理。 */
+const sourceOriginUrlSchema = z.preprocess(
+  value => value === '' ? null : value,
+  z.url('资料来源地址无效').max(2_000, '资料来源地址不能超过 2000 字').nullable(),
+).optional()
+
+/** 可选资料作者或发言者；空字符串按显式空值处理。 */
+const sourceAuthorNameSchema = z.preprocess(
+  value => value === '' ? null : value,
+  z.string().trim().min(1, '资料作者不能为空').max(300, '资料作者不能超过 300 字').nullable(),
+).optional()
+
+/** 可选资料发表时间；公共接口可传带时区 ISO 8601，内部调用可传 Unix 毫秒。 */
+const sourcePublishedAtSchema = z.preprocess(
+  value => value === '' ? null : value,
+  z.union([
+    z.number().int('资料发表时间必须是整数毫秒').nonnegative('资料发表时间不能为负数'),
+    z.iso.datetime({ offset: true, error: '资料发表时间必须是带时区的 ISO 8601 时间' })
+      .transform(value => Date.parse(value)),
+  ]).nullable(),
+).optional()
+
+/** 可选原始来源稳定键；同一作品、访谈或事件的转载与切片应复用同一值。 */
+const sourceOriginalSourceKeySchema = z.preprocess(
+  value => value === '' ? null : value,
+  z.string().trim().min(1, '原始来源键不能为空').max(500, '原始来源键不能超过 500 字').nullable(),
+).optional()
+
 /** 创建粘贴文本资料的输入。 */
 export const createSourceSchema = z.object({
   name: z.string().trim().min(1, '资料名称不能为空').max(200, '资料名称不能超过 200 字'),
   role: sourceRoleSchema,
   content: z.string().min(1, '资料正文不能为空').max(2_000_000, '资料正文不能超过 2000000 字'),
+  originUrl: sourceOriginUrlSchema,
+  authorName: sourceAuthorNameSchema,
+  publishedAt: sourcePublishedAtSchema,
+  originalSourceKey: sourceOriginalSourceKeySchema,
 })
 
 /** 创建资料时可同时建立的人物或世界关联。 */
@@ -227,6 +259,10 @@ export const importSourceFileMetadataSchema = z.object({
   name: z.string().trim().min(1, '资料名称不能为空').max(200, '资料名称不能超过 200 字'),
   role: sourceRoleSchema,
   targets: z.array(sourceCreationTargetSchema).default([]),
+  originUrl: sourceOriginUrlSchema,
+  authorName: sourceAuthorNameSchema,
+  publishedAt: sourcePublishedAtSchema,
+  originalSourceKey: sourceOriginalSourceKeySchema,
 })
 
 /** 修改资料元数据与正文的输入。 */

@@ -50,12 +50,26 @@ describe('公共 API v2 人物标识契约', () => {
   })
 
   it('资料关系仅在人物目标中接受别名，世界目标继续要求 UUID', () => {
-    expect(publicCreateSourceWithTargetsSchema.parse({
+    const parsed = publicCreateSourceWithTargetsSchema.parse({
       name: '资料', role: 'reference', content: '正文',
+      originUrl: 'https://example.com/interview',
+      authorName: '受访者',
+      publishedAt: '2026-09-03T08:00:00Z',
+      originalSourceKey: 'interview:2026-09-03',
       targets: [{ targetType: 'persona', targetId: 'LinMo' }],
-    }).targets).toEqual([{ targetType: 'persona', targetId: 'linmo' }])
+    })
+    expect(parsed).toMatchObject({
+      originUrl: 'https://example.com/interview',
+      authorName: '受访者',
+      publishedAt: Date.parse('2026-09-03T08:00:00Z'),
+      originalSourceKey: 'interview:2026-09-03',
+      targets: [{ targetType: 'persona', targetId: 'linmo' }],
+    })
     expect(publicCreateSourceLinkSchema.parse({ targetType: 'persona', targetId: 'linmo@example.com' }))
       .toMatchObject({ targetType: 'persona', targetId: 'linmo@example.com', priority: 100 })
+    expect(() => publicCreateSourceWithTargetsSchema.parse({
+      name: '资料', role: 'reference', content: '正文', publishedAt: '2026-09-03',
+    })).toThrow('资料发表时间必须是带时区的 ISO 8601 时间')
     expect(() => publicCreateSourceLinkSchema.parse({ targetType: 'world', targetId: 'not-a-uuid' })).toThrow()
   })
 })

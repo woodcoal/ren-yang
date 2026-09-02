@@ -106,6 +106,21 @@ describe('公共 OpenAPI 契约', () => {
     expect(document.components.schemas.CreateGenerationRun).toMatchObject({
       properties: { personaId: { $ref: '#/components/schemas/PersonaIdentifier' } },
     })
+    expect(document.components.schemas.CreateSource).toMatchObject({
+      properties: {
+        originUrl: { type: ['string', 'null'], format: 'uri' },
+        authorName: { type: ['string', 'null'] },
+        publishedAt: { type: ['string', 'null'], format: 'date-time' },
+        originalSourceKey: { type: ['string', 'null'] },
+      },
+    })
+    expect(document.components.schemas.SourceFileForm).toMatchObject({
+      properties: {
+        originUrl: { type: 'string', format: 'uri' },
+        publishedAt: { type: 'string', format: 'date-time' },
+        originalSourceKey: { type: 'string' },
+      },
+    })
     expect(document.components.schemas.CreateSynchronousInterestBatch).toMatchObject({
       properties: { waitTimeoutMs: { type: 'integer', minimum: 1_000, maximum: 120_000, default: 30_000 } },
     })

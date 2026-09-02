@@ -82,6 +82,14 @@ export interface ImportSourceFileInput {
   mediaType?: string
   /** 文件原始字节。 */
   bytes: Uint8Array
+  /** 可选原始来源地址。 */
+  originUrl?: string | null
+  /** 可选作者或发言者。 */
+  authorName?: string | null
+  /** 可选发表或发生时间，UTC Unix 毫秒。 */
+  publishedAt?: number | null
+  /** 同一作品、访谈或事件跨转载与切片复用的稳定键。 */
+  originalSourceKey?: string | null
   /** 创建资料时同时建立的可选人物和世界关联。 */
   targets?: SourceCreationTarget[]
 }
@@ -795,6 +803,10 @@ export class ContentApplicationService {
       contentHash: this.dependencies.sourceProcessor.hash(content),
       contentText: content,
       originalFilePath: null,
+      originUrl: input.originUrl ?? null,
+      authorName: input.authorName ?? null,
+      publishedAt: input.publishedAt ?? null,
+      originalSourceKey: input.originalSourceKey ?? null,
       chunks: this.dependencies.sourceProcessor.chunk(sourceId, content),
       links,
       timestamp,
@@ -829,6 +841,10 @@ export class ContentApplicationService {
         contentHash: this.dependencies.sourceProcessor.hash(decoded.content),
         contentText: decoded.content,
         originalFilePath: relativePath,
+        originUrl: input.originUrl ?? null,
+        authorName: input.authorName ?? null,
+        publishedAt: input.publishedAt ?? null,
+        originalSourceKey: input.originalSourceKey ?? null,
         chunks: this.dependencies.sourceProcessor.chunk(sourceId, decoded.content),
         links,
         timestamp: this.dependencies.clock.now(),
@@ -862,6 +878,10 @@ export class ContentApplicationService {
       contentHash: this.dependencies.sourceProcessor.hash(content),
       contentText: content,
       originalFilePath,
+      originUrl: input.originUrl === undefined ? current.originUrl : input.originUrl,
+      authorName: input.authorName === undefined ? current.authorName : input.authorName,
+      publishedAt: input.publishedAt === undefined ? current.publishedAt : input.publishedAt,
+      originalSourceKey: input.originalSourceKey === undefined ? current.originalSourceKey : input.originalSourceKey,
       chunks: this.dependencies.sourceProcessor.chunk(sourceId, content),
       timestamp: this.dependencies.clock.now(),
     })

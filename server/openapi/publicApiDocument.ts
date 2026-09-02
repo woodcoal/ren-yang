@@ -471,11 +471,17 @@ function createSchemas(): Record<string, Record<string, unknown>> {
   const timestamp = { type: 'string', format: 'date-time', description: 'ISO 8601 UTC 时间。' }
   const nullableUuid = { oneOf: [uuid, { type: 'null' }] }
   const nullableString = { type: ['string', 'null'] }
+  const sourceProvenanceProperties = {
+    originUrl: { type: ['string', 'null'], format: 'uri', maxLength: 2_000, description: '原始来源地址。' },
+    authorName: { type: ['string', 'null'], maxLength: 300, description: '作者或发言者。' },
+    publishedAt: { type: ['string', 'null'], format: 'date-time', description: '发表或发生时间，ISO 8601 UTC。' },
+    originalSourceKey: { type: ['string', 'null'], maxLength: 500, description: '同一作品、访谈或事件跨转载与切片复用的稳定键。' },
+  }
   const soul = { type: 'object', required: ['promptText'], properties: { promptText: { type: 'string', minLength: 1, maxLength: 50_000 } } }
   const role = { type: 'string', enum: ['canon_fact', 'reference', 'style_sample'] }
   const sourceSummary = {
     type: 'object',
-    required: ['id', 'name', 'role', 'inputType', 'contentHash', 'contentText', 'originalFilePath', 'isEnabled', 'chunkCount', 'linkCount', 'isGlobal', 'createdAt', 'updatedAt'],
+    required: ['id', 'name', 'role', 'inputType', 'contentHash', 'contentText', 'originalFilePath', 'originUrl', 'authorName', 'publishedAt', 'originalSourceKey', 'isEnabled', 'chunkCount', 'linkCount', 'isGlobal', 'createdAt', 'updatedAt'],
     properties: {
       id: uuid,
       name: { type: 'string' },
@@ -484,6 +490,7 @@ function createSchemas(): Record<string, Record<string, unknown>> {
       contentHash: { type: 'string', description: '规范化正文 SHA-256。' },
       contentText: { type: 'string' },
       originalFilePath: nullableString,
+      ...sourceProvenanceProperties,
       isEnabled: { type: 'boolean' },
       chunkCount: { type: 'integer', minimum: 0 },
       linkCount: { type: 'integer', minimum: 0 },
@@ -554,15 +561,31 @@ function createSchemas(): Record<string, Record<string, unknown>> {
         { type: 'object', required: ['targetType', 'targetId'], properties: { targetType: { type: 'string', const: 'world' }, targetId: { type: 'string', format: 'uuid' } } },
       ],
     },
-    CreateSource: { type: 'object', required: ['name', 'role', 'content'], properties: { name: { type: 'string', maxLength: 200 }, role, content: { type: 'string', maxLength: 2_000_000 }, targets: { type: 'array', items: { $ref: '#/components/schemas/SourceTarget' }, default: [] } } },
-    UpdateSource: { type: 'object', required: ['name', 'role', 'content'], properties: { name: { type: 'string', maxLength: 200 }, role, content: { type: 'string', maxLength: 2_000_000 } } },
+    CreateSource: {
+      type: 'object', required: ['name', 'role', 'content'],
+      properties: { name: { type: 'string', maxLength: 200 }, role, content: { type: 'string', maxLength: 2_000_000 }, ...sourceProvenanceProperties, targets: { type: 'array', items: { $ref: '#/components/schemas/SourceTarget' }, default: [] } },
+    },
+    UpdateSource: {
+      type: 'object', required: ['name', 'role', 'content'],
+      properties: { name: { type: 'string', maxLength: 200 }, role, content: { type: 'string', maxLength: 2_000_000 }, ...sourceProvenanceProperties },
+    },
     SourceLinkInput: {
       oneOf: [
         { type: 'object', required: ['targetType', 'targetId'], properties: { targetType: { type: 'string', const: 'persona' }, targetId: { $ref: '#/components/schemas/PersonaIdentifier' }, priority: { type: 'integer', minimum: 0, maximum: 10_000, default: 100 } } },
         { type: 'object', required: ['targetType', 'targetId'], properties: { targetType: { type: 'string', const: 'world' }, targetId: { type: 'string', format: 'uuid' }, priority: { type: 'integer', minimum: 0, maximum: 10_000, default: 100 } } },
       ],
     },
-    SourceFileForm: { type: 'object', required: ['file', 'name', 'role'], properties: { file: { type: 'string', format: 'binary' }, name: { type: 'string', maxLength: 200 }, role, targets: { type: 'string', description: 'SourceTarget JSON 数组。', default: '[]' } } },
+    SourceFileForm: {
+      type: 'object', required: ['file', 'name', 'role'],
+      properties: {
+        file: { type: 'string', format: 'binary' }, name: { type: 'string', maxLength: 200 }, role,
+        originUrl: { type: 'string', format: 'uri', maxLength: 2_000 },
+        authorName: { type: 'string', maxLength: 300 },
+        publishedAt: { type: 'string', format: 'date-time' },
+        originalSourceKey: { type: 'string', maxLength: 500 },
+        targets: { type: 'string', description: 'SourceTarget JSON 数组。', default: '[]' },
+      },
+    },
     CreateGenerationRun: {
       type: 'object', required: ['personaId', 'requirement'],
       properties: {

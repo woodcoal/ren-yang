@@ -272,6 +272,14 @@ export interface SourceSummary {
   contentText: string
   /** 文件导入时保留的相对路径。 */
   originalFilePath: string | null
+  /** 可选原始来源地址。 */
+  originUrl: string | null
+  /** 可选作者或发言者。 */
+  authorName: string | null
+  /** 可选发表或发生时间，UTC Unix 毫秒。 */
+  publishedAt: number | null
+  /** 同一作品、访谈或事件跨转载与切片复用的稳定键。 */
+  originalSourceKey: string | null
   /** 是否允许资料进入人物、世界检索和 OpenViking 投影。 */
   isEnabled: boolean
   /** 当前检索切片数。 */

@@ -135,12 +135,12 @@ export class PersonaDistillationApplicationService implements TaskHandler {
           sourceRole: source.role,
           sourceRelation: null,
           coverageDimensions: [],
-          independentSourceKey: source.id,
+          independentSourceKey: source.originalSourceKey,
           contentHash: source.contentHash,
           contentSnapshot: source.contentText,
-          originUrl: null,
-          authorName: null,
-          publishedAt: null,
+          originUrl: source.originUrl,
+          authorName: source.authorName,
+          publishedAt: source.publishedAt,
         })),
       ],
       timestamp,
@@ -333,7 +333,18 @@ export class PersonaDistillationApplicationService implements TaskHandler {
     if (await this.stopIfCancellationRequested(run.id)) return
     const assessment = modelPersonaDistillationSourceAssessmentSchema.parse(response.structuredOutput)
     validatePersonaDistillationSourceAssessment(assessment, sources.map(source => source.id))
-    const assessmentByInput = new Map(assessment.sources.map(source => [source.inputId, source]))
+    const inputById = new Map(sources.map(source => [source.id, source]))
+    const normalizedAssessment = {
+      sources: assessment.sources.map((classified) => {
+        const input = inputById.get(classified.inputId)
+        return {
+          ...classified,
+          // 明确提供的原始来源键属于可审计事实；缺失时才采用模型的同源判断。
+          independentSourceKey: input?.independentSourceKey ?? classified.independentSourceKey,
+        }
+      }),
+    }
+    const assessmentByInput = new Map(normalizedAssessment.sources.map(source => [source.inputId, source]))
     const coverageInputs: PersonaDistillationInput[] = sources.map((source) => {
       const classified = assessmentByInput.get(source.id)
       if (!classified || !source.contentSnapshot) throw new ApplicationError('DISTILLATION_SOURCE_ASSESSMENT_INVALID', '人物蒸馏资料分类缺少输入', 502)
@@ -347,7 +358,7 @@ export class PersonaDistillationApplicationService implements TaskHandler {
     })
     if (!await this.dependencies.distillations.saveSourceAssessment({
       runId: run.id,
-      assessment,
+      assessment: normalizedAssessment,
       coverage: buildPersonaDistillationCoverage(coverageInputs),
       timestamp: this.dependencies.clock.now(),
     })) throw new ApplicationError('DISTILLATION_STATE_CONFLICT', '人物蒸馏资料评估状态已经变化', 409)

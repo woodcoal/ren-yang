@@ -19,7 +19,13 @@ async function handleImportSourceFile(event: H3Event) {
     const parts = await readMultipartFormData(event)
     if (!parts) throw new ApplicationError('VALIDATION_FAILED', '请求必须使用 multipart/form-data', 422)
     const metadata = publicImportSourceFileMetadataSchema.parse({
-      name: readTextPart(parts, 'name'), role: readTextPart(parts, 'role'), targets: readJsonPart(parts, 'targets'),
+      name: readTextPart(parts, 'name'),
+      role: readTextPart(parts, 'role'),
+      targets: readJsonPart(parts, 'targets'),
+      originUrl: readTextPart(parts, 'originUrl'),
+      authorName: readTextPart(parts, 'authorName'),
+      publishedAt: readTextPart(parts, 'publishedAt'),
+      originalSourceKey: readTextPart(parts, 'originalSourceKey'),
     })
     const files = parts.filter(part => part.name === 'file' && part.filename)
     const file = files[0]
