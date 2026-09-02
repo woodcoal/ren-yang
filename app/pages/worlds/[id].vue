@@ -440,7 +440,7 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
 </script>
 
 <template>
-  <div>
+  <div class="world-detail-page">
     <ContentPageHeader :title="details?.world.name || '世界工作区'"
       :description="details?.world.summary || '世界是多个人物共享的背景，也拥有自己的灵魂和成长。'">
       <UButton to="/worlds" color="neutral" variant="ghost">返回世界列表</UButton>

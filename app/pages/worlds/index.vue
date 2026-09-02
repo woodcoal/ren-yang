@@ -277,7 +277,7 @@ async function changePageSize(pageSize: number): Promise<void> {
               <td data-label="世界">
                 <NuxtLink :to="`/worlds/${world.id}`" data-world-title-link class="content-table-title hover:underline">
                   <strong>{{ world.name }}</strong>
-                </NuxtLink><span class="content-table-description line-clamp-2 whitespace-pre-wrap">{{ world.summary
+                </NuxtLink><span class="content-table-description content-table-description--clamped">{{ world.summary
                   || '未填写摘要' }}</span>
               </td>
               <td data-label="使用关系"><span>{{ world.personaCount }} 个人物</span><span class="content-table-description">{{

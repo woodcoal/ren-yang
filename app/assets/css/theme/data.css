@@ -161,6 +161,15 @@
   overflow-wrap: anywhere;
 }
 
+/* 人物与世界列表只展示两行介绍；独立规则避免基础描述样式覆盖 line-clamp 的 display。 */
+.content-table-description--clamped {
+  display: -webkit-box;
+  overflow: hidden;
+  white-space: pre-wrap;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
 .content-empty-state {
   display: grid;
   min-height: 15rem;

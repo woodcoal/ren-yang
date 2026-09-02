@@ -69,6 +69,7 @@ describe('详情工作区信息架构', () => {
     const personaPage = readFileSync('app/pages/personas/[id].vue', 'utf8')
     const worldPage = readFileSync('app/pages/worlds/[id].vue', 'utf8')
     const contentStyles = readFileSync('app/assets/css/theme/content.css', 'utf8')
+    const dataStyles = readFileSync('app/assets/css/theme/data.css', 'utf8')
 
     for (const pageSource of [personaPage, worldPage]) {
       expect(pageSource).toContain("{ id: 'basic', label: '基础信息' }")
@@ -82,8 +83,11 @@ describe('详情工作区信息架构', () => {
     expect(personaPage).toContain("{ id: 'records', label: '历史任务'")
     expect(personaPage).toContain("{ id: 'external_records', label: '三方记录'")
     expect(personaPage).toContain('class="persona-detail-page"')
-    expect(contentStyles).toContain('.persona-detail-page .page-description')
+    expect(worldPage).toContain('class="world-detail-page"')
+    expect(contentStyles).toContain('.persona-detail-page .page-description,\n.world-detail-page .page-description')
     expect(contentStyles).toContain('-webkit-line-clamp: 2')
+    expect(dataStyles).toContain('.content-table-description--clamped')
+    expect(dataStyles).toContain('display: -webkit-box')
     expect(worldPage).not.toContain("{ id: 'memory', label: '记忆'")
   })
 

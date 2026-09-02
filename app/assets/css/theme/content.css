@@ -69,8 +69,9 @@
   line-height: 1.7;
 }
 
-/* 人物灵魂可能很长；详情页顶部只保留两行身份介绍，完整正文仍在灵魂工作区查看。 */
-.persona-detail-page .page-description {
+/* 人物灵魂和世界简介可能很长；详情页顶部只保留两行，完整内容在对应工作区查看。 */
+.persona-detail-page .page-description,
+.world-detail-page .page-description {
   display: -webkit-box;
   overflow: hidden;
   -webkit-box-orient: vertical;
