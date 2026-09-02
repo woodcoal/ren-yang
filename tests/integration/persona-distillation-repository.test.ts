@@ -127,7 +127,17 @@ describe('人物蒸馏 SQLite 持久化', () => {
       expect.objectContaining({ name: 'original_source_key', notnull: 0 }),
     ]))
     expect(client.prepare(`SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations`).get())
-      .toEqual({ count: 19, version: 1790841600000 })
+      .toEqual({ count: 20, version: 1790928000000 })
+    expect(client.prepare(`SELECT code FROM ai_algorithms WHERE code = 'persona_distillation'`).get())
+      .toEqual({ code: 'persona_distillation' })
+    expect(client.prepare(`
+      SELECT code FROM ai_prompts WHERE code LIKE 'distillation.%' ORDER BY code
+    `).all()).toEqual([
+      { code: 'distillation.classify_sources' },
+      { code: 'distillation.evaluate_soul' },
+      { code: 'distillation.extract_claims' },
+      { code: 'distillation.synthesize_soul' },
+    ])
     expect(client.prepare('PRAGMA foreign_key_check').all()).toEqual([])
   })
 

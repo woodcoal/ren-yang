@@ -127,6 +127,25 @@ export const modelPersonaDistillationExtractionSchema = z.object({
   claims: z.array(modelPersonaDistillationClaimSchema).max(200),
 })
 
+/** 模型返回的一项人物候选质量评测。 */
+export const modelPersonaDistillationEvaluationItemSchema = z.object({
+  evaluationType: z.enum(['known_fact', 'decision_tendency', 'unknown_boundary', 'expression', 'counterfactual', 'conflict_handling']),
+  status: z.enum(['passed', 'warning', 'failed']),
+  score: z.number().min(0).max(1).nullable(),
+  summary: z.string().trim().min(1).max(4_000),
+  failureReasons: z.array(z.string().trim().min(1).max(1_000)).max(20).default([]),
+})
+
+/** 人物候选评测步骤必须返回六类且各一次的完整结构。 */
+export const modelPersonaDistillationEvaluationSchema = z.object({
+  evaluations: z.array(modelPersonaDistillationEvaluationItemSchema).length(6),
+}).superRefine((value, context) => {
+  const types = value.evaluations.map(item => item.evaluationType)
+  if (new Set(types).size !== 6) {
+    context.addIssue({ code: 'custom', path: ['evaluations'], message: '人物候选六类评测必须各返回一次' })
+  }
+})
+
 export type CreatePersonaDistillationInput = z.infer<typeof createPersonaDistillationSchema>
 export type ModelPersonaDistillationSourceAssessment = z.infer<typeof modelPersonaDistillationSourceAssessmentSchema>
 export type ReviewPersonaDistillationSourcesInput = z.infer<typeof reviewPersonaDistillationSourcesSchema>
@@ -134,3 +153,4 @@ export type SavePersonaDistillationCandidateInput = z.infer<typeof savePersonaDi
 export type ConfirmPersonaDistillationCandidateInput = z.infer<typeof confirmPersonaDistillationCandidateSchema>
 export type ModelPersonaDistillationClaim = z.infer<typeof modelPersonaDistillationClaimSchema>
 export type ModelPersonaDistillationExtraction = z.infer<typeof modelPersonaDistillationExtractionSchema>
+export type ModelPersonaDistillationEvaluation = z.infer<typeof modelPersonaDistillationEvaluationSchema>

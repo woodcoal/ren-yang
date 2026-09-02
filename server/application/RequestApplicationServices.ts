@@ -16,6 +16,7 @@ import type { ApiKeyApplicationService } from './authentication/ApiKeyApplicatio
 import type { PublicApiApplicationService } from './publicApi/PublicApiApplicationService'
 import type { SystemAiSettingsApplicationService } from './systemAi/SystemAiSettingsApplicationService'
 import type { LearningAutomationApplicationService } from './learningAutomation/LearningAutomationApplicationService'
+import type { PersonaDistillationApplicationService } from './distillation/PersonaDistillationApplicationService'
 
 /** 每个 HTTP 请求能够访问的应用服务集合。 */
 export interface RequestApplicationServices {
@@ -41,6 +42,8 @@ export interface RequestApplicationServices {
   learning: LearningApplicationService
   /** AI 成长与记忆提炼批次用例。 */
   analysis: AnalysisApplicationService
+  /** 人物创建前的资料覆盖、认知提取、候选评测和确认用例。 */
+  personaDistillation: PersonaDistillationApplicationService
   /** 定时提炼、自动发布和统一周期设置用例。 */
   learningAutomation: LearningAutomationApplicationService
   /** 兴趣判断、文档规划、生成和运行历史用例。 */

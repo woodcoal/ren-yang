@@ -12,6 +12,7 @@ export class TaskRoutingApplicationService implements TaskHandler {
   constructor(
     private readonly generation: TaskHandler,
     private readonly analysis?: TaskHandler,
+    private readonly distillation?: TaskHandler,
   ) {}
 
   /**
@@ -23,6 +24,10 @@ export class TaskRoutingApplicationService implements TaskHandler {
     if (job.type === 'analyze_learning') {
       if (!this.analysis) throw new TaskExecutionError('学习分析任务处理器未配置', false)
       await this.analysis.execute(job)
+    }
+    else if (job.type === 'distill_persona') {
+      if (!this.distillation) throw new TaskExecutionError('人物蒸馏任务处理器未配置', false)
+      await this.distillation.execute(job)
     }
     else await this.generation.execute(job)
   }

@@ -57,7 +57,7 @@ describe('SqliteDatabase', () => {
     ])
     expect(current.getClient().prepare(`
       SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations
-    `).get()).toEqual({ count: 19, version: 1790841600000 })
+    `).get()).toEqual({ count: 20, version: 1790928000000 })
     expect(current.getClient().prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name IN (
       'api_keys', 'public_api_idempotency_records', 'public_api_audit_events'
     ) ORDER BY name`).all()).toEqual([
@@ -67,8 +67,8 @@ describe('SqliteDatabase', () => {
     ])
     expect(current.getClient().prepare(`
       SELECT COUNT(*) AS count FROM ai_prompts WHERE active_version_id IS NOT NULL
-    `).get()).toEqual({ count: 22 })
-    expect(current.getClient().prepare(`SELECT COUNT(*) AS count FROM ai_prompt_versions`).get()).toEqual({ count: 30 })
+    `).get()).toEqual({ count: 26 })
+    expect(current.getClient().prepare(`SELECT COUNT(*) AS count FROM ai_prompt_versions`).get()).toEqual({ count: 34 })
     expect(current.getClient().prepare(`
       SELECT p.code,
         instr(v.system_prompt_template, '{{personaPromptJson}}') > 0 AS persona_in_system,
@@ -82,7 +82,7 @@ describe('SqliteDatabase', () => {
       { code: 'generation.interest_assessment', persona_in_system: 1, persona_in_user: 0 },
       { code: 'generation.text_block', persona_in_system: 1, persona_in_user: 0 },
     ])
-    expect(current.getClient().prepare(`SELECT COUNT(*) AS count FROM ai_algorithms`).get()).toEqual({ count: 14 })
+    expect(current.getClient().prepare(`SELECT COUNT(*) AS count FROM ai_algorithms`).get()).toEqual({ count: 15 })
     expect(current.getClient().prepare(`SELECT code FROM ai_algorithms WHERE code = 'persona_memory'`).get()).toEqual({ code: 'persona_memory' })
     expect(current.getClient().prepare(`SELECT code FROM ai_algorithms WHERE code IN (
       'article_generation', 'article_image_analysis', 'interest_assessment'
@@ -199,6 +199,12 @@ describe('SqliteDatabase', () => {
       '00000000-0000-4000-8001-000000000055',
       '00000000-0000-4000-8001-000000000056',
     )
+    client.prepare(`DELETE FROM ai_prompt_versions WHERE prompt_code IN (
+      'distillation.classify_sources', 'distillation.extract_claims',
+      'distillation.synthesize_soul', 'distillation.evaluate_soul'
+    )`).run()
+    client.prepare(`DELETE FROM ai_prompts WHERE code LIKE 'distillation.%'`).run()
+    client.prepare(`DELETE FROM ai_algorithms WHERE code = 'persona_distillation'`).run()
     // 当前测试库已执行全部迁移；回退迁移历史前同步恢复到 0011 结构，准确模拟既有数据库。
     client.prepare('ALTER TABLE personas DROP COLUMN automatic_learning_enabled').run()
     client.prepare('ALTER TABLE worlds DROP COLUMN automatic_learning_enabled').run()
@@ -240,7 +246,7 @@ describe('SqliteDatabase', () => {
     database = new SqliteDatabase({ dataDirectory, migrationsDirectory: resolve(process.cwd(), 'drizzle') })
     expect(database.getClient().prepare(`
       SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations
-    `).get()).toEqual({ count: 9, version: 1790841600000 })
+    `).get()).toEqual({ count: 10, version: 1790928000000 })
     expect(database.getClient().prepare(`
       SELECT p.code,
         instr(v.system_prompt_template, '{{personaPromptJson}}') > 0 AS persona_in_system,
@@ -258,7 +264,7 @@ describe('SqliteDatabase', () => {
     database = new SqliteDatabase({ dataDirectory, migrationsDirectory: resolve(process.cwd(), 'drizzle') })
     expect(database.getClient().prepare(`
       SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations
-    `).get()).toEqual({ count: 9, version: 1790841600000 })
+    `).get()).toEqual({ count: 10, version: 1790928000000 })
     expect(database.getClient().prepare('PRAGMA integrity_check').get()).toEqual({ integrity_check: 'ok' })
   })
 
@@ -386,7 +392,7 @@ describe('SqliteDatabase', () => {
     database = null
 
     database = new SqliteDatabase({ dataDirectory, migrationsDirectory: resolve(process.cwd(), 'drizzle') })
-    expect(database.getClient().prepare(`SELECT COUNT(*) AS count FROM ai_algorithms`).get()).toEqual({ count: 14 })
+    expect(database.getClient().prepare(`SELECT COUNT(*) AS count FROM ai_algorithms`).get()).toEqual({ count: 15 })
     expect(database.getClient().prepare(`
       SELECT thinking_control, default_timeout_ms FROM ai_model_deployments
       WHERE id = '10000000-0000-4000-8000-000000000002'
@@ -442,8 +448,8 @@ describe('SqliteDatabase', () => {
     database = new SqliteDatabase({ dataDirectory, migrationsDirectory: resolve(process.cwd(), 'drizzle') })
     expect(database.getClient().prepare(`
       SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations
-    `).get()).toEqual({ count: 19, version: 1790841600000 })
-    expect(database.getClient().prepare(`SELECT COUNT(*) AS count FROM ai_algorithms`).get()).toEqual({ count: 14 })
+    `).get()).toEqual({ count: 20, version: 1790928000000 })
+    expect(database.getClient().prepare(`SELECT COUNT(*) AS count FROM ai_algorithms`).get()).toEqual({ count: 15 })
     expect(database.getClient().prepare('PRAGMA foreign_key_check').all()).toEqual([])
     expect(database.getClient().prepare('PRAGMA integrity_check').get()).toEqual({ integrity_check: 'ok' })
   })
@@ -518,8 +524,8 @@ describe('SqliteDatabase', () => {
     `).get()).toEqual({ name: '旧资料', content_text: '压平前正文。', is_enabled: 1 })
     expect(database.getClient().prepare(`
       SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations
-    `).get()).toEqual({ count: 34, version: 1790841600000 })
-    expect(database.getClient().prepare(`SELECT COUNT(*) AS count FROM ai_algorithms`).get()).toEqual({ count: 14 })
+    `).get()).toEqual({ count: 35, version: 1790928000000 })
+    expect(database.getClient().prepare(`SELECT COUNT(*) AS count FROM ai_algorithms`).get()).toEqual({ count: 15 })
     expect(database.getClient().prepare(`PRAGMA table_info(generation_runs)`).all()).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'algorithm_snapshot_json', notnull: 0 }),
       expect.objectContaining({ name: 'interest_algorithm_snapshot_json', notnull: 0 }),

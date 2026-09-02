@@ -100,6 +100,7 @@ interface DistillationEvidenceRow {
 interface DistillationEvaluationRow {
   id: string
   round_no: number
+  candidate_prompt_hash: string
   evaluation_type: PersonaDistillationEvaluationRecord['evaluationType']
   input_json: string
   expected_json: string
@@ -217,7 +218,7 @@ export class SqliteDistillationRepository implements DistillationRepository {
       WHERE claim.run_id = ? ORDER BY evidence.created_at ASC, evidence.id ASC
     `).all(runId) as DistillationEvidenceRow[]
     const evaluationRows = this.client.prepare(`
-      SELECT id, round_no, evaluation_type, input_json, expected_json, output_json,
+      SELECT id, round_no, evaluation_type, candidate_prompt_hash, input_json, expected_json, output_json,
         status, score_millionths, failure_reasons_json
       FROM persona_distillation_evaluations
       WHERE run_id = ? ORDER BY round_no ASC, evaluation_type ASC, id ASC
@@ -862,6 +863,7 @@ function toEvaluationRecord(row: DistillationEvaluationRow): PersonaDistillation
   return {
     id: row.id,
     roundNo: row.round_no,
+    candidatePromptHash: row.candidate_prompt_hash,
     evaluationType: row.evaluation_type,
     input: JSON.parse(row.input_json) as unknown,
     expected: JSON.parse(row.expected_json) as unknown,

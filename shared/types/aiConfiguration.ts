@@ -2,7 +2,7 @@ import type { AiAlgorithmStepParameters, AiThinkingControlMode } from '../schema
 
 /** 由代码固定流程的全部算法编码。 */
 export type AiAlgorithmCode = 'persona_soul' | 'world_soul' | 'persona_growth' | 'world_growth' | 'persona_memory'
-  | 'persona_draft' | 'world_draft' | 'feedback_classification' | 'persona_avatar'
+  | 'persona_draft' | 'persona_distillation' | 'world_draft' | 'feedback_classification' | 'persona_avatar'
   | 'interest_assessment' | 'article_generation' | 'article_image_analysis'
   | 'article_text_revision' | 'article_image_generation'
 

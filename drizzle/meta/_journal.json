@@ -134,6 +134,13 @@
       "when": 1790841600000,
       "tag": "0018_persona_distillation",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1790928000000,
+      "tag": "0019_persona_distillation_algorithm",
+      "breakpoints": true
     }
   ]
 }

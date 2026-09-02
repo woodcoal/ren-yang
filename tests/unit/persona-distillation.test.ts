@@ -10,6 +10,8 @@ import {
 import type { ModelPersonaDistillationClaim } from '../../shared/schemas/personaDistillation'
 import type { ModelPersonaDistillationSourceAssessment } from '../../shared/schemas/personaDistillation'
 import { PERSONA_DISTILLATION_ALGORITHM_STEPS } from '../../shared/types/personaDistillation'
+import { getAiAlgorithmDefinition } from '../../server/domain/ai/AiAlgorithmDefinitions'
+import type { AiAlgorithmCode } from '../../shared/types/aiConfiguration'
 import {
   assertPersonaDistillationCandidateConfirmable,
   buildPersonaDistillationCoverage,
@@ -87,6 +89,8 @@ describe('人物蒸馏共享契约', () => {
       'synthesize_soul',
       'evaluate_soul',
     ])
+    expect(getAiAlgorithmDefinition('persona_distillation' as AiAlgorithmCode).steps.map(step => step.key))
+      .toEqual(PERSONA_DISTILLATION_ALGORITHM_STEPS)
   })
 
   it('允许只用自然语言要求创建无资料蒸馏运行', () => {

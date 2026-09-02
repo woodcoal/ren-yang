@@ -62,6 +62,8 @@ import { SystemAiSettingsApplicationService } from '../../application/systemAi/S
 import { SqliteSystemAiSettingsRepository } from '../database/SqliteSystemAiSettingsRepository'
 import { LearningAutomationApplicationService } from '../../application/learningAutomation/LearningAutomationApplicationService'
 import { SqliteLearningAutomationSettingsRepository } from '../database/SqliteLearningAutomationSettingsRepository'
+import { PersonaDistillationApplicationService } from '../../application/distillation/PersonaDistillationApplicationService'
+import { SqliteDistillationRepository } from '../database/SqliteDistillationRepository'
 
 /** 应用运行时组合配置。 */
 export interface ApplicationRuntimeOptions {
@@ -107,6 +109,8 @@ export class ApplicationRuntime {
   private readonly learningAutomationService: LearningAutomationApplicationService
   /** 请求与 Worker 共用的生成应用服务。 */
   private readonly generationService: GenerationApplicationService
+  /** 请求与 Worker 共用的人物蒸馏应用服务。 */
+  private readonly personaDistillationService: PersonaDistillationApplicationService
   /** 请求间共享的统一任务记录查询服务。 */
   private readonly historyService: HistoryApplicationService
   /** 请求间共享的反馈分类与人物成长素材应用服务。 */
@@ -307,6 +311,17 @@ export class ApplicationRuntime {
       contextSyncQueue,
       algorithms: aiAlgorithms,
     })
+    this.personaDistillationService = new PersonaDistillationApplicationService({
+      content: contentRepository,
+      distillations: new SqliteDistillationRepository(this.sqlite.getClient()),
+      algorithms: aiAlgorithms,
+      identifiers,
+      clock: this.clock,
+      tokenCounter,
+      personaSoulTokenBudget: 3_500,
+      context: contextProvider,
+      contextSyncQueue,
+    })
     this.historyService = new HistoryApplicationService({
       history: new SqliteHistoryRepository(this.sqlite.getClient()),
     })
@@ -337,6 +352,7 @@ export class ApplicationRuntime {
     const taskHandler = new TaskRoutingApplicationService(
       this.generationService,
       this.analysisService,
+      this.personaDistillationService,
     )
     const foregroundWorkerService = new WorkerApplicationService({
       taskJobRepository,
@@ -398,6 +414,7 @@ export class ApplicationRuntime {
       soul: this.soulService,
       learning: this.learningService,
       analysis: this.analysisService,
+      personaDistillation: this.personaDistillationService,
       learningAutomation: this.learningAutomationService,
       generation: this.generationService,
       history: this.historyService,

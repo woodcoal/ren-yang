@@ -161,6 +161,8 @@ export interface PersonaDistillationEvaluationRecord {
   id: string
   /** 同一候选编辑后的评测轮次。 */
   roundNo: number
+  /** 本轮评测对应的候选正文 SHA-256。 */
+  candidatePromptHash: string
   /** 固定评测维度。 */
   evaluationType: 'known_fact' | 'decision_tendency' | 'unknown_boundary' | 'expression' | 'counterfactual' | 'conflict_handling'
   /** 评测输入快照。 */
@@ -184,7 +186,7 @@ export interface SavePersonaDistillationEvaluationRecord {
   /** 本轮实际评测的候选正文哈希。 */
   candidatePromptHash: string
   /** 六类只追加评测结果。 */
-  evaluations: PersonaDistillationEvaluationRecord[]
+  evaluations: Array<Omit<PersonaDistillationEvaluationRecord, 'candidatePromptHash'>>
   /** 阻止最终确认的硬失败。 */
   hardFailures: string[]
   /** 保存时间。 */

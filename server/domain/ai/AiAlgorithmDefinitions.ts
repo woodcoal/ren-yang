@@ -55,6 +55,16 @@ export const AI_ALGORITHM_DEFINITIONS: Record<AiAlgorithmCode, AiAlgorithmDefini
     description: '根据用户要求、可选世界和资料生成待确认的人物初始草稿。',
     steps: [{ key: 'generate', name: '生成草稿', description: '一次生成人物名称、灵魂和版本说明。', promptCode: 'generation.persona_draft', modality: 'text', ordinal: 0 }],
   },
+  persona_distillation: {
+    code: 'persona_distillation', name: '人物蒸馏', implementationVersion: 1,
+    description: '评估资料覆盖，提取并校验证据候选，综合单文本灵魂并评测人物候选。',
+    steps: [
+      { key: 'classify_sources', name: '资料分类', description: '识别来源关系、覆盖维度和同源分组。', promptCode: 'distillation.classify_sources', modality: 'text', ordinal: 0 },
+      { key: 'extract_claims', name: '认知提取', description: '从确认资料提取带精确引文的认知候选。', promptCode: 'distillation.extract_claims', modality: 'text', ordinal: 1 },
+      { key: 'synthesize_soul', name: '灵魂综合', description: '把已校验候选编译为完整人物候选草稿。', promptCode: 'distillation.synthesize_soul', modality: 'text', ordinal: 2 },
+      { key: 'evaluate_soul', name: '候选评测', description: '按六类固定维度评测当前候选及诚实边界。', promptCode: 'distillation.evaluate_soul', modality: 'text', ordinal: 3 },
+    ],
+  },
   world_draft: {
     code: 'world_draft', name: '世界草稿生成', implementationVersion: 1,
     description: '根据用户要求生成待确认的世界初始草稿。',

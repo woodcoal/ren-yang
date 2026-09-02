@@ -923,7 +923,7 @@ export const aiAlgorithms = sqliteTable(
     updatedAt: integer('updated_at').notNull(),
   },
   table => [
-    check('ai_algorithms_code_check', sql`${table.code} IN ('persona_soul', 'world_soul', 'persona_growth', 'world_growth', 'persona_memory', 'persona_draft', 'world_draft', 'feedback_classification', 'persona_avatar', 'interest_assessment', 'article_generation', 'article_image_analysis', 'article_text_revision', 'article_image_generation')`),
+    check('ai_algorithms_code_check', sql`${table.code} IN ('persona_soul', 'world_soul', 'persona_growth', 'world_growth', 'persona_memory', 'persona_draft', 'persona_distillation', 'world_draft', 'feedback_classification', 'persona_avatar', 'interest_assessment', 'article_generation', 'article_image_analysis', 'article_text_revision', 'article_image_generation')`),
     check('ai_algorithms_name_check', sql`length(trim(${table.name})) > 0`),
     check('ai_algorithms_implementation_version_check', sql`${table.implementationVersion} > 0`),
   ],
