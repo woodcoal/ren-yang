@@ -36,10 +36,14 @@ describe('全站 AI 提示词目录', () => {
   it('迁移初始化全部固定提示词并能按变量契约渲染', async () => {
     const prompts = await service.listWorkspaces()
 
-    expect(prompts).toHaveLength(22)
+    expect(prompts).toHaveLength(26)
     expect(prompts.map(prompt => prompt.code)).toEqual(expect.arrayContaining([
       'analysis.persona_memory_extract',
       'analysis.persona_memory_synthesize',
+      'distillation.classify_sources',
+      'distillation.extract_claims',
+      'distillation.synthesize_soul',
+      'distillation.evaluate_soul',
       'generation.article',
       'generation.article_images',
     ]))

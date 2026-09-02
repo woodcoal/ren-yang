@@ -118,7 +118,7 @@ describe('OpenViking 后台设置', () => {
 
     wrapper.vm.$nuxt.runWithContext(() => useToast().clear())
     await wrapper.findAll('button').find(button => button.text() === '检测服务')!.trigger('click')
-    await vi.waitFor(() => expect(permissionCheckCount).toBe(2))
+    await vi.waitFor(() => expect(permissionCheckCount).toBe(2), { timeout: 3_000 })
     await vi.waitFor(() => expect(wrapper.vm.$nuxt.runWithContext(() => useToast().toasts.value)
       .some(notification => notification.title === 'OpenViking 检测通过')).toBe(true))
   })

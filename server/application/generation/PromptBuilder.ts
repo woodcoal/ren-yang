@@ -4,7 +4,6 @@ import type { PersonaSnapshot, WorldSnapshot } from '../../domain/content/Conten
 
 /** 生成模块使用的固定提示词编码。 */
 export const GENERATION_PROMPT_CODES = {
-  personaDraft: 'generation.persona_draft',
   worldDraft: 'generation.world_draft',
   interestAssessment: 'generation.interest_assessment',
   article: 'generation.article',
@@ -14,16 +13,6 @@ export const GENERATION_PROMPT_CODES = {
   imageBlock: 'generation.image_block',
   jsonRetry: 'generation.json_retry',
 } as const
-
-/** 人物草稿生成时的一项不可信参考资料。 */
-export interface PersonaDraftReference {
-  /** 资料展示名称。 */
-  name: string
-  /** 资料在证据优先级中的角色。 */
-  role: 'canon_fact' | 'reference' | 'style_sample'
-  /** 已按输入上限截取的资料正文。 */
-  content: string
-}
 
 /** 构建提示所需的固定运行上下文。 */
 export interface PromptContext {
@@ -41,25 +30,6 @@ export interface PromptContext {
   scene: unknown
   /** 经过范围与预算筛选的证据。 */
   evidence: EvidenceSnapshotRecord[]
-}
-
-/**
- * 构建人物候选草稿模板变量。
- * @param prompt 用户明确描述的人设。
- * @param world 可选已发布世界。
- * @param references 已限制长度的不可信参考资料。
- * @returns 与固定提示词变量契约完全一致的字符串映射。
- */
-export function buildPersonaDraftPromptVariables(
-  prompt: string,
-  world: WorldSnapshot | null,
-  references: PersonaDraftReference[],
-): Record<string, string> {
-  return {
-    promptJson: JSON.stringify(prompt),
-    worldPromptJson: JSON.stringify(world?.promptText ?? null),
-    referencesJson: JSON.stringify(references),
-  }
 }
 
 /**

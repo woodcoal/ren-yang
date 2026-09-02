@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from 'vitest'
 import { readBody } from 'h3'
 import { DOMWrapper, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { mountSuspended, registerEndpoint } from '@nuxt/test-utils/runtime'
-import PersonaDraftAssistant from '../../app/components/content/PersonaDraftAssistant.vue'
 import PersonaForm from '../../app/components/content/PersonaForm.vue'
 import PersonaCredentialPanel from '../../app/components/content/PersonaCredentialPanel.vue'
 import QuickCreateSubjectModal from '../../app/components/content/QuickCreateSubjectModal.vue'
@@ -149,32 +148,6 @@ describe('阶段二内容表单', () => {
     expect(wrapper.emitted('save')).toEqual([[{
       username: 'onlyaccount', email: '', password: '',
     }]])
-  })
-
-  it('AI 草稿助手提交自然语言与选中的参考资料，但不直接创建人物', async () => {
-    const sourceId = '00000000-0000-4000-8000-000000000001'
-    const wrapper = await mountSuspended(PersonaDraftAssistant, {
-      props: {
-        worlds: [],
-        sources: [{
-          id: sourceId, name: '学院资料', role: 'canon_fact', inputType: 'paste', contentHash: 'a'.repeat(64),
-          contentText: '学院事实', originalFilePath: null, isEnabled: true, chunkCount: 1, linkCount: 0, createdAt: 1_000, updatedAt: 1_000,
-        }],
-        textModelConfigured: true,
-        loading: false,
-        errorMessage: null,
-      },
-    })
-    await wrapper.get('textarea').setValue('创建一名谨慎的档案员')
-    await wrapper.get('select[multiple]').setValue(sourceId)
-    await wrapper.get('form').trigger('submit')
-    await flushPromises()
-
-    expect(wrapper.text()).not.toContain('来源模式')
-    expect(wrapper.emitted('generate')).toEqual([[
-      expect.objectContaining({ prompt: '创建一名谨慎的档案员', sourceIds: [sourceId] }),
-    ]])
-    expect(wrapper.emitted('submit')).toBeUndefined()
   })
 
   it('结构化表单收到 AI 草稿后完整替换字段并仍需用户提交', async () => {

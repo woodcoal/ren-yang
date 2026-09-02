@@ -1,12 +1,10 @@
 import { ZodError } from 'zod'
 import {
-  personaDraftSchema,
   worldDraftSchema,
   worldSnapshotSchema,
-  type GeneratePersonaDraftInput,
   type GenerateWorldDraftInput,
 } from '../../../shared/schemas/content'
-import type { PersonaDraftView, WorldDraftView } from '../../../shared/types/content'
+import type { WorldDraftView } from '../../../shared/types/content'
 import {
   articleImagesOutputSchema,
   articleOutputSchema,
@@ -81,7 +79,6 @@ import {
   buildImagePromptVariables,
   buildInterestBatchPromptVariables,
   buildInterestPromptVariables,
-  buildPersonaDraftPromptVariables,
   buildTextBlockPromptVariables,
   buildWorldDraftPromptVariables,
   GENERATION_PROMPT_CODES,
@@ -113,12 +110,6 @@ export const DEFAULT_TEXT_PARAMETERS: TextModelParameters = {
   personaMemoryBudgetTokens: 3_000,
   sourceBudgetTokens: 5_000,
 }
-
-/** 人物草稿单项资料最多发送给模型的字符数。 */
-const PERSONA_DRAFT_SOURCE_CHARACTER_LIMIT = 5_000
-
-/** 人物草稿世界最多发送给模型的字符数。 */
-const PERSONA_DRAFT_WORLD_CHARACTER_LIMIT = 10_000
 
 /** 同步优先接口查询持久运行状态的固定间隔。 */
 const SYNCHRONOUS_WAIT_POLL_INTERVAL_MS = 250
@@ -211,69 +202,6 @@ export class GenerationApplicationService implements TaskHandler {
     catch (error: unknown) {
       if (error instanceof ApplicationError) return null
       throw error
-    }
-  }
-
-  /**
-   * 把自然语言、可选世界和参考资料整理为待人工确认的人物草稿。
-   * @param input 已校验的草稿生成输入。
-   * @returns 不写入数据库的结构化草稿及非阻断截断提示。
-   */
-  async generatePersonaDraft(input: GeneratePersonaDraftInput): Promise<PersonaDraftView> {
-    if (!this.dependencies.algorithms && !this.dependencies.model.getConfiguredModel()) {
-      throw new ApplicationError('CAPABILITY_DISABLED', '文本模型尚未配置，不能生成人物草稿', 422)
-    }
-    const sourceIds = [...new Set(input.sourceIds)]
-
-    const warnings: string[] = []
-    let world = null
-    if (input.worldId) {
-      const worldRecord = await this.dependencies.content.findWorld(input.worldId)
-      if (!worldRecord) throw new ApplicationError('RESOURCE_NOT_FOUND', '世界不存在', 404)
-      if (!worldRecord.activeVersionId) {
-        throw new ApplicationError('WORLD_VERSION_NOT_ACTIVE', '所选世界当前灵魂版本缺失', 409)
-      }
-      const version = await this.dependencies.content.findWorldVersion(worldRecord.activeVersionId)
-      if (!version || version.status !== 'published') {
-        throw new ApplicationError('WORLD_VERSION_NOT_ACTIVE', '所选世界当前版本不可用', 409)
-      }
-      const promptText = version.snapshot.promptText.slice(0, PERSONA_DRAFT_WORLD_CHARACTER_LIMIT)
-      world = { promptText }
-      if (promptText.length < version.snapshot.promptText.length) {
-        warnings.push('世界灵魂提示词较长，生成人物草稿时仅使用前 10000 字')
-      }
-    }
-
-    const sources = await Promise.all(sourceIds.map(async (sourceId) => {
-      const source = await this.dependencies.content.findSource(sourceId)
-      if (!source) throw new ApplicationError('RESOURCE_NOT_FOUND', '所选参考资料不存在', 404)
-      const content = source.contentText.slice(0, PERSONA_DRAFT_SOURCE_CHARACTER_LIMIT)
-      if (content.length < source.contentText.length) warnings.push(`资料“${source.name}”较长，生成人物草稿时仅使用前 5000 字`)
-      return { name: source.name, role: source.role, content }
-    }))
-    sources.sort((left, right) => sourceRoleRank(left.role) - sourceRoleRank(right.role) || left.name.localeCompare(right.name, 'zh-CN'))
-
-    const variables = buildPersonaDraftPromptVariables(input.prompt, world, sources)
-    try {
-      const output = this.dependencies.algorithms
-        ? personaDraftSchema.parse((await this.dependencies.algorithms.executeStep(
-            await this.dependencies.algorithms.prepare('persona_draft'),
-            'generate', variables, 'persona_draft', 'json_object',
-            { limits: { ...DEFAULT_TEXT_PARAMETERS }, validateStructuredOutput: value => { personaDraftSchema.parse(value) } },
-          )).structuredOutput)
-        : (await this.generateValidated(
-            await this.dependencies.prompts.render(GENERATION_PROMPT_CODES.personaDraft, variables),
-            await this.requirePublishedPromptVersion(GENERATION_PROMPT_CODES.jsonRetry),
-            { ...DEFAULT_TEXT_PARAMETERS },
-            'persona_draft',
-            value => personaDraftSchema.parse(value),
-          )).output
-      return { ...output, warnings }
-    }
-    catch (error: unknown) {
-      const normalized = normalizeExecutionError(error)
-      const statusCode = normalized.code === 'CAPABILITY_DISABLED' ? 422 : normalized.code === 'MODEL_OUTPUT_INVALID' ? 502 : 503
-      throw new ApplicationError(normalized.code, normalized.message, statusCode)
     }
   }
 
@@ -2392,13 +2320,6 @@ function requireRunPromptVersion(run: GenerationRunRecord, code: string): string
     throw new ApplicationError('AI_PROMPT_VERSION_MISSING', '该历史任务没有提示词版本快照，不能继续执行或重试', 409)
   }
   return versionId
-}
-
-/** @param role 资料业务角色。 @returns 数值越小表示人物草稿提示中的事实优先级越高。 */
-function sourceRoleRank(role: 'canon_fact' | 'reference' | 'style_sample'): number {
-  if (role === 'canon_fact') return 0
-  if (role === 'reference') return 1
-  return 2
 }
 
 /** @param usages 一次或多次供应商响应的用量。 @returns 各字段严格合计，任一响应缺字段时该合计为 null。 */

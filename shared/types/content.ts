@@ -7,16 +7,6 @@ export interface SoulSnapshot {
 /** 人物灵魂的完整不可变快照。 */
 export type PersonaSnapshot = SoulSnapshot
 
-/** 自然语言生成但尚未保存的人物候选草稿。 */
-export interface PersonaDraftView {
-  /** 模型建议的人物名称。 */
-  name: string
-  /** 模型建议的单文本人物灵魂。 */
-  snapshot: PersonaSnapshot
-  /** 参考资料被截断等不影响人工继续编辑的提示。 */
-  warnings: string[]
-}
-
 /** 世界灵魂的完整不可变快照。 */
 export type WorldSnapshot = SoulSnapshot
 

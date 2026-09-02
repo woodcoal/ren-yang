@@ -460,31 +460,6 @@ describe('阶段三纯文本运行', () => {
     })
   })
 
-  it('从自然语言和选定资料生成不落库的结构化人物候选草稿', async () => {
-    const before = database.getClient().prepare('SELECT COUNT(*) AS count FROM personas').get()
-    const draft = await generation.generatePersonaDraft({
-      prompt: '创建一名谨慎的学院档案员，回答必须简短。',
-      worldId: null,
-      sourceIds: [sourceId, sourceId],
-    })
-
-    expect(draft).toMatchObject({
-      name: '林默',
-      snapshot: { promptText: expect.stringContaining('谨慎的学院档案员') },
-      warnings: [],
-    })
-    const request = model.requests.get('persona_draft')!
-    expect(request.userPrompt).toContain('创建一名谨慎的学院档案员')
-    expect(request.userPrompt).toContain('魔法学院课程包含古代文献研究与档案整理。')
-    expect(request.userPrompt).not.toContain('人物来源模式')
-    expect(request.userPrompt.match(/学院原著事实/g)).toHaveLength(1)
-    expect(request.systemPrompt).toContain('原著事实只能来自 role=canon_fact')
-    expect(request.systemPrompt).toContain('禁止写入返回内容')
-    expect(model.calls.get('persona_draft')).toBe(1)
-    expect(JSON.stringify(draft)).not.toContain('候选草稿')
-    expect(database.getClient().prepare('SELECT COUNT(*) AS count FROM personas').get()).toEqual(before)
-  })
-
   it('从自然语言生成不落库的结构化世界候选草稿', async () => {
     const before = database.getClient().prepare('SELECT COUNT(*) AS count FROM worlds').get()
     const draft = await generation.generateWorldDraft({ prompt: '创建一个人类生活在浮空岛屿、依靠风帆船往来的世界。' })
@@ -942,8 +917,6 @@ describe('阶段三纯文本运行', () => {
       learning: new SqliteLearningRepository(database.getClient()),
     })
     await expect(disabled.createInterestRun({ personaId, content: '测试' })).rejects.toMatchObject({ code: 'AI_ALGORITHM_NOT_CONFIGURED' })
-    await expect(disabled.generatePersonaDraft({ prompt: '测试人物', sourceIds: [] }))
-      .rejects.toMatchObject({ code: 'CAPABILITY_DISABLED' })
     await expect(disabled.generateWorldDraft({ prompt: '测试世界' }))
       .rejects.toMatchObject({ code: 'CAPABILITY_DISABLED' })
     expect(database.getClient().prepare('SELECT COUNT(*) AS count FROM generation_runs').get()).toEqual({ count: 0 })

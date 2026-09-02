@@ -64,12 +64,6 @@ export const analyzeSoulPromptInputSchema = z.object({
   promptText: z.string().trim().min(1, '灵魂提示词不能为空').max(50_000, '灵魂提示词不能超过 50000 字'),
 })
 
-/** 从自然语言生成人物候选草稿的输入。 */
-export const generatePersonaDraftSchema = subjectInitializationSchema.extend({
-  worldId: z.string().uuid('世界标识无效').nullable().optional(),
-  sourceIds: z.array(z.string().uuid('资料标识无效')).max(8, '一次最多使用 8 项参考资料').default([]),
-})
-
 /** 文本模型返回且仍需用户确认的人物候选草稿。 */
 export const personaDraftSchema = z.object({
   name: z.string().trim().min(1, '人物名称不能为空').max(100, '人物名称不能超过 100 字'),
@@ -335,8 +329,6 @@ export type SubjectInitializationInput = z.infer<typeof subjectInitializationSch
 export type QuickCreateSubjectInput = z.infer<typeof quickCreateSubjectSchema>
 export type PersonaCredentialInput = z.infer<typeof personaCredentialSchema>
 export type AnalyzeSoulPromptInput = z.infer<typeof analyzeSoulPromptInputSchema>
-export type GeneratePersonaDraftInput = z.infer<typeof generatePersonaDraftSchema>
-export type PersonaDraft = z.infer<typeof personaDraftSchema>
 export type UpdatePersonaInput = z.infer<typeof updatePersonaSchema>
 export type UpdatePersonaStatusInput = z.infer<typeof updatePersonaStatusSchema>
 export type UpdateLearningAutomationInput = z.infer<typeof updateLearningAutomationSchema>
