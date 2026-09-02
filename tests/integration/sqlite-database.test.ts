@@ -457,7 +457,7 @@ describe('SqliteDatabase', () => {
 
     await expect(repository.createIfAbsent(record)).resolves.toBe(true)
     await expect(repository.createIfAbsent(record)).resolves.toBe(false)
-    await expect(repository.updatePassword('administrator', 'new-hash', 2_000)).resolves.toMatchObject({
+    await expect(repository.updatePassword('administrator', 'new-hash', 2_000, 'maintenance')).resolves.toMatchObject({
       credentialVersion: 2,
       passwordHash: 'new-hash',
       updatedAt: 2_000,

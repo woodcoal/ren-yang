@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { eq, sql } from 'drizzle-orm'
 import type { Administrator } from '../../domain/authentication/Administrator'
 import type {
+  AdministratorPasswordUpdateSource,
   AdministratorRepository,
   CreateAdministratorRecord,
 } from '../../ports/AdministratorRepository'
@@ -77,9 +78,15 @@ export class DrizzleAdministratorRepository implements AdministratorRepository {
    * @param id 管理员固定标识。
    * @param passwordHash 新密码哈希。
    * @param timestamp 更新时间。
+   * @param source 已登录管理员修改或本机维护重置。
    * @returns 更新后的管理员或 null。
    */
-  async updatePassword(id: string, passwordHash: string, timestamp: number): Promise<Administrator | null> {
+  async updatePassword(
+    id: string,
+    passwordHash: string,
+    timestamp: number,
+    source: AdministratorPasswordUpdateSource,
+  ): Promise<Administrator | null> {
     return this.db.transaction((transaction) => {
       const administrator = transaction
         .update(administrators)
@@ -93,7 +100,9 @@ export class DrizzleAdministratorRepository implements AdministratorRepository {
         .get() ?? null
       if (administrator) {
         transaction.insert(auditEvents).values({
-          id: randomUUID(), actor: 'maintenance', action: 'administrator_password_reset', targetType: 'administrator',
+          id: randomUUID(), actor: source,
+          action: source === 'administrator' ? 'administrator_password_changed' : 'administrator_password_reset',
+          targetType: 'administrator',
           targetId: id, detailsJson: '{}', createdAt: timestamp,
         }).run()
       }

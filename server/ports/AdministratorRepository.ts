@@ -1,5 +1,8 @@
 import type { Administrator } from '../domain/authentication/Administrator'
 
+/** 管理员密码更新的发起来源，用于写入准确审计动作。 */
+export type AdministratorPasswordUpdateSource = 'administrator' | 'maintenance'
+
 /** 创建唯一管理员所需的持久化字段。 */
 export interface CreateAdministratorRecord {
   /** 固定管理员标识。 */
@@ -48,7 +51,13 @@ export interface AdministratorRepository {
    * @param id 管理员固定标识。
    * @param passwordHash 新密码哈希。
    * @param timestamp 更新时间。
+   * @param source 已登录管理员修改或本机维护重置。
    * @returns 更新后的管理员；管理员不存在时返回 null。
    */
-  updatePassword(id: string, passwordHash: string, timestamp: number): Promise<Administrator | null>
+  updatePassword(
+    id: string,
+    passwordHash: string,
+    timestamp: number,
+    source: AdministratorPasswordUpdateSource,
+  ): Promise<Administrator | null>
 }

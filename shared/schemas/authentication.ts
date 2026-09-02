@@ -35,8 +35,24 @@ export const loginInputSchema = z
   })
   .strict()
 
+/** 已登录管理员修改自身密码时使用的请求结构。 */
+export const changeAdministratorPasswordInputSchema = z
+  .object({
+    currentPassword: z.string().min(1, '请输入当前密码').max(128, '当前密码不能超过 128 个字符'),
+    newPassword: administratorPasswordSchema,
+    newPasswordConfirmation: z.string(),
+  })
+  .strict()
+  .refine(input => input.newPassword === input.newPasswordConfirmation, {
+    message: '两次输入的新密码不一致',
+    path: ['newPasswordConfirmation'],
+  })
+
 /** 首次创建管理员请求的已校验类型。 */
 export type SetupAdministratorInput = z.output<typeof setupAdministratorInputSchema>
 
 /** 管理员登录请求的已校验类型。 */
 export type LoginInput = z.output<typeof loginInputSchema>
+
+/** 管理员修改自身密码请求的已校验类型。 */
+export type ChangeAdministratorPasswordInput = z.output<typeof changeAdministratorPasswordInputSchema>

@@ -6,6 +6,7 @@ import type { ContextReindexResult, ContextSyncSummaryView, OpenVikingCapability
 import type { SystemCapabilitiesResult } from '#shared/types/system'
 import type { LearningAutomationSettingsView } from '#shared/types/learningAutomation'
 import type { UpdateLearningAutomationSettingsInput } from '#shared/schemas/learningAutomation'
+import type { ChangeAdministratorPasswordInput } from '#shared/schemas/authentication'
 import { getApiErrorMessage } from '../utils/apiError'
 
 /** 上下文同步状态接口。 */
@@ -38,6 +39,29 @@ const syncRuntime = computed(() => statusData.value?.data.runtime ?? null)
 const { notifySuccess, notifyError, notifyWarning } = useOperationNotifications()
 const actionLoading = shallowRef(false)
 const reindexConfirmed = shallowRef(false)
+const passwordLoading = shallowRef(false)
+const passwordFormVersion = shallowRef(0)
+
+/**
+ * 修改当前管理员密码，并在成功后清空浏览器中的三个密码字段。
+ * @param input 已通过共享 Schema 校验的当前密码和新密码。
+ * @returns 密码请求和界面反馈完成时结束。
+ */
+async function changePassword(input: ChangeAdministratorPasswordInput): Promise<void> {
+  if (passwordLoading.value) return
+  passwordLoading.value = true
+  try {
+    await $fetch('/api/v1/auth/password', { method: 'PUT', body: input })
+    passwordFormVersion.value += 1
+    notifySuccess('其他旧会话已失效，当前会话继续有效。', '管理员密码已修改')
+  }
+  catch (error: unknown) {
+    notifyError(getApiErrorMessage(error, '管理员密码修改失败'), '管理员密码修改失败')
+  }
+  finally {
+    passwordLoading.value = false
+  }
+}
 
 /** @returns 主动检测外部上下文服务，不改变开关或索引。 */
 async function checkProvider(): Promise<void> {
@@ -179,7 +203,12 @@ async function executeAction(action: () => Promise<void>): Promise<void> {
             <dd class="mt-1">本机唯一管理员</dd>
           </div>
         </dl>
-        <UAlert class="mt-5" color="neutral" title="密码不在浏览器内维护" description="忘记密码时停止应用并执行本机维护命令；重置会撤销既有会话并写入审计。" />
+        <AuthenticationChangePasswordForm
+          :key="passwordFormVersion"
+          :loading="passwordLoading"
+          @submit="changePassword"
+        />
+        <UAlert class="mt-5" color="neutral" title="忘记当前密码？" description="停止应用并执行本机维护命令；重置会撤销全部既有会话并写入审计。" />
       </UCard>
     </div>
 

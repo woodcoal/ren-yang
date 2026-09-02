@@ -35,6 +35,7 @@ export class AdministratorMaintenanceApplicationService {
       ADMINISTRATOR_ID,
       passwordHash,
       this.dependencies.clock.now(),
+      'maintenance',
     )
 
     if (!administrator) {

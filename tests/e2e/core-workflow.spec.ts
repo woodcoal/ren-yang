@@ -472,4 +472,31 @@ test('首次设置、灵魂保存及文章直接生成形成可复现闭环', as
   await expect(page.getByText('当前管理员', { exact: true }).locator('..')).toContainText(ADMINISTRATOR.username)
   await expect(page.getByText('系统默认运行限制', { exact: true })).toBeVisible()
   await expect(page.getByText('最多 12 个文字块', { exact: true })).toBeVisible()
+
+  const changedPassword = 'e2e-password-updated-67890'
+  const passwordForm = page.locator('form[data-change-password-form]')
+  await passwordForm.locator('input[autocomplete="current-password"]').fill(ADMINISTRATOR.password)
+  const newPasswordInputs = passwordForm.locator('input[autocomplete="new-password"]')
+  await newPasswordInputs.nth(0).fill(changedPassword)
+  await newPasswordInputs.nth(1).fill(changedPassword)
+  await passwordForm.getByRole('button', { name: '修改密码', exact: true }).click()
+  await expect(page.getByText('管理员密码已修改', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '退出登录', exact: true }).click()
+  await page.getByLabel('管理员名称').fill(ADMINISTRATOR.username)
+  await page.getByLabel('管理员密码', { exact: true }).fill(changedPassword)
+  await page.getByRole('button', { name: '登录并进入工作台', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '先处理会影响后续创作的事', exact: true })).toBeVisible()
+
+  // 浏览器测试共用同一隔离数据库；验证新密码登录后恢复原密码，避免影响后续独立用例。
+  const restorePasswordStatus = await page.evaluate(async input => (await fetch('/api/v1/auth/password', {
+    method: 'PUT',
+    credentials: 'same-origin',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+  })).status, {
+    currentPassword: changedPassword,
+    newPassword: ADMINISTRATOR.password,
+    newPasswordConfirmation: ADMINISTRATOR.password,
+  })
+  expect(restorePasswordStatus).toBe(200)
 })

@@ -58,7 +58,8 @@ const pageSizeItems = [
 
 /** 审计动作中文标签；未知动作保留稳定名称，避免隐藏新事件。 */
 const auditActionLabels: Record<string, string> = {
-  administrator_created: '创建管理员', administrator_password_reset: '重置管理员密码',
+  administrator_created: '创建管理员', administrator_password_changed: '修改管理员密码',
+  administrator_password_reset: '重置管理员密码',
   data_restored: '恢复数据', context_reindexed: '重建上下文索引',
 }
 

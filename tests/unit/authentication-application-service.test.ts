@@ -3,6 +3,7 @@ import { AuthenticationApplicationService } from '../../server/application/authe
 import { AdministratorMaintenanceApplicationService } from '../../server/application/authentication/AdministratorMaintenanceApplicationService'
 import type { Administrator } from '../../server/domain/authentication/Administrator'
 import type {
+  AdministratorPasswordUpdateSource,
   AdministratorRepository,
   CreateAdministratorRecord,
 } from '../../server/ports/AdministratorRepository'
@@ -50,8 +51,19 @@ class InMemoryAdministratorRepository implements AdministratorRepository {
     return true
   }
 
-  /** @param id 管理员标识。 @param passwordHash 新哈希。 @param timestamp 更新时间。 @returns 更新记录或 null。 */
-  async updatePassword(id: string, passwordHash: string, timestamp: number): Promise<Administrator | null> {
+  /**
+   * @param id 管理员标识。
+   * @param passwordHash 新哈希。
+   * @param timestamp 更新时间。
+   * @param _source 密码更新来源；内存仓储不写审计。
+   * @returns 更新记录或 null。
+   */
+  async updatePassword(
+    id: string,
+    passwordHash: string,
+    timestamp: number,
+    _source: AdministratorPasswordUpdateSource,
+  ): Promise<Administrator | null> {
     if (!this.administrator || this.administrator.id !== id) {
       return null
     }
@@ -213,6 +225,35 @@ describe('AuthenticationApplicationService', () => {
     await expect(harness.service.login({ username: 'admin', password: 'correct-password' })).resolves.toEqual({
       id: 'administrator',
       username: 'admin',
+    })
+  })
+
+  it('校验当前密码后更新凭据并保留当前会话', async () => {
+    const harness = createHarness()
+    await harness.service.setupAdministrator(setupInput)
+
+    await expect(harness.service.changePassword({
+      currentPassword: 'wrong-password',
+      newPassword: 'new-correct-password',
+      newPasswordConfirmation: 'new-correct-password',
+    })).rejects.toMatchObject({ code: 'INVALID_CURRENT_PASSWORD', statusCode: 400 })
+    expect(harness.repository.administrator?.credentialVersion).toBe(1)
+
+    await expect(harness.service.changePassword({
+      currentPassword: 'correct-password',
+      newPassword: 'new-correct-password',
+      newPasswordConfirmation: 'new-correct-password',
+    })).resolves.toEqual({ id: 'administrator', username: 'admin' })
+    expect(harness.repository.administrator).toMatchObject({
+      passwordHash: 'hash:new-correct-password',
+      credentialVersion: 2,
+    })
+    expect(harness.session.principal).toEqual({
+      id: 'administrator', username: 'admin', credentialVersion: 2,
+    })
+    await expect(harness.service.getSession()).resolves.toEqual({
+      authenticated: true,
+      administrator: { id: 'administrator', username: 'admin' },
     })
   })
 

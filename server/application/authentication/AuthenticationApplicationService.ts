@@ -1,4 +1,8 @@
-import type { LoginInput, SetupAdministratorInput } from '../../../shared/schemas/authentication'
+import type {
+  ChangeAdministratorPasswordInput,
+  LoginInput,
+  SetupAdministratorInput,
+} from '../../../shared/schemas/authentication'
 import type {
   AdministratorIdentity,
   AuthenticationSessionResult,
@@ -97,6 +101,47 @@ export class AuthenticationApplicationService {
       credentialVersion: administrator.credentialVersion,
     })
     return toIdentity(administrator)
+  }
+
+  /**
+   * 校验当前凭据后修改唯一管理员密码，并让当前会话使用新的凭据版本。
+   * @param input 当前密码、符合统一规则的新密码及其确认值。
+   * @returns 密码修改后的公开管理员身份。
+   * @throws ApplicationError 当前会话无效、当前密码错误或管理员记录消失时抛出。
+   * @remarks 数据库递增凭据版本会使其他旧会话失效；当前会话在成功后立即刷新。
+   */
+  async changePassword(input: ChangeAdministratorPasswordInput): Promise<AdministratorIdentity> {
+    const identity = await this.requireAuthenticatedAdministrator()
+    const administrator = await this.dependencies.administratorRepository.findById(identity.id)
+    if (!administrator) {
+      throw new ApplicationError('AUTH_REQUIRED', '需要登录后才能修改密码', 401)
+    }
+
+    const passwordMatches = await this.dependencies.passwordHasher.verify(
+      administrator.passwordHash,
+      input.currentPassword,
+    )
+    if (!passwordMatches) {
+      throw new ApplicationError('INVALID_CURRENT_PASSWORD', '当前密码错误', 400)
+    }
+
+    const passwordHash = await this.dependencies.passwordHasher.hash(input.newPassword)
+    const updated = await this.dependencies.administratorRepository.updatePassword(
+      administrator.id,
+      passwordHash,
+      this.dependencies.clock.now(),
+      'administrator',
+    )
+    if (!updated) {
+      throw new ApplicationError('AUTH_REQUIRED', '管理员账户已失效，请重新登录', 401)
+    }
+
+    await this.dependencies.session.setPrincipal({
+      id: updated.id,
+      username: updated.username,
+      credentialVersion: updated.credentialVersion,
+    })
+    return toIdentity(updated)
   }
 
   /**

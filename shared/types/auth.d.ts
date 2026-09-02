@@ -4,7 +4,7 @@ declare module '#auth-utils' {
     id: string
     /** 当前管理员用户名。 */
     username: string
-    /** 用于使密码重置前会话失效的凭据版本。 */
+    /** 用于使密码修改或重置前会话失效的凭据版本。 */
     credentialVersion: number
   }
 }

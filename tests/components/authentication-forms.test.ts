@@ -3,6 +3,7 @@ import { flushPromises } from '@vue/test-utils'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
 import LoginForm from '../../app/components/authentication/LoginForm.vue'
 import SetupForm from '../../app/components/authentication/SetupForm.vue'
+import ChangePasswordForm from '../../app/components/authentication/ChangePasswordForm.vue'
 
 describe('认证表单', () => {
   it('登录表单只在 Schema 校验通过后上送结构化输入', async () => {
@@ -60,5 +61,42 @@ describe('认证表单', () => {
 
     const alert = wrapper.get('[role="alert"]')
     expect(alert.text()).toBe('用户名或密码错误')
+  })
+
+  it('修改密码表单一次提交当前密码和经过确认的新密码', async () => {
+    const wrapper = await mountSuspended(ChangePasswordForm, {
+      props: { loading: false },
+    })
+
+    await wrapper.get('input[autocomplete="current-password"]').setValue('current-password')
+    const newPasswordInputs = wrapper.findAll('input[autocomplete="new-password"]')
+    await newPasswordInputs[0]!.setValue('new-password')
+    await newPasswordInputs[1]!.setValue('new-password')
+    await wrapper.get('form[data-change-password-form]').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.emitted('submit')).toEqual([[
+      {
+        currentPassword: 'current-password',
+        newPassword: 'new-password',
+        newPasswordConfirmation: 'new-password',
+      },
+    ]])
+  })
+
+  it('修改密码表单在两次新密码不一致时阻止提交', async () => {
+    const wrapper = await mountSuspended(ChangePasswordForm, {
+      props: { loading: false },
+    })
+
+    await wrapper.get('input[autocomplete="current-password"]').setValue('current-password')
+    const newPasswordInputs = wrapper.findAll('input[autocomplete="new-password"]')
+    await newPasswordInputs[0]!.setValue('new-password')
+    await newPasswordInputs[1]!.setValue('different-password')
+    await wrapper.get('form[data-change-password-form]').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.emitted('submit')).toBeUndefined()
+    expect(wrapper.text()).toContain('两次输入的新密码不一致')
   })
 })

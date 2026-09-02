@@ -9,6 +9,7 @@ const props = defineProps<{
 /** 审计动作的固定中文名称。 */
 const ACTION_LABELS: Record<string, string> = {
   administrator_created: '创建管理员',
+  administrator_password_changed: '修改管理员密码',
   administrator_password_reset: '重置管理员密码',
   persona_version_published: '发布人物版本',
   persona_rolled_back: '回滚人物版本',
