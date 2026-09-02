@@ -1,7 +1,7 @@
 import type { H3Event } from 'h3'
 import { getMethod, getRequestHeader, getRequestURL } from 'h3'
 import { ApplicationError } from '../application/errors/ApplicationError'
-import { isBrowserRequestOriginAllowed } from '../infrastructure/http/RequestOriginValidator'
+import { isBrowserRequestOriginAllowed, parseTrustedBrowserOrigins } from '../infrastructure/http/RequestOriginValidator'
 import { writeErrorResponse } from '../presentation/http/controller'
 
 /** 会改变服务端状态的 HTTP 方法。 */
@@ -15,10 +15,12 @@ const MUTATION_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 function enforceRequestOrigin(event: H3Event) {
   const url = getRequestURL(event)
   if (!url.pathname.startsWith('/api/v1/') || !MUTATION_METHODS.has(getMethod(event))) return
+  const trustedOrigins = parseTrustedBrowserOrigins(useRuntimeConfig(event).trustedBrowserOrigins)
   const allowed = isBrowserRequestOriginAllowed(
     getRequestHeader(event, 'origin'),
     getRequestHeader(event, 'sec-fetch-site'),
     url.origin,
+    trustedOrigins,
   )
   if (!allowed) {
     return writeErrorResponse(event, new ApplicationError('CROSS_SITE_REQUEST_REJECTED', '拒绝跨站修改请求', 403))

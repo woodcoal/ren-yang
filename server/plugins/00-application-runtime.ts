@@ -1,6 +1,7 @@
 import type { H3Event } from 'h3'
 import type { NitroApp } from 'nitropack/types'
 import { ApplicationRuntime } from '../infrastructure/composition/ApplicationRuntime'
+import { parseTrustedBrowserOrigins } from '../infrastructure/http/RequestOriginValidator'
 
 /**
  * 初始化唯一应用运行时，并在请求和关闭钩子中管理其生命周期。
@@ -12,6 +13,7 @@ async function initializeApplicationRuntime(nitroApp: NitroApp): Promise<void> {
   let runtime: ApplicationRuntime | undefined
   try {
     validateSessionPassword(config.session.password)
+    parseTrustedBrowserOrigins(config.trustedBrowserOrigins)
     validatePositiveInteger(config.limits.requestBodyBytes, 'NUXT_LIMITS_REQUEST_BODY_BYTES')
     validateNonNegativeInteger(config.limits.minimumFreeDiskBytes, 'NUXT_LIMITS_MINIMUM_FREE_DISK_BYTES')
     validateMinimumInteger(config.logging.maximumFileBytes, 'NUXT_LOGGING_MAXIMUM_FILE_BYTES', 256)

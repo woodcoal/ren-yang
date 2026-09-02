@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { H3Event } from 'h3'
 import { H3RequestSecurity } from '../../server/infrastructure/authentication/H3RequestSecurity'
 import { parseBearerApiKey } from '../../server/infrastructure/authentication/ApiKeyBearerAuthentication'
-import { isBrowserRequestOriginAllowed } from '../../server/infrastructure/http/RequestOriginValidator'
+import { isBrowserRequestOriginAllowed, parseTrustedBrowserOrigins } from '../../server/infrastructure/http/RequestOriginValidator'
 import { requiresBoundedRequestBody } from '../../server/infrastructure/http/RequestBodyLimitPolicy'
 
 describe('HTTP 来源安全', () => {
@@ -26,6 +26,13 @@ describe('HTTP 来源安全', () => {
   it('同源浏览器请求和无来源头的维护脚本可以执行修改', () => {
     expect(isBrowserRequestOriginAllowed('https://ren-yang.example', 'same-origin', 'https://ren-yang.example')).toBe(true)
     expect(isBrowserRequestOriginAllowed(undefined, undefined, 'http://127.0.0.1:3000')).toBe(true)
+  })
+
+  it('反向代理可显式允许实际域名来源，但不放宽 cross-site 请求', () => {
+    const trustedOrigins = parseTrustedBrowserOrigins('https://ren-yang.example, https://admin.ren-yang.example')
+    expect(isBrowserRequestOriginAllowed('https://ren-yang.example', 'same-origin', 'http://127.0.0.1:3001', trustedOrigins)).toBe(true)
+    expect(isBrowserRequestOriginAllowed('https://ren-yang.example', 'cross-site', 'http://127.0.0.1:3001', trustedOrigins)).toBe(false)
+    expect(() => parseTrustedBrowserOrigins('https://ren-yang.example/path')).toThrow('只允许不含路径')
   })
 
   it('跨站、畸形 Origin 和 cross-site Fetch Metadata 均被拒绝', () => {

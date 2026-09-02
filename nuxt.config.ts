@@ -17,6 +17,8 @@ export default defineNuxtConfig({
   },
   runtimeConfig: {
     dataDirectory: './data',
+    // 反向代理未能保留原始 Host 时，可显式允许实际浏览器站点来源；空值只接受请求自身来源。
+    trustedBrowserOrigins: '',
     feedback: {
       autoPublishLowRisk: false,
     },
