@@ -15,6 +15,7 @@ import type { AiAlgorithmTestApplicationService } from './aiConfiguration/AiAlgo
 import type { ApiKeyApplicationService } from './authentication/ApiKeyApplicationService'
 import type { PublicApiApplicationService } from './publicApi/PublicApiApplicationService'
 import type { SystemAiSettingsApplicationService } from './systemAi/SystemAiSettingsApplicationService'
+import type { LearningAutomationApplicationService } from './learningAutomation/LearningAutomationApplicationService'
 
 /** 每个 HTTP 请求能够访问的应用服务集合。 */
 export interface RequestApplicationServices {
@@ -40,6 +41,8 @@ export interface RequestApplicationServices {
   learning: LearningApplicationService
   /** AI 成长与记忆提炼批次用例。 */
   analysis: AnalysisApplicationService
+  /** 定时提炼、自动发布和统一周期设置用例。 */
+  learningAutomation: LearningAutomationApplicationService
   /** 兴趣判断、文档规划、生成和运行历史用例。 */
   generation: GenerationApplicationService
   /** 生成运行与分析批次统一任务记录用例。 */

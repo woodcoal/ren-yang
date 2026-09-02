@@ -116,6 +116,11 @@ export const updatePersonaStatusSchema = z.object({
   isEnabled: z.boolean({ error: '人物状态必须是布尔值' }),
 })
 
+/** 修改人物或世界自动提炼并发布开关的输入。 */
+export const updateLearningAutomationSchema = z.object({
+  enabled: z.boolean({ error: '自动提炼开关必须是布尔值' }),
+})
+
 /** 根据人物当前灵魂生成头像时允许附加的视觉要求。 */
 export const generatePersonaAvatarSchema = z.object({
   additionalPrompt: z.string().trim().max(2_000, '补充提示词不能超过 2000 字').default(''),
@@ -298,6 +303,7 @@ export type GeneratePersonaDraftInput = z.infer<typeof generatePersonaDraftSchem
 export type PersonaDraft = z.infer<typeof personaDraftSchema>
 export type UpdatePersonaInput = z.infer<typeof updatePersonaSchema>
 export type UpdatePersonaStatusInput = z.infer<typeof updatePersonaStatusSchema>
+export type UpdateLearningAutomationInput = z.infer<typeof updateLearningAutomationSchema>
 export type GeneratePersonaAvatarInput = z.infer<typeof generatePersonaAvatarSchema>
 export type UpdatePersonasStatusInput = z.infer<typeof updatePersonasStatusSchema>
 export type CreatePersonaVersionInput = z.infer<typeof createPersonaVersionSchema>

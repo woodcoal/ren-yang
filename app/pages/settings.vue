@@ -4,6 +4,8 @@ import type { ApiResponse, AuthenticationSessionResult } from '#shared/types/api
 import type { UpdateOpenVikingSettingsInput } from '#shared/schemas/context'
 import type { ContextReindexResult, ContextSyncSummaryView, OpenVikingCapabilityView, OpenVikingSettingsView } from '#shared/types/context'
 import type { SystemCapabilitiesResult } from '#shared/types/system'
+import type { LearningAutomationSettingsView } from '#shared/types/learningAutomation'
+import type { UpdateLearningAutomationSettingsInput } from '#shared/schemas/learningAutomation'
 import { getApiErrorMessage } from '../utils/apiError'
 
 /** 上下文同步状态接口。 */
@@ -16,11 +18,13 @@ const [
   { data: statusData, error: statusError, refresh: refreshStatus },
   { data: sessionData, error: sessionError },
   { data: openVikingSettingsData, error: openVikingSettingsError, refresh: refreshOpenVikingSettings },
+  { data: learningAutomationData, error: learningAutomationError, refresh: refreshLearningAutomation },
 ] = await Promise.all([
   useFetch<ApiResponse<SystemCapabilitiesResult>>('/api/v1/system/capabilities'),
   useFetch<ApiResponse<ContextStatusResponse>>('/api/v1/system/context/summary'),
   useFetch<ApiResponse<AuthenticationSessionResult>>('/api/v1/auth/session'),
   useFetch<ApiResponse<OpenVikingSettingsView>>('/api/v1/system/context/settings'),
+  useFetch<ApiResponse<LearningAutomationSettingsView>>('/api/v1/system/learning-automation/settings'),
 ])
 const capabilities = computed(() => capabilityData.value?.data ?? null)
 const capability = computed(() => capabilityData.value?.data.openViking ?? statusData.value?.data.capability ?? null)
@@ -28,6 +32,7 @@ const contextProvider = computed(() => capabilityData.value?.data.contextProvide
 const administrator = computed(() => sessionData.value?.data.administrator ?? null)
 const openVikingSettings = computed(() => openVikingSettingsData.value?.data ?? null)
 const failedSyncCount = computed(() => statusData.value?.data.failedCount ?? 0)
+const learningAutomationSettings = computed(() => learningAutomationData.value?.data ?? null)
 
 const syncRuntime = computed(() => statusData.value?.data.runtime ?? null)
 const { notifySuccess, notifyError, notifyWarning } = useOperationNotifications()
@@ -75,6 +80,30 @@ async function saveOpenVikingSettings(input: UpdateOpenVikingSettingsInput): Pro
   }
   catch (error: unknown) {
     notifyError(getApiErrorMessage(error, 'OpenViking 设置保存失败'), 'OpenViking 设置保存失败')
+  }
+  finally {
+    actionLoading.value = false
+  }
+}
+
+/**
+ * 保存人物与世界共用的自动提炼执行周期。
+ * @param input 已通过共享 Schema 校验的小时数。
+ * @returns 保存和设置刷新完成时结束。
+ */
+async function saveLearningAutomationSettings(input: UpdateLearningAutomationSettingsInput): Promise<void> {
+  if (actionLoading.value) return
+  actionLoading.value = true
+  try {
+    learningAutomationData.value = await $fetch<ApiResponse<LearningAutomationSettingsView>>(
+      '/api/v1/system/learning-automation/settings',
+      { method: 'PUT', body: input },
+    )
+    notifySuccess(`执行周期已设为 ${input.intervalHours} 小时`, '自动提炼周期已保存')
+    await refreshLearningAutomation()
+  }
+  catch (error: unknown) {
+    notifyError(getApiErrorMessage(error, '自动提炼周期保存失败'), '自动提炼周期保存失败')
   }
   finally {
     actionLoading.value = false
@@ -130,7 +159,7 @@ async function executeAction(action: () => Promise<void>): Promise<void> {
   <div>
     <ContentPageHeader title="系统中心" description="按能力、检索同步和备份分区检查系统；浏览器只显示可确认的非敏感状态。" />
 
-    <UAlert v-if="capabilityError || statusError || sessionError || openVikingSettingsError" class="mb-5" color="error"
+    <UAlert v-if="capabilityError || statusError || sessionError || openVikingSettingsError || learningAutomationError" class="mb-5" color="error"
       title="系统数据加载失败" />
 
     <div class="mt-8 mb-6 grid gap-6 xl:grid-cols-[minmax(0,1.4fr)_minmax(20rem,0.6fr)]">
@@ -222,6 +251,22 @@ async function executeAction(action: () => Promise<void>): Promise<void> {
         </UButton>
       </UCard>
     </div>
+    <section class="archive-panel mt-6" aria-labelledby="learning-automation-heading">
+      <div class="section-heading">
+        <div class="section-heading-copy">
+          <p class="eyebrow">定时任务</p>
+          <h2 id="learning-automation-heading">成长与记忆自动提炼</h2>
+          <p>这里只设置统一检查周期；具体人物和世界仍需分别开启自动提炼并发布。</p>
+        </div>
+      </div>
+      <SystemLearningAutomationSettingsForm
+        v-if="learningAutomationSettings"
+        :key="learningAutomationSettings.updatedAt"
+        :settings="learningAutomationSettings"
+        :loading="actionLoading"
+        @submit="saveLearningAutomationSettings"
+      />
+    </section>
     <div class="mt-6">
       <SystemBackupPanel />
     </div>

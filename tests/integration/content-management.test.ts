@@ -183,7 +183,7 @@ describe('人物、世界与资料管理闭环', () => {
       changeSummary: '建立原创人物',
     })
     expect(created.persona).toMatchObject({
-      activeVersionId: expect.any(String), isEnabled: true, sourceCount: 0, versionCount: 1,
+      activeVersionId: expect.any(String), isEnabled: true, automaticLearningEnabled: false, sourceCount: 0, versionCount: 1,
     })
     expect(created.versions).toHaveLength(1)
     expect(created.versions[0]?.snapshot).toEqual(BASE_PERSONA_SNAPSHOT)
@@ -192,10 +192,26 @@ describe('人物、世界与资料管理闭环', () => {
     const world = await service.createWorld({
       name: '浮岛纪元', summary: '', snapshot: createWorldSnapshot('浮岛依靠浮石保持稳定。'), changeSummary: '建立世界',
     })
-    expect(world.world).toMatchObject({ activeVersionId: expect.any(String), isEnabled: true, versionCount: 1 })
+    expect(world.world).toMatchObject({
+      activeVersionId: expect.any(String), isEnabled: true, automaticLearningEnabled: false, versionCount: 1,
+    })
     expect(world.versions[0]?.snapshot).toEqual({ promptText: '浮岛依靠浮石保持稳定。' })
     expect(world.draft).toBeNull()
     expect(database.getClient().prepare('SELECT COUNT(*) AS count FROM soul_drafts').get()).toEqual({ count: 0 })
+  })
+
+  it('人物与世界自动提炼开关独立保存且默认关闭', async () => {
+    const persona = await service.createPersona({
+      name: '自动学习人物', worldId: null, sourceIds: [], snapshot: BASE_PERSONA_SNAPSHOT, changeSummary: '建立人物',
+    })
+    const world = await service.createWorld({
+      name: '自动学习世界', summary: '', snapshot: createWorldSnapshot('测试世界。'), changeSummary: '建立世界',
+    })
+
+    await expect(service.updatePersonaLearningAutomation(persona.persona.id, { enabled: true }))
+      .resolves.toMatchObject({ persona: { automaticLearningEnabled: true } })
+    await expect(service.updateWorldLearningAutomation(world.world.id, { enabled: true }))
+      .resolves.toMatchObject({ world: { automaticLearningEnabled: true } })
   })
 
   it('人物账号信息加密保存、主动取回，并按小写全局约束账号和邮箱唯一', async () => {

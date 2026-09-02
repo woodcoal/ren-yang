@@ -122,6 +122,18 @@ async function saveMetadata(event: FormSubmitEvent<UpdatePersonaInput>): Promise
 }
 
 /**
+ * 保存人物定时提炼并自动发布开关。
+ * @param enabled 用户选择的新状态。
+ * @returns 保存和人物详情刷新完成时结束。
+ */
+async function updateLearningAutomation(enabled: boolean): Promise<void> {
+  await runAction(enabled ? '人物自动提炼并发布已开启' : '人物自动提炼并发布已关闭', async () => {
+    await $fetch(`/api/v1/personas/${personaId}/learning-automation`, { method: 'PATCH', body: { enabled } })
+    await refresh()
+  })
+}
+
+/**
  * 主动请求服务端解密当前人物密码，仅在当前页面内存中短暂展示。
  * @returns 账号信息加载完成时结束。
  */
@@ -558,6 +570,13 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
             <div class="md:col-span-2"><UButton type="submit" :loading="actionLoading">保存基本信息</UButton></div>
           </UForm>
         </UCard>
+
+        <LearningLearningAutomationControl
+          :enabled="details.persona.automaticLearningEnabled"
+          subject-type="persona"
+          :loading="actionLoading"
+          @change="updateLearningAutomation"
+        />
 
         <div class="grid gap-6 xl:grid-cols-2">
           <ContentPersonaCredentialPanel

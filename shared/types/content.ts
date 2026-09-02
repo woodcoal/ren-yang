@@ -112,6 +112,8 @@ export interface PersonaSummary {
   currentSummary: string | null
   /** 是否允许人物参与后续新任务。 */
   isEnabled: boolean
+  /** 是否定时提炼并自动发布人物成长与记忆提示词。 */
+  automaticLearningEnabled: boolean
   /** 保留版本总数。 */
   versionCount: number
   /** 直接关联资料数。 */
@@ -198,6 +200,8 @@ export interface WorldSummary {
   currentContent: string | null
   /** 是否允许世界参与后续新任务。 */
   isEnabled: boolean
+  /** 是否定时提炼并自动发布世界成长提示词。 */
+  automaticLearningEnabled: boolean
   /** 保留版本总数。 */
   versionCount: number
   /** 直接关联人物数。 */

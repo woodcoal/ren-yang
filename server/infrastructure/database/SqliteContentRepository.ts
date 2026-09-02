@@ -181,6 +181,13 @@ export class SqliteContentRepository implements ContentRepository, SoulRepositor
     `).run(isEnabled ? 1 : 0, timestamp, personaId).changes === 1
   }
 
+  /** @param personaId 人物 UUID。 @param enabled 自动提炼并发布开关。 @param timestamp 更新时间。 @returns 是否更新。 */
+  async updatePersonaLearningAutomation(personaId: string, enabled: boolean, timestamp: number): Promise<boolean> {
+    return this.client.prepare(`
+      UPDATE personas SET automatic_learning_enabled = ?, updated_at = ? WHERE id = ?
+    `).run(enabled ? 1 : 0, timestamp, personaId).changes === 1
+  }
+
   /** @param personaIds 人物 UUID 集合。 @param isEnabled 统一新状态。 @param timestamp 更新时间。 @returns 更新数量。 */
   async updatePersonasStatus(personaIds: string[], isEnabled: boolean, timestamp: number): Promise<number> {
     return this.updateStatuses('personas', personaIds, isEnabled, timestamp)
@@ -352,6 +359,13 @@ export class SqliteContentRepository implements ContentRepository, SoulRepositor
     return this.client.prepare(`
       UPDATE worlds SET is_enabled = ?, updated_at = ? WHERE id = ?
     `).run(isEnabled ? 1 : 0, timestamp, worldId).changes === 1
+  }
+
+  /** @param worldId 世界 UUID。 @param enabled 自动提炼并发布开关。 @param timestamp 更新时间。 @returns 是否更新。 */
+  async updateWorldLearningAutomation(worldId: string, enabled: boolean, timestamp: number): Promise<boolean> {
+    return this.client.prepare(`
+      UPDATE worlds SET automatic_learning_enabled = ?, updated_at = ? WHERE id = ?
+    `).run(enabled ? 1 : 0, timestamp, worldId).changes === 1
   }
 
   /** @param worldIds 世界 UUID 集合。 @param isEnabled 统一新状态。 @param timestamp 更新时间。 @returns 更新数量。 */
@@ -1031,6 +1045,7 @@ function toPersona(value: unknown): PersonaRecord {
     origin: row.origin as PersonaRecord['origin'],
     activeVersionId: row.active_soul_version_id === null ? null : String(row.active_soul_version_id),
     isEnabled: Number(row.is_enabled) === 1,
+    automaticLearningEnabled: Number(row.automatic_learning_enabled) === 1,
     createdAt: Number(row.created_at),
     updatedAt: Number(row.updated_at),
   }
@@ -1062,6 +1077,7 @@ function toWorld(value: unknown): WorldRecord {
     summary: String(row.summary),
     activeVersionId: row.active_soul_version_id === null ? null : String(row.active_soul_version_id),
     isEnabled: Number(row.is_enabled) === 1,
+    automaticLearningEnabled: Number(row.automatic_learning_enabled) === 1,
     createdAt: Number(row.created_at),
     updatedAt: Number(row.updated_at),
   }

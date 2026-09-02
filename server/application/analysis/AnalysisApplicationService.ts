@@ -12,6 +12,7 @@ import type { TaskJob } from '../../domain/tasks/TaskJob'
 import type { TaskHandler } from '../../ports/TaskPorts'
 import { TaskExecutionError } from '../../ports/TaskPorts'
 import type { TextModelPort } from '../../ports/TextModelPort'
+import type { TokenCounter } from '../../ports/TokenCounter'
 import { TextModelError } from '../../ports/TextModelPort'
 import { ApplicationError } from '../errors/ApplicationError'
 import type { AiPromptApplicationService } from '../aiPrompts/AiPromptApplicationService'
@@ -57,6 +58,10 @@ export interface AnalysisApplicationServiceDependencies {
   clock: Clock
   /** 数据库配置的两阶段成长或记忆算法；未提供时保持旧单模型路径。 */
   algorithms?: Pick<AiAlgorithmApplicationService, 'prepare' | 'executeStep'>
+  /** 自动发布前使用的提示词 Token 计数器。 */
+  tokenCounter?: TokenCounter
+  /** 各类学习提示词自动发布时允许的 Token 上限。 */
+  promptTokenBudgets?: Record<AnalysisType, number>
 }
 
 /** 创建、执行和审核世界成长、人物成长及人物记忆 AI 迭代。 */
@@ -67,8 +72,20 @@ export class AnalysisApplicationService implements TaskHandler {
    */
   constructor(private readonly dependencies: AnalysisApplicationServiceDependencies) {}
 
-  /** @param analysisType 分析类型。 @param subjectId 对象 UUID。 @param input 分析模式。 @returns 已排队批次。 */
-  async createBatch(analysisType: AnalysisType, subjectId: string, input: CreateAnalysisBatchInput): Promise<AnalysisBatchView> {
+  /**
+   * 创建并固定一次成长或记忆提炼批次。
+   * @param analysisType 分析类型。
+   * @param subjectId 对象 UUID。
+   * @param input 增量或完整重建模式。
+   * @param options 是否由后台定时任务在完成后自动发布。
+   * @returns 已排队批次。
+   */
+  async createBatch(
+    analysisType: AnalysisType,
+    subjectId: string,
+    input: CreateAnalysisBatchInput,
+    options: { autoPublish: boolean } = { autoPublish: false },
+  ): Promise<AnalysisBatchView> {
     const algorithmSnapshot = this.dependencies.algorithms
       ? await this.dependencies.algorithms.prepare(learningAlgorithmCode(analysisType))
       : null
@@ -102,6 +119,7 @@ export class AnalysisApplicationService implements TaskHandler {
       algorithmSnapshot,
       inputs: prepared.inputs,
       timestamp: this.dependencies.clock.now(),
+      autoPublish: options.autoPublish,
     })
     if (!created) {
       throw new ApplicationError('ANALYSIS_ALREADY_PENDING', '该对象已有排队或进行中的提炼，请等待完成后再试', 409)
@@ -147,10 +165,14 @@ export class AnalysisApplicationService implements TaskHandler {
       if (!runtime) throw new ApplicationError('VERSION_CONFLICT', '分析批次不存在或状态已变化', 409)
       if (runtime.algorithmSnapshot) {
         if (runtime.algorithmSnapshot.algorithmCode === 'persona_memory') {
-          await this.executeConfiguredMemoryAlgorithm(batchId, runtime.algorithmSnapshot, runtime.baseline, runtime.batch.inputs)
+          await this.executeConfiguredMemoryAlgorithm(
+            batchId, runtime.algorithmSnapshot, runtime.baseline, runtime.batch.inputs, runtime.autoPublish,
+          )
         }
         else {
-          await this.executeConfiguredGrowthAlgorithm(batchId, runtime.algorithmSnapshot, runtime.baseline, runtime.batch.inputs)
+          await this.executeConfiguredGrowthAlgorithm(
+            batchId, runtime.algorithmSnapshot, runtime.baseline, runtime.batch.inputs, runtime.autoPublish,
+          )
         }
         return
       }
@@ -177,8 +199,10 @@ export class AnalysisApplicationService implements TaskHandler {
         promptText: response.structuredOutput,
         summary: LEARNING_PROMPT_RESULT_SUMMARY,
       })
+      this.validateAutomaticPublication(runtime.batch.analysisType, result.promptText, runtime.autoPublish)
       if (!await this.dependencies.analysis.saveLearningPromptResult(
         batchId, result, this.dependencies.identifiers.create(), this.dependencies.identifiers.create(), this.dependencies.clock.now(),
+        runtime.autoPublish ? { versionId: this.dependencies.identifiers.create(), changeSummary: '系统定时提炼并自动发布' } : undefined,
       )) {
         throw new Error('分析批次保存时状态已变化')
       }
@@ -196,6 +220,7 @@ export class AnalysisApplicationService implements TaskHandler {
    * @param snapshot 创建批次时固定的算法配置。
    * @param baseline 当前灵魂与当前成长提示词基线。
    * @param inputs 创建批次时固定的成长资料输入。
+   * @param autoPublish 创建批次时固定的自动发布行为。
    * @returns 两步模型调用与草稿保存完成时结束。
    */
   private async executeConfiguredGrowthAlgorithm(
@@ -203,6 +228,7 @@ export class AnalysisApplicationService implements TaskHandler {
     snapshot: AiAlgorithmSnapshot,
     baseline: unknown[],
     inputs: AnalysisBatchView['inputs'],
+    autoPublish: boolean,
   ): Promise<void> {
     const extractResponse = await this.dependencies.algorithms!.executeStep(
       snapshot,
@@ -224,8 +250,11 @@ export class AnalysisApplicationService implements TaskHandler {
       promptText: synthesizeResponse.structuredOutput,
       summary: `AI 已依据 ${facts.length} 条去重原子结论生成完整提示词草稿。`,
     })
+    const analysisType = snapshot.algorithmCode === 'world_growth' ? 'world_growth' : 'persona_growth'
+    this.validateAutomaticPublication(analysisType, result.promptText, autoPublish)
     if (!await this.dependencies.analysis.saveLearningPromptResult(
       batchId, result, this.dependencies.identifiers.create(), this.dependencies.identifiers.create(), this.dependencies.clock.now(),
+      autoPublish ? { versionId: this.dependencies.identifiers.create(), changeSummary: '系统定时提炼并自动发布' } : undefined,
     )) {
       throw new Error('分析批次保存时状态已变化')
     }
@@ -237,6 +266,7 @@ export class AnalysisApplicationService implements TaskHandler {
    * @param snapshot 创建批次时固定的人物记忆算法配置。
    * @param baseline 当前人物灵魂与当前记忆提示词基线。
    * @param inputs 创建批次时固定的任务记录和第三方经历。
+   * @param autoPublish 创建批次时固定的自动发布行为。
    * @returns 两步模型调用与待人工发布草稿保存完成时结束。
    */
   private async executeConfiguredMemoryAlgorithm(
@@ -244,6 +274,7 @@ export class AnalysisApplicationService implements TaskHandler {
     snapshot: AiAlgorithmSnapshot,
     baseline: unknown[],
     inputs: AnalysisBatchView['inputs'],
+    autoPublish: boolean,
   ): Promise<void> {
     const extractResponse = await this.dependencies.algorithms!.executeStep(
       snapshot,
@@ -265,10 +296,34 @@ export class AnalysisApplicationService implements TaskHandler {
       promptText: synthesizeResponse.structuredOutput,
       summary: `AI 已依据 ${facts.length} 条达到独立证据门槛的记忆事实生成完整提示词草稿。`,
     })
+    this.validateAutomaticPublication('persona_memory', result.promptText, autoPublish)
     if (!await this.dependencies.analysis.saveLearningPromptResult(
       batchId, result, this.dependencies.identifiers.create(), this.dependencies.identifiers.create(), this.dependencies.clock.now(),
+      autoPublish ? { versionId: this.dependencies.identifiers.create(), changeSummary: '系统定时提炼并自动发布' } : undefined,
     )) {
       throw new Error('分析批次保存时状态已变化')
+    }
+  }
+
+  /**
+   * 自动发布前复用人工发布的 Token 预算规则。
+   * @param analysisType 学习提示词类型。
+   * @param promptText 待发布完整正文。
+   * @param autoPublish 是否需要自动发布。
+   * @returns 无返回值。
+   */
+  private validateAutomaticPublication(analysisType: AnalysisType, promptText: string, autoPublish: boolean): void {
+    if (!autoPublish) return
+    const counter = this.dependencies.tokenCounter
+    const budget = this.dependencies.promptTokenBudgets?.[analysisType]
+    if (!counter || budget === undefined) throw new ApplicationError('CAPABILITY_DISABLED', '自动发布 Token 预算尚未配置', 503)
+    const count = counter.count(null, promptText)
+    if (count.tokens > budget) {
+      throw new ApplicationError(
+        'LEARNING_PROMPT_TOKEN_BUDGET_EXCEEDED',
+        `提示词预计 ${count.tokens} Token，超过当前 ${budget} Token 限制，请先精简文本`,
+        422,
+      )
     }
   }
 

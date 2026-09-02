@@ -397,6 +397,39 @@ describe('AI 综合提炼学习提示词', () => {
     })
   })
 
+  it('自动批次完成后直接发布当前版本且不保留草稿', async () => {
+    analysis = new AnalysisApplicationService({
+      content: contentRepository,
+      souls: contentRepository,
+      learning: learningRepository,
+      analysis: analysisRepository,
+      model,
+      prompts,
+      identifiers,
+      clock,
+      tokenCounter: new ConservativeTokenCounter(),
+      promptTokenBudgets: { world_growth: 2_500, persona_growth: 2_500, persona_memory: 3_000 },
+    })
+    worker = new WorkerApplicationService({
+      taskJobRepository: new SqliteTaskJobRepository(database.getClient()),
+      taskHandler: analysis,
+      clock,
+      leaseDurationMs: 60_000,
+    })
+
+    const batch = await analysis.createBatch('world_growth', worldId, { mode: 'incremental' }, { autoPublish: true })
+    await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: true })
+
+    expect((await learning.getWorldGrowthWorkspace(worldId)).prompt).toMatchObject({
+      activeVersion: {
+        sourceAnalysisBatchId: batch.id,
+        createdBy: 'analysis',
+        changeSummary: '系统定时提炼并自动发布',
+      },
+      draft: null,
+    })
+  })
+
   it('人物记忆专用算法会固定第三方记录，校验证据门槛后编译待发布草稿', async () => {
     const persona = await content.createPersona({
       name: '外部经历人物', worldId: null, sourceIds: [],

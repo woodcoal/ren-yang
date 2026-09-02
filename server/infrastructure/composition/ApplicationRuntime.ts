@@ -59,6 +59,8 @@ import { SqliteOpenVikingSettingsRepository } from '../database/SqliteOpenViking
 import { OpenAiCompatibleModelFactory } from '../models/OpenAiCompatibleModelFactory'
 import { SystemAiSettingsApplicationService } from '../../application/systemAi/SystemAiSettingsApplicationService'
 import { SqliteSystemAiSettingsRepository } from '../database/SqliteSystemAiSettingsRepository'
+import { LearningAutomationApplicationService } from '../../application/learningAutomation/LearningAutomationApplicationService'
+import { SqliteLearningAutomationSettingsRepository } from '../database/SqliteLearningAutomationSettingsRepository'
 
 /** 应用运行时组合配置。 */
 export interface ApplicationRuntimeOptions {
@@ -100,6 +102,8 @@ export class ApplicationRuntime {
   private readonly learningService: LearningApplicationService
   /** 请求与 Worker 共用的成长与记忆 AI 分析应用服务。 */
   private readonly analysisService: AnalysisApplicationService
+  /** 请求与 Worker 共用的学习自动化调度及设置服务。 */
+  private readonly learningAutomationService: LearningAutomationApplicationService
   /** 请求与 Worker 共用的生成应用服务。 */
   private readonly generationService: GenerationApplicationService
   /** 请求间共享的统一任务记录查询服务。 */
@@ -276,6 +280,14 @@ export class ApplicationRuntime {
       identifiers,
       clock: this.clock,
       algorithms: aiAlgorithms,
+      tokenCounter,
+      promptTokenBudgets: { world_growth: 2_500, persona_growth: 2_500, persona_memory: 3_000 },
+    })
+    this.learningAutomationService = new LearningAutomationApplicationService({
+      settings: new SqliteLearningAutomationSettingsRepository(this.sqlite.getClient()),
+      content: contentRepository,
+      analysis: this.analysisService,
+      clock: this.clock,
     })
     this.generationService = new GenerationApplicationService({
       runs: new SqliteRunRepository(this.sqlite.getClient()),
@@ -329,6 +341,7 @@ export class ApplicationRuntime {
       ),
       clock: this.clock,
       leaseDurationMs: options.workerLeaseDurationMs ?? 60_000,
+      learningAutomation: this.learningAutomationService,
     })
     this.worker = new InternalWorker(workerService, options.workerPollIntervalMs ?? 1_000)
     this.systemService = new SystemApplicationService({
@@ -373,6 +386,7 @@ export class ApplicationRuntime {
       soul: this.soulService,
       learning: this.learningService,
       analysis: this.analysisService,
+      learningAutomation: this.learningAutomationService,
       generation: this.generationService,
       history: this.historyService,
       feedback: this.feedbackService,

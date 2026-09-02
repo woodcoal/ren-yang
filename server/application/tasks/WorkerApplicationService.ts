@@ -1,6 +1,7 @@
 import type { Clock } from '../../ports/Clock'
 import type { TaskHandler, TaskJobRepository } from '../../ports/TaskPorts'
 import { TaskExecutionError } from '../../ports/TaskPorts'
+import type { LearningAutomationApplicationService } from '../learningAutomation/LearningAutomationApplicationService'
 
 /** Worker 应用服务的依赖。 */
 export interface WorkerApplicationServiceDependencies {
@@ -12,6 +13,8 @@ export interface WorkerApplicationServiceDependencies {
   clock: Clock
   /** 单次任务租约长度。 */
   leaseDurationMs: number
+  /** 可选的学习自动化周期调度入口。 */
+  learningAutomation?: Pick<LearningAutomationApplicationService, 'runDueCycle'>
 }
 
 /** Worker 每次轮询的执行结果。 */
@@ -45,6 +48,7 @@ export class WorkerApplicationService {
    * @returns 本次轮询是否处理任务及其结果。
    */
   async executeNext(): Promise<WorkerTickResult> {
+    await this.dependencies.learningAutomation?.runDueCycle()
     const job = await this.dependencies.taskJobRepository.claimNext(
       this.dependencies.clock.now(),
       this.dependencies.leaseDurationMs,

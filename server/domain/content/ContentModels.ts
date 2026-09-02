@@ -77,6 +77,8 @@ export interface PersonaRecord {
   activeVersionId: string | null
   /** 是否允许人物参与后续新任务。 */
   isEnabled: boolean
+  /** 是否定时提炼并自动发布人物成长与记忆提示词。 */
+  automaticLearningEnabled: boolean
   /** 创建时间。 */
   createdAt: number
   /** 更新时间。 */
@@ -115,6 +117,8 @@ export interface WorldRecord {
   activeVersionId: string | null
   /** 是否允许世界参与后续新任务。 */
   isEnabled: boolean
+  /** 是否定时提炼并自动发布世界成长提示词。 */
+  automaticLearningEnabled: boolean
   /** 创建时间。 */
   createdAt: number
   /** 更新时间。 */

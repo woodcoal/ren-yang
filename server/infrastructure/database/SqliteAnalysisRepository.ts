@@ -45,13 +45,13 @@ export class SqliteAnalysisRepository implements AnalysisRepository {
         INSERT INTO analysis_batches (
           id, analysis_type, world_id, persona_id, mode, baseline_soul_version_id,
           baseline_json, model_snapshot_json, parameter_snapshot_json, prompt_version,
-          algorithm_snapshot_json, status, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?)
+          algorithm_snapshot_json, auto_publish, status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', ?, ?)
       `).run(
         record.id, record.analysisType, worldId, personaId, record.mode, record.baselineSoulVersionId,
         JSON.stringify(record.baseline), JSON.stringify(record.model), JSON.stringify(record.parameters),
         record.promptVersion, record.algorithmSnapshot ? JSON.stringify(record.algorithmSnapshot) : null,
-        record.timestamp, record.timestamp,
+        record.autoPublish ? 1 : 0, record.timestamp, record.timestamp,
       )
       const insertInput = this.client.prepare(`
         INSERT INTO analysis_batch_inputs (
@@ -150,6 +150,7 @@ export class SqliteAnalysisRepository implements AnalysisRepository {
         algorithmSnapshot: row.algorithm_snapshot_json
           ? JSON.parse(String(row.algorithm_snapshot_json)) as AiAlgorithmSnapshot
           : null,
+        autoPublish: Number(row.auto_publish) === 1,
       }
     }).immediate()
   }
@@ -198,6 +199,7 @@ export class SqliteAnalysisRepository implements AnalysisRepository {
    * @param promptId 当前对象尚无提示词容器时使用的 UUID。
    * @param draftId 当前对象尚无草稿时使用的 UUID。
    * @param timestamp 分析完成和草稿更新时间。
+   * @param publication 存在时在同一事务内直接创建并启用不可变版本。
    * @returns 批次仍处于运行状态并成功保存时为 true。
    */
   async saveLearningPromptResult(
@@ -206,6 +208,7 @@ export class SqliteAnalysisRepository implements AnalysisRepository {
     promptId: string,
     draftId: string,
     timestamp: number,
+    publication?: { versionId: string, changeSummary: string },
   ): Promise<boolean> {
     return this.client.transaction(() => {
       const batch = this.client.prepare(`
@@ -242,15 +245,35 @@ export class SqliteAnalysisRepository implements AnalysisRepository {
         draftId, prompt.id, prompt.active_version_id, result.promptText, hashContent(result.promptText),
         batchId, timestamp, timestamp,
       )
+      if (publication) {
+        const versionNo = Number((this.client.prepare(`
+          SELECT COALESCE(MAX(version_no), 0) + 1 AS value
+          FROM learning_prompt_versions WHERE prompt_id = ?
+        `).get(prompt.id) as { value: number }).value)
+        this.client.prepare(`
+          INSERT INTO learning_prompt_versions (
+            id, prompt_id, version_no, parent_version_id, prompt_text, content_hash,
+            source_analysis_batch_id, change_summary, created_by, published_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'analysis', ?)
+        `).run(
+          publication.versionId, prompt.id, versionNo, prompt.active_version_id,
+          result.promptText, hashContent(result.promptText), batchId, publication.changeSummary, timestamp,
+        )
+        this.client.prepare(`
+          UPDATE learning_prompts SET active_version_id = ?, updated_at = ? WHERE id = ?
+        `).run(publication.versionId, timestamp, prompt.id)
+        this.client.prepare('DELETE FROM learning_prompt_drafts WHERE prompt_id = ?').run(prompt.id)
+      }
       this.client.prepare(`UPDATE learning_prompts SET updated_at = ? WHERE id = ?`).run(timestamp, prompt.id)
       this.client.prepare(`
         UPDATE analysis_batches SET raw_result_json = ?, status = 'completed',
           completed_at = ?, updated_at = ? WHERE id = ? AND status = 'running'
       `).run(JSON.stringify(result), timestamp, timestamp, batchId)
       insertAuditEvent(this.client, {
-        actor: 'administrator', action: 'learning_prompt_draft_generated',
+        actor: publication ? 'system' : 'administrator',
+        action: publication ? 'learning_prompt_automatically_published' : 'learning_prompt_draft_generated',
         targetType: 'analysis_batch', targetId: batchId, timestamp,
-        details: { promptType },
+        details: { promptType, autoPublished: Boolean(publication) },
       })
       return true
     }).immediate()

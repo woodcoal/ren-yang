@@ -212,6 +212,8 @@ export interface ContentRepository {
   updatePersona(id: string, name: string, worldId: string | null, timestamp: number): Promise<boolean>
   /** @param personaId 人物标识。 @param isEnabled 新状态。 @param timestamp 更新时间。 @returns 是否更新成功。 */
   updatePersonaStatus(personaId: string, isEnabled: boolean, timestamp: number): Promise<boolean>
+  /** @param personaId 人物标识。 @param enabled 自动提炼并发布开关。 @param timestamp 更新时间。 @returns 是否更新成功。 */
+  updatePersonaLearningAutomation(personaId: string, enabled: boolean, timestamp: number): Promise<boolean>
   /** @param personaIds 人物标识集合。 @param isEnabled 统一新状态。 @param timestamp 更新时间。 @returns 更新数量。 */
   updatePersonasStatus(personaIds: string[], isEnabled: boolean, timestamp: number): Promise<number>
   /** @param personaId 人物标识。 @returns 按创建时间倒序的版本。 */
@@ -239,6 +241,8 @@ export interface ContentRepository {
   updateWorld(id: string, name: string, summary: string, timestamp: number): Promise<boolean>
   /** @param worldId 世界标识。 @param isEnabled 新状态。 @param timestamp 更新时间。 @returns 是否更新成功。 */
   updateWorldStatus(worldId: string, isEnabled: boolean, timestamp: number): Promise<boolean>
+  /** @param worldId 世界标识。 @param enabled 自动提炼并发布开关。 @param timestamp 更新时间。 @returns 是否更新成功。 */
+  updateWorldLearningAutomation(worldId: string, enabled: boolean, timestamp: number): Promise<boolean>
   /** @param worldIds 世界标识集合。 @param isEnabled 统一新状态。 @param timestamp 更新时间。 @returns 更新数量。 */
   updateWorldsStatus(worldIds: string[], isEnabled: boolean, timestamp: number): Promise<number>
   /** @param worldId 世界标识。 @returns 按创建时间倒序的版本。 */

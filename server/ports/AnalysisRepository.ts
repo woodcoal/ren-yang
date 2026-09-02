@@ -52,6 +52,8 @@ export interface CreateAnalysisBatchRecord {
   inputs: CreateAnalysisBatchInputRecord[]
   /** 创建时间。 */
   timestamp: number
+  /** 批次完成后是否在同一事务内直接发布结果。 */
+  autoPublish: boolean
 }
 
 /** Worker 执行分析所需的固定批次数据。 */
@@ -68,6 +70,8 @@ export interface AnalysisBatchRuntimeRecord {
   promptVersion: string
   /** 两阶段成长算法的完整非敏感快照；旧批次为空。 */
   algorithmSnapshot: AiAlgorithmSnapshot | null
+  /** 创建批次时固定的自动发布行为。 */
+  autoPublish: boolean
 }
 
 /** AI 分析批次、提案和原子审核事实源。 */
@@ -86,8 +90,8 @@ export interface AnalysisRepository {
   startBatch(batchId: string, timestamp: number): Promise<AnalysisBatchRuntimeRecord | null>
   /** @param batchId 批次 UUID。 @param result 已校验模型结果。 @param timestamp 完成时间。 @returns 是否保存成功。 */
   saveAnalysisResult(batchId: string, result: ModelIterationResult, timestamp: number): Promise<boolean>
-  /** @param batchId 批次 UUID。 @param result 完整提示词提炼结果。 @param promptId 首次提示词容器 UUID。 @param draftId 草稿 UUID。 @param timestamp 完成时间。 @returns 是否原子保存批次和草稿。 */
-  saveLearningPromptResult(batchId: string, result: ModelLearningPromptResult, promptId: string, draftId: string, timestamp: number): Promise<boolean>
+  /** @param batchId 批次 UUID。 @param result 完整提示词提炼结果。 @param promptId 首次提示词容器 UUID。 @param draftId 草稿 UUID。 @param timestamp 完成时间。 @param publication 可选自动发布版本信息。 @returns 是否原子保存批次及草稿或当前版本。 */
+  saveLearningPromptResult(batchId: string, result: ModelLearningPromptResult, promptId: string, draftId: string, timestamp: number, publication?: { versionId: string, changeSummary: string }): Promise<boolean>
   /** @param batchId 批次 UUID。 @param code 稳定错误码。 @param message 脱敏错误。 @param timestamp 失败时间。 @returns 无返回值。 */
   failBatch(batchId: string, code: string, message: string, timestamp: number): Promise<void>
   /** @param batchId 批次 UUID。 @param input 审核决定。 @param timestamp 审核时间。 @returns 审核并幂等应用后的批次或 null。 */

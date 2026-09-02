@@ -9,6 +9,7 @@ import type {
   SourceCreationTarget,
   CreateWorldInput,
   UpdatePersonaInput,
+  UpdateLearningAutomationInput,
   UpdatePersonaStatusInput,
   UpdatePersonasStatusInput,
   UpdateSourceInput,
@@ -399,6 +400,19 @@ export class ContentApplicationService {
   }
 
   /**
+   * 修改人物定时提炼并自动发布开关，不影响手动提炼和发布。
+   * @param personaId 人物 UUID。
+   * @param input 已校验的新开关状态。
+   * @returns 更新后的人物详情。
+   */
+  async updatePersonaLearningAutomation(personaId: string, input: UpdateLearningAutomationInput): Promise<PersonaDetails> {
+    const current = await this.requirePersona(personaId)
+    if (current.automaticLearningEnabled === input.enabled) return await this.getPersona(personaId)
+    await this.dependencies.repository.updatePersonaLearningAutomation(personaId, input.enabled, this.dependencies.clock.now())
+    return await this.getPersona(personaId)
+  }
+
+  /**
    * 验证全部人物后原子修改统一启用状态，避免部分成功。
    * @param input 已校验的人物 UUID 集合和统一状态。
    * @returns 去重后的处理对象与新状态。
@@ -586,6 +600,19 @@ export class ContentApplicationService {
     const current = await this.requireWorld(worldId)
     if (current.isEnabled === input.isEnabled) return await this.getWorld(worldId)
     await this.dependencies.repository.updateWorldStatus(worldId, input.isEnabled, this.dependencies.clock.now())
+    return await this.getWorld(worldId)
+  }
+
+  /**
+   * 修改世界定时提炼并自动发布开关，不影响手动提炼和发布。
+   * @param worldId 世界 UUID。
+   * @param input 已校验的新开关状态。
+   * @returns 更新后的世界详情。
+   */
+  async updateWorldLearningAutomation(worldId: string, input: UpdateLearningAutomationInput): Promise<WorldDetails> {
+    const current = await this.requireWorld(worldId)
+    if (current.automaticLearningEnabled === input.enabled) return await this.getWorld(worldId)
+    await this.dependencies.repository.updateWorldLearningAutomation(worldId, input.enabled, this.dependencies.clock.now())
     return await this.getWorld(worldId)
   }
 
