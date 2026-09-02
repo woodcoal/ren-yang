@@ -68,6 +68,7 @@ describe('详情工作区信息架构', () => {
   it('人物和世界只保留四个顶层入口并在内部声明提示词与资料模块', () => {
     const personaPage = readFileSync('app/pages/personas/[id].vue', 'utf8')
     const worldPage = readFileSync('app/pages/worlds/[id].vue', 'utf8')
+    const contentStyles = readFileSync('app/assets/css/theme/content.css', 'utf8')
 
     for (const pageSource of [personaPage, worldPage]) {
       expect(pageSource).toContain("{ id: 'basic', label: '基础信息' }")
@@ -80,6 +81,9 @@ describe('详情工作区信息架构', () => {
     expect(personaPage).toContain("{ id: 'memory', label: '记忆'")
     expect(personaPage).toContain("{ id: 'records', label: '历史任务'")
     expect(personaPage).toContain("{ id: 'external_records', label: '三方记录'")
+    expect(personaPage).toContain('class="persona-detail-page"')
+    expect(contentStyles).toContain('.persona-detail-page .page-description')
+    expect(contentStyles).toContain('-webkit-line-clamp: 2')
     expect(worldPage).not.toContain("{ id: 'memory', label: '记忆'")
   })
 

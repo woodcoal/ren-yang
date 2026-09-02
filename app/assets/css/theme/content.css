@@ -69,6 +69,14 @@
   line-height: 1.7;
 }
 
+/* 人物灵魂可能很长；详情页顶部只保留两行身份介绍，完整正文仍在灵魂工作区查看。 */
+.persona-detail-page .page-description {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
 .page-actions {
   display: flex;
   flex-wrap: wrap;

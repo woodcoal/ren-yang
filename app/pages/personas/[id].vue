@@ -532,7 +532,7 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
 </script>
 
 <template>
-  <div>
+  <div class="persona-detail-page">
     <ContentPageHeader
       :title="details?.persona.name || '人物工作区'"
       :description="details?.persona.currentSummary || '管理人物灵魂、成长、记忆和资料。'"
