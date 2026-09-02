@@ -1,12 +1,11 @@
 import { getRouterParam, readBody } from 'h3'
-import { resourceIdSchema } from '#shared/schemas/content'
-import { setPersonaWorldSchema } from '#shared/schemas/publicApi'
+import { publicPersonaIdentifierSchema, setPersonaWorldSchema } from '#shared/schemas/publicApi'
 import { executePublicWriteController } from '../../../../presentation/http/publicController'
-import { toPublicJson } from '../../../../presentation/http/publicJson'
+import { readPublicPersonaId, toPublicJson } from '../../../../presentation/http/publicJson'
 
 /**
  * 建立或替换人物的唯一世界关系。
- * @param event 已认证 API Key 且包含人物与世界 UUID 的请求事件。
+ * @param event 已认证 API Key，路径包含人物 UUID、用户名或邮箱，正文包含世界 UUID。
  * @returns 关系生效后的人物详情。
  * @remarks 要求 `persona:write` 权限和幂等键，目标世界必须存在。
  */
@@ -14,9 +13,11 @@ export default defineEventHandler(async (event) => {
   const rawId = getRouterParam(event, 'personaId')
   const body: unknown = await readBody(event)
   return await executePublicWriteController(event, 'persona:write', {
-    payload: body, targetType: 'persona_world', successStatusCode: 200, targetId: () => rawId ?? null,
+    payload: body, targetType: 'persona_world', successStatusCode: 200, targetId: readPublicPersonaId,
   }, async () => {
     const input = setPersonaWorldSchema.parse(body)
-    return toPublicJson(await event.context.applicationServices.content.setPersonaWorld(resourceIdSchema.parse(rawId), input.worldId))
+    const identifier = publicPersonaIdentifierSchema.parse(rawId)
+    const personaId = await event.context.applicationServices.content.resolvePersonaIdentifier(identifier)
+    return toPublicJson(await event.context.applicationServices.content.setPersonaWorld(personaId, input.worldId))
   })
 })

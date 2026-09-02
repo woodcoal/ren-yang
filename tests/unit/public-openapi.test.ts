@@ -83,8 +83,40 @@ describe('公共 OpenAPI 契约', () => {
       .toMatchObject({ properties: { data: { $ref: '#/components/schemas/InterestBatch' } } })
     expect(document.components.schemas.CreateInterestBatch).toMatchObject({
       properties: {
+        personaId: { $ref: '#/components/schemas/PersonaIdentifier' },
         additionalPrompt: { type: 'string', maxLength: 4_000, default: '' },
       },
+    })
+    expect(document.components.schemas.CreateGenerationRun).toMatchObject({
+      properties: { personaId: { $ref: '#/components/schemas/PersonaIdentifier' } },
+    })
+    expect(document.components.schemas.PersonaIdentifier).toEqual({
+      type: 'string', minLength: 1, maxLength: 320,
+      description: '人物 UUID、用户名或邮箱；用户名和邮箱忽略大小写及首尾空白。',
+    })
+    expect(document.paths['/api/v2/personas/{personaId}']?.get?.parameters).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        name: 'personaId',
+        schema: { $ref: '#/components/schemas/PersonaIdentifier' },
+      }),
+    ]))
+    for (const [path, pathItem] of Object.entries(document.paths)) {
+      if (!path.startsWith('/api/v2/personas/{personaId}')) continue
+      for (const operation of Object.values(pathItem)) {
+        expect(operation.parameters).toEqual(expect.arrayContaining([
+          expect.objectContaining({ name: 'personaId', schema: { $ref: '#/components/schemas/PersonaIdentifier' } }),
+        ]))
+      }
+    }
+    expect(document.components.schemas.SourceTarget).toMatchObject({
+      oneOf: expect.arrayContaining([
+        expect.objectContaining({ properties: expect.objectContaining({ targetType: { type: 'string', const: 'persona' }, targetId: { $ref: '#/components/schemas/PersonaIdentifier' } }) }),
+      ]),
+    })
+    expect(document.components.schemas.SourceLinkInput).toMatchObject({
+      oneOf: expect.arrayContaining([
+        expect.objectContaining({ properties: expect.objectContaining({ targetType: { type: 'string', const: 'persona' }, targetId: { $ref: '#/components/schemas/PersonaIdentifier' } }) }),
+      ]),
     })
     expect(document.components.schemas.InterestBatchItem).toMatchObject({
       required: expect.arrayContaining(['text']),
@@ -123,5 +155,8 @@ describe('公共 OpenAPI 契约', () => {
     expect(document.paths['/api/v2/runs']?.get?.parameters?.map(parameter => parameter.name)).toEqual([
       'personaId', 'kind', 'status', 'limit',
     ])
+    expect(document.paths['/api/v2/runs']?.get?.parameters).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'personaId', schema: { $ref: '#/components/schemas/PersonaIdentifier' } }),
+    ]))
   })
 })

@@ -10,7 +10,7 @@ POST /api/v2/interest-batches
 
 ```json
 {
-  "personaId": "<人物 UUID>",
+  "personaId": "<人物用户名、邮箱或 UUID>",
   "additionalPrompt": "只根据长期兴趣判断，不考虑短期热点。",
   "items": [
     { "itemId": "news-001", "text": "第一条内容" },
@@ -49,7 +49,7 @@ POST /api/v2/generation-runs
 
 ```json
 {
-  "personaId": "<人物 UUID>",
+  "personaId": "<人物用户名、邮箱或 UUID>",
   "requirement": "以该人物的口吻写一篇专业文章，说明目标、论据和结论。",
   "outputFormat": "text",
   "imageCount": 0
@@ -80,6 +80,8 @@ GET /api/v2/runs/{runId}
 | `POST /api/v2/runs/{runId}/render` | `generation:read` | 即时渲染指定格式 |
 | `GET /api/v2/runs/{runId}/assets/{assetId}?variant=result|original` | `generation:read` | 读取结果图或保留的供应商原图 |
 | `GET /api/v2/runs/{runId}/exports/{format}` | `generation:read` | 下载导出结果 |
+
+创建批次、创建图文运行及 `GET /api/v2/runs?personaId=...` 筛选均可使用人物 UUID、用户名或邮箱；服务端解析后返回真实人物 UUID。
 
 即时渲染正文：
 

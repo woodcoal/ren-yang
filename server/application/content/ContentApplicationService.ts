@@ -159,6 +159,30 @@ export class ContentApplicationService {
   }
 
   /**
+   * 把公共调用方提供的人物 UUID、用户名或邮箱解析为唯一内部 UUID。
+   * @param identifier 人物 UUID、用户名或邮箱；用户名和邮箱允许混合大小写及首尾空白。
+   * @returns 唯一人物 UUID。
+   * @throws ApplicationError 标识不存在时返回 404，历史数据跨字段指向不同人物时返回 409。
+   * @remarks UUID 精确命中优先；非 UUID 别名同时匹配用户名和邮箱，绝不随机选择歧义结果。
+   */
+  async resolvePersonaIdentifier(identifier: string): Promise<string> {
+    const normalized = normalizeCredentialIdentity(identifier)
+    if (!normalized) throw new ApplicationError('VALIDATION_FAILED', '人物标识不能为空', 422)
+
+    const exactPersona = await this.dependencies.repository.findPersona(normalized)
+    if (exactPersona) return exactPersona.id
+
+    const matchedIds = await this.dependencies.repository.findPersonaIdsByCredentialIdentifier(normalized)
+    if (matchedIds.length === 0) throw new ApplicationError('RESOURCE_NOT_FOUND', '人物不存在', 404)
+    if (matchedIds.length > 1) {
+      throw new ApplicationError('PERSONA_IDENTIFIER_AMBIGUOUS', '人物用户名或邮箱指向多个历史人物，请改用人物 UUID', 409)
+    }
+    const [personaId] = matchedIds
+    if (!personaId) throw new ApplicationError('RESOURCE_NOT_FOUND', '人物不存在', 404)
+    return personaId
+  }
+
+  /**
    * 查询单个人物、版本和资料。
    * @param personaId 人物 UUID。
    * @returns 可供管理界面直接使用的人物详情。

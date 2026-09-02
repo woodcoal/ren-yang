@@ -1,5 +1,5 @@
 import { readBody } from 'h3'
-import { createSourceWithTargetsSchema } from '#shared/schemas/content'
+import { publicCreateSourceWithTargetsSchema } from '#shared/schemas/publicApi'
 import { executePublicWriteController } from '../../../presentation/http/publicController'
 import { toPublicJson } from '../../../presentation/http/publicJson'
 
@@ -13,9 +13,13 @@ export default defineEventHandler(async (event) => {
   const body: unknown = await readBody(event)
   return await executePublicWriteController(event, 'library:write', {
     payload: body, targetType: 'source', successStatusCode: 201, targetId: data => readSourceId(data),
-  }, async () => toPublicJson(await event.context.applicationServices.content.createPastedSource(
-    createSourceWithTargetsSchema.parse(body),
-  )))
+  }, async () => {
+    const input = publicCreateSourceWithTargetsSchema.parse(body)
+    const targets = await Promise.all(input.targets.map(async target => target.targetType === 'persona'
+      ? { ...target, targetId: await event.context.applicationServices.content.resolvePersonaIdentifier(target.targetId) }
+      : target))
+    return toPublicJson(await event.context.applicationServices.content.createPastedSource({ ...input, targets }))
+  })
 })
 
 /** @param value 公共资料详情。 @returns 资料 UUID 或 null。 */

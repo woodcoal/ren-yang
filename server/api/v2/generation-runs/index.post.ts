@@ -1,5 +1,5 @@
 import { readBody } from 'h3'
-import { createGenerationRunSchema } from '#shared/schemas/generation'
+import { publicCreateGenerationRunSchema } from '#shared/schemas/publicApi'
 import { executePublicWriteController } from '../../../presentation/http/publicController'
 import { toPublicJson } from '../../../presentation/http/publicJson'
 
@@ -16,9 +16,11 @@ export default defineEventHandler(async (event) => {
     targetType: 'generation_run',
     successStatusCode: 202,
     targetId: data => readRunId(data),
-  }, async () => toPublicJson(await event.context.applicationServices.generation.createGenerationRun(
-    createGenerationRunSchema.parse(body),
-  )))
+  }, async () => {
+    const input = publicCreateGenerationRunSchema.parse(body)
+    const personaId = await event.context.applicationServices.content.resolvePersonaIdentifier(input.personaId)
+    return toPublicJson(await event.context.applicationServices.generation.createGenerationRun({ ...input, personaId }))
+  })
 })
 
 /** @param value 公共创建结果。 @returns 运行 UUID 或 null。 */

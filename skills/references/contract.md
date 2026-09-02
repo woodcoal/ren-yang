@@ -8,6 +8,8 @@
 
 调用前检查目标操作的 `x-required-scope`、请求 Schema、成功状态码和错误响应。不要从旧示例推断新字段。
 
+`/api/v2` 中需要人物的 `personaId`、人物路径参数和 `targetType=persona` 的 `targetId` 均可填写 UUID、用户名或邮箱。用户名和邮箱忽略大小写与首尾空白，响应仍返回真实 UUID；`PERSONA_IDENTIFIER_AMBIGUOUS` 表示历史账号数据跨字段冲突，此时改用 UUID。
+
 ## 认证与权限
 
 所有业务请求使用：

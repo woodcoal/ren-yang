@@ -238,6 +238,35 @@ describe('人物、世界与资料管理闭环', () => {
     await expect(service.savePersonaCredential(second.persona.id, {
       username: 'second', email: 'LINMO@EXAMPLE.COM', password: '第二个密码',
     })).rejects.toMatchObject<ApplicationError>({ code: 'EMAIL_CONFLICT', statusCode: 409 })
+    await expect(service.savePersonaCredential(second.persona.id, {
+      username: 'linmo@example.com', email: 'second@example.com', password: '第二个密码',
+    })).rejects.toMatchObject<ApplicationError>({ code: 'USERNAME_CONFLICT', statusCode: 409 })
+    await expect(service.savePersonaCredential(second.persona.id, {
+      username: 'second', email: 'linmo', password: '第二个密码',
+    })).rejects.toMatchObject<ApplicationError>({ code: 'EMAIL_CONFLICT', statusCode: 409 })
+  })
+
+  it('公共人物标识按 UUID、用户名或邮箱解析，并拒绝不存在或跨字段歧义的别名', async () => {
+    const first = await service.createPersona({
+      name: '别名人物一', worldId: null, sourceIds: [], snapshot: BASE_PERSONA_SNAPSHOT,
+      changeSummary: '建立人物', username: 'PersonaAlias', email: 'Persona@One.Example',
+    })
+
+    await expect(service.resolvePersonaIdentifier(first.persona.id)).resolves.toBe(first.persona.id)
+    await expect(service.resolvePersonaIdentifier('  PERSONAALIAS  ')).resolves.toBe(first.persona.id)
+    await expect(service.resolvePersonaIdentifier(' PERSONA@ONE.EXAMPLE ')).resolves.toBe(first.persona.id)
+    await expect(service.resolvePersonaIdentifier('missing-persona')).rejects.toMatchObject<ApplicationError>({
+      code: 'RESOURCE_NOT_FOUND', statusCode: 404,
+    })
+
+    const second = await service.createPersona({
+      name: '别名人物二', worldId: null, sourceIds: [], snapshot: BASE_PERSONA_SNAPSHOT,
+      changeSummary: '建立人物', username: 'second-alias',
+    })
+    database.getClient().prepare('UPDATE personas SET email = ? WHERE id = ?').run('personaalias', second.persona.id)
+    await expect(service.resolvePersonaIdentifier('personaalias')).rejects.toMatchObject<ApplicationError>({
+      code: 'PERSONA_IDENTIFIER_AMBIGUOUS', statusCode: 409,
+    })
   })
 
   it('账号、邮箱和密码可分别配置，修改账号时保留原密码', async () => {

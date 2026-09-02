@@ -13,6 +13,23 @@ export function toPublicJson(value: unknown): PublicApiJsonValue {
 }
 
 /**
+ * 从人物公共写入结果读取真实人物 UUID，避免把路径中的邮箱或用户名写入审计目标。
+ * @param value 人物详情、人物灵魂记录或人物删除结果。
+ * @returns 找到的真实人物 UUID；结果结构不匹配时返回 null。
+ * @remarks 灵魂记录自身也有 `id`，因此必须优先读取其 `subjectId`。
+ */
+export function readPublicPersonaId(value: unknown): string | null {
+  if (typeof value !== 'object' || value === null) return null
+  const record = value as Record<string, unknown>
+  if (typeof record.subjectId === 'string') return record.subjectId
+  if (typeof record.persona === 'object' && record.persona !== null) {
+    const personaId = (record.persona as Record<string, unknown>).id
+    if (typeof personaId === 'string') return personaId
+  }
+  return typeof record.id === 'string' ? record.id : null
+}
+
+/**
  * 递归脱敏并序列化单个公共响应值。
  * @param value 应用服务返回的当前未知值。
  * @param key 当前值所属字段名；根值和数组项为 null。

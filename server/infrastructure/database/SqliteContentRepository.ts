@@ -63,6 +63,17 @@ export class SqliteContentRepository implements ContentRepository, SoulRepositor
     return row ? toPersona(row) : null
   }
 
+  /**
+   * 同时按人物用户名和邮箱查找别名，供公共 API 把别名解析为内部 UUID。
+   * @param identifier 已去除首尾空白并转为小写的人物别名。
+   * @returns 去重且按 UUID 稳定排序的匹配结果；最多返回两项以识别跨字段历史冲突。
+   */
+  async findPersonaIdsByCredentialIdentifier(identifier: string): Promise<string[]> {
+    return this.client.prepare(`
+      SELECT id FROM personas WHERE username = ? OR email = ? ORDER BY id LIMIT 2
+    `).all(identifier, identifier).map(value => String(asRow(value).id))
+  }
+
   /** @param personaId 人物 UUID。 @returns 至少配置一项的账号信息密文记录，否则为 null。 */
   async findPersonaCredential(personaId: string): Promise<PersonaCredentialRecord | null> {
     const value = this.client.prepare(`
@@ -165,10 +176,14 @@ export class SqliteContentRepository implements ContentRepository, SoulRepositor
     username: string | null,
     email: string | null,
   ): 'duplicate_username' | 'duplicate_email' | null {
-    if (username !== null && this.client.prepare(`SELECT 1 FROM personas WHERE username = ? AND id <> ?`).get(username, personaId)) {
+    if (username !== null && this.client.prepare(`
+      SELECT 1 FROM personas WHERE (username = ? OR email = ?) AND id <> ?
+    `).get(username, username, personaId)) {
       return 'duplicate_username'
     }
-    if (email !== null && this.client.prepare(`SELECT 1 FROM personas WHERE email = ? AND id <> ?`).get(email, personaId)) {
+    if (email !== null && this.client.prepare(`
+      SELECT 1 FROM personas WHERE (email = ? OR username = ?) AND id <> ?
+    `).get(email, email, personaId)) {
       return 'duplicate_email'
     }
     return null

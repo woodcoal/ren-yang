@@ -1,5 +1,5 @@
 import { readBody } from 'h3'
-import { createInterestBatchSchema } from '#shared/schemas/generation'
+import { publicCreateInterestBatchSchema } from '#shared/schemas/publicApi'
 import { executePublicWriteController } from '../../../presentation/http/publicController'
 import { toPublicJson } from '../../../presentation/http/publicJson'
 
@@ -16,9 +16,11 @@ export default defineEventHandler(async (event) => {
     targetType: 'interest_batch',
     successStatusCode: 202,
     targetId: data => readBatchId(data),
-  }, async () => toPublicJson(await event.context.applicationServices.generation.createInterestBatch(
-    createInterestBatchSchema.parse(body),
-  )))
+  }, async () => {
+    const input = publicCreateInterestBatchSchema.parse(body)
+    const personaId = await event.context.applicationServices.content.resolvePersonaIdentifier(input.personaId)
+    return toPublicJson(await event.context.applicationServices.generation.createInterestBatch({ ...input, personaId }))
+  })
 })
 
 /**

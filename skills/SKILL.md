@@ -24,6 +24,7 @@ description: 通过人样公共 API v2 管理人物、世界、资料与灵魂�
 - 删除人物、世界或资料前先调用对应 `deletion-impact`，确认阻塞关系和影响后再删除。
 - 灵魂修改遵循“读取工作区 → 基于当前版本保存草稿 → 发布草稿”，不得直接覆盖已发布版本。
 - 兴趣判断优先把同一人物的一至二十条文本放在一个批次中；单项失败只重试该 `itemId`。
+- `/api/v2` 的人物路径参数、`personaId` 和人物类型 `targetId` 可使用人物 UUID、用户名或邮箱；优先使用稳定用户名，响应中的人物标识仍保存为 UUID。
 - `202` 只表示任务已接受。按参考文件中的终态轮询对应查询接口，不把 `queued`、`running`、`planning` 或 `awaiting_confirmation` 当作成功。
 - 保留并报告响应中的 `X-Request-Id`、资源 ID、运行 ID、批次 ID、最终状态和稳定错误码；不得把完整模型提示、凭据或人物私密资料写入日志。
 
@@ -41,7 +42,7 @@ node scripts/api-request.mjs GET /api/v2/personas?page=1\&pageSize=20
 
 ```bash
 export REN_YANG_IDEMPOTENCY_KEY="$(uuidgen)"
-node scripts/api-request.mjs POST /api/v2/interest-batches '{"personaId":"<UUID>","additionalPrompt":"","items":[{"itemId":"item-1","text":"待判断内容"}]}'
+node scripts/api-request.mjs POST /api/v2/interest-batches '{"personaId":"<用户名、邮箱或 UUID>","additionalPrompt":"","items":[{"itemId":"item-1","text":"待判断内容"}]}'
 ```
 
 文件上传使用 `multipart/form-data`，按 [references/resources.md](references/resources.md) 的命令执行。不要把 Key 直接写进命令历史或脚本源码。

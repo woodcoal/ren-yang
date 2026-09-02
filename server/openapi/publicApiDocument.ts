@@ -54,7 +54,7 @@ const LIST_PARAMETERS: OpenApiParameter[] = [
 
 /** 图文运行历史使用的固定筛选参数。 */
 const RUN_LIST_PARAMETERS: OpenApiParameter[] = [
-  { name: 'personaId', in: 'query', description: '按人物 UUID 筛选。', schema: { type: 'string', format: 'uuid' } },
+  { name: 'personaId', in: 'query', description: '按人物 UUID、用户名或邮箱筛选。', schema: { $ref: '#/components/schemas/PersonaIdentifier' } },
   { name: 'kind', in: 'query', description: '按运行类型筛选。', schema: { type: 'string', enum: ['interest_assessment', 'artifact_generation'] } },
   { name: 'status', in: 'query', description: '按运行状态筛选。', schema: { type: 'string', enum: ['planning', 'awaiting_confirmation', 'queued', 'running', 'succeeded', 'partial', 'failed', 'canceled'] } },
   { name: 'limit', in: 'query', description: '最多返回数量。', schema: { type: 'integer', minimum: 1, maximum: 100, default: 50 } },
@@ -128,11 +128,23 @@ function idParameter(name: string, label: string): OpenApiParameter {
 }
 
 /**
+ * 创建允许 UUID、用户名或邮箱的人物路径参数。
+ * @returns 指向统一人物标识 Schema 的必填路径参数。
+ */
+function personaIdentifierParameter(): OpenApiParameter {
+  return {
+    name: 'personaId', in: 'path', required: true,
+    description: '人物 UUID、用户名或邮箱；用户名和邮箱忽略大小写及首尾空白。',
+    schema: { $ref: '#/components/schemas/PersonaIdentifier' },
+  }
+}
+
+/**
  * 创建人物、世界、资料库和图文运行公共 API 的唯一 OpenAPI 契约。
  * @returns 只包含 `/api/v2` 业务接口的 OpenAPI 3.1 文档。
  */
 export function createPublicOpenApiDocument(): PublicOpenApiDocument {
-  const personaId = idParameter('personaId', '人物')
+  const personaId = personaIdentifierParameter()
   const worldId = idParameter('worldId', '世界')
   const sourceId = idParameter('sourceId', '资料')
   const runId = idParameter('runId', '运行')
@@ -494,6 +506,10 @@ function createSchemas(): Record<string, Record<string, unknown>> {
   return {
     ResponseMeta: { type: 'object', required: ['requestId'], properties: { requestId: uuid, idempotencyReplayed: { type: 'boolean' } } },
     ErrorResponse: { type: 'object', required: ['error'], properties: { error: { type: 'object', required: ['code', 'message', 'requestId'], properties: { code: { type: 'string' }, message: { type: 'string' }, requestId: { type: 'string' }, details: { type: 'object' } } } } },
+    PersonaIdentifier: {
+      type: 'string', minLength: 1, maxLength: 320,
+      description: '人物 UUID、用户名或邮箱；用户名和邮箱忽略大小写及首尾空白。',
+    },
     CreatePersona: { type: 'object', required: ['name', 'sourceIds', 'snapshot', 'changeSummary'], properties: { name: { type: 'string', maxLength: 100 }, worldId: { type: ['string', 'null'], format: 'uuid' }, sourceIds: { type: 'array', maxItems: 100, items: { type: 'string', format: 'uuid' } }, snapshot: soul, changeSummary: { type: 'string', maxLength: 500 } } },
     UpdatePersona: { type: 'object', required: ['name', 'worldId'], properties: { name: { type: 'string', maxLength: 100 }, worldId: { type: ['string', 'null'], format: 'uuid' } } },
     PersonaWorldInput: { type: 'object', required: ['worldId'], properties: { worldId: { type: 'string', format: 'uuid' } } },
@@ -501,15 +517,25 @@ function createSchemas(): Record<string, Record<string, unknown>> {
     UpdateWorld: { type: 'object', required: ['name', 'summary'], properties: { name: { type: 'string', maxLength: 100 }, summary: { type: 'string', maxLength: 2_000 } } },
     StatusInput: { type: 'object', required: ['isEnabled'], properties: { isEnabled: { type: 'boolean' } } },
     SoulDraftInput: { type: 'object', required: ['baseVersionId', 'snapshot'], properties: { baseVersionId: { type: ['string', 'null'], format: 'uuid' }, snapshot: soul, autoAnalyze: { type: 'boolean', default: false } } },
-    SourceTarget: { type: 'object', required: ['targetType', 'targetId'], properties: { targetType: { type: 'string', enum: ['persona', 'world'] }, targetId: { type: 'string', format: 'uuid' } } },
+    SourceTarget: {
+      oneOf: [
+        { type: 'object', required: ['targetType', 'targetId'], properties: { targetType: { type: 'string', const: 'persona' }, targetId: { $ref: '#/components/schemas/PersonaIdentifier' } } },
+        { type: 'object', required: ['targetType', 'targetId'], properties: { targetType: { type: 'string', const: 'world' }, targetId: { type: 'string', format: 'uuid' } } },
+      ],
+    },
     CreateSource: { type: 'object', required: ['name', 'role', 'content'], properties: { name: { type: 'string', maxLength: 200 }, role, content: { type: 'string', maxLength: 2_000_000 }, targets: { type: 'array', items: { $ref: '#/components/schemas/SourceTarget' }, default: [] } } },
     UpdateSource: { type: 'object', required: ['name', 'role', 'content'], properties: { name: { type: 'string', maxLength: 200 }, role, content: { type: 'string', maxLength: 2_000_000 } } },
-    SourceLinkInput: { type: 'object', required: ['targetType', 'targetId'], properties: { targetType: { type: 'string', enum: ['persona', 'world'] }, targetId: { type: 'string', format: 'uuid' }, priority: { type: 'integer', minimum: 0, maximum: 10_000, default: 100 } } },
+    SourceLinkInput: {
+      oneOf: [
+        { type: 'object', required: ['targetType', 'targetId'], properties: { targetType: { type: 'string', const: 'persona' }, targetId: { $ref: '#/components/schemas/PersonaIdentifier' }, priority: { type: 'integer', minimum: 0, maximum: 10_000, default: 100 } } },
+        { type: 'object', required: ['targetType', 'targetId'], properties: { targetType: { type: 'string', const: 'world' }, targetId: { type: 'string', format: 'uuid' }, priority: { type: 'integer', minimum: 0, maximum: 10_000, default: 100 } } },
+      ],
+    },
     SourceFileForm: { type: 'object', required: ['file', 'name', 'role'], properties: { file: { type: 'string', format: 'binary' }, name: { type: 'string', maxLength: 200 }, role, targets: { type: 'string', description: 'SourceTarget JSON 数组。', default: '[]' } } },
     CreateGenerationRun: {
       type: 'object', required: ['personaId', 'requirement'],
       properties: {
-        personaId: uuid,
+        personaId: { $ref: '#/components/schemas/PersonaIdentifier' },
         requirement: { type: 'string', minLength: 1, maxLength: 50_000 },
         outputFormat: { type: 'string', enum: ['html', 'text'], default: 'text' },
         imageCount: { type: 'integer', minimum: 0, maximum: 4, default: 0 },
@@ -518,7 +544,7 @@ function createSchemas(): Record<string, Record<string, unknown>> {
     CreateInterestBatch: {
       type: 'object', required: ['personaId', 'items'],
       properties: {
-        personaId: uuid,
+        personaId: { $ref: '#/components/schemas/PersonaIdentifier' },
         additionalPrompt: { type: 'string', maxLength: 4_000, default: '', description: '可选；对整批文本生效且不修改人物长期设定。' },
         items: {
           type: 'array', minItems: 1, maxItems: 20,

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import type { H3Event, MultiPartData } from 'h3'
 import { getRequestHeader, readMultipartFormData } from 'h3'
-import { importSourceFileMetadataSchema } from '#shared/schemas/content'
+import { publicImportSourceFileMetadataSchema } from '#shared/schemas/publicApi'
 import { ApplicationError } from '../../../application/errors/ApplicationError'
 import { executePublicWriteController, writePublicPreflightError } from '../../../presentation/http/publicController'
 import { toPublicJson } from '../../../presentation/http/publicJson'
@@ -18,7 +18,7 @@ async function handleImportSourceFile(event: H3Event) {
     if (contentLength > 2_100_000) throw new ApplicationError('VALIDATION_FAILED', '上传请求不能超过 2.1 MB', 422)
     const parts = await readMultipartFormData(event)
     if (!parts) throw new ApplicationError('VALIDATION_FAILED', '请求必须使用 multipart/form-data', 422)
-    const metadata = importSourceFileMetadataSchema.parse({
+    const metadata = publicImportSourceFileMetadataSchema.parse({
       name: readTextPart(parts, 'name'), role: readTextPart(parts, 'role'), targets: readJsonPart(parts, 'targets'),
     })
     const files = parts.filter(part => part.name === 'file' && part.filename)
@@ -34,9 +34,14 @@ async function handleImportSourceFile(event: H3Event) {
     }
     return await executePublicWriteController(event, 'library:write', {
       payload, targetType: 'source', successStatusCode: 201, targetId: data => readSourceId(data),
-    }, async () => toPublicJson(await event.context.applicationServices.content.importSourceFile({
-      ...metadata, fileName: file.filename, mediaType: file.type, bytes: file.data,
-    })))
+    }, async () => {
+      const targets = await Promise.all(metadata.targets.map(async target => target.targetType === 'persona'
+        ? { ...target, targetId: await event.context.applicationServices.content.resolvePersonaIdentifier(target.targetId) }
+        : target))
+      return toPublicJson(await event.context.applicationServices.content.importSourceFile({
+        ...metadata, targets, fileName: file.filename, mediaType: file.type, bytes: file.data,
+      }))
+    })
   }
   catch (error: unknown) {
     return await writePublicPreflightError(event, 'source', error)

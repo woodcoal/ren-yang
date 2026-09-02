@@ -1,5 +1,6 @@
 import { getRouterParam, readBody } from 'h3'
-import { createSourceLinkSchema, resourceIdSchema } from '#shared/schemas/content'
+import { resourceIdSchema } from '#shared/schemas/content'
+import { publicCreateSourceLinkSchema } from '#shared/schemas/publicApi'
 import { executePublicWriteController } from '../../../../presentation/http/publicController'
 import { toPublicJson } from '../../../../presentation/http/publicJson'
 
@@ -14,7 +15,13 @@ export default defineEventHandler(async (event) => {
   const body: unknown = await readBody(event)
   return await executePublicWriteController(event, 'library:write', {
     payload: body, targetType: 'source_link', successStatusCode: 200, targetId: () => rawId ?? null,
-  }, async () => toPublicJson(await event.context.applicationServices.content.linkSource(
-    resourceIdSchema.parse(rawId), createSourceLinkSchema.parse(body),
-  )))
+  }, async () => {
+    const input = publicCreateSourceLinkSchema.parse(body)
+    const targetId = input.targetType === 'persona'
+      ? await event.context.applicationServices.content.resolvePersonaIdentifier(input.targetId)
+      : input.targetId
+    return toPublicJson(await event.context.applicationServices.content.linkSource(
+      resourceIdSchema.parse(rawId), { ...input, targetId },
+    ))
+  })
 })

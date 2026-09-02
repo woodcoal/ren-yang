@@ -14,6 +14,8 @@
 | `PUT /api/v2/personas/{personaId}/world` | `persona:write` | 关联唯一世界，正文为 `{"worldId":"<UUID>"}` |
 | `DELETE /api/v2/personas/{personaId}/world` | `persona:write` | 解除世界关系 |
 
+上述 `{personaId}` 可填写人物 UUID、用户名或邮箱。用户名和邮箱忽略大小写及首尾空白；人物必须先在后台配置对应账号信息，公共创建人物接口不负责设置账号或邮箱。响应中的人物标识始终为 UUID。
+
 创建人物的核心正文：
 
 ```json
@@ -97,7 +99,7 @@
   "role": "reference",
   "content": "资料正文",
   "targets": [
-    { "targetType": "persona", "targetId": "<人物 UUID>" }
+    { "targetType": "persona", "targetId": "<人物用户名、邮箱或 UUID>" }
   ]
 }
 ```
@@ -121,7 +123,7 @@ curl --fail-with-body \
   -F 'file=@/absolute/path/material.md;type=text/markdown' \
   -F 'name=资料名称' \
   -F 'role=reference' \
-  -F 'targets=[{"targetType":"persona","targetId":"<人物 UUID>"}]' \
+  -F 'targets=[{"targetType":"persona","targetId":"<人物用户名、邮箱或 UUID>"}]' \
   "${REN_YANG_API_BASE_URL%/}/api/v2/sources/files"
 ```
 

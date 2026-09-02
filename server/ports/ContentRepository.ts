@@ -202,6 +202,8 @@ export interface ContentRepository {
   listPersonasPage(page: number, pageSize: 5 | 10 | 20 | 50 | 100, query?: string, status?: 'all' | 'enabled' | 'disabled', sort?: 'name' | 'createdAt' | 'updatedAt', order?: 'asc' | 'desc'): Promise<PersonaPageRecord>
   /** @param id 人物标识。 @returns 人物或 null。 */
   findPersona(id: string): Promise<PersonaRecord | null>
+  /** @param identifier 已规范化的人物用户名或邮箱。 @returns 同时匹配用户名或邮箱的人物 UUID，最多两项。 */
+  findPersonaIdsByCredentialIdentifier(identifier: string): Promise<string[]>
   /** @param personaId 人物标识。 @returns 至少配置一项的账号信息密文记录，否则为 null。 */
   findPersonaCredential(personaId: string): Promise<PersonaCredentialRecord | null>
   /** @param record 完整创建命令。 @returns 无返回值。 */
