@@ -409,6 +409,23 @@ test('首次设置、灵魂保存及文章直接生成形成可复现闭环', as
   await page.getByRole('button', { name: '提示词', exact: true }).click()
   await page.getByRole('button', { name: '灵魂', exact: true }).click()
   await expect(page.getByLabel('人物灵魂提示词')).toHaveValue('严谨克制的学院观察员，关注课程、档案与古代文献，表达冷静简洁。')
+  await expect(page.getByRole('button', { name: '重新生成当前灵魂提示词', exact: true })).toHaveText('')
+
+  // 重新蒸馏固定当前灵魂，最终确认后只为原人物发布新版本。
+  await page.getByRole('button', { name: '重新蒸馏当前人物', exact: true }).click()
+  await page.getByLabel('本次聚焦方向').fill('保留当前判断原则，重点重新校准表达特征和未知边界。')
+  await page.getByRole('button', { name: '开始重新蒸馏', exact: true }).click()
+  await expect(page).toHaveURL(/\/personas\/distillations\//)
+  await expect(page.getByRole('heading', { name: '确认资料覆盖', exact: true })).toBeVisible({ timeout: 30_000 })
+  await page.getByRole('button', { name: '继续提炼', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '校准并确认人物候选', exact: true })).toBeVisible({ timeout: 30_000 })
+  await page.getByRole('button', { name: '确认更新人物灵魂', exact: true }).click()
+  await expect(page).toHaveURL(`/personas/${personaId}`)
+  await page.getByRole('button', { name: '提示词', exact: true }).click()
+  await page.getByRole('button', { name: '灵魂', exact: true }).click()
+  await page.getByRole('button', { name: '查看提示词历史', exact: true }).click()
+  await expect(page.locator('[data-soul-history-list] button')).toHaveCount(2)
+  await page.keyboard.press('Escape')
 
   // 第三方记录拥有独立标签，并在弹窗中完成新增、修改、启停和删除。
   await page.getByRole('button', { name: '资料', exact: true }).click()

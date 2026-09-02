@@ -31,6 +31,8 @@ interface DistillationRunRow {
   requested_name: string
   objective: string
   world_id: string | null
+  mode: PersonaDistillationRunRecord['mode']
+  base_soul_version_id: string | null
   provider: 'sqlite_fts5' | 'openviking'
   coverage_snapshot_json: string | null
   algorithm_snapshot_json: string
@@ -127,17 +129,20 @@ export class SqliteDistillationRepository implements DistillationRepository {
     this.client.transaction(() => {
       this.client.prepare(`
         INSERT INTO persona_distillation_runs (
-          id, retry_of_run_id, status, requested_name, objective, world_id, provider,
-          algorithm_snapshot_json, created_at, updated_at
-        ) VALUES (?, ?, 'assessing_sources', ?, ?, ?, ?, ?, ?, ?)
+          id, retry_of_run_id, status, requested_name, objective, world_id, mode,
+          base_soul_version_id, provider, algorithm_snapshot_json, created_persona_id, created_at, updated_at
+        ) VALUES (?, ?, 'assessing_sources', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         record.id,
         record.retryOfRunId,
         record.requestedName,
         record.objective,
         record.worldId,
+        record.mode,
+        record.baseSoulVersionId,
         record.provider,
         JSON.stringify(record.algorithmSnapshot),
+        record.createdPersonaId,
         record.timestamp,
         record.timestamp,
       )
@@ -179,9 +184,12 @@ export class SqliteDistillationRepository implements DistillationRepository {
       )
       insertAuditEvent(this.client, {
         actor: 'administrator',
-        action: 'persona_distillation_created',
+        action: record.mode === 'update' ? 'persona_redistillation_created' : 'persona_distillation_created',
         targetType: 'persona_distillation_run',
         targetId: record.id,
+        details: record.mode === 'update'
+          ? { personaId: record.createdPersonaId, baseSoulVersionId: record.baseSoulVersionId }
+          : undefined,
         timestamp: record.timestamp,
       })
     }).immediate()
@@ -226,6 +234,8 @@ export class SqliteDistillationRepository implements DistillationRepository {
     return {
       id: row.id,
       retryOfRunId: row.retry_of_run_id,
+      mode: row.mode,
+      baseSoulVersionId: row.base_soul_version_id,
       status: row.status,
       requestedName: row.requested_name,
       objective: row.objective,
@@ -608,18 +618,22 @@ export class SqliteDistillationRepository implements DistillationRepository {
   }
 
   /**
-   * 原子确认已评测候选，并创建人物、初始当前灵魂版本和确认资料关系。
-   * @param record 候选哈希、并发版本、新标识和 Token 预算快照。
-   * @returns 状态、更新时间和评测哈希都匹配时为 true。
+   * 原子确认已评测候选，并创建人物或发布已有人物的新灵魂版本。
+   * @param record 候选哈希、并发版本、人物与新灵魂标识和 Token 预算快照。
+   * @returns 状态、更新时间、评测哈希和更新基线都匹配时为 true。
    */
-  async confirmAndCreatePersona(record: ConfirmPersonaDistillationCandidateRecord): Promise<boolean> {
+  async confirmCandidate(record: ConfirmPersonaDistillationCandidateRecord): Promise<boolean> {
     return this.client.transaction(() => {
       const run = this.client.prepare(`
-        SELECT world_id, candidate_prompt_text, candidate_prompt_hash, evaluated_prompt_hash
+        SELECT mode, world_id, base_soul_version_id, created_persona_id,
+          candidate_prompt_text, candidate_prompt_hash, evaluated_prompt_hash
         FROM persona_distillation_runs
         WHERE id = ? AND status = 'awaiting_candidate_review' AND updated_at = ?
       `).get(record.runId, record.expectedUpdatedAt) as {
+        mode: 'create' | 'update'
         world_id: string | null
+        base_soul_version_id: string | null
+        created_persona_id: string | null
         candidate_prompt_text: string | null
         candidate_prompt_hash: string | null
         evaluated_prompt_hash: string | null
@@ -627,36 +641,49 @@ export class SqliteDistillationRepository implements DistillationRepository {
       if (!run || !run.candidate_prompt_text
         || run.candidate_prompt_hash !== record.expectedPromptHash
         || run.evaluated_prompt_hash !== record.expectedPromptHash) return false
-      this.client.prepare(`
-        INSERT INTO personas (
-          id, world_id, name, username, email, password_ciphertext, origin,
-          is_enabled, automatic_learning_enabled, created_at, updated_at
-        ) VALUES (?, ?, ?, NULL, NULL, NULL, 'original', 1, 0, ?, ?)
-      `).run(record.personaId, run.world_id, record.name, record.timestamp, record.timestamp)
+      if (run.mode === 'update') {
+        if (!run.base_soul_version_id || run.created_persona_id !== record.personaId) return false
+        const target = this.client.prepare(`
+          SELECT active_soul_version_id FROM personas WHERE id = ?
+        `).get(record.personaId) as { active_soul_version_id: string | null } | undefined
+        if (!target || target.active_soul_version_id !== run.base_soul_version_id) return false
+      }
+      else {
+        this.client.prepare(`
+          INSERT INTO personas (
+            id, world_id, name, username, email, password_ciphertext, origin,
+            is_enabled, automatic_learning_enabled, created_at, updated_at
+          ) VALUES (?, ?, ?, NULL, NULL, NULL, 'original', 1, 0, ?, ?)
+        `).run(record.personaId, run.world_id, record.name, record.timestamp, record.timestamp)
+      }
       this.client.prepare(`
         INSERT INTO soul_versions (
           id, subject_type, world_id, persona_id, parent_version_id, prompt_text,
           runtime_token_count, token_counter, change_summary, status, published_at, created_at
-        ) VALUES (?, 'persona', NULL, ?, NULL, ?, ?, ?, '由人物蒸馏创建初始灵魂', 'published', ?, ?)
+        ) VALUES (?, 'persona', NULL, ?, ?, ?, ?, ?, ?, 'published', ?, ?)
       `).run(
         record.soulVersionId,
         record.personaId,
+        run.mode === 'update' ? run.base_soul_version_id : null,
         run.candidate_prompt_text,
         record.runtimeTokenCount,
         record.tokenCounter,
+        run.mode === 'update' ? '由人物重新蒸馏生成新灵魂' : '由人物蒸馏创建初始灵魂',
         record.timestamp,
         record.timestamp,
       )
-      this.client.prepare(`
-        UPDATE personas SET active_soul_version_id = ? WHERE id = ?
-      `).run(record.soulVersionId, record.personaId)
+      const personaUpdated = this.client.prepare(`
+        UPDATE personas SET name = ?, active_soul_version_id = ?, updated_at = ?
+        WHERE id = ?
+      `).run(record.name, record.soulVersionId, record.timestamp, record.personaId)
+      if (personaUpdated.changes !== 1) throw new Error('人物蒸馏目标人物已变化')
       const acceptedSources = this.client.prepare(`
         SELECT DISTINCT source_id FROM persona_distillation_inputs
         WHERE run_id = ? AND input_type = 'source_material' AND accepted = 1
           AND source_available = 1 AND source_id IS NOT NULL
       `).all(record.runId) as Array<{ source_id: string }>
       const linkSource = this.client.prepare(`
-        INSERT INTO persona_sources (persona_id, source_id, priority) VALUES (?, ?, 100)
+        INSERT OR IGNORE INTO persona_sources (persona_id, source_id, priority) VALUES (?, ?, 100)
       `)
       for (const source of acceptedSources) linkSource.run(record.personaId, source.source_id)
       const completed = this.client.prepare(`
@@ -677,10 +704,10 @@ export class SqliteDistillationRepository implements DistillationRepository {
       if (completed.changes !== 1) throw new Error('人物蒸馏候选确认状态已经变化')
       insertAuditEvent(this.client, {
         actor: 'administrator',
-        action: 'persona_distillation_confirmed',
+        action: run.mode === 'update' ? 'persona_redistillation_confirmed' : 'persona_distillation_confirmed',
         targetType: 'persona_distillation_run',
         targetId: record.runId,
-        details: { personaId: record.personaId, soulVersionId: record.soulVersionId },
+        details: { mode: run.mode, personaId: record.personaId, soulVersionId: record.soulVersionId },
         timestamp: record.timestamp,
       })
       return true
@@ -712,12 +739,16 @@ export class SqliteDistillationRepository implements DistillationRepository {
   async createRetry(record: CreatePersonaDistillationRetryRecord): Promise<boolean> {
     return this.client.transaction(() => {
       const source = this.client.prepare(`
-        SELECT requested_name, objective, world_id, provider, algorithm_snapshot_json
+        SELECT requested_name, objective, world_id, mode, base_soul_version_id,
+          created_persona_id, provider, algorithm_snapshot_json
         FROM persona_distillation_runs WHERE id = ? AND status = 'failed'
       `).get(record.sourceRunId) as {
         requested_name: string
         objective: string
         world_id: string | null
+        mode: 'create' | 'update'
+        base_soul_version_id: string | null
+        created_persona_id: string | null
         provider: 'sqlite_fts5' | 'openviking'
         algorithm_snapshot_json: string
       } | undefined
@@ -732,17 +763,20 @@ export class SqliteDistillationRepository implements DistillationRepository {
         || inputs.some(input => input.source_available !== 1 || input.content_snapshot === null)) return false
       this.client.prepare(`
         INSERT INTO persona_distillation_runs (
-          id, retry_of_run_id, status, requested_name, objective, world_id, provider,
-          algorithm_snapshot_json, created_at, updated_at
-        ) VALUES (?, ?, 'assessing_sources', ?, ?, ?, ?, ?, ?, ?)
+          id, retry_of_run_id, status, requested_name, objective, world_id, mode,
+          base_soul_version_id, provider, algorithm_snapshot_json, created_persona_id, created_at, updated_at
+        ) VALUES (?, ?, 'assessing_sources', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         record.runId,
         record.sourceRunId,
         source.requested_name,
         source.objective,
         source.world_id,
+        source.mode,
+        source.base_soul_version_id,
         source.provider,
         source.algorithm_snapshot_json,
+        source.created_persona_id,
         record.timestamp,
         record.timestamp,
       )

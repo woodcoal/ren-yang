@@ -6,6 +6,7 @@ import {
   modelPersonaDistillationEvaluationSchema,
   modelPersonaDistillationExtractionSchema,
   modelPersonaDistillationSourceAssessmentSchema,
+  restartPersonaDistillationSchema,
   reviewPersonaDistillationSourcesSchema,
   savePersonaDistillationCandidateSchema,
 } from '../../../shared/schemas/personaDistillation'
@@ -14,6 +15,7 @@ import type {
   CreatePersonaDistillationInput,
   ModelPersonaDistillationExtraction,
   ReviewPersonaDistillationSourcesInput,
+  RestartPersonaDistillationInput,
   SavePersonaDistillationCandidateInput,
 } from '../../../shared/schemas/personaDistillation'
 import type { AiAlgorithmSnapshot } from '../../domain/ai/AiAlgorithmModels'
@@ -49,8 +51,8 @@ const MAX_DISTILLATION_SOURCE_CHARACTERS = 120_000
 
 /** 人物蒸馏应用服务依赖。 */
 export interface PersonaDistillationApplicationServiceDependencies {
-  /** 世界、资料和资料切片查询。 */
-  content: Pick<ContentRepository, 'findWorld' | 'findSource' | 'listSourceChunks'>
+  /** 人物、灵魂版本、世界、资料和资料切片查询。 */
+  content: Pick<ContentRepository, 'findPersona' | 'findPersonaVersion' | 'findWorld' | 'findSource' | 'listSourceChunks'>
   /** 人物蒸馏运行、阶段快照和最终确认事实源。 */
   distillations: DistillationRepository
   /** 固定四步算法准备与执行入口。 */
@@ -84,12 +86,66 @@ export class PersonaDistillationApplicationService implements TaskHandler {
    */
   async createRun(input: CreatePersonaDistillationInput): Promise<PersonaDistillationRunRecord> {
     const parsed = createPersonaDistillationSchema.parse(input)
-    const sourceIds = [...new Set(parsed.sourceIds)]
     if (parsed.worldId) {
       const world = await this.dependencies.content.findWorld(parsed.worldId)
       if (!world) throw new ApplicationError('RESOURCE_NOT_FOUND', '人物蒸馏选择的世界不存在', 404)
       if (!world.isEnabled) throw new ApplicationError('RESOURCE_DISABLED', '人物蒸馏选择的世界已停用', 409)
     }
+    return await this.createPreparedRun({
+      mode: 'create',
+      createdPersonaId: null,
+      baseSoulVersionId: null,
+      currentSoulPromptText: null,
+      requestedName: parsed.requestedName,
+      objective: parsed.objective,
+      worldId: parsed.worldId,
+      sourceIds: parsed.sourceIds,
+    })
+  }
+
+  /**
+   * 固定已有人物的当前灵魂和所选资料，创建更新模式的重新蒸馏运行。
+   * @param personaId 将在最终确认时更新的已有人物 UUID。
+   * @param input 本次聚焦方向和可选资料标识。
+   * @returns 已排队执行资料覆盖评估的更新运行。
+   */
+  async restartRun(personaId: string, input: RestartPersonaDistillationInput): Promise<PersonaDistillationRunRecord> {
+    const parsed = restartPersonaDistillationSchema.parse(input)
+    const persona = await this.dependencies.content.findPersona(personaId)
+    if (!persona) throw new ApplicationError('RESOURCE_NOT_FOUND', '重新蒸馏的人物不存在', 404)
+    if (!persona.activeVersionId) throw new ApplicationError('RESOURCE_NOT_FOUND', '重新蒸馏需要人物已有当前灵魂', 409)
+    const activeVersion = await this.dependencies.content.findPersonaVersion(persona.activeVersionId)
+    if (!activeVersion || activeVersion.personaId !== persona.id) {
+      throw new ApplicationError('VERSION_CONFLICT', '人物当前灵魂版本已变化', 409)
+    }
+    return await this.createPreparedRun({
+      mode: 'update',
+      createdPersonaId: persona.id,
+      baseSoulVersionId: activeVersion.id,
+      currentSoulPromptText: activeVersion.snapshot.promptText,
+      requestedName: persona.name,
+      objective: parsed.objective,
+      worldId: persona.worldId,
+      sourceIds: parsed.sourceIds,
+    })
+  }
+
+  /**
+   * 共用创建与更新模式的资料校验、快照组装和任务入队。
+   * @param input 已确定模式、目标人物、基线灵魂和资料的内部命令。
+   * @returns 已持久化的完整蒸馏运行。
+   */
+  private async createPreparedRun(input: {
+    mode: 'create' | 'update'
+    createdPersonaId: string | null
+    baseSoulVersionId: string | null
+    currentSoulPromptText: string | null
+    requestedName: string
+    objective: string
+    worldId: string | null
+    sourceIds: string[]
+  }): Promise<PersonaDistillationRunRecord> {
+    const sourceIds = [...new Set(input.sourceIds)]
     const sources = await Promise.all(sourceIds.map(async (sourceId) => {
       const source = await this.dependencies.content.findSource(sourceId)
       if (!source) throw new ApplicationError('RESOURCE_NOT_FOUND', '人物蒸馏选择的资料不存在', 404)
@@ -107,9 +163,12 @@ export class PersonaDistillationApplicationService implements TaskHandler {
       id: runId,
       taskId: this.dependencies.identifiers.create(),
       retryOfRunId: null,
-      requestedName: parsed.requestedName,
-      objective: parsed.objective,
-      worldId: parsed.worldId,
+      mode: input.mode,
+      createdPersonaId: input.createdPersonaId,
+      baseSoulVersionId: input.baseSoulVersionId,
+      requestedName: input.requestedName,
+      objective: input.objective,
+      worldId: input.worldId,
       provider: this.dependencies.context.getProvider(),
       algorithmSnapshot,
       inputs: [
@@ -117,17 +176,34 @@ export class PersonaDistillationApplicationService implements TaskHandler {
           id: this.dependencies.identifiers.create(),
           inputType: 'user_statement',
           sourceId: null,
-          name: '用户创建要求',
+          name: input.mode === 'update' ? '本次重新蒸馏要求' : '用户创建要求',
           sourceRole: null,
           sourceRelation: 'user_statement',
           coverageDimensions: [],
           independentSourceKey: `requirement:${runId}`,
-          contentHash: hashText(parsed.objective),
-          contentSnapshot: parsed.objective,
+          contentHash: hashText(input.objective),
+          contentSnapshot: input.objective,
           originUrl: null,
           authorName: null,
           publishedAt: null,
         },
+        ...(input.currentSoulPromptText && input.baseSoulVersionId
+          ? [{
+              id: this.dependencies.identifiers.create(),
+              inputType: 'user_statement' as const,
+              sourceId: null,
+              name: '当前人物灵魂',
+              sourceRole: null,
+              sourceRelation: 'user_statement' as const,
+              coverageDimensions: [],
+              independentSourceKey: `soul-version:${input.baseSoulVersionId}`,
+              contentHash: hashText(input.currentSoulPromptText),
+              contentSnapshot: input.currentSoulPromptText,
+              originUrl: null,
+              authorName: null,
+              publishedAt: null,
+            }]
+          : []),
         ...sources.map(source => ({
           id: this.dependencies.identifiers.create(),
           inputType: 'source_material' as const,
@@ -205,10 +281,10 @@ export class PersonaDistillationApplicationService implements TaskHandler {
   }
 
   /**
-   * 确认当前已通过评测的候选，并原子创建人物及初始当前灵魂版本。
+   * 确认当前已通过评测的候选，并原子创建人物或发布已有人物的新灵魂版本。
    * @param runId 运行 UUID。
    * @param input 页面并发版本、最终名称和已评测候选哈希。
-   * @returns 已完成人物创建的蒸馏运行。
+   * @returns 已完成人物创建或更新的蒸馏运行。
    */
   async confirmCandidate(runId: string, input: ConfirmPersonaDistillationCandidateInput): Promise<PersonaDistillationRunRecord> {
     const parsed = confirmPersonaDistillationCandidateSchema.parse(input)
@@ -235,11 +311,15 @@ export class PersonaDistillationApplicationService implements TaskHandler {
     if (count.tokens > this.dependencies.personaSoulTokenBudget) {
       throw new ApplicationError('SOUL_TOKEN_BUDGET_EXCEEDED', `人物灵魂预计 ${count.tokens} Token，超过当前 ${this.dependencies.personaSoulTokenBudget} Token 限制`, 422)
     }
-    const confirmed = await this.dependencies.distillations.confirmAndCreatePersona({
+    const targetPersonaId = run.mode === 'update' ? run.createdPersonaId : this.dependencies.identifiers.create()
+    if (!targetPersonaId || (run.mode === 'update' && !run.baseSoulVersionId)) {
+      throw new ApplicationError('VERSION_CONFLICT', '重新蒸馏的目标人物或基线灵魂已变化', 409)
+    }
+    const confirmed = await this.dependencies.distillations.confirmCandidate({
       runId,
       expectedUpdatedAt: parsed.expectedUpdatedAt,
       expectedPromptHash: parsed.expectedPromptHash,
-      personaId: this.dependencies.identifiers.create(),
+      personaId: targetPersonaId,
       soulVersionId: this.dependencies.identifiers.create(),
       name: parsed.name,
       runtimeTokenCount: count.tokens,
@@ -556,17 +636,19 @@ function toModelInput(input: PersonaDistillationRunRecord['inputs'][number]) {
 }
 
 /**
- * 将用户明确设定的证据引文固定为本次运行保存的完整原文，避免模型改写导致无法定位。
+ * 将用户本次明确要求的证据引文固定为完整原文，避免模型改写导致无法定位。
  * @param extraction 模型返回且已通过结构校验的认知提取结果。
  * @param inputs 本次运行的不可变输入快照。
- * @returns 只规范用户设定引文、保留外部资料精确引文的提取结果。
+ * @returns 只规范本次要求引文；基线灵魂和外部资料仍要求精确定位的提取结果。
  */
 function normalizeUserStatementEvidenceQuotes(
   extraction: ModelPersonaDistillationExtraction,
   inputs: PersonaDistillationRunRecord['inputs'],
 ): ModelPersonaDistillationExtraction {
   const userStatements = new Map(inputs
-    .filter(input => input.inputType === 'user_statement' && input.contentSnapshot !== null)
+    .filter(input => input.inputType === 'user_statement'
+      && input.independentSourceKey?.startsWith('requirement:')
+      && input.contentSnapshot !== null)
     .map(input => [input.id, input.contentSnapshot ?? '']))
   return {
     claims: extraction.claims.map(claim => ({

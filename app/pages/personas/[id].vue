@@ -13,6 +13,8 @@ import type {
 } from '#shared/schemas/learning'
 import type { ApiResponse } from '#shared/types/api'
 import type { DeletionImpact, PersonaCredentialSecretView, PersonaDetails, SoulWorkspaceView, SourceDetails, SourceSummary, WorldSummary } from '#shared/types/content'
+import type { RestartPersonaDistillationInput } from '#shared/schemas/personaDistillation'
+import type { PersonaDistillationRunView } from '#shared/types/personaDistillation'
 import type { PersonaGrowthWorkspaceView, PersonaMemoryWorkspaceView } from '#shared/types/learning'
 import type { AnalysisBatchView } from '#shared/types/analysis'
 import type { SourceFileSubmission } from '../../components/content/SourceImportForm.vue'
@@ -95,6 +97,12 @@ const revealedCredential = shallowRef<PersonaCredentialSecretView | null>(null)
 const avatarRevision = shallowRef(0)
 const enableConfirmationOpen = shallowRef(false)
 const disableConfirmationOpen = shallowRef(false)
+/** 是否显示当前人物的重新蒸馏配置弹窗。 */
+const redistillationOpen = shallowRef(false)
+/** 重新蒸馏运行创建请求是否正在执行。 */
+const redistillationLoading = shallowRef(false)
+/** 最近一次重新蒸馏创建失败的安全消息。 */
+const redistillationError = shallowRef<string | null>(null)
 /** 页首头像读取地址；每次更新增加版本查询参数，避免浏览器继续显示旧图。 */
 const headerAvatarUrl = computed(() => details.value?.persona.avatarUrl
   ? `${details.value.persona.avatarUrl}?v=${avatarRevision.value}`
@@ -184,6 +192,41 @@ async function saveSoulVersion(input: SaveSoulVersionInput): Promise<void> {
     await $fetch(`/api/v1/personas/${personaId}/soul`, { method: 'PUT', body: input })
     await Promise.all([refresh(), refreshSoul()])
   })
+}
+
+/**
+ * 打开当前人物的重新蒸馏配置弹窗。
+ * @returns 无返回值。
+ */
+function openRedistillation(): void {
+  redistillationError.value = null
+  redistillationOpen.value = true
+}
+
+/**
+ * 固定当前灵魂、聚焦方向和所选资料，创建可恢复的重新蒸馏运行。
+ * @param input 用户确认的本次聚焦方向和资料 UUID。
+ * @returns 运行创建并进入蒸馏工作区时结束。
+ */
+async function createRedistillation(input: RestartPersonaDistillationInput): Promise<void> {
+  if (redistillationLoading.value) return
+  redistillationLoading.value = true
+  redistillationError.value = null
+  try {
+    const created = await $fetch<ApiResponse<PersonaDistillationRunView>>(`/api/v1/personas/${personaId}/distillations`, {
+      method: 'POST',
+      body: input,
+    })
+    notifySuccess(`人物“${created.data.requestedName}”的重新蒸馏运行已创建。`, '重新蒸馏已开始')
+    await navigateTo(`/personas/distillations/${created.data.id}`)
+  }
+  catch (requestError: unknown) {
+    redistillationError.value = getApiErrorMessage(requestError, '重新蒸馏创建失败')
+    notifyError(redistillationError.value, '重新蒸馏创建失败')
+  }
+  finally {
+    redistillationLoading.value = false
+  }
 }
 
 /**
@@ -604,6 +647,7 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
           :workspace="soul"
           :loading="actionLoading"
           @save="saveSoulVersion"
+          @redistill="openRedistillation"
         />
         <LearningPromptPanel
           v-else-if="selectedPromptModule === 'growth'"
@@ -687,6 +731,17 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
         @delete="deletePersona"
       />
     </template>
+
+    <DistillationRestartModal
+      v-if="details"
+      v-model:open="redistillationOpen"
+      :persona-name="details.persona.name"
+      :sources="allSources"
+      :initial-source-ids="details.sources.map(source => source.id)"
+      :loading="redistillationLoading"
+      :error-message="redistillationError"
+      @submit="createRedistillation"
+    />
 
     <UModal v-model:open="enableConfirmationOpen" title="确认启用人物" description="启用后，可以重新用该人物创建新任务。">
       <template #body><p class="text-sm text-muted">确定启用“{{ details?.persona.name }}”吗？</p></template>

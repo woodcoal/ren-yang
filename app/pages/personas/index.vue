@@ -326,7 +326,7 @@ async function changePageSize(pageSize: number): Promise<void> {
                   <div class="min-w-0">
                     <NuxtLink :to="`/personas/${persona.id}`" data-persona-title-link
                       class="content-table-title hover:underline"><strong>{{ persona.name }}</strong></NuxtLink><span
-                      class="content-table-description">{{ persona.currentSummary || '暂无灵魂提示词' }}</span>
+                      class="content-table-description line-clamp-2 whitespace-pre-wrap">{{ persona.currentSummary || '暂无灵魂提示词' }}</span>
                   </div>
                 </div>
               </td>

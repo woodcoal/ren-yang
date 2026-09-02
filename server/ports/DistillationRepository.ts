@@ -1,5 +1,6 @@
 import type {
   PersonaDistillationCoverageDimension,
+  PersonaDistillationMode,
   PersonaDistillationSourceRelation,
   PersonaDistillationStatus,
 } from '../../shared/types/personaDistillation'
@@ -51,6 +52,12 @@ export interface CreatePersonaDistillationRunRecord {
   taskId: string
   /** 重试来源运行 UUID。 */
   retryOfRunId: string | null
+  /** 创建新人物或更新已有人物。 */
+  mode: PersonaDistillationMode
+  /** 更新模式的目标人物 UUID；创建模式为 null。 */
+  createdPersonaId: string | null
+  /** 重新蒸馏创建时固定的当前灵魂版本；创建模式为 null。 */
+  baseSoulVersionId: string | null
   /** 用户填写的候选人物名称。 */
   requestedName: string
   /** 使用目的与聚焦方向。 */
@@ -209,7 +216,7 @@ export interface SavePersonaDistillationCandidateRecord {
   timestamp: number
 }
 
-/** 最终确认候选并原子创建人物及初始灵魂版本的命令。 */
+/** 最终确认候选并原子创建人物或更新人物灵魂的命令。 */
 export interface ConfirmPersonaDistillationCandidateRecord {
   /** 等待候选审核的运行 UUID。 */
   runId: string
@@ -217,9 +224,9 @@ export interface ConfirmPersonaDistillationCandidateRecord {
   expectedUpdatedAt: number
   /** 页面确认的已评测候选 SHA-256。 */
   expectedPromptHash: string
-  /** 新人物 UUID。 */
+  /** 新人物或已有目标人物 UUID。 */
   personaId: string
-  /** 新初始灵魂版本 UUID。 */
+  /** 将发布的新灵魂版本 UUID。 */
   soulVersionId: string
   /** 人工确认的人物名称。 */
   name: string
@@ -261,6 +268,10 @@ export interface PersonaDistillationRunRecord {
   id: string
   /** 重试来源运行 UUID。 */
   retryOfRunId: string | null
+  /** 创建新人物或更新已有人物。 */
+  mode: PersonaDistillationMode
+  /** 重新蒸馏创建时固定的当前灵魂版本。 */
+  baseSoulVersionId: string | null
   /** 当前状态。 */
   status: PersonaDistillationStatus
   /** 用户填写的候选人物名称。 */
@@ -291,7 +302,7 @@ export interface PersonaDistillationRunRecord {
   evaluatedPromptHash: string | null
   /** 最终确认时保存的人工正文。 */
   reviewedPromptText: string | null
-  /** 成功创建的人物 UUID。 */
+  /** 本次蒸馏创建或更新的人物 UUID；创建模式在完成前为 null。 */
   createdPersonaId: string | null
   /** 稳定错误码。 */
   errorCode: string | null
@@ -335,8 +346,8 @@ export interface DistillationRepository {
   isCancellationRequested(runId: string): Promise<boolean>
   /** @param runId 运行 UUID。 @param timestamp 安全取消时间。 @returns 运行和任务取消完成时结束。 */
   markRunCanceled(runId: string, timestamp: number): Promise<void>
-  /** @param record 候选哈希、人物与版本标识、预算和并发版本。 @returns 原子创建并完成运行时为 true。 */
-  confirmAndCreatePersona(record: ConfirmPersonaDistillationCandidateRecord): Promise<boolean>
+  /** @param record 候选哈希、人物与版本标识、预算和并发版本。 @returns 原子创建或更新人物并完成运行时为 true。 */
+  confirmCandidate(record: ConfirmPersonaDistillationCandidateRecord): Promise<boolean>
   /** @param runId 运行 UUID。 @param code 稳定错误码。 @param message 脱敏错误。 @param timestamp 失败时间。 @returns 执行状态仍允许失败时为 true。 */
   failRun(runId: string, code: string, message: string, timestamp: number): Promise<boolean>
   /** @param record 来源运行、新标识和时间。 @returns 来源运行仍失败且输入可用时为 true。 */

@@ -213,7 +213,9 @@ describe('阶段二内容表单', () => {
     const promptTextarea = wrapper.get<HTMLTextAreaElement>('[data-soul-prompt-form] textarea')
     expect(promptTextarea.element.value).toBe('当前灵魂提示词')
     expect(wrapper.find('[data-soul-analyze-button]').exists()).toBe(true)
-    expect(wrapper.get('[data-soul-analyze-button]').text()).toBe('重新生成')
+    expect(wrapper.get('[data-soul-analyze-button]').text()).toBe('')
+    expect(wrapper.get('[data-soul-analyze-button]').attributes('aria-label')).toBe('重新生成当前灵魂提示词')
+    expect(wrapper.find('[data-soul-redistill-button]').exists()).toBe(false)
     expect(wrapper.find('[data-soul-history-button]').exists()).toBe(true)
     expect(wrapper.text()).not.toContain('确认并发布')
 
@@ -260,6 +262,31 @@ describe('阶段二内容表单', () => {
     })
     await flushPromises()
     expect(promptTextarea.element.value).toBe('历史灵魂提示词')
+  })
+
+  it('人物灵魂编辑区以可访问纯图标发出重新蒸馏意图', async () => {
+    const activeVersion = {
+      id: '00000000-0000-4000-8000-000000000021', subjectType: 'persona' as const,
+      subjectId: '00000000-0000-4000-8000-000000000020', parentVersionId: null,
+      status: 'published' as const, snapshot: { promptText: '当前人物灵魂' }, runtimeTokenCount: 10, tokenCounter: 'test',
+      changeSummary: '当前版本', publishedAt: 2_000, createdAt: 2_000,
+    }
+    const wrapper = await mountSuspended(SoulWorkspace, {
+      props: {
+        loading: false,
+        workspace: {
+          subjectType: 'persona', subjectId: '00000000-0000-4000-8000-000000000020', draft: null,
+          activeVersion,
+          versions: [activeVersion],
+        },
+      },
+    })
+
+    const redistillButton = wrapper.get('[data-soul-redistill-button]')
+    expect(redistillButton.text()).toBe('')
+    expect(redistillButton.attributes('aria-label')).toBe('重新蒸馏当前人物')
+    await redistillButton.trigger('click')
+    expect(wrapper.emitted('redistill')).toEqual([[]])
   })
 
   it('人物与世界共用资料区使用新标签页查看资料，并确认启停与解除关联', async () => {

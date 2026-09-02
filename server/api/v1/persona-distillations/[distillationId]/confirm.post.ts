@@ -5,9 +5,9 @@ import { confirmPersonaDistillationCandidateSchema } from '#shared/schemas/perso
 import { executeController } from '../../../../presentation/http/controller'
 
 /**
- * 确认已通过对应哈希评测的候选并原子创建人物。
+ * 确认已通过对应哈希评测的候选并原子创建或更新人物。
  * @param event 当前已认证请求。
- * @returns 已完成人物创建的蒸馏运行。
+ * @returns 已完成人物创建或灵魂更新的蒸馏运行。
  */
 async function handleConfirmPersonaDistillation(event: H3Event) {
   return await executeController(event, async () => {

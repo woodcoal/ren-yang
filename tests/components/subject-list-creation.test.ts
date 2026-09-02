@@ -349,6 +349,8 @@ describe('世界与人物列表快速初始化', () => {
     expect(personaPageSize.props('items').map((item: { value: number }) => item.value)).toEqual([5, 10, 20, 50, 100])
     expect(personaWrapper.get('a[data-persona-avatar-link]').attributes('href')).toBe('/personas/10000000-0000-4000-8000-000000000001')
     expect(personaWrapper.get('a[data-persona-title-link]').attributes('href')).toBe('/personas/10000000-0000-4000-8000-000000000001')
+    expect(personaWrapper.findAll('.content-table-description')
+      .find(description => description.text() === '可参与新任务。')?.classes()).toEqual(expect.arrayContaining(['line-clamp-2']))
     expect(personaWrapper.get('a[aria-label="查看与维护：启用人物"]').exists()).toBe(true)
     const personaDetailsButton = personaWrapper.findAllComponents({ name: 'UButton' })
       .find(button => button.props('icon') === 'i-lucide-chevron-right')!
@@ -394,6 +396,8 @@ describe('世界与人物列表快速初始化', () => {
     expect(worldPageSize.props('modelValue')).toBe(10)
     expect(worldPageSize.props('items').map((item: { value: number }) => item.value)).toEqual([5, 10, 20, 50, 100])
     expect(worldWrapper.get('a[data-world-title-link]').attributes('href')).toBe('/worlds/20000000-0000-4000-8000-000000000001')
+    expect(worldWrapper.findAll('.content-table-description')
+      .find(description => description.text() === '可进入新任务。')?.classes()).toEqual(expect.arrayContaining(['line-clamp-2']))
     expect(worldWrapper.get('a[aria-label="查看与维护：启用世界"]').exists()).toBe(true)
 
     await worldWrapper.get('input[aria-label="选择世界：启用世界"]').setValue(true)

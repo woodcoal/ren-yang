@@ -41,6 +41,9 @@ async function createConfirmedRequirementRun(): Promise<void> {
     id: IDS.run,
     taskId: IDS.task,
     retryOfRunId: null,
+    mode: 'create',
+    createdPersonaId: null,
+    baseSoulVersionId: null,
     requestedName: '顾岚',
     objective: '提炼判断方式。',
     worldId: null,
@@ -126,8 +129,12 @@ describe('人物蒸馏 SQLite 持久化', () => {
       expect.objectContaining({ name: 'published_at', notnull: 0 }),
       expect.objectContaining({ name: 'original_source_key', notnull: 0 }),
     ]))
+    expect(client.prepare(`PRAGMA table_info(persona_distillation_runs)`).all()).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'mode', notnull: 1, dflt_value: "'create'" }),
+      expect.objectContaining({ name: 'base_soul_version_id', notnull: 0 }),
+    ]))
     expect(client.prepare(`SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations`).get())
-      .toEqual({ count: 20, version: 1790928000000 })
+      .toEqual({ count: 21, version: 1791014400000 })
     expect(client.prepare(`SELECT code FROM ai_algorithms WHERE code = 'persona_distillation'`).get())
       .toEqual({ code: 'persona_distillation' })
     expect(client.prepare(`
@@ -155,6 +162,9 @@ describe('人物蒸馏 SQLite 持久化', () => {
       id: IDS.run,
       taskId: IDS.task,
       retryOfRunId: null,
+      mode: 'create',
+      createdPersonaId: null,
+      baseSoulVersionId: null,
       requestedName: '顾岚',
       objective: '提炼重视证据的判断方式。',
       worldId: null,
@@ -227,6 +237,9 @@ describe('人物蒸馏 SQLite 持久化', () => {
       id: IDS.run,
       taskId: IDS.task,
       retryOfRunId: null,
+      mode: 'create',
+      createdPersonaId: null,
+      baseSoulVersionId: null,
       requestedName: '顾岚',
       objective: '提炼判断方式。',
       worldId: null,
@@ -437,6 +450,9 @@ describe('人物蒸馏 SQLite 持久化', () => {
       id: IDS.run,
       taskId: IDS.task,
       retryOfRunId: null,
+      mode: 'create',
+      createdPersonaId: null,
+      baseSoulVersionId: null,
       requestedName: '顾岚',
       objective: '提炼判断方式。',
       worldId: null,
@@ -481,6 +497,9 @@ describe('人物蒸馏 SQLite 持久化', () => {
       id: IDS.run,
       taskId: IDS.task,
       retryOfRunId: null,
+      mode: 'create',
+      createdPersonaId: null,
+      baseSoulVersionId: null,
       requestedName: '顾岚',
       objective: '提炼判断方式。',
       worldId: null,
@@ -521,6 +540,9 @@ describe('人物蒸馏 SQLite 持久化', () => {
       id: IDS.run,
       taskId: IDS.task,
       retryOfRunId: null,
+      mode: 'create',
+      createdPersonaId: null,
+      baseSoulVersionId: null,
       requestedName: '顾岚',
       objective: '提炼判断方式。',
       worldId: null,
@@ -581,7 +603,7 @@ describe('人物蒸馏 SQLite 持久化', () => {
       timestamp: 7_000,
     })
 
-    await expect(repository.confirmAndCreatePersona({
+    await expect(repository.confirmCandidate({
       runId: IDS.run,
       expectedUpdatedAt: 7_000,
       expectedPromptHash: promptHash,
@@ -614,7 +636,7 @@ describe('人物蒸馏 SQLite 持久化', () => {
       reviewedPromptText: '# 心智模型\n先明确判断依据。',
       completedAt: 8_000,
     })
-    await expect(repository.confirmAndCreatePersona({
+    await expect(repository.confirmCandidate({
       runId: IDS.run,
       expectedUpdatedAt: 7_000,
       expectedPromptHash: promptHash,
@@ -632,6 +654,9 @@ describe('人物蒸馏 SQLite 持久化', () => {
       id: IDS.run,
       taskId: IDS.task,
       retryOfRunId: null,
+      mode: 'create',
+      createdPersonaId: null,
+      baseSoulVersionId: null,
       requestedName: '顾岚',
       objective: '提炼判断方式。',
       worldId: null,
@@ -708,6 +733,9 @@ describe('人物蒸馏 SQLite 持久化', () => {
       id: IDS.otherRun,
       taskId: IDS.otherTask,
       retryOfRunId: null,
+      mode: 'create',
+      createdPersonaId: null,
+      baseSoulVersionId: null,
       requestedName: '另一人物',
       objective: '另一项要求。',
       worldId: null,

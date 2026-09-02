@@ -42,7 +42,7 @@ export interface RequestApplicationServices {
   learning: LearningApplicationService
   /** AI 成长与记忆提炼批次用例。 */
   analysis: AnalysisApplicationService
-  /** 人物创建前的资料覆盖、认知提取、候选评测和确认用例。 */
+  /** 人物创建或已有人物重新蒸馏的资料覆盖、认知提取、候选评测和确认用例。 */
   personaDistillation: PersonaDistillationApplicationService
   /** 定时提炼、自动发布和统一周期设置用例。 */
   learningAutomation: LearningAutomationApplicationService

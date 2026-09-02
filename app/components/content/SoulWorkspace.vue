@@ -21,6 +21,8 @@ const { notifySuccess, notifyError } = useOperationNotifications()
 const emit = defineEmits<{
   /** 保存编辑框内容并立即生成新的当前版本。 */
   save: [input: SaveSoulVersionInput]
+  /** 为当前人物打开一次新的可恢复蒸馏运行。 */
+  redistill: []
 }>()
 
 /** 直接显示在页面中的灵魂编辑状态。 */
@@ -159,7 +161,19 @@ watch(() => props.workspace.activeVersion, synchronizeActiveVersion, { immediate
               title="根据当前编辑内容重新生成，只回填编辑框"
               :disabled="!editor.snapshot.promptText.trim() || loading || analysisLoading"
               @click="analyzePrompt"
-            >重新生成</UButton>
+            />
+            <UButton
+              v-if="workspace.subjectType === 'persona'"
+              type="button"
+              data-soul-redistill-button
+              icon="i-lucide-flask-conical"
+              color="neutral"
+              variant="ghost"
+              aria-label="重新蒸馏当前人物"
+              title="基于当前灵魂和所选资料重新蒸馏"
+              :disabled="!workspace.activeVersion || loading || analysisLoading"
+              @click="emit('redistill')"
+            />
             <UButton
               type="button"
               data-soul-history-button

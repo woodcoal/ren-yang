@@ -48,6 +48,12 @@ export const createPersonaDistillationSchema = z.object({
   sourceIds: z.array(z.string().uuid('资料标识无效')).max(100, '一次最多选择 100 项资料').default([]),
 })
 
+/** 对已有人物重新执行蒸馏的共享输入。 */
+export const restartPersonaDistillationSchema = z.object({
+  objective: z.string().trim().min(1, '重新蒸馏目的不能为空').max(20_000, '重新蒸馏目的不能超过 20000 字'),
+  sourceIds: z.array(z.string().uuid('资料标识无效')).max(100, '一次最多选择 100 项资料').default([]),
+})
+
 /** 模型对一项蒸馏输入给出的来源和覆盖分类。 */
 export const modelPersonaDistillationSourceAssessmentItemSchema = z.object({
   inputId: z.string().uuid(),
@@ -147,6 +153,7 @@ export const modelPersonaDistillationEvaluationSchema = z.object({
 })
 
 export type CreatePersonaDistillationInput = z.infer<typeof createPersonaDistillationSchema>
+export type RestartPersonaDistillationInput = z.infer<typeof restartPersonaDistillationSchema>
 export type ModelPersonaDistillationSourceAssessment = z.infer<typeof modelPersonaDistillationSourceAssessmentSchema>
 export type ReviewPersonaDistillationSourcesInput = z.infer<typeof reviewPersonaDistillationSourcesSchema>
 export type SavePersonaDistillationCandidateInput = z.infer<typeof savePersonaDistillationCandidateSchema>

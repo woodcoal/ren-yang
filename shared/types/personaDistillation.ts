@@ -14,6 +14,9 @@ export const PERSONA_DISTILLATION_STATUSES = [
 /** 人物蒸馏运行的稳定状态。 */
 export type PersonaDistillationStatus = typeof PERSONA_DISTILLATION_STATUSES[number]
 
+/** 人物蒸馏是创建新人物，还是更新已有人物。 */
+export type PersonaDistillationMode = 'create' | 'update'
+
 /** 人物蒸馏算法固定的四个模型步骤及执行顺序。 */
 export const PERSONA_DISTILLATION_ALGORITHM_STEPS = [
   'classify_sources',
@@ -219,6 +222,8 @@ export interface PersonaDistillationRunView {
   id: string
   /** 重试来源运行 UUID。 */
   retryOfRunId: string | null
+  /** 创建新人物或更新已有人物。 */
+  mode: PersonaDistillationMode
   /** 当前状态。 */
   status: PersonaDistillationStatus
   /** 用户填写的候选人物名称。 */
@@ -241,7 +246,7 @@ export interface PersonaDistillationRunView {
   candidatePromptHash: string | null
   /** 最近通过硬门禁评测的正文 SHA-256。 */
   evaluatedPromptHash: string | null
-  /** 成功创建的人物 UUID。 */
+  /** 本次蒸馏创建或更新的人物 UUID；创建模式在完成前为 null。 */
   createdPersonaId: string | null
   /** 稳定错误码。 */
   errorCode: string | null

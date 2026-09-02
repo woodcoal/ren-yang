@@ -108,15 +108,20 @@ export async function usePersonaDistillation(runId: string) {
   }
 
   /**
-   * 确认当前评测哈希对应的候选并原子创建人物。
+   * 确认当前评测哈希对应的候选并原子创建或更新人物。
    * @param input 当前页面版本、最终名称和候选哈希。
-   * @returns 创建成功后的完整运行，失败或重复点击时返回 null。
+   * @returns 创建或更新成功后的完整运行，失败或重复点击时返回 null。
    */
   async function confirmCandidate(input: ConfirmPersonaDistillationCandidateInput): Promise<PersonaDistillationRunView | null> {
-    return await executeAction('人物与初始灵魂已经创建', '人物确认失败', async () => await $fetch(
-      `/api/v1/persona-distillations/${runId}/confirm`,
-      { method: 'POST', body: input },
-    ))
+    const updateMode = run.value?.mode === 'update'
+    return await executeAction(
+      updateMode ? '人物新灵魂版本已发布' : '人物与初始灵魂已经创建',
+      updateMode ? '人物灵魂更新失败' : '人物确认失败',
+      async () => await $fetch(
+        `/api/v1/persona-distillations/${runId}/confirm`,
+        { method: 'POST', body: input },
+      ),
+    )
   }
 
   /**

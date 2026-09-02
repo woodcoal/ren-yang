@@ -479,7 +479,7 @@ export const globalSources = sqliteTable(
   ],
 )
 
-/** 人物创建前的可审计蒸馏运行。 */
+/** 创建新人物或更新已有人物的可审计蒸馏运行。 */
 export const personaDistillationRuns = sqliteTable(
   'persona_distillation_runs',
   {
@@ -489,6 +489,8 @@ export const personaDistillationRuns = sqliteTable(
     requestedName: text('requested_name').notNull(),
     objective: text('objective').notNull(),
     worldId: text('world_id').references(() => worlds.id, { onDelete: 'set null' }),
+    mode: text('mode').notNull().default('create'),
+    baseSoulVersionId: text('base_soul_version_id').references(() => soulVersions.id, { onDelete: 'set null' }),
     provider: text('provider').notNull(),
     coverageSnapshotJson: text('coverage_snapshot_json'),
     algorithmSnapshotJson: text('algorithm_snapshot_json').notNull(),
@@ -515,6 +517,7 @@ export const personaDistillationRuns = sqliteTable(
     check('persona_distillation_runs_status_check', sql`${table.status} IN ('assessing_sources', 'awaiting_source_review', 'extracting', 'synthesizing', 'evaluating', 'awaiting_candidate_review', 'completed', 'failed', 'canceled')`),
     check('persona_distillation_runs_name_check', sql`length(trim(${table.requestedName})) BETWEEN 1 AND 100`),
     check('persona_distillation_runs_objective_check', sql`length(trim(${table.objective})) BETWEEN 1 AND 20000`),
+    check('persona_distillation_runs_mode_check', sql`${table.mode} IN ('create', 'update')`),
     check('persona_distillation_runs_provider_check', sql`${table.provider} IN ('sqlite_fts5', 'openviking')`),
     check('persona_distillation_runs_coverage_json_check', sql`${table.coverageSnapshotJson} IS NULL OR json_valid(${table.coverageSnapshotJson})`),
     check('persona_distillation_runs_algorithm_json_check', sql`json_valid(${table.algorithmSnapshotJson})`),

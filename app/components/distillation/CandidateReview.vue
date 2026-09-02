@@ -20,7 +20,7 @@ const props = defineProps<Props>()
 const emit = defineEmits<{
   /** 保存编辑后的完整候选并重新评测。 */
   save: [input: SavePersonaDistillationCandidateInput]
-  /** 确认当前评测哈希并创建人物。 */
+  /** 确认当前评测哈希并创建或更新人物。 */
   confirm: [input: ConfirmPersonaDistillationCandidateInput]
 }>()
 
@@ -40,6 +40,8 @@ const canConfirm = computed(() => Boolean(
   && currentHardFailures.value.length === 0
   && !candidateChanged.value,
 ))
+/** 最终确认动作在当前运行模式下的用户可见名称。 */
+const confirmationLabel = computed(() => props.run.mode === 'update' ? '确认更新人物灵魂' : '确认创建人物')
 
 /**
  * 从服务端候选快照初始化当前页面编辑状态。
@@ -117,7 +119,9 @@ watch(() => [props.run.id, props.run.candidatePromptHash] as const, initializeCa
         <template #header>
           <div>
             <h3 class="font-semibold text-highlighted">完整人物灵魂</h3>
-            <p class="mt-1 text-sm text-muted">这是确认后写入首个当前灵魂版本的完整正文。</p>
+            <p class="mt-1 text-sm text-muted">{{ props.run.mode === 'update'
+              ? '这是确认后发布为当前人物新灵魂版本的完整正文。'
+              : '这是确认后写入首个当前灵魂版本的完整正文。' }}</p>
           </div>
         </template>
         <div class="space-y-4">
@@ -132,7 +136,7 @@ watch(() => [props.run.id, props.run.candidatePromptHash] as const, initializeCa
             color="warning"
             variant="subtle"
             title="当前正文尚未评测"
-            description="保存后系统会重新执行六类评测；评测完成前不能创建人物。"
+            :description="`保存后系统会重新执行六类评测；评测完成前不能${props.run.mode === 'update' ? '更新人物灵魂' : '创建人物'}。`"
           />
           <UButton
             icon="i-lucide-refresh-cw"
@@ -155,10 +159,10 @@ watch(() => [props.run.id, props.run.candidatePromptHash] as const, initializeCa
     <div class="sticky-action-bar mt-6">
       <div>
         <p class="m-0 font-medium text-highlighted">{{ canConfirm ? '当前候选已通过硬门禁' : '当前候选暂不能确认' }}</p>
-        <p class="mt-1 text-xs text-muted">只有正文哈希与最近完整评测一致时才能创建人物。</p>
+        <p class="mt-1 text-xs text-muted">只有正文哈希与最近完整评测一致时才能{{ props.run.mode === 'update' ? '更新人物灵魂' : '创建人物' }}。</p>
       </div>
       <UButton icon="i-lucide-check" :loading="loading" :disabled="!canConfirm || !state.name.trim()" @click="confirmCandidate">
-        确认创建人物
+        {{ confirmationLabel }}
       </UButton>
     </div>
   </section>

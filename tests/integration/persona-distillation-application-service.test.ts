@@ -298,4 +298,83 @@ describe('人物蒸馏应用闭环', () => {
     `).get(confirmed.createdPersonaId) as { name: string, prompt_text: string }
     expect(persona).toEqual({ name: '顾岚', prompt_text: '# 心智模型\n先明确判断依据。' })
   })
+
+  it('重新蒸馏固定当前灵魂并在最终确认后只发布原人物的新灵魂版本', async () => {
+    const personaId = '70000000-0000-4000-8000-000000000010'
+    const baseVersionId = '70000000-0000-4000-8000-000000000011'
+    const client = database.getClient()
+    client.prepare(`
+      INSERT INTO personas (
+        id, world_id, name, username, email, password_ciphertext, origin,
+        is_enabled, automatic_learning_enabled, created_at, updated_at
+      ) VALUES (?, NULL, '原人物', NULL, NULL, NULL, 'original', 1, 0, 1000, 1000)
+    `).run(personaId)
+    client.prepare(`
+      INSERT INTO soul_versions (
+        id, subject_type, world_id, persona_id, parent_version_id, prompt_text,
+        runtime_token_count, token_counter, change_summary, status, published_at, created_at
+      ) VALUES (?, 'persona', NULL, ?, NULL, '原始灵魂提示词。', 10, '测试计数器', '原始灵魂', 'published', 1000, 1000)
+    `).run(baseVersionId, personaId)
+    client.prepare(`UPDATE personas SET active_soul_version_id = ? WHERE id = ?`).run(baseVersionId, personaId)
+
+    const created = await service.restartRun(personaId, {
+      objective: '保留当前判断原则，重点校准表达特征。',
+      sourceIds: [],
+    })
+    expect(created).toMatchObject({
+      mode: 'update',
+      createdPersonaId: personaId,
+      baseSoulVersionId: baseVersionId,
+      requestedName: '原人物',
+    })
+    expect(created.inputs).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: '当前人物灵魂', contentSnapshot: '原始灵魂提示词。' }),
+    ]))
+
+    await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: true })
+    const assessed = await service.getRun(created.id)
+    await service.reviewSources(created.id, {
+      expectedUpdatedAt: assessed.updatedAt,
+      acceptedInputIds: [],
+      corrections: [],
+    })
+    await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: true })
+    const candidate = await service.getRun(created.id)
+    const conflictingVersionId = '70000000-0000-4000-8000-000000000012'
+    client.prepare(`
+      INSERT INTO soul_versions (
+        id, subject_type, world_id, persona_id, parent_version_id, prompt_text,
+        runtime_token_count, token_counter, change_summary, status, published_at, created_at
+      ) VALUES (?, 'persona', NULL, ?, ?, '并发发布的灵魂。', 10, '测试计数器', '并发发布', 'published', 2000, 2000)
+    `).run(conflictingVersionId, personaId, baseVersionId)
+    client.prepare(`UPDATE personas SET active_soul_version_id = ? WHERE id = ?`).run(conflictingVersionId, personaId)
+    await expect(service.confirmCandidate(created.id, {
+      expectedUpdatedAt: candidate.updatedAt,
+      name: '不应覆盖并发版本',
+      expectedPromptHash: candidate.candidatePromptHash,
+    })).rejects.toMatchObject({ code: 'DISTILLATION_STATE_CONFLICT' })
+    client.prepare(`UPDATE personas SET active_soul_version_id = ? WHERE id = ?`).run(baseVersionId, personaId)
+    client.prepare(`DELETE FROM soul_versions WHERE id = ?`).run(conflictingVersionId)
+
+    const confirmed = await service.confirmCandidate(created.id, {
+      expectedUpdatedAt: candidate.updatedAt,
+      name: '更新后的原人物',
+      expectedPromptHash: candidate.candidatePromptHash,
+    })
+
+    expect(confirmed).toMatchObject({ mode: 'update', status: 'completed', createdPersonaId: personaId })
+    expect(client.prepare(`SELECT COUNT(*) AS count FROM personas`).get()).toEqual({ count: 1 })
+    expect(client.prepare(`SELECT COUNT(*) AS count FROM soul_versions WHERE persona_id = ?`).get(personaId)).toEqual({ count: 2 })
+    expect(client.prepare(`
+      SELECT personas.name, soul_versions.parent_version_id, soul_versions.prompt_text, soul_versions.change_summary
+      FROM personas
+      INNER JOIN soul_versions ON soul_versions.id = personas.active_soul_version_id
+      WHERE personas.id = ?
+    `).get(personaId)).toEqual({
+      name: '更新后的原人物',
+      parent_version_id: baseVersionId,
+      prompt_text: '# 心智模型\n先明确判断依据。',
+      change_summary: '由人物重新蒸馏生成新灵魂',
+    })
+  })
 })
