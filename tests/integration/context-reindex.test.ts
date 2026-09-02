@@ -589,19 +589,20 @@ describe('OpenViking 可关闭索引与 SQLite 重建', () => {
     ]
     const repository = new SqliteContextIndexRepository(database.getClient())
     const provider = new OpenVikingHttpContextProvider({
-      enabled: false, endpoint: '', apiKey: '', timeoutMs: 60_000, repository,
+      enabled: false, endpoint: '', accountId: 'ren-yang', apiKey: '', timeoutMs: 60_000, repository,
       configurationSource: () => {
         const current = settings.findCurrent()
         return current
           ? {
               enabled: current.enabled,
               endpoint: current.endpoint,
+              accountId: current.accountId,
               apiKey: current.apiKeyCiphertext
                 ? secretCipher.decrypt(current.apiKeyCiphertext, OPEN_VIKING_SECRET_CONTEXT)
                 : '',
               timeoutMs: current.timeoutMs,
             }
-          : { enabled: false, endpoint: '', apiKey: '', timeoutMs: 60_000 }
+          : { enabled: false, endpoint: '', accountId: 'ren-yang', apiKey: '', timeoutMs: 60_000 }
       },
       fetcher: (async (input: URL | RequestInfo, init?: RequestInit) => {
         requests.push({ url: String(input), init: init ?? {} })
@@ -614,11 +615,11 @@ describe('OpenViking 可关闭索引与 SQLite 重建', () => {
     })
 
     await expect(service.updateSettings({
-      enabled: true, endpoint: 'https://first-ov.test', timeoutMs: 5_000,
+      enabled: true, endpoint: 'https://first-ov.test', accountId: 'ren-yang', timeoutMs: 5_000,
     })).rejects.toThrow('启用 OpenViking 前必须填写 ADMIN Key')
 
     await expect(service.updateSettings({
-      enabled: true, endpoint: 'https://first-ov.test', apiKey: 'database-admin-key', timeoutMs: 5_000,
+      enabled: true, endpoint: 'https://first-ov.test', accountId: 'ren-yang', apiKey: 'database-admin-key', timeoutMs: 5_000,
     })).resolves.toMatchObject({ enabled: true, hasApiKey: true })
     const firstCiphertext = (database.getClient().prepare(`
       SELECT api_key_ciphertext FROM openviking_settings WHERE id = 'openviking_settings'
@@ -631,8 +632,8 @@ describe('OpenViking 可关闭索引与 SQLite 重建', () => {
     })
 
     await expect(service.updateSettings({
-      enabled: true, endpoint: 'https://second-ov.test', timeoutMs: 6_000,
-    })).resolves.toMatchObject({ endpoint: 'https://second-ov.test', hasApiKey: true, timeoutMs: 6_000 })
+      enabled: true, endpoint: 'https://second-ov.test', accountId: 'xxx', timeoutMs: 6_000,
+    })).resolves.toMatchObject({ endpoint: 'https://second-ov.test', accountId: 'xxx', hasApiKey: true, timeoutMs: 6_000 })
     expect((database.getClient().prepare(`
       SELECT api_key_ciphertext FROM openviking_settings WHERE id = 'openviking_settings'
     `).get() as { api_key_ciphertext: string }).api_key_ciphertext).toBe(firstCiphertext)
@@ -642,6 +643,9 @@ describe('OpenViking 可关闭索引与 SQLite 重建', () => {
     expect(requests.filter(request => new URL(request.url).pathname.includes('/admin/')).map(request => {
       return new Headers(request.init.headers).get('x-api-key')
     })).toEqual(['database-admin-key', 'database-admin-key'])
+    expect(requests.filter(request => new URL(request.url).pathname.includes('/admin/')).map(request => {
+      return new URL(request.url).pathname
+    })).toEqual(['/api/v1/admin/accounts/ren-yang/users', '/api/v1/admin/accounts/xxx/users'])
   })
 })
 

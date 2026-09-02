@@ -199,6 +199,7 @@ export class ApplicationRuntime {
     const openViking = new OpenVikingHttpContextProvider({
       enabled: false,
       endpoint: '',
+      accountId: 'ren-yang',
       apiKey: '',
       timeoutMs: 60_000,
       repository: contextRepository,
@@ -208,12 +209,13 @@ export class ApplicationRuntime {
           ? {
               enabled: current.enabled,
               endpoint: current.endpoint,
+              accountId: current.accountId,
               apiKey: current.apiKeyCiphertext
                 ? secretCipher.decrypt(current.apiKeyCiphertext, OPEN_VIKING_SECRET_CONTEXT)
                 : '',
               timeoutMs: current.timeoutMs,
             }
-          : { enabled: false, endpoint: '', apiKey: '', timeoutMs: 60_000 }
+          : { enabled: false, endpoint: '', accountId: 'ren-yang', apiKey: '', timeoutMs: 60_000 }
       },
     })
     const contextSyncQueue = new SqliteContextSyncTaskQueue(

@@ -136,6 +136,7 @@ export const openVikingSettings = sqliteTable(
     id: text('id').primaryKey(),
     enabled: integer('enabled').notNull().default(0),
     endpoint: text('endpoint').notNull().default(''),
+    accountId: text('account_id').notNull().default('ren-yang'),
     apiKeyCiphertext: text('api_key_ciphertext').notNull().default(''),
     timeoutMs: integer('timeout_ms').notNull().default(60_000),
     updatedAt: integer('updated_at').notNull(),
@@ -143,6 +144,7 @@ export const openVikingSettings = sqliteTable(
   table => [
     check('openviking_settings_singleton_check', sql`${table.id} = 'openviking_settings'`),
     check('openviking_settings_enabled_check', sql`${table.enabled} IN (0, 1)`),
+    check('openviking_settings_account_id_check', sql`length(trim(${table.accountId})) > 0`),
     check('openviking_settings_timeout_check', sql`${table.timeoutMs} BETWEEN 1000 AND 300000`),
   ],
 )
@@ -254,12 +256,14 @@ export const worlds = sqliteTable(
     summary: text('summary').notNull().default(''),
     activeSoulVersionId: text('active_soul_version_id'),
     isEnabled: integer('is_enabled').notNull().default(1),
+    automaticLearningEnabled: integer('automatic_learning_enabled').notNull().default(0),
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull(),
   },
   table => [
     check('worlds_name_not_empty_check', sql`length(trim(${table.name})) > 0`),
     check('worlds_enabled_check', sql`${table.isEnabled} IN (0, 1)`),
+    check('worlds_automatic_learning_check', sql`${table.automaticLearningEnabled} IN (0, 1)`),
   ],
 )
 
@@ -276,6 +280,7 @@ export const personas = sqliteTable(
     origin: text('origin').notNull(),
     activeSoulVersionId: text('active_soul_version_id'),
     isEnabled: integer('is_enabled').notNull().default(1),
+    automaticLearningEnabled: integer('automatic_learning_enabled').notNull().default(0),
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull(),
   },
@@ -286,6 +291,7 @@ export const personas = sqliteTable(
     check('personas_name_not_empty_check', sql`length(trim(${table.name})) > 0`),
     check('personas_origin_check', sql`${table.origin} IN ('original', 'source_based', 'hybrid')`),
     check('personas_enabled_check', sql`${table.isEnabled} IN (0, 1)`),
+    check('personas_automatic_learning_check', sql`${table.automaticLearningEnabled} IN (0, 1)`),
   ],
 )
 
@@ -962,6 +968,7 @@ export const analysisBatches = sqliteTable(
     algorithmSnapshotJson: text('algorithm_snapshot_json'),
     rawResultJson: text('raw_result_json'),
     status: text('status').notNull().default('queued'),
+    autoPublish: integer('auto_publish').notNull().default(0),
     errorCode: text('error_code'),
     errorMessage: text('error_message'),
     createdAt: integer('created_at').notNull(),
@@ -978,11 +985,28 @@ export const analysisBatches = sqliteTable(
     )`),
     check('analysis_batches_mode_check', sql`${table.mode} IN ('incremental', 'full_rebuild')`),
     check('analysis_batches_status_check', sql`${table.status} IN ('queued', 'running', 'awaiting_review', 'completed', 'failed')`),
+    check('analysis_batches_auto_publish_check', sql`${table.autoPublish} IN (0, 1)`),
     check('analysis_batches_baseline_json_check', sql`json_valid(${table.baselineJson})`),
     check('analysis_batches_model_json_check', sql`json_valid(${table.modelSnapshotJson})`),
     check('analysis_batches_parameter_json_check', sql`json_valid(${table.parameterSnapshotJson})`),
     check('analysis_batches_algorithm_json_check', sql`${table.algorithmSnapshotJson} IS NULL OR json_valid(${table.algorithmSnapshotJson})`),
     check('analysis_batches_raw_json_check', sql`${table.rawResultJson} IS NULL OR json_valid(${table.rawResultJson})`),
+  ],
+)
+
+/** 管理员统一维护的学习自动化周期和下次扫描时间。 */
+export const learningAutomationSettings = sqliteTable(
+  'learning_automation_settings',
+  {
+    id: text('id').primaryKey(),
+    intervalHours: integer('interval_hours').notNull().default(24),
+    nextRunAt: integer('next_run_at').notNull().default(0),
+    lastRunAt: integer('last_run_at'),
+    updatedAt: integer('updated_at').notNull().default(0),
+  },
+  table => [
+    check('learning_automation_settings_singleton_check', sql`${table.id} = 'learning_automation_settings'`),
+    check('learning_automation_settings_interval_check', sql`${table.intervalHours} BETWEEN 1 AND 720`),
   ],
 )
 
@@ -1448,6 +1472,7 @@ export const databaseSchema = {
   memoryRevisions,
   memoryRevisionEvidence,
   analysisBatches,
+  learningAutomationSettings,
   analysisBatchInputs,
   iterationProposals,
   learningPrompts,

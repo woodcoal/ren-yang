@@ -20,7 +20,7 @@ export class SqliteOpenVikingSettingsRepository implements OpenVikingSettingsRep
   /** @returns 当前含密文设置的同步读取结果。 */
   findCurrent(): OpenVikingSettingsSecretRecord | null {
     const row = this.client.prepare(`
-      SELECT enabled, endpoint, api_key_ciphertext, timeout_ms, updated_at
+      SELECT enabled, endpoint, account_id, api_key_ciphertext, timeout_ms, updated_at
       FROM openviking_settings WHERE id = 'openviking_settings'
     `).get() as Record<string, unknown> | undefined
     return row ? mapSecretRecord(row) : null
@@ -31,12 +31,13 @@ export class SqliteOpenVikingSettingsRepository implements OpenVikingSettingsRep
     this.client.transaction(() => {
       this.client.prepare(`
         INSERT INTO openviking_settings (
-          id, enabled, endpoint, api_key_ciphertext, timeout_ms, updated_at
-        ) VALUES ('openviking_settings', ?, ?, ?, ?, ?)
+          id, enabled, endpoint, account_id, api_key_ciphertext, timeout_ms, updated_at
+        ) VALUES ('openviking_settings', ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET enabled = excluded.enabled, endpoint = excluded.endpoint,
+          account_id = excluded.account_id,
           api_key_ciphertext = excluded.api_key_ciphertext, timeout_ms = excluded.timeout_ms,
           updated_at = excluded.updated_at
-      `).run(record.enabled ? 1 : 0, record.endpoint, record.apiKeyCiphertext, record.timeoutMs, record.timestamp)
+      `).run(record.enabled ? 1 : 0, record.endpoint, record.accountId, record.apiKeyCiphertext, record.timeoutMs, record.timestamp)
       insertAuditEvent(this.client, {
         actor: 'administrator', action: 'openviking_settings_updated',
         targetType: 'openviking_settings', targetId: 'openviking_settings', timestamp: record.timestamp,
@@ -53,6 +54,7 @@ function mapSecretRecord(row: Record<string, unknown>): OpenVikingSettingsSecret
   return {
     enabled: Number(row.enabled) === 1,
     endpoint: String(row.endpoint),
+    accountId: String(row.account_id),
     hasApiKey: apiKeyCiphertext.length > 0,
     apiKeyCiphertext,
     timeoutMs: Number(row.timeout_ms),

@@ -18,6 +18,7 @@ const emit = defineEmits<{
 const form = reactive({
   enabled: props.settings.enabled,
   endpoint: props.settings.endpoint,
+  accountId: props.settings.accountId,
   apiKey: '',
   timeoutMs: props.settings.timeoutMs,
 })
@@ -29,6 +30,7 @@ function submit(): void {
   const candidate = {
     enabled: form.enabled,
     endpoint: form.endpoint,
+    accountId: form.accountId,
     timeoutMs: form.timeoutMs,
     ...(form.apiKey.trim() ? { apiKey: form.apiKey } : {}),
   }
@@ -45,11 +47,14 @@ function submit(): void {
   <form class="mt-5 grid gap-4" data-openviking-settings-form @submit.prevent="submit">
     <UAlert v-if="validationError" color="error" title="设置无效" :description="validationError" />
     <UFormField label="服务地址" description="填写 OpenViking HTTP 服务根地址。" required>
-      <UInput v-model="form.endpoint" class="w-full" placeholder="http://127.0.0.1:20000" />
+      <UInput v-model="form.endpoint" class="w-full" name="endpoint" placeholder="http://127.0.0.1:20000" />
+    </UFormField>
+    <UFormField label="Account ID" description="ADMIN Key 必须属于该 Account，切换后会从 SQLite 重建投影。" required>
+      <UInput v-model="form.accountId" class="w-full" name="account-id" placeholder="ren-yang" />
     </UFormField>
     <UFormField
       label="ADMIN Key"
-      :description="settings.hasApiKey ? '密钥已加密保存；留空保留当前值。' : '必须是 ren-yang Account 下可管理 User 的 ADMIN Key。'"
+      :description="settings.hasApiKey ? '密钥已加密保存；留空保留当前值。' : '必须是所填 Account 下可管理 User 的 ADMIN Key。'"
       :required="!settings.hasApiKey"
     >
       <UInput v-model="form.apiKey" class="w-full" type="password" autocomplete="new-password" />

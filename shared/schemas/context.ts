@@ -31,10 +31,15 @@ const openVikingEndpointSchema = z.union([
   }),
 ])
 
+/** OpenViking Account 标识只允许服务端路径安全的名称字符。 */
+const openVikingAccountIdSchema = z.string().trim().min(1, 'Account ID 不能为空').max(200)
+  .regex(/^[A-Za-z0-9][A-Za-z0-9_-]*$/, 'Account ID 只能包含字母、数字、短横线和下划线')
+
 /** 管理员保存的 OpenViking 运行配置；省略 API Key 表示保留数据库密文。 */
 export const updateOpenVikingSettingsSchema = z.object({
   enabled: z.boolean(),
   endpoint: openVikingEndpointSchema,
+  accountId: openVikingAccountIdSchema,
   apiKey: z.string().trim().min(1, 'ADMIN Key 不能为空').max(8_000).optional(),
   timeoutMs: z.number().int().min(1_000, '超时不能少于 1000 毫秒').max(300_000, '超时不能超过 300000 毫秒'),
 }).superRefine((value, context) => {

@@ -54,6 +54,9 @@ class FixedContextIndexRepository implements ContextIndexRepository {
   /** @returns 当前单元测试不重置 Session 投影。 */
   async markSessionsForRebuild() {}
 
+  /** @returns 当前测试不重置资料投影。 */
+  async markSourceProjectionsForRebuild() {}
+
   /** @returns 当前单元测试不保存 Session 状态。 */
   async saveSessionState() {}
 
@@ -152,6 +155,7 @@ describe('OpenViking 原生 HTTP 上下文适配器', () => {
     const provider = new OpenVikingHttpContextProvider({
       enabled: true,
       endpoint: 'https://ov.test',
+      accountId: 'xxx',
       apiKey: 'admin-key',
       timeoutMs: 5_000,
       repository: new FixedContextIndexRepository([]),
@@ -163,7 +167,7 @@ describe('OpenViking 原生 HTTP 上下文适配器', () => {
 
     await expect(provider.checkHealth()).resolves.toEqual({ healthy: true, version: '0.4.16', authMode: 'api_key', queueHealthy: true })
     expect(requests.map(item => new URL(item.url).pathname)).toEqual([
-      '/health', '/api/v1/admin/accounts/ren-yang/users', '/api/v1/observer/queue',
+      '/health', '/api/v1/admin/accounts/xxx/users', '/api/v1/observer/queue',
     ])
     expect(new Headers(requests[1]!.init.headers).get('x-api-key')).toBe('admin-key')
   })

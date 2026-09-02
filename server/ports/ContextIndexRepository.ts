@@ -149,6 +149,8 @@ export interface ContextIndexRepository {
   listPendingSessionSources(): Promise<PendingContextSessionSource[]>
   /** @param timestamp 重建开始时间。 @returns 把既有 Session 投影改为待重放，同时保留已同步回 SQLite 的候选记忆。 */
   markSessionsForRebuild(timestamp: number): Promise<void>
+  /** @param timestamp 切换 Account 后的重建时间。 @returns 全部资料投影改为待重放后结束。 */
+  markSourceProjectionsForRebuild(timestamp: number): Promise<void>
   /** @param exchange 本地交流。 @param status 投影状态。 @param error 可选脱敏错误。 @param timestamp 更新时间。 @returns 无返回值。 */
   saveSessionState(exchange: ContextSessionExchange, status: 'pending' | 'failed', error: string | null, timestamp: number): Promise<void>
   /** @param exchange 已成功同步的交流。 @param memories OpenViking 派生候选。 @param timestamp 同步时间。 @returns 无返回值。 */

@@ -341,6 +341,15 @@ export class SqliteContextIndexRepository implements ContextIndexRepository {
     `).run(timestamp)
   }
 
+  /** @param timestamp 切换 Account 后的重建时间。 @returns 全部资料投影改为待重放后结束。 */
+  async markSourceProjectionsForRebuild(timestamp: number): Promise<void> {
+    this.client.prepare(`
+      UPDATE context_sync_records
+      SET status = 'pending', error = NULL, error_code = NULL, error_stage = NULL,
+        failure_count = 0, next_retry_at = ?, updated_at = ?
+    `).run(timestamp, timestamp)
+  }
+
   /** @param exchange 本地交流。 @param status 待处理或失败。 @param error 脱敏错误。 @param timestamp 更新时间。 @returns 无返回值。 */
   async saveSessionState(exchange: ContextSessionExchange, status: 'pending' | 'failed', error: string | null, timestamp: number): Promise<void> {
     this.client.prepare(`

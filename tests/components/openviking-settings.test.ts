@@ -27,7 +27,10 @@ registerEndpoint('/api/v1/auth/session', () => ({
   data: { authenticated: true, administrator: { id: 'administrator', username: 'admin' } },
 }))
 registerEndpoint('/api/v1/system/context/settings', () => ({ data: {
-  enabled: false, endpoint: '', hasApiKey: false, timeoutMs: 60_000, updatedAt: null,
+  enabled: false, endpoint: '', accountId: 'ren-yang', hasApiKey: false, timeoutMs: 60_000, updatedAt: null,
+} }))
+registerEndpoint('/api/v1/system/learning-automation/settings', () => ({ data: {
+  intervalHours: 24, nextRunAt: 0, lastRunAt: null, updatedAt: 0,
 } }))
 registerEndpoint('/api/v1/system/context/settings', {
   method: 'PUT',
@@ -37,6 +40,7 @@ registerEndpoint('/api/v1/system/context/settings', {
     return { data: {
       enabled: savedSettings.enabled,
       endpoint: savedSettings.endpoint,
+      accountId: savedSettings.accountId,
       hasApiKey: Boolean(savedSettings.apiKey),
       timeoutMs: savedSettings.timeoutMs,
       updatedAt: 8_000,
@@ -61,30 +65,30 @@ describe('OpenViking 后台设置', () => {
   it('表单提交完整新配置且已有密钥时留空不会要求覆盖', async () => {
     const wrapper = await mountSuspended(OpenVikingSettingsForm, {
       props: {
-        settings: { enabled: false, endpoint: '', hasApiKey: false, timeoutMs: 60_000, updatedAt: null },
+        settings: { enabled: false, endpoint: '', accountId: 'ren-yang', hasApiKey: false, timeoutMs: 60_000, updatedAt: null },
         loading: false,
       },
     })
     const inputs = wrapper.findAll('input')
-    await inputs.find(input => input.attributes('type') !== 'password' && input.attributes('type') !== 'number' && input.attributes('type') !== 'checkbox')!.setValue('https://ov.test')
+    await inputs.find(input => input.attributes('name') === 'endpoint')!.setValue('https://ov.test')
     await inputs.find(input => input.attributes('type') === 'password')!.setValue('admin-key')
     await inputs.find(input => input.attributes('type') === 'number')!.setValue('5000')
     await wrapper.get('[role="checkbox"]').trigger('click')
     await wrapper.get('form[data-openviking-settings-form]').trigger('submit')
 
     expect(wrapper.emitted('submit')?.[0]?.[0]).toEqual({
-      enabled: true, endpoint: 'https://ov.test', apiKey: 'admin-key', timeoutMs: 5_000,
+      enabled: true, endpoint: 'https://ov.test', accountId: 'ren-yang', apiKey: 'admin-key', timeoutMs: 5_000,
     })
 
     const existing = await mountSuspended(OpenVikingSettingsForm, {
       props: {
-        settings: { enabled: true, endpoint: 'https://ov.test', hasApiKey: true, timeoutMs: 5_000, updatedAt: 1 },
+        settings: { enabled: true, endpoint: 'https://ov.test', accountId: 'ren-yang', hasApiKey: true, timeoutMs: 5_000, updatedAt: 1 },
         loading: false,
       },
     })
     await existing.get('form[data-openviking-settings-form]').trigger('submit')
     expect(existing.emitted('submit')?.[0]?.[0]).toEqual({
-      enabled: true, endpoint: 'https://ov.test', timeoutMs: 5_000,
+      enabled: true, endpoint: 'https://ov.test', accountId: 'ren-yang', timeoutMs: 5_000,
     })
   })
 
@@ -97,7 +101,7 @@ describe('OpenViking 后台设置', () => {
     wrapper.vm.$nuxt.runWithContext(() => useToast().clear())
     const form = wrapper.get('form[data-openviking-settings-form]')
     const inputs = form.findAll('input')
-    await inputs.find(input => input.attributes('type') !== 'password' && input.attributes('type') !== 'number' && input.attributes('type') !== 'checkbox')!.setValue('https://ov.test')
+    await inputs.find(input => input.attributes('name') === 'endpoint')!.setValue('https://ov.test')
     await inputs.find(input => input.attributes('type') === 'password')!.setValue('admin-key')
     await inputs.find(input => input.attributes('type') === 'number')!.setValue('5000')
     await form.get('[role="checkbox"]').trigger('click')
@@ -106,7 +110,7 @@ describe('OpenViking 后台设置', () => {
     await vi.waitFor(() => expect(permissionCheckCount).toBe(1))
 
     expect(savedSettings).toEqual({
-      enabled: true, endpoint: 'https://ov.test', apiKey: 'admin-key', timeoutMs: 5_000,
+      enabled: true, endpoint: 'https://ov.test', accountId: 'ren-yang', apiKey: 'admin-key', timeoutMs: 5_000,
     })
     await vi.waitFor(() => expect(wrapper.vm.$nuxt.runWithContext(() => useToast().toasts.value)
       .some(notification => notification.description?.toString().includes('ADMIN Key 具有 User 管理权限'))).toBe(true))

@@ -16,6 +16,8 @@ export interface OpenVikingSettingsView {
   enabled: boolean
   /** 服务根地址；未配置时为空字符串。 */
   endpoint: string
+  /** OpenViking 中承载本系统世界 User 的 Account 标识。 */
+  accountId: string
   /** 数据库是否已有加密 ADMIN Key。 */
   hasApiKey: boolean
   /** 单次 HTTP 请求超时毫秒数。 */

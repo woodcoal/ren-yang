@@ -12,6 +12,8 @@ export interface SaveOpenVikingSettingsRecord {
   enabled: boolean
   /** 服务根地址。 */
   endpoint: string
+  /** OpenViking 中承载本系统世界 User 的 Account 标识。 */
+  accountId: string
   /** ADMIN Key 密文。 */
   apiKeyCiphertext: string
   /** 请求超时毫秒数。 */

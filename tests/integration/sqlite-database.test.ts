@@ -56,7 +56,7 @@ describe('SqliteDatabase', () => {
     ])
     expect(current.getClient().prepare(`
       SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations
-    `).get()).toEqual({ count: 12, version: 1790236800000 })
+    `).get()).toEqual({ count: 14, version: 1790409600000 })
     expect(current.getClient().prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name IN (
       'api_keys', 'public_api_idempotency_records', 'public_api_audit_events'
     ) ORDER BY name`).all()).toEqual([
@@ -113,6 +113,7 @@ describe('SqliteDatabase', () => {
     ]))
     expect(current.getClient().prepare(`PRAGMA table_info(openviking_settings)`).all()).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'api_key_ciphertext', notnull: 1, dflt_value: "''" }),
+      expect.objectContaining({ name: 'account_id', notnull: 1, dflt_value: "'ren-yang'" }),
     ]))
     expect(current.getClient().prepare(`PRAGMA table_info(source_materials)`).all()).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'is_enabled', notnull: 1, dflt_value: '1' }),
@@ -165,6 +166,12 @@ describe('SqliteDatabase', () => {
       '00000000-0000-4000-8001-000000000052',
       '00000000-0000-4000-8001-000000000053',
     )
+    // 当前测试库已执行全部迁移；回退迁移历史前同步恢复到 0011 结构，准确模拟既有数据库。
+    client.prepare('ALTER TABLE personas DROP COLUMN automatic_learning_enabled').run()
+    client.prepare('ALTER TABLE worlds DROP COLUMN automatic_learning_enabled').run()
+    client.prepare('ALTER TABLE analysis_batches DROP COLUMN auto_publish').run()
+    client.prepare('DROP TABLE learning_automation_settings').run()
+    client.prepare('ALTER TABLE openviking_settings DROP COLUMN account_id').run()
     client.prepare(`DELETE FROM __drizzle_migrations`).run()
     client.prepare(`INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)`).run(
       'legacy-latest-before-stable-persona-system-prompts',
@@ -180,7 +187,7 @@ describe('SqliteDatabase', () => {
     database = new SqliteDatabase({ dataDirectory, migrationsDirectory: resolve(process.cwd(), 'drizzle') })
     expect(database.getClient().prepare(`
       SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations
-    `).get()).toEqual({ count: 2, version: 1790236800000 })
+    `).get()).toEqual({ count: 4, version: 1790409600000 })
     expect(database.getClient().prepare(`
       SELECT p.code,
         instr(v.system_prompt_template, '{{personaPromptJson}}') > 0 AS persona_in_system,
@@ -198,7 +205,7 @@ describe('SqliteDatabase', () => {
     database = new SqliteDatabase({ dataDirectory, migrationsDirectory: resolve(process.cwd(), 'drizzle') })
     expect(database.getClient().prepare(`
       SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations
-    `).get()).toEqual({ count: 2, version: 1790236800000 })
+    `).get()).toEqual({ count: 4, version: 1790409600000 })
     expect(database.getClient().prepare('PRAGMA integrity_check').get()).toEqual({ integrity_check: 'ok' })
   })
 
@@ -324,7 +331,7 @@ describe('SqliteDatabase', () => {
     database = new SqliteDatabase({ dataDirectory, migrationsDirectory: resolve(process.cwd(), 'drizzle') })
     expect(database.getClient().prepare(`
       SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations
-    `).get()).toEqual({ count: 12, version: 1790236800000 })
+    `).get()).toEqual({ count: 14, version: 1790409600000 })
     expect(database.getClient().prepare(`SELECT COUNT(*) AS count FROM ai_algorithms`).get()).toEqual({ count: 14 })
     expect(database.getClient().prepare('PRAGMA foreign_key_check').all()).toEqual([])
     expect(database.getClient().prepare('PRAGMA integrity_check').get()).toEqual({ integrity_check: 'ok' })
@@ -400,7 +407,7 @@ describe('SqliteDatabase', () => {
     `).get()).toEqual({ name: '旧资料', content_text: '压平前正文。', is_enabled: 1 })
     expect(database.getClient().prepare(`
       SELECT COUNT(*) AS count, MAX(created_at) AS version FROM __drizzle_migrations
-    `).get()).toEqual({ count: 27, version: 1790236800000 })
+    `).get()).toEqual({ count: 29, version: 1790409600000 })
     expect(database.getClient().prepare(`SELECT COUNT(*) AS count FROM ai_algorithms`).get()).toEqual({ count: 14 })
     expect(database.getClient().prepare(`PRAGMA table_info(generation_runs)`).all()).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'algorithm_snapshot_json', notnull: 0 }),
@@ -426,6 +433,7 @@ describe('SqliteDatabase', () => {
     ]))
     expect(database.getClient().prepare(`PRAGMA table_info(openviking_settings)`).all()).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'api_key_ciphertext', notnull: 1, dflt_value: "''" }),
+      expect.objectContaining({ name: 'account_id', notnull: 1, dflt_value: "'ren-yang'" }),
     ]))
     expect(database.getClient().prepare('PRAGMA foreign_key_check').all()).toEqual([])
   })

@@ -56,7 +56,7 @@ export class ContextSynchronizationApplicationService implements TaskHandler {
   /** @returns 当前不含 ADMIN Key 密文的后台设置。 */
   async getSettings(): Promise<OpenVikingSettingsView> {
     const current = await this.dependencies.settings?.find() ?? null
-    if (!current) return { enabled: false, endpoint: '', hasApiKey: false, timeoutMs: 60_000, updatedAt: null }
+    if (!current) return { enabled: false, endpoint: '', accountId: 'ren-yang', hasApiKey: false, timeoutMs: 60_000, updatedAt: null }
     const { apiKeyCiphertext: _apiKeyCiphertext, ...view } = current
     return view
   }
@@ -81,10 +81,16 @@ export class ContextSynchronizationApplicationService implements TaskHandler {
     const saved = await settings.save({
       enabled: normalized.enabled,
       endpoint: normalized.endpoint,
+      accountId: normalized.accountId,
       apiKeyCiphertext,
       timeoutMs: normalized.timeoutMs,
       timestamp: this.dependencies.clock.now(),
     })
+    if (current && current.accountId !== saved.accountId) {
+      const timestamp = this.dependencies.clock.now()
+      await this.dependencies.repository.markSourceProjectionsForRebuild(timestamp)
+      await this.dependencies.repository.markSessionsForRebuild(timestamp)
+    }
     if (saved.enabled) await this.recoverPendingTasks()
     return saved
   }

@@ -15,8 +15,6 @@ import { ContextProviderError } from '../../ports/ContextProvider'
 import type { OpenVikingHealthResult, OpenVikingPort } from '../../ports/OpenVikingPort'
 import { OpenVikingError } from '../../ports/OpenVikingPort'
 
-/** 当前单租户实例对应的 OpenViking Account。 */
-const OPEN_VIKING_ACCOUNT_ID = 'ren-yang'
 /** OpenViking 删除 User 后释放同名存储空间的维护等待上限。 */
 const USER_RELEASE_TIMEOUT_MS = 180_000
 
@@ -26,6 +24,8 @@ export interface OpenVikingHttpContextProviderOptions {
   enabled: boolean
   /** OpenViking 服务根地址。 */
   endpoint: string
+  /** 当前单租户实例对应的 OpenViking Account。 */
+  accountId?: string
   /** 当前 Account 的 ADMIN User Key；只用于管理世界 User。 */
   apiKey: string
   /** 单次 HTTP 请求超时。 */
@@ -35,7 +35,7 @@ export interface OpenVikingHttpContextProviderOptions {
   /** 测试可替换的 Fetch 实现。 */
   fetcher?: typeof fetch
   /** 数据库动态配置源；提供时覆盖构造参数中的开关、地址、密钥和超时。 */
-  configurationSource?: () => Pick<OpenVikingHttpContextProviderOptions, 'enabled' | 'endpoint' | 'apiKey' | 'timeoutMs'>
+  configurationSource?: () => Pick<OpenVikingHttpContextProviderOptions, 'enabled' | 'endpoint' | 'accountId' | 'apiKey' | 'timeoutMs'>
 }
 
 /** 通过原生 HTTP 同步、检索和重建 OpenViking 资源。 */
@@ -163,7 +163,7 @@ export class OpenVikingHttpContextProvider implements ContextProvider, OpenVikin
       )
     }
     const users = readOkArrayResult(
-      await this.request(`/api/v1/admin/accounts/${OPEN_VIKING_ACCOUNT_ID}/users`, { method: 'GET' }, this.requireAdminKey()),
+      await this.request(`/api/v1/admin/accounts/${encodeURIComponent(this.getConfiguration().accountId)}/users`, { method: 'GET' }, this.requireAdminKey()),
       'OpenViking ADMIN Key 无法读取当前 Account User',
     )
     return {
@@ -523,7 +523,7 @@ export class OpenVikingHttpContextProvider implements ContextProvider, OpenVikin
     if (state.userIds.has(userId)) {
       try {
         payload = await this.request(
-          `/api/v1/admin/accounts/${OPEN_VIKING_ACCOUNT_ID}/users/${encodeURIComponent(userId)}/key`,
+          `/api/v1/admin/accounts/${encodeURIComponent(this.getConfiguration().accountId)}/users/${encodeURIComponent(userId)}/key`,
           { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' },
           this.requireAdminKey(),
         )
@@ -555,7 +555,7 @@ export class OpenVikingHttpContextProvider implements ContextProvider, OpenVikin
     while (Date.now() < deadline) {
       try {
         return await this.request(
-          `/api/v1/admin/accounts/${OPEN_VIKING_ACCOUNT_ID}/users`,
+          `/api/v1/admin/accounts/${encodeURIComponent(this.getConfiguration().accountId)}/users`,
           {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
@@ -567,7 +567,7 @@ export class OpenVikingHttpContextProvider implements ContextProvider, OpenVikin
       catch (error: unknown) {
         if (error instanceof OpenVikingHttpStatusError && error.statusCode === 409) {
           return await this.request(
-            `/api/v1/admin/accounts/${OPEN_VIKING_ACCOUNT_ID}/users/${encodeURIComponent(userId)}/key`,
+            `/api/v1/admin/accounts/${encodeURIComponent(this.getConfiguration().accountId)}/users/${encodeURIComponent(userId)}/key`,
             { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' },
             this.requireAdminKey(),
           )
@@ -587,7 +587,7 @@ export class OpenVikingHttpContextProvider implements ContextProvider, OpenVikin
     while (Date.now() < deadline) {
       try {
         const payload = await this.request(
-          `/api/v1/admin/accounts/${OPEN_VIKING_ACCOUNT_ID}/users/${encodeURIComponent(userId)}`,
+          `/api/v1/admin/accounts/${encodeURIComponent(this.getConfiguration().accountId)}/users/${encodeURIComponent(userId)}`,
           { method: 'DELETE' },
           this.requireAdminKey(),
         )
@@ -782,12 +782,13 @@ export class OpenVikingHttpContextProvider implements ContextProvider, OpenVikin
   private getConfiguration(): {
     enabled: boolean
     endpoint: URL | null
+    accountId: string
     apiKey: string
     timeoutMs: number
   } {
     const source = this.options.configurationSource?.() ?? this.options
     const fingerprint = createHash('sha256')
-      .update(`${source.enabled}\0${source.endpoint}\0${source.apiKey}\0${source.timeoutMs}`)
+      .update(`${source.enabled}\0${source.endpoint}\0${source.accountId ?? 'ren-yang'}\0${source.apiKey}\0${source.timeoutMs}`)
       .digest('hex')
     if (this.configurationFingerprint && fingerprint !== this.configurationFingerprint) {
       this.adminStatePromise = undefined
@@ -800,6 +801,7 @@ export class OpenVikingHttpContextProvider implements ContextProvider, OpenVikin
     return {
       enabled: source.enabled,
       endpoint: parseEndpoint(source.endpoint),
+      accountId: source.accountId?.trim() || 'ren-yang',
       apiKey: source.apiKey,
       timeoutMs: source.timeoutMs,
     }
