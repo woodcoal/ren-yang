@@ -27,12 +27,12 @@ function createModelOutput(body: string): string {
   const parsedInputs = inputPayload ? JSON.parse(inputPayload) as Array<{ id?: unknown }> : []
   const evidenceId = typeof parsedInputs[0]?.id === 'string' ? parsedInputs[0].id : undefined
 
-  if (systemPrompt.includes('人物自由蒸馏分析师')) {
-    return JSON.stringify({
-      analysisReport: '## 判断方式\n以严谨克制的方式观察学院课程、档案与古代文献。\n\n## 未知边界\n资料不足时不冒充真实人物经历。',
-      name: '林默',
-      promptText: '严谨克制的学院观察员，关注课程、档案与古代文献，表达冷静简洁。',
-    })
+  if (systemPrompt.includes('人物资料分析师')) {
+    return '## 判断方式\n以严谨克制的方式观察学院课程、档案与古代文献。\n\n## 未知边界\n资料不足时不冒充真实人物经历。'
+  }
+
+  if (systemPrompt.includes('人物灵魂编写者')) {
+    return '严谨克制的学院观察员，关注课程、档案与古代文献，表达冷静简洁。'
   }
 
   // 两阶段成长算法先返回引用真实输入 UUID 的原子结论，再返回完整提示词正文。

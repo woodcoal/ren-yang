@@ -13,10 +13,10 @@ export type PersonaDistillationStatus = typeof PERSONA_DISTILLATION_STATUSES[num
 /** 人物蒸馏是创建新人物，还是更新已有人物。 */
 export type PersonaDistillationMode = 'create' | 'update'
 
-/** 人物蒸馏算法的唯一自由分析步骤。 */
-export const PERSONA_DISTILLATION_ALGORITHM_STEPS = ['analyze'] as const
+/** 人物蒸馏算法的内部纯文本处理步骤。 */
+export const PERSONA_DISTILLATION_ALGORITHM_STEPS = ['analyze', 'compose'] as const
 
-/** 人物蒸馏算法的固定步骤编码。 */
+/** 人物蒸馏算法的内部步骤编码。 */
 export type PersonaDistillationAlgorithmStep = typeof PERSONA_DISTILLATION_ALGORITHM_STEPS[number]
 
 /** 人物蒸馏可引用的现有资料角色。 */
@@ -40,7 +40,7 @@ export interface PersonaDistillationInputView {
   contentHash: string
   /** 资料被删除后为空的固定正文。 */
   contentSnapshot: string | null
-  /** 原始资料当前是否仍可用。 */
+  /** 原始正文当前是否仍可用。 */
   sourceAvailable: boolean
   /** 可选来源地址。 */
   originUrl: string | null

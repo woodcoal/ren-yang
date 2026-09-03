@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import {
   confirmPersonaDistillationCandidateSchema,
   createPersonaDistillationSchema,
-  modelPersonaDistillationResultSchema,
   savePersonaDistillationCandidateSchema,
 } from '../../shared/schemas/personaDistillation'
 import { PERSONA_DISTILLATION_ALGORITHM_STEPS } from '../../shared/types/personaDistillation'
@@ -14,10 +13,11 @@ import {
 
 /** 人物自由蒸馏共享契约和状态机。 */
 describe('人物自由蒸馏', () => {
-  it('只保留一次自由分析步骤，并与固定算法定义一致', () => {
-    expect(PERSONA_DISTILLATION_ALGORITHM_STEPS).toEqual(['analyze'])
+  it('内部保留自由分析和灵魂编写两段，但不暴露结构化结果契约', () => {
+    expect(PERSONA_DISTILLATION_ALGORITHM_STEPS).toEqual(['analyze', 'compose'])
     expect(getAiAlgorithmDefinition('persona_distillation').steps).toEqual([
       expect.objectContaining({ key: 'analyze', promptCode: 'distillation.analyze_persona', ordinal: 0 }),
+      expect.objectContaining({ key: 'compose', promptCode: 'distillation.compose_soul', ordinal: 1 }),
     ])
   })
 
@@ -29,16 +29,6 @@ describe('人物自由蒸馏', () => {
     expect(transitionPersonaDistillationStatus('analyzing', 'fail')).toBe('failed')
   })
 
-  it('要求最小结果包包含可读分析报告、名称和完整候选灵魂', () => {
-    expect(modelPersonaDistillationResultSchema.parse({
-      analysisReport: '## 判断方式\n优先区分证据与推断。',
-      name: '顾岚',
-      promptText: '# 诚实边界\n资料不足时明确说明未知。',
-    })).toMatchObject({ name: '顾岚' })
-    expect(modelPersonaDistillationResultSchema.safeParse({
-      analysisReport: '', name: '顾岚', promptText: '候选灵魂',
-    }).success).toBe(false)
-  })
 
   it('创建、校准和确认仍使用边界输入校验与候选哈希', () => {
     expect(createPersonaDistillationSchema.parse({

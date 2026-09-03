@@ -67,7 +67,7 @@ afterEach(() => {
 })
 
 describe('人物自由蒸馏 SQLite 持久化', () => {
-  it('迁移只保留运行与输入表，并注册单次自由分析提示词', () => {
+  it('迁移只保留运行与输入表，并注册两个纯文本内部步骤', () => {
     const client = database.getClient()
     expect(client.prepare(`
       SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'persona_distillation_%' ORDER BY name
@@ -75,8 +75,10 @@ describe('人物自由蒸馏 SQLite 持久化', () => {
       { name: 'persona_distillation_inputs' },
       { name: 'persona_distillation_runs' },
     ])
-    expect(client.prepare(`SELECT code FROM ai_prompts WHERE code LIKE 'distillation.%'`).all())
-      .toEqual([{ code: 'distillation.analyze_persona' }])
+    expect(client.prepare(`SELECT code FROM ai_prompts WHERE code LIKE 'distillation.%' ORDER BY code`).all()).toEqual([
+      { code: 'distillation.analyze_persona' },
+      { code: 'distillation.compose_soul' },
+    ])
     expect(client.prepare('PRAGMA foreign_key_check').all()).toEqual([])
   })
 
@@ -134,7 +136,7 @@ describe('人物自由蒸馏 SQLite 持久化', () => {
     const firstHash = 'd'.repeat(64)
     await expect(repository.saveAnalysis({
       runId: IDS.run,
-      rawResult: { analysisReport: '分析', name: '顾岚', promptText: '第一版候选。' },
+      rawResult: { analysisReport: '分析', candidatePromptText: '第一版候选。' },
       analysisReport: '## 判断方式\n先明确判断依据。',
       candidateName: '顾岚',
       candidatePromptText: '第一版候选。',

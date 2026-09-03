@@ -56,10 +56,11 @@ export const AI_ALGORITHM_DEFINITIONS: Record<AiAlgorithmCode, AiAlgorithmDefini
     steps: [{ key: 'generate', name: '生成草稿', description: '一次生成人物名称、灵魂和版本说明。', promptCode: 'generation.persona_draft', modality: 'text', ordinal: 0 }],
   },
   persona_distillation: {
-    code: 'persona_distillation', name: '人物自由蒸馏', implementationVersion: 2,
-    description: '一次调用由模型自主完成资料分析、冲突处理和人物灵魂编写，人工确认后发布。',
+    code: 'persona_distillation', name: '人物自由蒸馏', implementationVersion: 3,
+    description: '内部先自由分析资料，再基于分析文本编写人物灵魂；用户只审阅最终结果。',
     steps: [
-      { key: 'analyze', name: '自由分析', description: '一次完成资料理解、人物分析报告和候选灵魂。', promptCode: 'distillation.analyze_persona', modality: 'text', ordinal: 0 },
+      { key: 'analyze', name: '资料分析', description: '自由分析资料并生成可读人物分析报告。', promptCode: 'distillation.analyze_persona', modality: 'text', ordinal: 0 },
+      { key: 'compose', name: '灵魂编写', description: '仅基于分析报告编写完整人物灵魂。', promptCode: 'distillation.compose_soul', modality: 'text', ordinal: 1 },
     ],
   },
   world_draft: {

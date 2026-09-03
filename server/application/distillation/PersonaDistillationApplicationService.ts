@@ -2,7 +2,6 @@ import { createHash } from 'node:crypto'
 import {
   confirmPersonaDistillationCandidateSchema,
   createPersonaDistillationSchema,
-  modelPersonaDistillationResultSchema,
   restartPersonaDistillationSchema,
   savePersonaDistillationCandidateSchema,
 } from '../../../shared/schemas/personaDistillation'
@@ -39,7 +38,7 @@ export interface PersonaDistillationApplicationServiceDependencies {
   content: Pick<ContentRepository, 'findPersona' | 'findPersonaVersion' | 'findWorld' | 'findSource'>
   /** 人物蒸馏运行和最终确认事实源。 */
   distillations: DistillationRepository
-  /** 单次自由分析算法准备与执行入口。 */
+  /** 内部纯文本分析与灵魂编写算法准备和执行入口。 */
   algorithms: Pick<AiAlgorithmApplicationService, 'prepare' | 'executeStep'>
   /** 新运行和任务标识生成器。 */
   identifiers: IdentifierGenerator
@@ -55,7 +54,7 @@ export interface PersonaDistillationApplicationServiceDependencies {
   contextSyncQueue?: Pick<ContextSyncTaskQueue, 'enqueueSourceSynchronization' | 'enqueueUserReconciliation'>
 }
 
-/** 创建、执行、人工校准和确认单次自由蒸馏运行。 */
+/** 创建、执行、人工校准和确认内部两段纯文本蒸馏运行。 */
 export class PersonaDistillationApplicationService implements TaskHandler {
   /** @param dependencies 内容、蒸馏、算法、标识、时间、预算和上下文接缝。 */
   constructor(private readonly dependencies: PersonaDistillationApplicationServiceDependencies) {}
@@ -227,7 +226,7 @@ export class PersonaDistillationApplicationService implements TaskHandler {
     return await this.requireRun(newRunId)
   }
 
-  /** @param job 已领取的人物蒸馏任务。 @returns 唯一自由分析完成时结束。 */
+  /** @param job 已领取的人物蒸馏任务。 @returns 内部分析和灵魂编写完成时结束。 */
   async execute(job: TaskJob): Promise<void> {
     if (job.type !== 'distill_persona') throw new TaskExecutionError('未知人物蒸馏任务', false)
     const runId = readDistillationRunId(job.payloadJson)
@@ -246,29 +245,46 @@ export class PersonaDistillationApplicationService implements TaskHandler {
     }
   }
 
-  /** @param run 当前自由分析运行。 @returns 分析报告和候选保存完成时结束。 */
+  /** @param run 当前运行。 @returns 自由分析文本和基于其编写的灵魂保存完成时结束。 */
   private async executeFreeformAnalysis(run: PersonaDistillationRunRecord): Promise<void> {
     const inputs = run.inputs.filter(input => input.sourceAvailable && input.contentSnapshot !== null)
-    const response = await this.dependencies.algorithms.executeStep(
+    const analysis = await this.dependencies.algorithms.executeStep(
       run.algorithmSnapshot as AiAlgorithmSnapshot,
       'analyze',
       {
         objectiveJson: JSON.stringify(run.objective),
         inputsJson: JSON.stringify(inputs.map(toModelInput)),
       },
-      'persona_distillation_result',
-      'json_object',
-      { validateStructuredOutput: value => { modelPersonaDistillationResultSchema.parse(value) } },
+      'persona_distillation_analysis',
+      'text',
     )
     if (await this.stopIfCancellationRequested(run.id)) return
-    const result = modelPersonaDistillationResultSchema.parse(response.structuredOutput)
+    const analysisReport = analysis.structuredOutput
+    if (typeof analysisReport !== 'string' || analysisReport.trim().length === 0) {
+      throw new ApplicationError('MODEL_OUTPUT_INVALID', '人物蒸馏分析未返回文本', 502)
+    }
+    const composition = await this.dependencies.algorithms.executeStep(
+      run.algorithmSnapshot as AiAlgorithmSnapshot,
+      'compose',
+      {
+        objectiveJson: JSON.stringify(run.objective),
+        analysisTextJson: JSON.stringify(analysisReport),
+      },
+      'persona_distillation_soul',
+      'text',
+    )
+    if (await this.stopIfCancellationRequested(run.id)) return
+    const candidatePromptText = composition.structuredOutput
+    if (typeof candidatePromptText !== 'string' || candidatePromptText.trim().length === 0) {
+      throw new ApplicationError('MODEL_OUTPUT_INVALID', '人物蒸馏灵魂编写未返回文本', 502)
+    }
     const saved = await this.dependencies.distillations.saveAnalysis({
       runId: run.id,
-      rawResult: response.structuredOutput,
-      analysisReport: result.analysisReport,
-      candidateName: result.name,
-      candidatePromptText: result.promptText,
-      candidatePromptHash: hashText(result.promptText),
+      rawResult: { analysisReport, candidatePromptText },
+      analysisReport,
+      candidateName: run.requestedName,
+      candidatePromptText,
+      candidatePromptHash: hashText(candidatePromptText),
       timestamp: this.dependencies.clock.now(),
     })
     if (!saved) throw new ApplicationError('DISTILLATION_STATE_CONFLICT', '人物蒸馏运行状态已经变化', 409)

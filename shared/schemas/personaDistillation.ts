@@ -32,15 +32,8 @@ export const confirmPersonaDistillationCandidateSchema = z.object({
   expectedPromptHash: z.string().regex(/^[a-f0-9]{64}$/, '候选正文哈希必须是 SHA-256'),
 })
 
-/** 单次自由蒸馏调用返回的最小结果包。 */
-export const modelPersonaDistillationResultSchema = z.object({
-  analysisReport: z.string().trim().min(1, '人物分析报告不能为空').max(50_000, '人物分析报告不能超过 50000 字'),
-  name: z.string().trim().min(1, '人物名称不能为空').max(100, '人物名称不能超过 100 字'),
-  promptText: soulSnapshotSchema.shape.promptText,
-})
 
 export type CreatePersonaDistillationInput = z.infer<typeof createPersonaDistillationSchema>
 export type RestartPersonaDistillationInput = z.infer<typeof restartPersonaDistillationSchema>
 export type SavePersonaDistillationCandidateInput = z.infer<typeof savePersonaDistillationCandidateSchema>
 export type ConfirmPersonaDistillationCandidateInput = z.infer<typeof confirmPersonaDistillationCandidateSchema>
-export type ModelPersonaDistillationResult = z.infer<typeof modelPersonaDistillationResultSchema>

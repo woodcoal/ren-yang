@@ -15,7 +15,7 @@ import type { IdentifierGenerator } from '../../server/ports/IdentifierGenerator
 import type { TextModelResponse } from '../../server/ports/TextModelPort'
 import { TextModelError } from '../../server/ports/TextModelPort'
 
-/** 为自由蒸馏测试生成稳定且不重复的 UUID。 */
+/** 为纯文本蒸馏测试生成稳定且不重复的 UUID。 */
 class SequentialIdentifierGenerator implements IdentifierGenerator {
   /** 当前递增序号。 */
   private sequence = 0
@@ -27,7 +27,7 @@ class SequentialIdentifierGenerator implements IdentifierGenerator {
   }
 }
 
-/** 为自由蒸馏测试提供单调递增时间。 */
+/** 为纯文本蒸馏测试提供单调递增时间。 */
 class TestClock implements Clock {
   /** 当前时间。 */
   private timestamp = 30_000
@@ -39,55 +39,61 @@ class TestClock implements Clock {
   }
 }
 
-/** 固定返回一次分析报告和候选的测试算法。 */
-class FixedFreeformDistillationAlgorithms {
-  /** 已执行的固定步骤。 */
+/** 模拟内部分析和灵魂编写均为自由文本的测试算法。 */
+class FixedTextDistillationAlgorithms {
+  /** 已执行的内部步骤。 */
   readonly executedSteps: string[] = []
-  /** 首次调用是否模拟瞬态 JSON 错误。 */
+  /** 首次调用是否模拟瞬态模型错误。 */
   failOnce = false
+  /** 第二步收到的分析报告变量。 */
+  compositionAnalysisText: string | null = null
 
-  /** @returns 单次自由蒸馏算法快照。 */
+  /** @returns 两段纯文本蒸馏算法快照。 */
   async prepare(): Promise<AiAlgorithmSnapshot> {
     return {
       algorithmCode: 'persona_distillation',
-      implementationVersion: 2,
+      implementationVersion: 3,
       configurationVersionId: '90000000-0000-4000-8000-000000000001',
       configurationVersion: 1,
-      steps: [{
-        stepKey: 'analyze', ordinal: 0, modelDeploymentId: '90000000-0000-4000-8000-000000000002',
-        connectionId: '90000000-0000-4000-8000-000000000003', protocol: 'openai_compatible',
-        endpoint: 'https://model.test/v1', model: 'distillation-test-model', modality: 'text',
-        promptCode: 'distillation.analyze_persona', promptVersionId: '90000000-0000-4000-8002-000000000001',
-        parameters: { temperature: 0.2, maxOutputTokens: 8_192, timeoutMs: 60_000 }, thinkingDisableMode: 'none',
-      }],
+      steps: [
+        {
+          stepKey: 'analyze', ordinal: 0, modelDeploymentId: '90000000-0000-4000-8000-000000000002',
+          connectionId: '90000000-0000-4000-8000-000000000003', protocol: 'openai_compatible',
+          endpoint: 'https://model.test/v1', model: 'distillation-test-model', modality: 'text',
+          promptCode: 'distillation.analyze_persona', promptVersionId: '90000000-0000-4000-8003-000000000001',
+          parameters: { temperature: 0.7, maxOutputTokens: 8_192, timeoutMs: 60_000 }, thinkingDisableMode: 'none',
+        },
+        {
+          stepKey: 'compose', ordinal: 1, modelDeploymentId: '90000000-0000-4000-8000-000000000002',
+          connectionId: '90000000-0000-4000-8000-000000000003', protocol: 'openai_compatible',
+          endpoint: 'https://model.test/v1', model: 'distillation-test-model', modality: 'text',
+          promptCode: 'distillation.compose_soul', promptVersionId: '90000000-0000-4000-8003-000000000002',
+          parameters: { temperature: 0.5, maxOutputTokens: 8_192, timeoutMs: 60_000 }, thinkingDisableMode: 'none',
+        },
+      ],
     }
   }
 
-  /** @returns 模拟模型一次完成的自由分析结果。 */
+  /** @returns 两个模型步骤分别返回自由分析文本和灵魂正文。 */
   async executeStep(
     _snapshot: AiAlgorithmSnapshot,
     stepKey: string,
     variables: Record<string, string>,
     _responseSchemaName?: string,
     _responseFormat?: 'json_object' | 'text',
-    options?: { validateStructuredOutput?: (value: unknown) => void },
   ): Promise<TextModelResponse> {
     this.executedSteps.push(stepKey)
     if (this.failOnce) {
       this.failOnce = false
-      throw new TextModelError('MODEL_OUTPUT_INVALID', '文本模型返回的内容不是有效 JSON', true)
+      throw new TextModelError('PROVIDER_UNAVAILABLE', '文本模型暂时不可用', true)
     }
-    const inputs = JSON.parse(variables.inputsJson) as Array<{ name: string, content: string }>
-    const sourceNames = inputs.filter(input => input.name !== '用户创建要求').map(input => input.name).join('、') || '用户明确要求'
-    const structuredOutput = {
-      analysisReport: `## 判断方式\n优先区分证据与推断。\n\n## 依据\n本次参考：${sourceNames}。\n\n## 未知边界\n资料未覆盖的经历不作断言。`,
-      name: '顾岚',
-      promptText: '# 心智模型\n先明确判断依据。\n\n# 诚实边界\n资料不足时明确说明未知。',
-    }
-    options?.validateStructuredOutput?.(structuredOutput)
+    if (stepKey === 'compose') this.compositionAnalysisText = variables.analysisTextJson
+    const structuredOutput = stepKey === 'analyze'
+      ? '## 判断方式\n优先区分证据与推断。\n\n## 未知边界\n资料未覆盖的经历不作断言。'
+      : '# 心智模型\n先明确判断依据。\n\n# 诚实边界\n资料不足时明确说明未知。'
     return {
       structuredOutput,
-      rawOutput: JSON.stringify(structuredOutput),
+      rawOutput: structuredOutput,
       usage: { inputTokens: 10, outputTokens: 20, totalTokens: 30 },
     }
   }
@@ -97,14 +103,14 @@ let directory: string
 let database: SqliteDatabase
 let service: PersonaDistillationApplicationService
 let worker: WorkerApplicationService
-let algorithms: FixedFreeformDistillationAlgorithms
+let algorithms: FixedTextDistillationAlgorithms
 
 beforeEach(() => {
-  directory = mkdtempSync(resolve(tmpdir(), 'ren-yang-freeform-distillation-'))
+  directory = mkdtempSync(resolve(tmpdir(), 'ren-yang-text-distillation-'))
   database = new SqliteDatabase({ dataDirectory: directory, migrationsDirectory: resolve(process.cwd(), 'drizzle') })
   const identifiers = new SequentialIdentifierGenerator()
   const clock = new TestClock()
-  algorithms = new FixedFreeformDistillationAlgorithms()
+  algorithms = new FixedTextDistillationAlgorithms()
   service = new PersonaDistillationApplicationService({
     content: new SqliteContentRepository(database.getClient()),
     distillations: new SqliteDistillationRepository(database.getClient()),
@@ -126,43 +132,32 @@ afterEach(() => {
 })
 
 describe('人物自由蒸馏应用闭环', () => {
-  it('一次模型调用保存完整分析报告和候选，随后由人工确认创建人物', async () => {
+  it('内部先输出自由分析文本，再将该文本交给灵魂编写，用户只收到最终候选', async () => {
     const created = await service.createRun({
       requestedName: '顾岚', objective: '提炼谨慎且重视证据的判断方式。', worldId: null, sourceIds: [],
     })
-    expect(created).toMatchObject({ status: 'analyzing' })
-
     await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: true })
     const candidate = await service.getRun(created.id)
+
     expect(candidate).toMatchObject({
       status: 'awaiting_candidate_review', candidateName: '顾岚',
       analysisReport: expect.stringContaining('未知边界'),
       candidatePromptText: expect.stringContaining('# 心智模型'),
       candidatePromptHash: candidate.preparedPromptHash,
     })
-    expect(algorithms.executedSteps).toEqual(['analyze'])
-
-    const confirmed = await service.confirmCandidate(created.id, {
-      expectedUpdatedAt: candidate.updatedAt, name: '顾岚', expectedPromptHash: candidate.candidatePromptHash,
-    })
-    expect(confirmed).toMatchObject({ status: 'completed', createdPersonaId: expect.any(String) })
+    expect(algorithms.executedSteps).toEqual(['analyze', 'compose'])
+    expect(algorithms.compositionAnalysisText).toBe(JSON.stringify(candidate.analysisReport))
   })
 
   it('人工校准候选后不再调用模型，校准正文可直接确认', async () => {
     const created = await service.createRun({ requestedName: '顾岚', objective: '提炼判断方式。', worldId: null, sourceIds: [] })
     await worker.executeNext()
     const analyzed = await service.getRun(created.id)
-
     const saved = await service.saveCandidate(created.id, {
       expectedUpdatedAt: analyzed.updatedAt, promptText: '# 校准后的心智模型\n面对证据不足时保留判断。',
     })
-    expect(saved).toMatchObject({
-      status: 'awaiting_candidate_review',
-      candidatePromptText: '# 校准后的心智模型\n面对证据不足时保留判断。',
-      candidatePromptHash: saved.preparedPromptHash,
-    })
-    expect(algorithms.executedSteps).toEqual(['analyze'])
-
+    expect(saved.candidatePromptHash).toBe(saved.preparedPromptHash)
+    expect(algorithms.executedSteps).toEqual(['analyze', 'compose'])
     await expect(service.confirmCandidate(created.id, {
       expectedUpdatedAt: saved.updatedAt, name: '顾岚', expectedPromptHash: saved.candidatePromptHash,
     })).resolves.toMatchObject({ status: 'completed' })
@@ -171,7 +166,6 @@ describe('人物自由蒸馏应用闭环', () => {
   it('可重试模型错误保留分析阶段，由同一持久任务重新领取', async () => {
     algorithms.failOnce = true
     const created = await service.createRun({ requestedName: '顾岚', objective: '提炼判断方式。', worldId: null, sourceIds: [] })
-
     await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: false })
     await expect(service.getRun(created.id)).resolves.toMatchObject({ status: 'analyzing' })
     await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: true })
@@ -184,7 +178,6 @@ describe('人物自由蒸馏应用闭环', () => {
       INSERT INTO source_materials (id, name, role, input_type, content_hash, content_text, original_file_path, created_at, updated_at)
       VALUES (?, '超长人物资料', 'reference', 'paste', ?, ?, NULL, 1000, 1000)
     `).run(sourceId, 'f'.repeat(64), '证据'.repeat(24_001))
-
     await expect(service.createRun({
       requestedName: '顾岚', objective: '提炼判断方式。', worldId: null, sourceIds: [sourceId],
     })).rejects.toMatchObject({ code: 'TASK_LIMIT_EXCEEDED', statusCode: 422 })
