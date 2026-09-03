@@ -75,15 +75,24 @@ describe('人物自由蒸馏工作区', () => {
     document.body.innerHTML = ''
   })
 
-  it('重新蒸馏弹窗提交聚焦方向并明确只更新原人物', async () => {
+  it('重新蒸馏弹窗保留最近一次蒸馏用途，且允许按本次需求编辑', async () => {
     const wrapper = await mountSuspended(RestartModal, {
-      props: { open: false, personaName: '顾岚', sources: [], initialSourceIds: [], loading: false, errorMessage: null },
+      props: {
+        open: false,
+        personaName: '顾岚',
+        sources: [],
+        initialSourceIds: [],
+        initialObjective: '保留谨慎判断方式，用于发布商业观察短文。',
+        loading: false,
+        errorMessage: null,
+      },
     })
     await wrapper.setProps({ open: true })
     await flushPromises()
     expect(document.body.textContent).toContain('最终确认后只发布当前人物的新灵魂版本')
     const objective = document.querySelector<HTMLTextAreaElement>('[data-persona-redistillation-form] textarea')
     if (!objective) throw new Error('重新蒸馏弹窗缺少聚焦方向输入')
+    expect(objective.value).toBe('保留谨慎判断方式，用于发布商业观察短文。')
     await new DOMWrapper(objective).setValue('保留当前判断原则，重点校准表达特征。')
     const submit = [...document.querySelectorAll<HTMLButtonElement>('button')]
       .find(button => button.textContent?.includes('开始重新蒸馏'))

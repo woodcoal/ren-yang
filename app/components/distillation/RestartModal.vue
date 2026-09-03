@@ -12,6 +12,8 @@ interface Props {
   sources: SourceSummary[]
   /** 打开弹窗时默认选中的已关联资料 UUID。 */
   initialSourceIds: string[]
+  /** 最近一次蒸馏保留的用途与聚焦方向。 */
+  initialObjective: string
   /** 创建运行请求是否正在执行。 */
   loading: boolean
   /** 最近一次创建失败的安全消息。 */
@@ -43,12 +45,12 @@ function sourceRoleLabel(role: SourceSummary['role']): string {
 }
 
 /**
- * 清空聚焦方向并恢复已关联的可用资料。
+ * 保留上一轮蒸馏用途并恢复已关联的可用资料。
  * @returns 无返回值。
  */
 function resetState(): void {
   const availableIds = new Set(availableSources.value.map(source => source.value))
-  state.objective = ''
+  state.objective = props.initialObjective
   state.sourceIds = props.initialSourceIds.filter(sourceId => availableIds.has(sourceId))
 }
 
@@ -76,7 +78,7 @@ watch(open, (isOpen, wasOpen) => {
   >
     <template #body>
       <UForm :schema="restartPersonaDistillationSchema" :state="state" class="space-y-5" data-persona-redistillation-form @submit="handleSubmit">
-        <UFormField name="objective" label="本次聚焦方向" description="说明希望重新检查或加强的判断方式、表达特征与未知边界。" required>
+        <UFormField name="objective" label="本次聚焦方向" description="默认保留最近一次蒸馏用途；可按新资料调整判断方式、表达特征与未知边界。" required>
           <UTextarea
             v-model="state.objective"
             class="w-full"

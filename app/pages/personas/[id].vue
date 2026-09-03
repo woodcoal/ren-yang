@@ -17,6 +17,7 @@ import type { RestartPersonaDistillationInput } from '#shared/schemas/personaDis
 import type { PersonaDistillationRunView } from '#shared/types/personaDistillation'
 import type { PersonaGrowthWorkspaceView, PersonaMemoryWorkspaceView } from '#shared/types/learning'
 import type { AnalysisBatchView } from '#shared/types/analysis'
+import type { HistoryPageView } from '#shared/types/history'
 import type { SourceFileSubmission } from '../../components/content/SourceImportForm.vue'
 import GrowthMaterialPanel from '../../components/learning/GrowthMaterialPanel.vue'
 import LearningPromptPanel from '../../components/learning/LearningPromptPanel.vue'
@@ -37,6 +38,7 @@ const [
   { data: memoryData, refresh: refreshMemory },
   { data: growthAnalysisData, refresh: refreshGrowthAnalysis },
   { data: memoryAnalysisData, refresh: refreshMemoryAnalysis },
+  { data: distillationHistoryData, refresh: refreshDistillationHistory },
 ] = await Promise.all([
   useFetch<ApiResponse<PersonaDetails>>(`/api/v1/personas/${personaId}`),
   useFetch<ApiResponse<SoulWorkspaceView>>(`/api/v1/personas/${personaId}/soul`),
@@ -46,6 +48,9 @@ const [
   useFetch<ApiResponse<PersonaMemoryWorkspaceView>>(`/api/v1/personas/${personaId}/memories`),
   useFetch<ApiResponse<AnalysisBatchView | null>>('/api/v1/analysis-batches/latest', { query: { analysisType: 'persona_growth', subjectId: personaId } }),
   useFetch<ApiResponse<AnalysisBatchView | null>>('/api/v1/analysis-batches/latest', { query: { analysisType: 'persona_memory', subjectId: personaId } }),
+  useFetch<ApiResponse<HistoryPageView>>('/api/v1/history', {
+    query: { personaId, kind: 'persona_distillation', status: 'completed', page: 1, pageSize: 5 },
+  }),
 ])
 
 const details = computed(() => data.value?.data ?? null)
@@ -64,6 +69,8 @@ const memoryWorkspace = computed<PersonaMemoryWorkspaceView>(() => memoryData.va
 })
 const growthAnalysis = computed(() => growthAnalysisData.value?.data ?? null)
 const memoryAnalysis = computed(() => memoryAnalysisData.value?.data ?? null)
+/** 最近一次已完成蒸馏的用途，缺失时保持空白供用户填写。 */
+const previousDistillationObjective = computed(() => distillationHistoryData.value?.data.items[0]?.description ?? '')
 const tabs: Array<{ id: PersonaTab, label: string }> = [
   { id: 'basic', label: '基础信息' },
   { id: 'prompts', label: '提示词' },
@@ -195,11 +202,12 @@ async function saveSoulVersion(input: SaveSoulVersionInput): Promise<void> {
 }
 
 /**
- * 打开当前人物的重新蒸馏配置弹窗。
- * @returns 无返回值。
+ * 刷新此人物的蒸馏历史后打开配置弹窗，以最近已完成运行的用途预填本次聚焦方向。
+ * @returns 历史刷新与弹窗打开完成时结束。
  */
-function openRedistillation(): void {
+async function openRedistillation(): Promise<void> {
   redistillationError.value = null
+  await refreshDistillationHistory()
   redistillationOpen.value = true
 }
 
@@ -738,6 +746,7 @@ async function runAction(successMessage: string | null, action: () => Promise<vo
       :persona-name="details.persona.name"
       :sources="allSources"
       :initial-source-ids="details.sources.map(source => source.id)"
+      :initial-objective="previousDistillationObjective"
       :loading="redistillationLoading"
       :error-message="redistillationError"
       @submit="createRedistillation"
