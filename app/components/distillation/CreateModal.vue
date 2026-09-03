@@ -136,17 +136,12 @@ watch(open, (isOpen, wasOpen) => {
     description="系统先检查资料覆盖，再提炼和评测候选；最终确认前不会创建人物。"
     :dismissible="!loading && !uploadingSources"
     :close="!loading && !uploadingSources"
+    :ui="{ content: 'max-w-5xl' }"
   >
     <slot />
     <template #body>
       <div class="space-y-5">
-        <ContentSourceImportForm
-          file-only
-          :loading="loading || uploadingSources"
-          :error-message="sourceUploadError"
-          @file="uploadSourceFiles"
-        />
-        <UForm :schema="createPersonaDistillationSchema" :state="state" class="space-y-5" data-persona-distillation-create @submit="handleSubmit">
+        <UForm id="persona-distillation-create-form" :schema="createPersonaDistillationSchema" :state="state" class="space-y-5" data-persona-distillation-create @submit="handleSubmit">
           <UFormField name="requestedName" label="人物名称" description="这是候选名称，最终确认前仍可修改。" required>
             <UInput v-model="state.requestedName" class="w-full" placeholder="例如：查理·芒格" :disabled="loading || uploadingSources" />
           </UFormField>
@@ -168,7 +163,7 @@ watch(open, (isOpen, wasOpen) => {
                 <option v-for="world in availableWorlds" :key="world.id" :value="world.id">{{ world.name }}</option>
               </select>
             </UFormField>
-            <UFormField name="sourceIds" label="参考资料（可选）" description="可选择已有资料，或在上方上传后直接用于本次蒸馏；最多 100 项。">
+            <UFormField name="sourceIds" label="参考资料（可选）" description="可选择已有资料，或在下方上传后直接用于本次蒸馏；最多 100 项。">
               <UInputMenu
                 v-model="state.sourceIds"
                 class="w-full"
@@ -185,18 +180,25 @@ watch(open, (isOpen, wasOpen) => {
               </UInputMenu>
             </UFormField>
           </div>
-          <UAlert
-            color="neutral"
-            variant="subtle"
-            title="两次人工确认"
-            description="资料覆盖完成后确认一次；候选正文和评测完成后再确认一次。中途可以离开，稍后按运行记录继续。"
-          />
-          <UAlert v-if="errorMessage" color="error" title="创建失败" :description="errorMessage" />
-          <div class="flex justify-end gap-2">
-            <UButton type="button" color="neutral" variant="ghost" :disabled="loading || uploadingSources" @click="open = false">取消</UButton>
-            <UButton type="submit" icon="i-lucide-sparkles" :loading="loading" :disabled="uploadingSources">开始人物蒸馏</UButton>
-          </div>
         </UForm>
+        <ContentSourceImportForm
+          file-only
+          class="w-full"
+          :loading="loading || uploadingSources"
+          :error-message="sourceUploadError"
+          @file="uploadSourceFiles"
+        />
+        <UAlert
+          color="neutral"
+          variant="subtle"
+          title="两次人工确认"
+          description="资料覆盖完成后确认一次；候选正文和评测完成后再确认一次。中途可以离开，稍后按运行记录继续。"
+        />
+        <UAlert v-if="errorMessage" color="error" title="创建失败" :description="errorMessage" />
+        <div class="flex justify-end gap-2">
+          <UButton type="button" color="neutral" variant="ghost" :disabled="loading || uploadingSources" @click="open = false">取消</UButton>
+          <UButton type="submit" form="persona-distillation-create-form" icon="i-lucide-sparkles" :loading="loading" :disabled="uploadingSources">开始人物蒸馏</UButton>
+        </div>
       </div>
     </template>
   </UModal>
