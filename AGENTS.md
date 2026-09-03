@@ -1,51 +1,86 @@
-# 人样项目代理规范
+# Repository Guidelines
 
-## 事实源
+## Project Overview
 
-- 修改领域概念前完整阅读 `CONTEXT.md`，并沿用其中术语。
-- 判断产品范围时以 `docs/00-产品决策与范围.md` 为准；后续业务方向不是当前需求。
-- 调整分层、依赖或运行拓扑前阅读 `docs/02-系统架构与分层约束.md`。
-- 调整测试、部署、备份或恢复时分别阅读 `docs/08-测试与验收方案.md`、`docs/11-生产部署与运维.md`。
-- 以代码、迁移和 `package.json` 为当前实现事实；开发记录只解释历史决策。
+“人样”是单机本地运行的 AI 人物模拟、兴趣判断与结构化图文创作工作台。SQLite 是唯一业务事实源；OpenViking 仅是可重建的异步语义检索投影，故障时按既有能力降级到 FTS5。先阅读 `CONTEXT.md`，严格沿用其中“世界、人物、灵魂、成长、记忆、资料、证据、运行、产物”等领域术语。
 
-## 执行流程
+当前范围是单 Node 进程、单实例、本地 SQLite。不要擅自加入 Docker、Serverless、Edge、多实例共享目录、PostgreSQL、协作/多用户、独立 Worker 或自动备份。
 
-1. 先执行 `git status --short --branch` 和相关 `git diff`，识别并保护用户已有改动。
-2. 写代码前列出必要假设和可验证计划。需求存在会改变行为、数据或架构的歧义时，停止并询问。
-3. 只修改当前需求必需的文件和代码；保持邻近代码风格，不顺带重构或格式化。
-4. 测试节奏按任务规模执行：单步骤行为变更先补能复现问题或约束预期的测试；多步骤任务先连续完成全部已确认任务编码，过程中只补充并运行必要的基础测试，不逐步骤执行完整门禁。
-5. 产品、领域、接口、迁移或运维行为变化时，同步对应事实源文档；开发记录用于记录已闭合的重要变更。
-6. 完成后检查全部差异，确保每一行都可追溯到当前需求。
-7. 验证通过后只暂存本任务文件，使用中文提交信息提交并推送当前分支；确认 `HEAD...origin/<当前分支>` 为 `0/0`。用户已有改动不得纳入提交。
+## Architecture & Data Flow
 
-## 工程边界
+依赖方向固定为：`app` UI → `server/api`/`server/presentation` HTTP 边界 → `server/application` 用例编排 → `server/domain` 与 `server/ports` → `server/infrastructure` 适配器。`shared/schemas` 与 `shared/types` 是前后端唯一共享契约。
 
-- `app/pages/` 负责页面组合，通用交互放在 `app/components/` 或 `app/composables/`；使用 Vue 3 Composition API 与 `<script setup>`。
-- `server/api/` 只负责认证、请求解析、调用 `event.context.applicationServices` 和响应映射。
-- `server/application/` 编排用例和事务；`server/domain/` 保存无 I/O 的业务规则；`server/ports/` 定义外部能力；`server/infrastructure/` 实现端口。
-- Worker 只调用应用服务，不直接访问仓储或基础设施适配器。
-- 前后端公共输入使用 `shared/schemas/` 的 Zod Schema，公开类型放在 `shared/types/`；不要复制一套漂移的 DTO。
-- SQLite 是唯一业务事实源。OpenViking 是可重建的异步投影与语义检索能力，故障时仅按既有规则降级到 FTS5。
-- AI 算法的步骤、顺序、输入组装和输出校验固定在代码中；数据库只保存模型部署、提示词和调用参数绑定。
-- API Key、人物凭据和会话主密钥不得写入日志、响应、测试快照或文档；备份中的密文仍依赖原会话主密钥。
-- 数据库结构变更必须新增 Drizzle 迁移，并验证空库、既有数据库升级及重复执行。
+- `server/plugins/00-application-runtime.ts` 校验运行配置并启动运行时；`server/infrastructure/composition/ApplicationRuntime.ts` 是唯一组合根，负责构造 SQLite、仓储、外部适配器、应用服务和 Worker。
+- HTTP 路由只读取请求、用 `shared/schemas/**` 的 Zod schema 校验、调用 `event.context.applicationServices`，再走 `server/presentation/http/controller.ts` 响应。路由不得直接访问 Drizzle 或自行 `new` 服务。
+- 业务编排放在 `server/application/**`；无 I/O 不变量放在 `server/domain/**`；外部能力先在 `server/ports/**` 定义，再在 `server/infrastructure/**` 实现。
+- UI 经 `useFetch`/`$fetch` 调用 API；跨组件状态用 composables 与 Nuxt `useState`。`app/middleware/authentication.global.ts` 集中处理登录态，避免页面重复鉴权。
+- 生成、学习分析与人物蒸馏先写入持久任务，再由同进程 `server/worker/InternalWorker.ts` 按租约领取并处理。任务处理器不得直接更新任务状态；Worker 必须保持防重入和优雅停止语义。
+- OpenViking 同步经 outbox/队列异步执行，禁止在请求内无界等待外部服务。
 
-## 源码规范
+## Key Directories
 
-- 对话、文档、提交信息及新增或修改的代码注释使用中文。
-- 每个新增或修改的函数、方法和组件业务处理入口必须有完整中文文档注释，说明功能、参数、返回值及特殊规则；反直觉逻辑补充就近行内注释。
-- TypeScript 保持严格类型，边界输入先经 Zod 校验；不得用 `any`、非空断言或吞错绕过约束。
-- 保留既有错误码、审计、事务、幂等、任务租约和运行快照语义；调整这些契约时必须增加对应测试。
-- 不为未确认场景增加抽象、开关、兼容层或第三方依赖。
+- `app/pages/`：页面组合；通用 UI 放 `app/components/`，可复用状态与请求逻辑放 `app/composables/`。
+- `server/api/v1/`：管理员 Cookie 会话 API；`server/api/v2/`：Bearer API Key 公共 API。
+- `server/presentation/http/`：统一控制器、公共 API 鉴权、幂等和脱敏审计边界。
+- `server/application/`：认证、内容、AI 配置、任务与上下文同步用例。
+- `server/domain/`：领域模型和无 I/O 规则；`server/ports/`：仓储及外部能力接口；`server/infrastructure/`：Drizzle/SQLite、加密、文件、模型等实现。
+- `server/worker/`：同进程后台任务轮询与生命周期。
+- `shared/schemas/`、`shared/types/`：跨端 Zod 输入契约和公开类型；不要在前后端复制 DTO。
+- `drizzle/`：数据库迁移；schema 位于 `server/infrastructure/database/schema.ts`。
+- `tests/{unit,integration,components,architecture,e2e}/`：按测试层级分组。
+- `scripts/`：迁移、备份、恢复校验、恢复和本机管理员密码重置。
 
-## 验证门禁
+## Development Commands
 
-- 多步骤任务必须在全部编码与必要文档完成后，按本节最高适用等级统一执行一次完整门禁；完成前只运行能验证当前实现或解除阻断的基础测试。最终门禁失败时先定向修复和复验，全部问题闭合后再重新执行完整门禁。
-- 纯文档变更：核对链接、命令和事实，并检查目标文件差异。
-- 局部逻辑或组件变更：运行相关 Vitest 文件，再执行 `pnpm typecheck`。
-- 跨层、接口、任务、存储或发布相关变更：执行 `pnpm check`。
-- 数据库、备份或恢复变更：除 `pnpm check` 外，运行对应集成测试和只读恢复验证。
-- 核心浏览器闭环或生产启动行为变更：执行 `pnpm test:e2e`；首次运行前安装 Chromium。
-- 自动化测试不得调用真实收费模型；真实模型只用于明确授权的手工验收。
+```bash
+pnpm install --frozen-lockfile  # 冻结锁文件安装
+pnpm dev                        # 开发服务，默认 127.0.0.1:3001
+pnpm typecheck                  # 显式 Nuxt 类型检查
+pnpm test                       # Vitest：单元、集成、组件、架构
+pnpm test:e2e                   # Playwright Chromium 闭环；首次先 pnpm exec playwright install chromium
+pnpm build                      # 使用 .env.build 生成 Nitro node-server
+pnpm start                      # 启动 .output/server/index.mjs
+pnpm check                      # typecheck + test + build
+pnpm migrate                    # 执行 SQLite 迁移和健康检查
+pnpm backup                     # 创建一致性备份
+pnpm restore:validate -- <目录> # 只读验证指定备份
+```
 
-验证失败时报告原始失败、影响范围和下一步，不提交或推送未通过的变更。
+`pnpm restore -- <目录>` 必须在停机后执行；`pnpm admin:reset-password` 仅限本机交互式 TTY。数据目录由 `NUXT_DATA_DIRECTORY` 控制，默认 `./data`。
+
+## Code Conventions & Common Patterns
+
+- 使用 Vue 3 Composition API 与 `<script setup>`；TypeScript 必须满足 `strict`、`noUncheckedIndexedAccess` 与 `exactOptionalPropertyTypes`，不得用 `any`、非空断言或吞错绕过边界。
+- 边界输入只接受 Zod 校验后的值。可预期失败抛出 `ApplicationError(code, message, status)`；控制器负责转换为稳定错误响应。不要向客户端返回原始异常、供应商响应、文件路径或密钥。
+- v1 浏览器写请求保留 Origin/Sec-Fetch-Site 防护。管理员认证使用最小化密封 Cookie 会话与 `credentialVersion`；改密必须递增版本使旧会话失效。首次设置只允许 loopback。
+- v2 写 API 必须经过 `server/presentation/http/publicController.ts` 的 API Key scope、幂等键和脱敏审计链路。身份解析遇到用户名/邮箱多匹配时返回冲突，不能随机选择。
+- SQLite 是事务与持久化事实源。数据库结构变更必须新增 Drizzle 迁移，并验证空库、既有库升级和重复执行。
+- 凭据只可保存为密文、摘要或环境变量；不得进入日志、响应、测试快照、`.env.build`、版本库或数据库明文。
+
+## Important Files
+
+- `README.md`：快速开始、命令与产品边界。
+- `CONTEXT.md`：领域词汇和命名约束。
+- `package.json`、`pnpm-lock.yaml`、`pnpm-workspace.yaml`：脚本、依赖和 pnpm 约束。
+- `nuxt.config.ts`、`.env.example`、`.env.build`：Nitro、端口与运行配置契约。
+- `server/plugins/00-application-runtime.ts`、`server/infrastructure/composition/ApplicationRuntime.ts`：启动与依赖组合。
+- `server/presentation/http/controller.ts`、`server/presentation/http/publicController.ts`：HTTP 错误与公共 API 安全边界。
+- `drizzle.config.ts`、`server/infrastructure/database/schema.ts`：SQLite schema 与迁移配置。
+- `vitest.config.ts`、`playwright.config.ts`：测试运行器边界。
+- `docs/00-产品决策与范围.md`、`docs/02-系统架构与分层约束.md`、`docs/08-测试与验收方案.md`、`docs/09-部署备份与安全.md`、`docs/11-生产部署与运维.md`：修改对应领域前的事实源。
+
+## Runtime/Tooling Preferences
+
+- 使用 Node.js `>=24 <25` 与 pnpm `>=11 <12`（锁定包管理器为 pnpm `11.24.0`）；这是 ESM 单根工作区，不使用 npm、yarn 或 Bun。
+- Nuxt `4` + Vue `3` + Nitro `node-server`；Nuxt UI 与 Tailwind CSS 用于界面。默认仅监听 `127.0.0.1:3001`，`HOST`/`PORT` 可覆盖。
+- `pnpm build` 使用无密钥的 `.env.build`；`NUXT_SESSION_PASSWORD` 等运行时密钥必须在启动进程从仓库外注入，且至少符合 `.env.example` 的约束。
+- `pnpm-workspace.yaml` 启用 `strictDepBuilds`，只允许既有原生依赖构建脚本；不得放宽白名单。
+- 生产为单主机单 Node 进程，本服务只监听回环地址；外部访问必须通过同机 HTTPS 反向代理并配置可信浏览器来源。
+
+## Testing & QA
+
+- `pnpm test` 使用 Vitest：`tests/unit/**/*.test.ts`、`tests/integration/**/*.test.ts`、`tests/architecture/**/*.test.ts` 在 Node 环境运行；`tests/components/**/*.test.ts` 通过 Nuxt + happy-dom 运行。测试名使用 `*.test.ts`。
+- 组件测试沿用 `mountSuspended`、`registerEndpoint`、Vue Test Utils 与 `vi` mock；集成测试使用临时 SQLite，并在 `afterEach` 关闭和清理资源。示例：`tests/integration/sqlite-database.test.ts`。
+- 架构测试 `tests/architecture/layering.test.ts` 会检查层间依赖和 TypeScript 非空断言；修改分层前先运行它。
+- `pnpm test:e2e` 使用 Playwright Chromium，E2E 文件为 `tests/e2e/*.spec.ts`，单 worker 运行；会启动确定性模型替身（4311）和构建后的应用（4310），并使用独占 `.playwright-data`。失败产物在 `test-results/playwright/` 和 `playwright-report/`。
+- 局部逻辑或组件修改至少运行相关 Vitest 文件加 `pnpm typecheck`；跨层、接口、任务、存储或发布变更运行 `pnpm check`；核心浏览器闭环或生产启动改动运行 `pnpm test:e2e`。当前未配置覆盖率命令，不要虚构覆盖率门禁。
