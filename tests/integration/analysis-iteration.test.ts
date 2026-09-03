@@ -418,6 +418,7 @@ describe('AI 综合提炼学习提示词', () => {
     await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: true })
     expect((await analysis.getBatch(queued.id)).status).toBe('completed')
     expect(algorithms.synthesizedFacts).toEqual([expect.objectContaining({ evidenceCount: 1 })])
+    expect(algorithms.invalidEvidenceOnce).toBe(false)
   })
 
   it('提取结果没有新事实时直接完成批次且不调用综合或创建草稿', async () => {

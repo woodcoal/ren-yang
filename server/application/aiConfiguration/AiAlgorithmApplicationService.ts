@@ -457,10 +457,13 @@ function buildStructuredRepairPrompt(
   error: unknown,
 ): { systemPrompt: string, userPrompt: string } {
   const message = error instanceof Error ? error.message.slice(0, 2_000) : '结构化输出不符合约束'
+  const details = error instanceof ApplicationError && error.details
+    ? `；可用约束：${JSON.stringify(error.details)}`
+    : ''
   const inputHash = createHash('sha256').update(prompt.userPrompt).digest('hex')
   return {
     systemPrompt: prompt.systemPrompt,
-    userPrompt: `${prompt.userPrompt}\n\n<结构修正要求>上次响应未通过结构校验。请重新根据原始输入生成完整结果，不要解释，不要引用或复述上次回答。输入哈希：${inputHash}；校验错误：${message}</结构修正要求>`,
+    userPrompt: `${prompt.userPrompt}\n\n<结构修正要求>上次响应未通过结构校验。请重新根据原始输入生成完整结果，不要解释，不要引用或复述上次回答。输入哈希：${inputHash}；校验错误：${message}${details}</结构修正要求>`,
   }
 }
 

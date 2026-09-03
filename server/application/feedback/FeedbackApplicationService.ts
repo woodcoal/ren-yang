@@ -8,6 +8,7 @@ import type { FeedbackView } from '../../../shared/types/feedback'
 import type { Clock } from '../../ports/Clock'
 import type { ContextSyncTaskQueue } from '../../ports/ContextSyncTaskQueue'
 import type { FeedbackAggregate, FeedbackRepository } from '../../ports/FeedbackRepository'
+import type { FeedbackResolutionImpactRecord } from '../../domain/feedback/FeedbackModels'
 import type { TextModelSnapshot } from '../../domain/generation/GenerationModels'
 import type { IdentifierGenerator } from '../../ports/IdentifierGenerator'
 import type { TextModelPort } from '../../ports/TextModelPort'
@@ -72,7 +73,8 @@ export class FeedbackApplicationService {
 
   /** @returns 新反馈在前的完整反馈历史。 */
   async listFeedback(): Promise<FeedbackView[]> {
-    return (await this.dependencies.repository.listFeedback()).map(toFeedbackView)
+    const aggregates = await this.dependencies.repository.listFeedback()
+    return await Promise.all(aggregates.map(async aggregate => await this.toFeedbackView(aggregate)))
   }
 
   /**
@@ -161,7 +163,7 @@ export class FeedbackApplicationService {
       },
     )
     if (!created) throw new ApplicationError('RESOURCE_NOT_FOUND', '反馈目标产物块不属于当前运行', 404)
-    return toFeedbackView(await this.requireFeedback(feedbackId))
+    return await this.toFeedbackView(await this.requireFeedback(feedbackId))
   }
 
   /**
@@ -222,7 +224,15 @@ export class FeedbackApplicationService {
 
     await this.enqueueFeedbackSessionSynchronization(feedbackId)
 
-    return toFeedbackView(await this.requireFeedback(feedbackId))
+    return await this.toFeedbackView(await this.requireFeedback(feedbackId))
+  }
+
+  /** @param aggregate 原始反馈、分类建议和确认动作。 @returns 附带当前跨表影响的公开反馈。 */
+  private async toFeedbackView(aggregate: FeedbackAggregate): Promise<FeedbackView> {
+    const impact = aggregate.resolution
+      ? await this.dependencies.repository.findResolutionImpact(aggregate.event.id)
+      : null
+    return toFeedbackView(aggregate, impact)
   }
 
   /** @param feedbackId 反馈 UUID。 @returns 存在的反馈聚合。 */
@@ -262,9 +272,13 @@ export class FeedbackApplicationService {
   }
 }
 
-/** @param aggregate 反馈领域聚合。 @returns 不暴露模型参数的公开视图。 */
-function toFeedbackView(aggregate: FeedbackAggregate): FeedbackView {
-  return {
+/** @param aggregate 反馈持久化事实。 @param impact 当前跨表影响。 @returns 面向界面的可审计反馈。 */
+function toFeedbackView(
+  aggregate: FeedbackAggregate,
+  impact: FeedbackResolutionImpactRecord | null,
+): FeedbackView {
+  const resolution = aggregate.resolution?.resolution ?? null
+  const base = {
     id: aggregate.event.id,
     runId: aggregate.event.runId,
     blockId: aggregate.event.blockId,
@@ -278,10 +292,58 @@ function toFeedbackView(aggregate: FeedbackAggregate): FeedbackView {
       rationale: aggregate.suggestion.rationale,
     },
     confirmedTarget: aggregate.resolution?.targetType ?? null,
-    resolution: aggregate.resolution?.resolution ?? null,
+    resolution,
     createdAt: aggregate.event.createdAt,
     confirmedAt: aggregate.resolution?.confirmedAt ?? null,
   }
+  if (!impact || !resolution) return { ...base, impact: null }
+  if (impact.targetType === 'artifact' && impact.artifact) {
+    return {
+      ...base,
+      impact: {
+        targetType: 'artifact',
+        blockId: String(resolution.blockId),
+        taskId: String(resolution.taskId),
+        ...impact.artifact,
+      },
+    }
+  }
+  if (impact.targetType === 'parameters') {
+    return {
+      ...base,
+      impact: {
+        targetType: 'parameters',
+        recommendation: String(resolution.recommendation),
+        scope: String(resolution.scope),
+        isApplied: false,
+      },
+    }
+  }
+  if (impact.targetType === 'source_fact') {
+    return {
+      ...base,
+      impact: {
+        targetType: 'source_fact',
+        sourceId: String(resolution.sourceId),
+        sourceName: impact.sourceName,
+        hasEvidenceConflict: resolution.conflict === true,
+        automaticMindChange: false,
+      },
+    }
+  }
+  if (impact.persona) {
+    return {
+      ...base,
+      impact: {
+        targetType: 'persona',
+        personaId: String(resolution.personaId),
+        feedbackSourceId: String(resolution.feedbackSourceId),
+        growthMaterialId: String(resolution.growthMaterialId),
+        ...impact.persona,
+      },
+    }
+  }
+  return { ...base, impact: null }
 }
 
 /** @param content 原始反馈正文。 @returns 便于在人物成长素材池辨认的标题。 */

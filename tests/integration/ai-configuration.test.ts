@@ -21,6 +21,7 @@ import type { AiPromptApplicationService } from '../../server/application/aiProm
 import { createTestAiPromptService } from '../support/createTestAiPromptService'
 import { ConservativeTokenCounter } from '../../server/infrastructure/model/ConservativeTokenCounter'
 import { DEFAULT_TEXT_PARAMETERS } from '../../server/application/generation/GenerationApplicationService'
+import { ApplicationError } from '../../server/application/errors/ApplicationError'
 
 /** 当前测试独占的临时数据目录。 */
 let directory: string
@@ -379,6 +380,35 @@ describe('AI 接口、模型部署与算法配置', () => {
     expect(modelFactory.requests[1]?.userPrompt).not.toBe(modelFactory.requests[0]?.userPrompt)
     expect(modelFactory.requests[1]?.userPrompt).toContain('结构修正要求')
     expect(response.usage).toEqual({ inputTokens: 2, outputTokens: 2, totalTokens: 4 })
+  })
+
+  it('成长资料引用不存在时向结构修正调用提供允许的批次输入标识', async () => {
+    const { service, algorithms, modelFactory } = createServices()
+    await configureSoulAlgorithm(service)
+    const snapshot = await algorithms.prepare('persona_soul')
+
+    await algorithms.executeStep(
+      snapshot,
+      'organize',
+      { promptTextJson: '"需要整理的资料"' },
+      'soul_prompt_analysis',
+      'json_object',
+      {
+        limits: { ...DEFAULT_TEXT_PARAMETERS },
+        priorUsage: null,
+        validateStructuredOutput: () => {
+          if (modelFactory.requests.length === 1) {
+            throw new ApplicationError('MODEL_OUTPUT_INVALID', '模型返回的成长结论引用了不存在的资料', 502, {
+              invalidEvidenceInputIds: ['00000000-0000-4000-8000-000000000999'],
+              validEvidenceInputIds: ['00000000-0000-4000-8000-000000000001'],
+            })
+          }
+        },
+      },
+    )
+
+    expect(modelFactory.requests[1]?.userPrompt).toContain('validEvidenceInputIds')
+    expect(modelFactory.requests[1]?.userPrompt).toContain('00000000-0000-4000-8000-000000000001')
   })
 
   it('结构修正响应仍不合规时拒绝返回未验证结果', async () => {

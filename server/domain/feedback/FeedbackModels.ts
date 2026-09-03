@@ -33,3 +33,22 @@ export interface FeedbackResolutionRecord {
   resolution: Record<string, unknown>
   confirmedAt: number
 }
+
+/** 反馈确认后各目标动作的持久化审计关系。 */
+export interface FeedbackResolutionImpactRecord {
+  /** 反馈确认的最终目标。 */
+  targetType: FeedbackTarget
+  /** 原始动作结果。 */
+  resolution: Record<string, unknown>
+  /** 当前产物修正块与任务状态。 */
+  artifact: { blockStatus: 'pending' | 'running' | 'succeeded' | 'failed' | 'canceled' | null, task: { status: string, attemptCount: number, maxAttempts: number, lastError: string | null } | null } | null
+  /** 资料事实问题关联资料的名称。 */
+  sourceName: string | null
+  /** 人物成长素材、分析、发布版本及受影响运行。 */
+  persona: {
+    material: { importance: number, isEnabled: boolean } | null
+    analysis: { id: string, status: 'queued' | 'running' | 'awaiting_review' | 'completed' | 'failed', resultSummary: string | null, errorMessage: string | null, completedAt: number | null } | null
+    publishedPrompt: { id: string, versionNo: number, publishedAt: number } | null
+    affectedRuns: Array<{ id: string, personaName: string, status: string, createdAt: number }>
+  } | null
+}

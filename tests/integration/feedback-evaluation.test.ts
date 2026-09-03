@@ -213,6 +213,75 @@ describe('反馈分类与人物成长素材闭环', () => {
     `).get(feedback.id)).toEqual({ parameter_snapshot_json: expect.stringContaining('"temperature":0.9') })
   })
 
+  it('人物学习反馈展示素材、分析、发布版本和实际受影响运行', async () => {
+    const service = createService(new QueueTextModel([
+      { targetType: 'persona', confidence: 0.9, rationale: '应加入人物成长素材' },
+    ]))
+    const feedback = await service.submitFeedback(IDS.run, {
+      content: '以后先给出结论。', blockId: null, rating: 'positive', isLongTerm: true, editedOutput: null,
+    })
+    const confirmed = await service.confirmClassification(feedback.id, {
+      targetType: 'persona', blockId: null, sourceId: null, hasEvidenceConflict: false,
+    })
+    const growthMaterialId = String(confirmed.resolution?.growthMaterialId)
+    const analysisId = '00000000-0000-4000-8000-000000000201'
+    const promptId = '00000000-0000-4000-8000-000000000202'
+    const promptVersionId = '00000000-0000-4000-8000-000000000203'
+    const affectedRunId = '00000000-0000-4000-8000-000000000204'
+    const client = database.getClient()
+    client.prepare(`
+      INSERT INTO analysis_batches (
+        id, analysis_type, world_id, persona_id, mode, baseline_soul_version_id,
+        baseline_json, model_snapshot_json, parameter_snapshot_json, prompt_version,
+        status, raw_result_json, auto_publish, created_at, updated_at, completed_at
+      ) VALUES (?, 'persona_growth', NULL, ?, 'incremental', ?, '[]', '{}', '{}', 'test', 'completed', ?, 0, 11000, 11000, 11000)
+    `).run(analysisId, IDS.persona, IDS.version, JSON.stringify({ summary: '已从反馈生成成长草稿。' }))
+    client.prepare(`
+      INSERT INTO analysis_batch_inputs (
+        id, batch_id, input_type, input_id, content_hash, title, content_snapshot, importance, is_new, source_available, created_at
+      ) VALUES (?, ?, 'growth_material', ?, ?, '反馈素材', '以后先给出结论。', 3, 1, 1, 11000)
+    `).run('00000000-0000-4000-8000-000000000205', analysisId, growthMaterialId, 'b'.repeat(64))
+    client.prepare(`
+      INSERT INTO learning_prompts (id, prompt_type, world_id, persona_id, active_version_id, created_at, updated_at)
+      VALUES (?, 'persona_growth', NULL, ?, ?, 11000, 11000)
+    `).run(promptId, IDS.persona, promptVersionId)
+    client.prepare(`
+      INSERT INTO learning_prompt_versions (
+        id, prompt_id, version_no, parent_version_id, prompt_text, content_hash,
+        source_analysis_batch_id, change_summary, created_by, published_at
+      ) VALUES (?, ?, 1, NULL, '先给出结论。', ?, ?, '确认反馈成长', 'analysis', 12000)
+    `).run(promptVersionId, promptId, 'c'.repeat(64), analysisId)
+    client.prepare(`
+      INSERT INTO generation_runs (
+        id, kind, persona_version_id, status, input_json, scene_json, parameter_snapshot_json,
+        model_snapshot_json, image_model_snapshot_json, prompt_version, context_provider,
+        prompt_context_snapshot_json, created_at, updated_at
+      ) VALUES (?, 'interest_assessment', ?, 'succeeded', ?, NULL, ?, ?, NULL, 'interest-v1', 'sqlite_fts5', NULL, 13000, 13000)
+    `).run(
+      affectedRunId, IDS.version, JSON.stringify({ content: '测试内容' }),
+      JSON.stringify({ temperature: 0, maxOutputTokens: 1, timeoutMs: 1, maxEvidenceChunks: 1, maxTextBlocks: 1, maxImageBlocks: 0, maxPromptCharacters: 1, maxTotalTokens: 1, maxBlockAttempts: 1 }),
+      JSON.stringify({ provider: 'openai_compatible', model: 'test-model', endpointOrigin: 'https://model.test' }),
+    )
+    client.prepare(`
+      INSERT INTO evidence_snapshots (id, run_id, source_id, chunk_id, role, content, content_hash, rank, metadata_json, created_at)
+      VALUES (?, ?, NULL, NULL, 'growth', '先给出结论。', ?, 0, ?, 13000)
+    `).run('00000000-0000-4000-8000-000000000206', affectedRunId, 'd'.repeat(64), JSON.stringify({ learningPromptVersionId: promptVersionId }))
+
+    const listed = await service.listFeedback()
+    expect(listed.find(item => item.id === feedback.id)?.impact).toEqual({
+      targetType: 'persona',
+      personaId: IDS.persona,
+      feedbackSourceId: growthMaterialId,
+      growthMaterialId,
+      material: { importance: 3, isEnabled: true },
+      analysis: {
+        id: analysisId, status: 'completed', resultSummary: '已从反馈生成成长草稿。', errorMessage: null, completedAt: 11_000,
+      },
+      publishedPrompt: { id: promptVersionId, versionNo: 1, publishedAt: 12_000 },
+      affectedRuns: [{ id: affectedRunId, personaName: '林默', status: 'succeeded', createdAt: 13_000 }],
+    })
+  })
+
   it('同一反馈只能确认一次，不能重复创建人物成长素材', async () => {
     const service = createService(new QueueTextModel([
       { targetType: 'persona', confidence: 0.9, rationale: '人物学习资料' },

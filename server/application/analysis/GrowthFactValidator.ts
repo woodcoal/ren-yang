@@ -25,8 +25,17 @@ export function validateAndMergeGrowthFacts(
   const validEvidenceIds = new Set(inputs.map(input => input.id))
   const merged = new Map<string, { statement: string, evidenceInputIds: Set<string>, confidence: number }>()
   for (const fact of facts) {
-    if (fact.evidenceInputIds.some(id => !validEvidenceIds.has(id))) {
-      throw new ApplicationError('MODEL_OUTPUT_INVALID', '模型返回的成长结论引用了不存在的资料', 502)
+    const invalidEvidenceInputIds = fact.evidenceInputIds.filter(id => !validEvidenceIds.has(id))
+    if (invalidEvidenceInputIds.length > 0) {
+      throw new ApplicationError(
+        'MODEL_OUTPUT_INVALID',
+        '模型返回的成长结论引用了不存在的资料',
+        502,
+        {
+          invalidEvidenceInputIds,
+          validEvidenceInputIds: [...validEvidenceIds].sort(),
+        },
+      )
     }
     const key = fact.statement.replace(/\s+/g, ' ').trim().toLocaleLowerCase('zh-CN')
     const current = merged.get(key)

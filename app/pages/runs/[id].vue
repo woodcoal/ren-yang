@@ -5,6 +5,7 @@ import type { ConfirmFeedbackClassificationInput, SubmitFeedbackInput } from '#s
 import type { ApiResponse } from '#shared/types/api'
 import type { PersonaDetails, PersonaSnapshot } from '#shared/types/content'
 import type { FeedbackView } from '#shared/types/feedback'
+import FeedbackImpactPanel from '../../components/feedback/FeedbackImpactPanel.vue'
 import type { RenderedArtifactView, RunDetails } from '#shared/types/generation'
 import { getApiErrorMessage } from '../../utils/apiError'
 
@@ -279,8 +280,11 @@ function skippedReasonLabel(reason: string | null): string {
             <p class="mb-3 text-sm font-medium text-highlighted">已确认反馈</p>
             <ul class="space-y-2 text-sm">
               <li v-for="item in runFeedback.filter(value => value.confirmedTarget !== null)" :key="item.id" class="rounded-md bg-elevated p-3">
-                <span class="whitespace-pre-wrap">{{ item.content }}</span>
-                <UBadge class="ml-2" color="neutral" variant="subtle">{{ item.confirmedTarget }}</UBadge>
+                <div class="flex flex-wrap items-start justify-between gap-2">
+                  <span class="whitespace-pre-wrap">{{ item.content }}</span>
+                  <UBadge color="neutral" variant="subtle">{{ item.confirmedTarget }}</UBadge>
+                </div>
+                <FeedbackImpactPanel v-if="item.impact" class="mt-3" :impact="item.impact" />
               </li>
             </ul>
           </div>

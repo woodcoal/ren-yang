@@ -5,6 +5,7 @@ import type { FeedbackTarget } from '../../../shared/schemas/feedback'
 import type { TextModelSnapshot } from '../../domain/generation/GenerationModels'
 import type {
   FeedbackEventRecord,
+  FeedbackResolutionImpactRecord,
   FeedbackResolutionRecord,
   FeedbackSuggestionRecord,
 } from '../../domain/feedback/FeedbackModels'
@@ -69,6 +70,32 @@ export class SqliteFeedbackRepository implements FeedbackRepository {
   async findFeedback(feedbackId: string): Promise<FeedbackAggregate | null> {
     const value = this.client.prepare(feedbackAggregateSql('WHERE feedback_events.id = ?')).get(feedbackId)
     return value ? toFeedbackAggregate(value) : null
+  }
+
+  /** @param feedbackId 反馈 UUID。 @returns 已确认动作、成长分析、发布版本和后续运行的审计关系。 */
+  async findResolutionImpact(feedbackId: string): Promise<FeedbackResolutionImpactRecord | null> {
+    const feedback = this.client.prepare(`
+      SELECT feedback_resolutions.target_type, feedback_resolutions.resolution_json
+      FROM feedback_resolutions WHERE feedback_resolutions.feedback_id = ?
+    `).get(feedbackId)
+    if (!feedback) return null
+    const value = row(feedback)
+    const targetType = value.target_type as FeedbackTarget
+    const resolution = JSON.parse(String(value.resolution_json)) as Record<string, unknown>
+    if (targetType === 'artifact') return {
+      targetType, resolution,
+      artifact: this.findArtifactImpact(resolution), sourceName: null, persona: null,
+    }
+    if (targetType === 'parameters') return { targetType, resolution, artifact: null, sourceName: null, persona: null }
+    if (targetType === 'source_fact') return {
+      targetType, resolution, artifact: null,
+      sourceName: this.findSourceName(readResolutionId(resolution, 'sourceId')),
+      persona: null,
+    }
+    return {
+      targetType, resolution, artifact: null, sourceName: null,
+      persona: this.findPersonaImpact(resolution),
+    }
   }
 
   /** @param runId 运行 UUID。 @returns 运行固定的人物或 null。 */
@@ -203,6 +230,81 @@ export class SqliteFeedbackRepository implements FeedbackRepository {
   async sourceExists(sourceId: string): Promise<boolean> {
     return Boolean(this.client.prepare('SELECT 1 FROM source_materials WHERE id = ?').get(sourceId))
   }
+
+  /** @param resolution 当前产物反馈的原始动作结果。 @returns 当前块和修正任务状态。 */
+  private findArtifactImpact(resolution: Record<string, unknown>): FeedbackResolutionImpactRecord['artifact'] {
+    const blockId = readResolutionId(resolution, 'blockId')
+    const taskId = readResolutionId(resolution, 'taskId')
+    const block = blockId
+      ? this.client.prepare('SELECT status FROM artifact_blocks WHERE id = ?').get(blockId) as { status: 'pending' | 'running' | 'succeeded' | 'failed' | 'canceled' } | undefined
+      : undefined
+    const task = taskId
+      ? this.client.prepare('SELECT status, attempt_count, max_attempts, last_error FROM task_jobs WHERE id = ?').get(taskId) as { status: string, attempt_count: number, max_attempts: number, last_error: string | null } | undefined
+      : undefined
+    return {
+      blockStatus: block?.status ?? null,
+      task: task ? { status: task.status, attemptCount: task.attempt_count, maxAttempts: task.max_attempts, lastError: task.last_error } : null,
+    }
+  }
+
+  /** @param sourceId 资料 UUID。 @returns 尚存资料名称。 */
+  private findSourceName(sourceId: string | null): string | null {
+    if (!sourceId) return null
+    const source = this.client.prepare('SELECT name FROM source_materials WHERE id = ?').get(sourceId) as { name: string } | undefined
+    return source?.name ?? null
+  }
+
+  /** @param resolution 人物学习反馈的原始动作结果。 @returns 素材、提炼、发布与实际使用关系。 */
+  private findPersonaImpact(resolution: Record<string, unknown>): NonNullable<FeedbackResolutionImpactRecord['persona']> {
+    const growthMaterialId = readResolutionId(resolution, 'growthMaterialId')
+    const personaId = readResolutionId(resolution, 'personaId')
+    if (!growthMaterialId || !personaId) {
+      return { material: null, analysis: null, publishedPrompt: null, affectedRuns: [] }
+    }
+    const material = this.client.prepare(`
+      SELECT importance, is_enabled FROM growth_materials
+      WHERE id = ? AND subject_type = 'persona' AND persona_id = ?
+    `).get(growthMaterialId, personaId) as { importance: number, is_enabled: number } | undefined
+    const analysis = this.client.prepare(`
+      SELECT analysis_batches.id, analysis_batches.status, analysis_batches.raw_result_json,
+        analysis_batches.error_message, analysis_batches.completed_at
+      FROM analysis_batch_inputs
+      INNER JOIN analysis_batches ON analysis_batches.id = analysis_batch_inputs.batch_id
+      WHERE analysis_batch_inputs.input_type = 'growth_material' AND analysis_batch_inputs.input_id = ?
+        AND analysis_batches.analysis_type = 'persona_growth' AND analysis_batches.persona_id = ?
+      ORDER BY analysis_batches.created_at DESC, analysis_batches.id DESC LIMIT 1
+    `).get(growthMaterialId, personaId) as Record<string, unknown> | undefined
+    const analysisId = analysis ? String(analysis.id) : null
+    const publishedPrompt = analysisId
+      ? this.client.prepare(`
+          SELECT id, version_no, published_at FROM learning_prompt_versions
+          WHERE source_analysis_batch_id = ? ORDER BY published_at DESC, id DESC LIMIT 1
+        `).get(analysisId) as { id: string, version_no: number, published_at: number } | undefined
+      : undefined
+    const affectedRuns = publishedPrompt
+      ? this.client.prepare(`
+          SELECT generation_runs.id, personas.name AS persona_name, generation_runs.status, generation_runs.created_at
+          FROM evidence_snapshots
+          INNER JOIN generation_runs ON generation_runs.id = evidence_snapshots.run_id
+          INNER JOIN soul_versions ON soul_versions.id = generation_runs.persona_version_id
+          INNER JOIN personas ON personas.id = soul_versions.persona_id
+          WHERE json_extract(evidence_snapshots.metadata_json, '$.learningPromptVersionId') = ?
+          ORDER BY generation_runs.created_at DESC, generation_runs.id DESC
+        `).all(publishedPrompt.id) as Array<{ id: string, persona_name: string, status: string, created_at: number }>
+      : []
+    return {
+      material: material ? { importance: material.importance, isEnabled: material.is_enabled === 1 } : null,
+      analysis: analysis ? {
+        id: String(analysis.id),
+        status: String(analysis.status) as 'queued' | 'running' | 'awaiting_review' | 'completed' | 'failed',
+        resultSummary: readAnalysisSummary(analysis.raw_result_json),
+        errorMessage: nullableString(analysis.error_message),
+        completedAt: nullableNumber(analysis.completed_at),
+      } : null,
+      publishedPrompt: publishedPrompt ? { id: publishedPrompt.id, versionNo: publishedPrompt.version_no, publishedAt: publishedPrompt.published_at } : null,
+      affectedRuns: affectedRuns.map(run => ({ id: run.id, personaName: run.persona_name, status: run.status, createdAt: run.created_at })),
+    }
+  }
 }
 
 /** @param suffix 可控的 WHERE 或 ORDER BY 子句。 @returns 反馈聚合固定查询。 */
@@ -244,6 +346,29 @@ function toMillionths(value: number): number {
 /** @param value 百万分整数。 @returns 0 到 1 的业务分数。 */
 function fromMillionths(value: unknown): number {
   return Number(value) / 1_000_000
+}
+
+/** @param resolution 原始动作结果。 @param key UUID 字段名。 @returns 合法 UUID 或 null。 */
+function readResolutionId(resolution: Record<string, unknown>, key: string): string | null {
+  const value = resolution[key]
+  return typeof value === 'string' && /^[0-9a-f-]{36}$/i.test(value) ? value : null
+}
+
+/** @param rawResultJson 批次原始结果 JSON。 @returns 可公开的提炼摘要。 */
+function readAnalysisSummary(rawResultJson: unknown): string | null {
+  if (typeof rawResultJson !== 'string') return null
+  try {
+    const value = JSON.parse(rawResultJson) as { summary?: unknown }
+    return typeof value.summary === 'string' ? value.summary : null
+  }
+  catch {
+    return null
+  }
+}
+
+/** @param value SQLite 可空值。 @returns 数字或 null。 */
+function nullableNumber(value: unknown): number | null {
+  return value === null || value === undefined ? null : Number(value)
 }
 
 /** @param value SQLite 联表行。 @returns 已解析反馈聚合。 */
