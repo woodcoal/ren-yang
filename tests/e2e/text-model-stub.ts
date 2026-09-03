@@ -27,63 +27,11 @@ function createModelOutput(body: string): string {
   const parsedInputs = inputPayload ? JSON.parse(inputPayload) as Array<{ id?: unknown }> : []
   const evidenceId = typeof parsedInputs[0]?.id === 'string' ? parsedInputs[0].id : undefined
 
-  if (systemPrompt.includes('人物蒸馏资料分类器')) {
-    const sourcesPayload = /<不可信资料输入>([\s\S]*?)<\/不可信资料输入>/u.exec(userPrompt)?.[1]
-    const sources = sourcesPayload
-      ? JSON.parse(sourcesPayload) as Array<{ id: string, inputType: string }>
-      : []
+  if (systemPrompt.includes('人物自由蒸馏分析师')) {
     return JSON.stringify({
-      sources: sources.filter(input => input.inputType === 'source_material').map(input => ({
-        inputId: input.id,
-        sourceRelation: 'third_party',
-        coverageDimensions: ['external_views'],
-        independentSourceKey: input.id,
-      })),
-    })
-  }
-
-  if (systemPrompt.includes('人物蒸馏认知提取器')) {
-    const confirmedPayload = /<用户确认输入>([\s\S]*?)<\/用户确认输入>/u.exec(userPrompt)?.[1]
-    const confirmedInputs = confirmedPayload
-      ? JSON.parse(confirmedPayload) as Array<{ id: string, inputType: string, content: string }>
-      : []
-    const userStatement = confirmedInputs.find(input => input.inputType === 'user_statement')
-    if (!userStatement) throw new Error('人物蒸馏测试输入缺少用户创建要求')
-    return JSON.stringify({ claims: [{
-      category: 'mental_model',
-      statement: '严谨克制地观察学院课程、档案与古代文献。',
-      applicability: '学院内容判断与表达',
-      limitations: '资料不足时只按用户明确设定表达，不冒充真实人物经历。',
-      basis: 'explicit',
-      confidence: 1,
-      evidence: [{ inputId: userStatement.id, relation: 'supporting', quote: userStatement.content }],
-      conflicts: [],
-    }] })
-  }
-
-  if (systemPrompt.includes('人物候选灵魂编译器')) {
-    return JSON.stringify({
+      analysisReport: '## 判断方式\n以严谨克制的方式观察学院课程、档案与古代文献。\n\n## 未知边界\n资料不足时不冒充真实人物经历。',
       name: '林默',
-      snapshot: { promptText: '严谨克制的学院观察员，关注课程、档案与古代文献，表达冷静简洁。' },
-    })
-  }
-
-  if (systemPrompt.includes('人物候选质量评测器')) {
-    return JSON.stringify({
-      evaluations: [
-        'known_fact',
-        'decision_tendency',
-        'unknown_boundary',
-        'expression',
-        'counterfactual',
-        'conflict_handling',
-      ].map(evaluationType => ({
-        evaluationType,
-        status: 'passed',
-        score: 1,
-        summary: `${evaluationType} 通过`,
-        failureReasons: [],
-      })),
+      promptText: '严谨克制的学院观察员，关注课程、档案与古代文献，表达冷静简洁。',
     })
   }
 

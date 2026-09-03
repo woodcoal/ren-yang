@@ -89,7 +89,7 @@ const statusLabels: Record<HistoryStatus, string> = {
 
 /** 任务类型中文标签。 */
 const kindLabels: Record<HistoryKind, string> = {
-  persona_distillation: '人物蒸馏', interest_assessment: '兴趣判断', artifact_generation: '图文创作',
+  persona_distillation: '人物自由蒸馏', interest_assessment: '兴趣判断', artifact_generation: '图文创作',
   world_growth: '世界成长提炼', persona_growth: '人物成长提炼', persona_memory: '人物记忆提炼',
 }
 
@@ -198,7 +198,7 @@ function formatTime(timestamp: number): string {
             </select>
             <select v-model="filters.kind" class="native-control min-w-0 flex-1" aria-label="按类型筛选">
               <option value="">全部类型</option>
-              <option value="persona_distillation">人物蒸馏</option>
+              <option value="persona_distillation">人物自由蒸馏</option>
               <option value="interest_assessment">兴趣判断</option>
               <option value="artifact_generation">图文创作</option>
               <option value="world_growth">世界成长提炼</option>

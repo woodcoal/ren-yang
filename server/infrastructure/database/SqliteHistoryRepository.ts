@@ -62,11 +62,7 @@ function buildHistoryQuery(input: ListHistoryPageInput): HistoryQuery {
     ELSE 'failed'
   END`
   const distillationStatusExpression = `CASE persona_distillation_runs.status
-    WHEN 'assessing_sources' THEN 'running'
-    WHEN 'awaiting_source_review' THEN 'awaiting_review'
-    WHEN 'extracting' THEN 'running'
-    WHEN 'synthesizing' THEN 'running'
-    WHEN 'evaluating' THEN 'running'
+    WHEN 'analyzing' THEN 'running'
     WHEN 'awaiting_candidate_review' THEN 'awaiting_review'
     ELSE persona_distillation_runs.status
   END`
@@ -191,11 +187,7 @@ function buildHistoryQuery(input: ListHistoryPageInput): HistoryQuery {
         ${distillationStatusExpression} AS status,
         persona_distillation_runs.objective AS description,
         CASE persona_distillation_runs.status
-          WHEN 'assessing_sources' THEN '正在检查资料'
-          WHEN 'awaiting_source_review' THEN '等待资料确认'
-          WHEN 'extracting' THEN '正在提取认知'
-          WHEN 'synthesizing' THEN '正在综合灵魂'
-          WHEN 'evaluating' THEN '正在评测候选'
+          WHEN 'analyzing' THEN '正在自由分析'
           WHEN 'awaiting_candidate_review' THEN '等待候选确认'
           WHEN 'completed' THEN '人物已创建'
           WHEN 'failed' THEN '执行失败'

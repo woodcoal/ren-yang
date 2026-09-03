@@ -12,50 +12,38 @@ import type { PersonaDistillationRunView } from '#shared/types/personaDistillati
 interface Props {
   /** 当前等待候选确认的完整运行。 */
   run: PersonaDistillationRunView
-  /** 保存、评测或确认请求是否正在执行。 */
+  /** 保存或确认请求是否正在执行。 */
   loading: boolean
 }
 
 const props = defineProps<Props>()
 const emit = defineEmits<{
-  /** 保存编辑后的完整候选并重新评测。 */
+  /** 保存编辑后的完整候选。 */
   save: [input: SavePersonaDistillationCandidateInput]
-  /** 确认当前评测哈希并创建或更新人物。 */
+  /** 确认当前候选并创建或更新人物。 */
   confirm: [input: ConfirmPersonaDistillationCandidateInput]
 }>()
 
 /** 最终人工校准的人物名称和完整灵魂正文。 */
 const state = reactive({ name: '', promptText: '' })
-const currentEvaluations = computed(() => props.run.evaluations
-  .filter(item => item.candidatePromptHash === props.run.candidatePromptHash)
-  .sort((left, right) => left.evaluationType.localeCompare(right.evaluationType)))
-const currentHardFailures = computed(() => currentEvaluations.value
-  .filter(item => item.status === 'failed')
-  .flatMap(item => item.failureReasons.length > 0 ? item.failureReasons : [`${item.evaluationType} 评测未通过`]))
+/** 当前编辑内容相对已保存候选是否改变。 */
 const candidateChanged = computed(() => state.promptText.trim() !== (props.run.candidatePromptText ?? '').trim())
+/** 候选正文已由分析或人工编辑准备完成时允许确认。 */
 const canConfirm = computed(() => Boolean(
   props.run.candidatePromptHash
-  && props.run.candidatePromptHash === props.run.evaluatedPromptHash
-  && currentEvaluations.value.length === 6
-  && currentHardFailures.value.length === 0
+  && props.run.candidatePromptHash === props.run.preparedPromptHash
   && !candidateChanged.value,
 ))
 /** 最终确认动作在当前运行模式下的用户可见名称。 */
 const confirmationLabel = computed(() => props.run.mode === 'update' ? '确认更新人物灵魂' : '确认创建人物')
 
-/**
- * 从服务端候选快照初始化当前页面编辑状态。
- * @returns 无返回值。
- */
+/** 从服务端候选快照初始化当前页面编辑状态。 */
 function initializeCandidate(): void {
   state.name = props.run.candidateName ?? props.run.requestedName
   state.promptText = props.run.candidatePromptText ?? ''
 }
 
-/**
- * 保存当前完整候选正文并使旧评测失效。
- * @returns 无返回值。
- */
+/** 保存当前完整候选正文。 */
 function saveCandidate(): void {
   emit('save', savePersonaDistillationCandidateSchema.parse({
     expectedUpdatedAt: props.run.updatedAt,
@@ -63,10 +51,7 @@ function saveCandidate(): void {
   }))
 }
 
-/**
- * 确认当前未修改且已完整通过评测的候选。
- * @returns 无返回值。
- */
+/** 确认当前未修改且已准备完成的候选。 */
 function confirmCandidate(): void {
   if (!props.run.candidatePromptHash || !canConfirm.value) return
   emit('confirm', confirmPersonaDistillationCandidateSchema.parse({
@@ -83,36 +68,21 @@ watch(() => [props.run.id, props.run.candidatePromptHash] as const, initializeCa
   <section class="workflow-panel" aria-labelledby="distillation-candidate-heading">
     <div class="section-heading">
       <div class="section-heading-copy">
-        <p class="eyebrow">人工检查点 2 / 2</p>
-        <h2 id="distillation-candidate-heading">校准并确认人物候选</h2>
-        <p>候选是基于资料生成的模拟对象，不代表本人真实意图或授权。正文改动后必须重新评测。</p>
+        <p class="eyebrow">人工确认</p>
+        <h2 id="distillation-candidate-heading">审阅分析并确认人物候选</h2>
+        <p>模型已自主完成资料理解、冲突处理和灵魂编写。核对分析边界与候选正文后再发布。</p>
       </div>
     </div>
 
-    <UAlert
-      v-for="failure in props.run.qualityGate?.hardFailures ?? []"
-      :key="failure"
-      class="mb-3"
-      color="error"
-      title="硬门禁未通过"
-      :description="failure"
-    />
-    <UAlert
-      v-for="warning in props.run.qualityGate?.softWarnings ?? []"
-      :key="warning"
-      class="mb-3"
-      color="warning"
-      variant="subtle"
-      title="质量提醒"
-      :description="warning"
-    />
-
-    <div v-if="props.run.coverageSnapshot" class="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-      <UCard><p class="text-xs text-muted">资料</p><p class="mt-1 text-xl font-semibold text-highlighted">{{ props.run.coverageSnapshot.sourceCount }}</p></UCard>
-      <UCard><p class="text-xs text-muted">独立来源</p><p class="mt-1 text-xl font-semibold text-highlighted">{{ props.run.coverageSnapshot.independentSourceCount }}</p></UCard>
-      <UCard><p class="text-xs text-muted">本人直接来源</p><p class="mt-1 text-xl font-semibold text-highlighted">{{ props.run.coverageSnapshot.directIndependentSourceCount }}</p></UCard>
-      <UCard><p class="text-xs text-muted">重复或同源</p><p class="mt-1 text-xl font-semibold text-highlighted">{{ props.run.coverageSnapshot.duplicateSourceCount }}</p></UCard>
-    </div>
+    <UCard v-if="props.run.analysisReport" class="mb-6">
+      <template #header>
+        <div>
+          <h3 class="font-semibold text-highlighted">人物分析报告</h3>
+          <p class="mt-1 text-sm text-muted">这是模型根据固定资料形成的可读分析，不会直接写入人物运行提示词。</p>
+        </div>
+      </template>
+      <pre class="m-0 whitespace-pre-wrap break-words font-sans text-sm leading-7 text-toned">{{ props.run.analysisReport }}</pre>
+    </UCard>
 
     <div class="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(20rem,0.8fr)]">
       <UCard>
@@ -120,8 +90,8 @@ watch(() => [props.run.id, props.run.candidatePromptHash] as const, initializeCa
           <div>
             <h3 class="font-semibold text-highlighted">完整人物灵魂</h3>
             <p class="mt-1 text-sm text-muted">{{ props.run.mode === 'update'
-              ? '这是确认后发布为当前人物新灵魂版本的完整正文。'
-              : '这是确认后写入首个当前灵魂版本的完整正文。' }}</p>
+              ? '确认后会发布为当前人物的新灵魂版本。'
+              : '确认后会写入人物的首个当前灵魂版本。' }}</p>
           </div>
         </template>
         <div class="space-y-4">
@@ -135,31 +105,40 @@ watch(() => [props.run.id, props.run.candidatePromptHash] as const, initializeCa
             v-if="candidateChanged"
             color="warning"
             variant="subtle"
-            title="当前正文尚未评测"
-            :description="`保存后系统会重新执行六类评测；评测完成前不能${props.run.mode === 'update' ? '更新人物灵魂' : '创建人物'}。`"
+            title="已改为人工校准版本"
+            description="保存后可直接确认；系统不会再用另一轮模型评测覆盖你的判断。"
           />
           <UButton
-            icon="i-lucide-refresh-cw"
+            icon="i-lucide-save"
             color="neutral"
             variant="soft"
             :loading="loading"
             :disabled="!candidateChanged || !state.promptText.trim()"
             @click="saveCandidate"
-          >保存并重新评测</UButton>
+          >保存校准版本</UButton>
         </div>
       </UCard>
 
-      <div class="space-y-4">
-        <DistillationEvaluationList :evaluations="currentEvaluations" />
-      </div>
+      <UCard>
+        <template #header>
+          <div>
+            <h3 class="font-semibold text-highlighted">固定输入</h3>
+            <p class="mt-1 text-sm text-muted">本次分析只使用这些运行快照。</p>
+          </div>
+        </template>
+        <ul class="m-0 space-y-3 p-0" aria-label="人物蒸馏固定输入">
+          <li v-for="input in props.run.inputs" :key="input.id" class="list-none rounded-md border border-default p-3">
+            <p class="m-0 font-medium text-highlighted">{{ input.name }}</p>
+            <p class="mt-1 text-xs text-muted">{{ input.inputType === 'user_statement' ? '用户明确要求或当前灵魂' : '参考资料' }}</p>
+          </li>
+        </ul>
+      </UCard>
     </div>
-
-    <DistillationClaimEvidenceList class="mt-6" :claims="props.run.claims" :inputs="props.run.inputs" />
 
     <div class="sticky-action-bar mt-6">
       <div>
-        <p class="m-0 font-medium text-highlighted">{{ canConfirm ? '当前候选已通过硬门禁' : '当前候选暂不能确认' }}</p>
-        <p class="mt-1 text-xs text-muted">只有正文哈希与最近完整评测一致时才能{{ props.run.mode === 'update' ? '更新人物灵魂' : '创建人物' }}。</p>
+        <p class="m-0 font-medium text-highlighted">{{ canConfirm ? '当前候选已准备确认' : '请先保存当前修改' }}</p>
+        <p class="mt-1 text-xs text-muted">确认后才会{{ props.run.mode === 'update' ? '发布人物新灵魂' : '创建人物及其初始灵魂' }}。</p>
       </div>
       <UButton icon="i-lucide-check" :loading="loading" :disabled="!canConfirm || !state.name.trim()" @click="confirmCandidate">
         {{ confirmationLabel }}

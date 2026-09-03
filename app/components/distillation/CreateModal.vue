@@ -132,8 +132,8 @@ watch(open, (isOpen, wasOpen) => {
 <template>
   <UModal
     v-model:open="open"
-    title="AI 蒸馏创建人物"
-    description="系统先检查资料覆盖，再提炼和评测候选；最终确认前不会创建人物。"
+    title="AI 自由蒸馏创建人物"
+    description="模型会在一次分析中理解你选择的资料、处理冲突和未知边界，再生成分析报告与人物候选；最终确认前不会创建人物。"
     :dismissible="!loading && !uploadingSources"
     :close="!loading && !uploadingSources"
     :ui="{ content: 'max-w-5xl' }"
@@ -191,8 +191,8 @@ watch(open, (isOpen, wasOpen) => {
         <UAlert
           color="neutral"
           variant="subtle"
-          title="两次人工确认"
-          description="资料覆盖完成后确认一次；候选正文和评测完成后再确认一次。中途可以离开，稍后按运行记录继续。"
+          title="一次分析，人工确认"
+          description="模型完成分析后展示完整分析报告和候选灵魂。你可直接校准候选，确认前不会创建人物。中途可以离开，稍后按运行记录继续。"
         />
         <UAlert v-if="errorMessage" color="error" title="创建失败" :description="errorMessage" />
         <div class="flex justify-end gap-2">

@@ -77,7 +77,7 @@ const standalonePageTitles: Record<string, string> = {
 const dynamicPageTitleRules: Array<{ prefix: string, title: string }> = [
   { prefix: '/runs/', title: '任务详情' },
   { prefix: '/interest-batches/', title: '兴趣批次详情' },
-  { prefix: '/personas/distillations/', title: '人物蒸馏' },
+  { prefix: '/personas/distillations/', title: '人物自由蒸馏' },
   { prefix: '/personas/', title: '人物详情' },
   { prefix: '/worlds/', title: '世界详情' },
   { prefix: '/sources/', title: '资料详情' },

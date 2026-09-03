@@ -69,14 +69,14 @@ registerEndpoint('/api/v1/history', (event) => {
   } }
 })
 describe('统一任务记录页', () => {
-  it('人物蒸馏任务显示等待状态并进入原工作区继续处理', async () => {
+  it('人物自由蒸馏任务显示等待状态并进入原工作区继续处理', async () => {
     const wrapper = await mountSuspended(HistoryPage, { route: '/history' })
     await flushPromises()
 
-    expect(wrapper.text()).toContain('人物蒸馏')
+    expect(wrapper.text()).toContain('人物自由蒸馏')
     expect(wrapper.text()).toContain('待确认人物')
     expect(wrapper.get('a[href="/personas/distillations/70000000-0000-4000-8000-000000000006"]').text())
-      .toContain('人物蒸馏')
+      .toContain('人物自由蒸馏')
   })
 
   it('展示后台人物记忆提炼批次及排队状态', async () => {

@@ -1,7 +1,6 @@
 import { computed, onMounted, onUnmounted, shallowRef, watch } from 'vue'
 import type {
   ConfirmPersonaDistillationCandidateInput,
-  ReviewPersonaDistillationSourcesInput,
   SavePersonaDistillationCandidateInput,
 } from '#shared/schemas/personaDistillation'
 import type { ApiResponse } from '#shared/types/api'
@@ -23,9 +22,7 @@ export async function usePersonaDistillation(runId: string) {
   const run = computed(() => data.value?.data ?? null)
   const actionLoading = shallowRef(false)
   const pollingTimer = shallowRef<ReturnType<typeof setInterval> | null>(null)
-  const active = computed(() => run.value
-    ? ['assessing_sources', 'extracting', 'synthesizing', 'evaluating'].includes(run.value.status)
-    : false)
+  const active = computed(() => run.value?.status === 'analyzing')
 
   /**
    * 启动每两秒一次的活动运行轮询；已有计时器或当前为人工检查点时不重复启动。
@@ -83,25 +80,14 @@ export async function usePersonaDistillation(runId: string) {
     }
   }
 
-  /**
-   * 确认资料范围和分类纠正并启动认知提取。
-   * @param input 当前页面版本、接受资料和分类纠正。
-   * @returns 操作完成时结束。
-   */
-  async function reviewSources(input: ReviewPersonaDistillationSourcesInput): Promise<void> {
-    await executeAction('资料范围已确认，正在提炼人物认知', '资料确认失败', async () => await $fetch(
-      `/api/v1/persona-distillations/${runId}/source-review`,
-      { method: 'POST', body: input },
-    ))
-  }
 
   /**
-   * 保存人工编辑后的完整候选并启动新一轮评测。
+   * 保存人工编辑后的完整候选，保留模型分析报告但不再触发模型重评。
    * @param input 当前页面版本和完整候选正文。
    * @returns 操作完成时结束。
    */
   async function saveCandidate(input: SavePersonaDistillationCandidateInput): Promise<void> {
-    await executeAction('候选已保存，正在重新评测', '候选保存失败', async () => await $fetch(
+    await executeAction('候选校准已保存，可以直接确认', '候选保存失败', async () => await $fetch(
       `/api/v1/persona-distillations/${runId}/candidate`,
       { method: 'PUT', body: input },
     ))
@@ -157,7 +143,6 @@ export async function usePersonaDistillation(runId: string) {
     active,
     actionLoading,
     refresh,
-    reviewSources,
     saveCandidate,
     confirmCandidate,
     cancelRun,

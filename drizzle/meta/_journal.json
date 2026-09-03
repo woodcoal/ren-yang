@@ -148,6 +148,13 @@
       "when": 1791014400000,
       "tag": "0020_persona_redistillation",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "6",
+      "when": 1791100800000,
+      "tag": "0021_freeform_persona_distillation",
+      "breakpoints": true
     }
   ]
 }

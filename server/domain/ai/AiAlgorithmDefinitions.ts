@@ -56,13 +56,10 @@ export const AI_ALGORITHM_DEFINITIONS: Record<AiAlgorithmCode, AiAlgorithmDefini
     steps: [{ key: 'generate', name: '生成草稿', description: '一次生成人物名称、灵魂和版本说明。', promptCode: 'generation.persona_draft', modality: 'text', ordinal: 0 }],
   },
   persona_distillation: {
-    code: 'persona_distillation', name: '人物蒸馏', implementationVersion: 1,
-    description: '评估资料覆盖，提取并校验证据候选，综合单文本灵魂并评测人物候选。',
+    code: 'persona_distillation', name: '人物自由蒸馏', implementationVersion: 2,
+    description: '一次调用由模型自主完成资料分析、冲突处理和人物灵魂编写，人工确认后发布。',
     steps: [
-      { key: 'classify_sources', name: '资料分类', description: '识别来源关系、覆盖维度和同源分组。', promptCode: 'distillation.classify_sources', modality: 'text', ordinal: 0 },
-      { key: 'extract_claims', name: '认知提取', description: '从确认资料提取带精确引文的认知候选。', promptCode: 'distillation.extract_claims', modality: 'text', ordinal: 1 },
-      { key: 'synthesize_soul', name: '灵魂综合', description: '把已校验候选编译为完整人物候选草稿。', promptCode: 'distillation.synthesize_soul', modality: 'text', ordinal: 2 },
-      { key: 'evaluate_soul', name: '候选评测', description: '按六类固定维度评测当前候选及诚实边界。', promptCode: 'distillation.evaluate_soul', modality: 'text', ordinal: 3 },
+      { key: 'analyze', name: '自由分析', description: '一次完成资料理解、人物分析报告和候选灵魂。', promptCode: 'distillation.analyze_persona', modality: 'text', ordinal: 0 },
     ],
   },
   world_draft: {
