@@ -452,9 +452,45 @@ describe('AI 综合提炼学习提示词', () => {
     expect(database.getClient().prepare(`
       SELECT extraction_result_json, validated_facts_json FROM analysis_batches WHERE id = ?
     `).get(queued.id)).toEqual({
-      extraction_result_json: '{"facts":[]}',
+      extraction_result_json: '{"batches":[{"facts":[]}]}',
       validated_facts_json: '[]',
     })
+  })
+
+  it('多份超长成长资料按安全批次提取后合并结论，不再让最终提示超出输入预算', async () => {
+    const algorithms = new TwoStageGrowthAlgorithms()
+    analysis = new AnalysisApplicationService({
+      content: contentRepository,
+      souls: contentRepository,
+      learning: learningRepository,
+      analysis: analysisRepository,
+      model,
+      prompts,
+      identifiers,
+      clock,
+      algorithms,
+    })
+    worker = new WorkerApplicationService({
+      taskJobRepository: new SqliteTaskJobRepository(database.getClient()),
+      taskHandler: analysis,
+      clock,
+      leaseDurationMs: 60_000,
+    })
+    const longSource = await content.createPastedSource({
+      name: '长篇世界成长资料',
+      role: 'reference',
+      content: '水运规则与城邦协作。'.repeat(7_000),
+    })
+    await content.linkSource(longSource.source.id, { targetType: 'world', targetId: worldId, priority: 10 })
+    await learning.importGrowthSources('world', worldId, { items: [{ sourceId: longSource.source.id, importance: 4 }] })
+    const queued = await analysis.createBatch('world_growth', worldId, { mode: 'incremental' })
+
+    await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: true })
+    expect(algorithms.synthesizeCallCount).toBe(1)
+    expect((await analysis.getBatch(queued.id)).status).toBe('completed')
+    expect(database.getClient().prepare(`
+      SELECT extraction_result_json FROM analysis_batches WHERE id = ?
+    `).get(queued.id)).toEqual({ extraction_result_json: expect.stringContaining('batches') })
   })
 
   it('增量提炼不会重复消费同正文同评分素材，完整重建仍可发起', async () => {

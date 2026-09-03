@@ -27,6 +27,10 @@ import { validateAndMergeMemoryFacts } from './MemoryFactValidator'
 const LEARNING_PROMPT_RESULT_SUMMARY = 'AI 已根据全部启用素材生成完整提示词草稿。'
 /** 提取阶段明确没有形成新事实时使用的稳定批次说明。 */
 const NO_ANALYSIS_CHANGE_SUMMARY = '没有形成新事实。'
+/** 单次提取调用内所有资料切片的保守字符预算，避免最终渲染提示超过模型输入预算。 */
+const MAX_ANALYSIS_BATCH_CHARACTERS = 48_000
+/** 单项资料超过单次预算时使用的连续正文切片长度。 */
+const MAX_ANALYSIS_INPUT_SLICE_CHARACTERS = 24_000
 
 /** 分析任务固定参数，独立于用户内容生成参数。 */
 const ANALYSIS_PARAMETERS: TextModelParameters = {
@@ -243,23 +247,29 @@ export class AnalysisApplicationService implements TaskHandler {
   ): Promise<void> {
     const algorithms = this.dependencies.algorithms
     if (!algorithms) throw new ApplicationError('CAPABILITY_DISABLED', '成长分析算法不可用', 422)
-    const extractResponse = await algorithms.executeStep(
-      snapshot,
-      'extract',
-      buildAnalysisPromptVariables(baseline, inputs),
-      'growth_atomic_facts',
-      'json_object',
-      {
-        limits: { ...ANALYSIS_PARAMETERS, ...snapshot.steps.find(step => step.stepKey === 'extract')?.parameters },
-        validateStructuredOutput: value => {
-          const extracted = modelGrowthExtractionResultSchema.parse(value)
-          validateAndMergeGrowthFacts(extracted.facts, inputs)
+    const extractedBatches: unknown[] = []
+    const candidates: Array<{ statement: string, evidenceInputIds: string[], confidence: number }> = []
+    for (const inputBatch of buildAnalysisInputBatches(inputs)) {
+      const extractResponse = await algorithms.executeStep(
+        snapshot,
+        'extract',
+        buildAnalysisPromptVariables(baseline, inputBatch),
+        'growth_atomic_facts',
+        'json_object',
+        {
+          limits: { ...ANALYSIS_PARAMETERS, ...snapshot.steps.find(step => step.stepKey === 'extract')?.parameters },
+          validateStructuredOutput: value => {
+            const extracted = modelGrowthExtractionResultSchema.parse(value)
+            validateAndMergeGrowthFacts(extracted.facts, inputs)
+          },
         },
-      },
-    )
-    const extracted = modelGrowthExtractionResultSchema.parse(extractResponse.structuredOutput)
-    const facts = validateAndMergeGrowthFacts(extracted.facts, inputs)
-    await this.saveExtractionSnapshot(batchId, extracted, facts)
+      )
+      const extracted = modelGrowthExtractionResultSchema.parse(extractResponse.structuredOutput)
+      extractedBatches.push(extracted)
+      candidates.push(...extracted.facts)
+    }
+    const facts = validateAndMergeGrowthFacts(candidates, inputs)
+    await this.saveExtractionSnapshot(batchId, { batches: extractedBatches }, facts)
     if (facts.length === 0) {
       await this.completeWithoutChanges(batchId)
       return
@@ -272,7 +282,6 @@ export class AnalysisApplicationService implements TaskHandler {
       'text',
       {
         limits: { ...ANALYSIS_PARAMETERS, ...snapshot.steps.find(step => step.stepKey === 'synthesize')?.parameters },
-        priorUsage: extractResponse.usage,
         validateStructuredOutput: value => {
           modelLearningPromptResultSchema.parse({ promptText: value, summary: LEARNING_PROMPT_RESULT_SUMMARY })
         },
@@ -309,20 +318,32 @@ export class AnalysisApplicationService implements TaskHandler {
   ): Promise<void> {
     const algorithms = this.dependencies.algorithms
     if (!algorithms) throw new ApplicationError('CAPABILITY_DISABLED', '人物记忆算法不可用', 422)
-    const extractResponse = await algorithms.executeStep(
-      snapshot,
-      'extract',
-      buildAnalysisPromptVariables(baseline, inputs),
-      'memory_evidence_facts',
-      'json_object',
-      {
-        limits: { ...ANALYSIS_PARAMETERS, ...snapshot.steps.find(step => step.stepKey === 'extract')?.parameters },
-        validateStructuredOutput: value => { modelMemoryExtractionResultSchema.parse(value) },
-      },
-    )
-    const extracted = modelMemoryExtractionResultSchema.parse(extractResponse.structuredOutput)
-    const facts = validateAndMergeMemoryFacts(extracted.facts, inputs)
-    await this.saveExtractionSnapshot(batchId, extracted, facts)
+    const extractedBatches: unknown[] = []
+    const candidates: Array<{
+      statement: string
+      memoryType: 'interest' | 'judgment' | 'experience' | 'preference'
+      evidence: Array<{ inputId: string }>
+      confidence: number
+      conflicts: string[]
+    }> = []
+    for (const inputBatch of buildAnalysisInputBatches(inputs)) {
+      const extractResponse = await algorithms.executeStep(
+        snapshot,
+        'extract',
+        buildAnalysisPromptVariables(baseline, inputBatch),
+        'memory_evidence_facts',
+        'json_object',
+        {
+          limits: { ...ANALYSIS_PARAMETERS, ...snapshot.steps.find(step => step.stepKey === 'extract')?.parameters },
+          validateStructuredOutput: value => { modelMemoryExtractionResultSchema.parse(value) },
+        },
+      )
+      const extracted = modelMemoryExtractionResultSchema.parse(extractResponse.structuredOutput)
+      extractedBatches.push(extracted)
+      candidates.push(...extracted.facts)
+    }
+    const facts = validateAndMergeMemoryFacts(candidates, inputs)
+    await this.saveExtractionSnapshot(batchId, { batches: extractedBatches }, facts)
     if (facts.length === 0) {
       await this.completeWithoutChanges(batchId)
       return
@@ -338,7 +359,6 @@ export class AnalysisApplicationService implements TaskHandler {
       'text',
       {
         limits: { ...ANALYSIS_PARAMETERS, ...snapshot.steps.find(step => step.stepKey === 'synthesize')?.parameters },
-        priorUsage: extractResponse.usage,
         validateStructuredOutput: value => {
           modelLearningPromptResultSchema.parse({ promptText: value, summary: LEARNING_PROMPT_RESULT_SUMMARY })
         },
@@ -539,7 +559,7 @@ function algorithmTextModelSnapshot(snapshot: AiAlgorithmSnapshot) {
 /**
  * 构建成长或记忆提炼的模板变量。
  * @param baseline 当前灵魂和当前长期提示词。
- * @param inputs 创建批次时固定的原始输入。
+ * @param inputs 当前单批固定的原始输入或资料切片。
  * @returns 与固定提示词变量契约完全一致的字符串映射。
  */
 function buildAnalysisPromptVariables(
@@ -549,11 +569,45 @@ function buildAnalysisPromptVariables(
   return {
     baselineJson: JSON.stringify(baseline),
     inputsJson: JSON.stringify(inputs.map(item => ({
-        // 模型只能看到并引用批次证据 UUID，避免误把原资料 UUID 当作证据引用返回。
-        id: item.id, inputType: item.inputType, title: item.title,
-        content: item.contentSnapshot, importance: item.importance, isNew: item.isNew,
+      // 模型只能看到并引用批次证据 UUID，避免误把原资料 UUID 当作证据引用返回。
+      id: item.id, inputType: item.inputType, title: item.title,
+      content: item.contentSnapshot, importance: item.importance, isNew: item.isNew,
     }))),
   }
+}
+
+/**
+ * 按保守字符预算拆分资料，避免某一批的最终提示词超过模型输入窗口。
+ * @param inputs 当前批次固定的全部原始输入。
+ * @returns 所有资料均被保留、单批正文受限的输入批次。
+ */
+function buildAnalysisInputBatches(inputs: AnalysisBatchView['inputs']): AnalysisBatchView['inputs'][] {
+  const batches: AnalysisBatchView['inputs'][] = []
+  let current: AnalysisBatchView['inputs'] = []
+  let currentCharacters = 0
+  for (const input of inputs) {
+    const content = input.contentSnapshot ?? ''
+    const sliceCount = Math.max(1, Math.ceil(content.length / MAX_ANALYSIS_INPUT_SLICE_CHARACTERS))
+    for (let sliceIndex = 0; sliceIndex < sliceCount; sliceIndex += 1) {
+      const slice = content.slice(
+        sliceIndex * MAX_ANALYSIS_INPUT_SLICE_CHARACTERS,
+        (sliceIndex + 1) * MAX_ANALYSIS_INPUT_SLICE_CHARACTERS,
+      )
+      if (current.length > 0 && currentCharacters + slice.length > MAX_ANALYSIS_BATCH_CHARACTERS) {
+        batches.push(current)
+        current = []
+        currentCharacters = 0
+      }
+      current.push({
+        ...input,
+        title: sliceCount === 1 ? input.title : `${input.title}（第 ${sliceIndex + 1}/${sliceCount} 段）`,
+        contentSnapshot: slice,
+      })
+      currentCharacters += slice.length
+    }
+  }
+  if (current.length > 0) batches.push(current)
+  return batches
 }
 
 /** @param payloadJson 任务载荷。 @returns 已校验批次 UUID。 */

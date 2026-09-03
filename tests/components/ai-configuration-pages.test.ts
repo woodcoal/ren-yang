@@ -403,21 +403,32 @@ describe('AI 模型与算法配置页面', () => {
     expect(input?.steps.every(step => step.parameters.timeoutMs === 0)).toBe(true)
   })
 
-  it('展示固定步骤和提示词绑定，并提交全部模型与参数作为新版本', async () => {
+  it('步骤编辑按钮打开选项卡弹窗，并允许切换提示词和详细帮助', async () => {
     const wrapper = await mountSuspended(AiAlgorithmsPage, { route: '/ai-algorithms' })
     await flushPromises()
 
     expect(wrapper.text()).toContain('原子提取')
     expect(wrapper.text()).toContain('综合编译')
     expect(wrapper.text()).toContain('analysis.persona_growth_extract')
-    expect(wrapper.text()).toContain('同页校准提示词')
-    expect(wrapper.text().indexOf('同页校准提示词')).toBeLessThan(wrapper.text().indexOf('运行诊断'))
-    expect(wrapper.get('[data-ai-prompt-editor]').attributes('data-prompt-code')).toBe('analysis.persona_growth_extract')
     await wrapper.findAll('button').filter(button => button.text() === '编辑该步骤提示词')[1]!.trigger('click')
-    expect(wrapper.get('[data-ai-prompt-editor]').attributes('data-prompt-code')).toBe('analysis.persona_growth_synthesize')
-    await wrapper.get('form[data-ai-algorithm-form]').trigger('submit')
     await flushPromises()
 
+    const modal = document.body.querySelector('[role="dialog"]')
+    if (!modal) throw new Error('步骤提示词编辑弹窗未打开')
+    expect(modal.textContent).toContain('人物成长提炼 · 步骤提示词')
+    expect(modal.textContent).toContain('综合编译')
+    expect(modal.querySelector('[data-ai-prompt-editor]')?.getAttribute('data-prompt-code'))
+      .toBe('analysis.persona_growth_synthesize')
+    const helpButton = [...modal.querySelectorAll('button')].find(button => button.textContent?.includes('详细帮助'))
+    if (!helpButton) throw new Error('步骤提示词详细帮助选项卡不存在')
+    await helpButton.click()
+    await flushPromises()
+    expect(modal.textContent).toContain('如何安全调整这些提示词')
+    expect(modal.textContent).toContain('应完成什么')
+    expect(modal.textContent).toContain('固定边界')
+
+    await wrapper.get('form[data-ai-algorithm-form]').trigger('submit')
+    await flushPromises()
     expect(savedAlgorithm).toEqual({
       steps: algorithm.steps.map(step => ({
         stepKey: step.key,

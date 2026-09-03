@@ -43,12 +43,15 @@ const selectedPromptCode = shallowRef(initialAlgorithm?.stepDefinitions.some(ste
   : initialAlgorithm?.stepDefinitions[0]?.promptCode ?? '')
 const pendingSelection = shallowRef<PendingAlgorithmSelection | null>(null)
 const switchConfirmationOpen = shallowRef(false)
+const promptModalOpen = shallowRef(false)
 const promptDirty = shallowRef(false)
 const savingCode = shallowRef<AiAlgorithmCode | null>(null)
 const selectedAlgorithm = computed(() => algorithms.value.find(algorithm => algorithm.code === selectedAlgorithmCode.value) ?? algorithms.value[0] ?? null)
 const activeCategory = computed<AiAlgorithmCategory>(() => algorithmCategory(selectedAlgorithm.value?.code ?? 'persona_soul'))
 const categoryAlgorithms = computed(() => algorithms.value.filter(algorithm => algorithmCategory(algorithm.code) === activeCategory.value))
-const selectedPrompt = computed(() => prompts.value.find(prompt => prompt.code === selectedPromptCode.value) ?? null)
+const selectedAlgorithmPrompts = computed(() => selectedAlgorithm.value
+  ? prompts.value.filter(prompt => selectedAlgorithm.value?.stepDefinitions.some(step => step.promptCode === prompt.code))
+  : [])
 
 /**
  * 根据地址栏的算法或提示词编码确定首次展示的算法。
@@ -120,12 +123,13 @@ function requestAlgorithm(algorithm: AiAlgorithmView): void {
 }
 
 /**
- * 请求编辑当前算法中指定步骤的提示词。
+ * 打开当前算法中指定步骤的提示词编辑弹窗。
  * @param promptCode 目标提示词编码。
  * @returns 无返回值。
  */
 function requestPrompt(promptCode: string): void {
   if (!selectedAlgorithm.value) return
+  promptModalOpen.value = true
   requestSelection({ algorithmCode: selectedAlgorithm.value.code, promptCode })
 }
 
@@ -222,18 +226,6 @@ async function saveAlgorithm(code: AiAlgorithmCode, input: PublishAiAlgorithmCon
           :algorithm="selectedAlgorithm" :deployments="deployments" :loading="savingCode === selectedAlgorithm.code"
           @save="saveAlgorithm(selectedAlgorithm.code, $event)" @edit-prompt="requestPrompt" />
 
-        <section class="content-section" aria-labelledby="algorithm-prompt-heading">
-          <div class="section-heading">
-            <div class="section-heading-copy">
-              <p class="eyebrow">步骤提示词</p>
-              <h2 id="algorithm-prompt-heading">同页校准提示词</h2>
-              <p>点击上方任一步骤的“编辑该步骤提示词”，即可在不离开算法上下文的情况下维护版本。</p>
-            </div>
-          </div>
-          <AiPromptEditor v-if="selectedPrompt" :key="selectedPrompt.code" :prompt="selectedPrompt"
-            @changed="promptRequest.refresh()" @dirty-change="promptDirty = $event" />
-          <UAlert v-else color="error" title="步骤提示词不存在" :description="`未找到固定提示词：${selectedPromptCode || '未绑定'}`" />
-        </section>
 
         <AiConfigurationAiAlgorithmTestPanel v-if="supportsDedicatedTest(selectedAlgorithm.code)"
           :key="selectedAlgorithm.code" :algorithm="selectedAlgorithm" />
@@ -246,6 +238,17 @@ async function saveAlgorithm(code: AiAlgorithmCode, input: PublishAiAlgorithmCon
         </div>
       </div>
     </div>
+
+    <AiConfigurationAiAlgorithmPromptModal
+      v-if="selectedAlgorithm"
+      v-model:open="promptModalOpen"
+      :algorithm="selectedAlgorithm"
+      :prompts="selectedAlgorithmPrompts"
+      :selected-prompt-code="selectedPromptCode"
+      @select-prompt="requestPrompt"
+      @refresh="promptRequest.refresh()"
+      @dirty-change="promptDirty = $event"
+    />
 
     <UModal v-model:open="switchConfirmationOpen" title="放弃未保存的提示词修改？" description="切换算法或步骤会重置当前提示词编辑器，未保存内容无法找回。">
       <template #footer>
