@@ -14,6 +14,11 @@ const worldSnapshot = {
 }
 const personaCreateRequests: CreatePersonaInput[] = []
 const personaDistillationRequests: CreatePersonaDistillationInput[] = []
+const importedSources = [{
+  id: '40000000-0000-4000-8000-000000000001', name: '上传的人物素材', role: 'reference' as const, inputType: 'markdown' as const,
+  contentHash: 'd'.repeat(64), contentText: '人物的判断证据。', originalFilePath: 'sources/uploaded.md', originUrl: null, authorName: null,
+  publishedAt: null, originalSourceKey: null, isEnabled: true, chunkCount: 1, linkCount: 0, isGlobal: false, createdAt: 1_000, updatedAt: 1_000,
+}]
 const worldCreateRequests: unknown[] = []
 const soulAnalyzeRequests: AnalyzeSoulPromptInput[] = []
 const personaStatusRequests: UpdatePersonasStatusInput[] = []
@@ -87,6 +92,11 @@ registerEndpoint('/api/v1/personas', {
     personaCreateRequests.push(input)
     return { data: { persona: { id: '10000000-0000-4000-8000-000000000099', name: input.name } } }
   },
+})
+
+registerEndpoint('/api/v1/sources/files', {
+  method: 'POST',
+  handler: () => ({ data: { source: importedSources[0], chunks: [], links: [] } }),
 })
 registerEndpoint('/api/v1/worlds', {
   method: 'GET',
@@ -214,6 +224,24 @@ async function submitPersonaDistillation(
 }
 
 /**
+ * 在人物蒸馏创建窗口上传资料并等待它进入本次素材选择。
+ * @param file 待上传的 Markdown 或 TXT 文件。
+ * @returns 无返回值。
+ */
+async function uploadPersonaDistillationSource(file: File): Promise<void> {
+  const input = document.querySelector<HTMLInputElement>('[role="dialog"] input[type="file"]')
+  if (!input) throw new Error('人物蒸馏创建表单缺少资料文件输入')
+  Object.defineProperty(input, 'files', { configurable: true, value: [file] })
+  await new DOMWrapper(input).trigger('change')
+  const uploadButton = [...document.querySelectorAll<HTMLButtonElement>('button')]
+    .find(button => button.textContent?.includes('导入 1 个文件'))
+  if (!uploadButton) throw new Error('人物蒸馏创建表单缺少资料上传按钮')
+  await new DOMWrapper(uploadButton).trigger('click')
+  await flushPromises()
+  await flushPromises()
+}
+
+/**
  * 按用户操作手动输入人物灵魂并直接创建。
  * @param wrapper 当前人物列表页包装器。
  * @param name 人物名称。
@@ -315,6 +343,32 @@ describe('世界与人物列表快速初始化', () => {
     expect(worldCreateRequests).toEqual([{
       name: '用户指定世界名', summary: '', snapshot: worldSnapshot,
       changeSummary: 'AI 整理初始世界灵魂',
+    }])
+  })
+
+  it('人物蒸馏创建时可上传资料并自动选为本次提示词素材', async () => {
+    const wrapper = await mountSuspended(PersonasPage, { route: '/personas' })
+    await wrapper.findAll('button').find(button => button.text() === 'AI 蒸馏创建')!.trigger('click')
+    await flushPromises()
+    const nameInput = document.querySelector<HTMLInputElement>('[data-persona-distillation-create] input[type="text"]')
+    const objectiveTextarea = document.querySelector<HTMLTextAreaElement>('[data-persona-distillation-create] textarea')
+    if (!nameInput || !objectiveTextarea) throw new Error('人物蒸馏创建表单缺少基本输入')
+    await new DOMWrapper(nameInput).setValue('上传素材人物')
+    await new DOMWrapper(objectiveTextarea).setValue('根据刚刚上传的资料生成提示词。')
+    await uploadPersonaDistillationSource(new File(['# 判断\n\n重视长期价值。'], '人物素材.md', { type: 'text/markdown' }))
+
+    const submitButton = [...document.querySelectorAll<HTMLButtonElement>('button')]
+      .find(button => button.textContent?.includes('开始人物蒸馏'))
+    if (!submitButton) throw new Error('人物蒸馏创建表单缺少提交按钮')
+    await new DOMWrapper(submitButton).trigger('click')
+    await flushPromises()
+    await flushPromises()
+
+    expect(personaDistillationRequests).toEqual([{
+      requestedName: '上传素材人物',
+      objective: '根据刚刚上传的资料生成提示词。',
+      worldId: null,
+      sourceIds: [importedSources[0]!.id],
     }])
   })
 

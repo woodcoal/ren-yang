@@ -31,4 +31,30 @@
     font-size: 0.875rem;
     color: var(--ui-text-muted);
   }
+
+  .source-file-drop-zone {
+    display: grid;
+    gap: 0.375rem;
+    padding: 1rem;
+    border: 1px dashed var(--ui-border-accented);
+    border-radius: var(--ui-radius);
+    background: var(--ui-bg-elevated);
+    transition: border-color 150ms ease, background-color 150ms ease;
+  }
+
+  .source-file-drop-zone--dragging {
+    border-color: var(--ui-primary);
+    background: color-mix(in oklch, var(--ui-primary) 8%, var(--ui-bg-elevated));
+  }
+
+  .source-file-drop-zone-title {
+    color: var(--ui-text-highlighted);
+    font-size: 0.875rem;
+    font-weight: 600;
+  }
+
+  .source-file-drop-zone-hint {
+    color: var(--ui-text-muted);
+    font-size: 0.75rem;
+  }
 }

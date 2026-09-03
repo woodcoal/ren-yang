@@ -36,6 +36,8 @@ interface Props {
   loading: boolean
   /** 服务端安全错误消息。 */
   errorMessage: string | null
+  /** 是否只显示文件上传区域。 */
+  fileOnly?: boolean
   /** 是否显示人物和世界关联选择。 */
   showTargetPicker?: boolean
   /** 可选择的人物。 */
@@ -45,6 +47,7 @@ interface Props {
 }
 
 const props = withDefaults(defineProps<Props>(), {
+  fileOnly: false,
   showTargetPicker: false,
   personas: () => [],
   worlds: () => [],
@@ -63,6 +66,7 @@ const fileFormSchema = z.object({ role: sourceRoleSchema })
 const sharedTargets = ref<SourceCreationTarget[]>([])
 const selectedFiles = ref<SelectedSourceFile[]>([])
 const localFileError = shallowRef<string | null>(null)
+const draggingFiles = shallowRef(false)
 const fileInput = useTemplateRef<HTMLInputElement>('fileInput')
 
 /** @param event 已通过 Schema 校验的粘贴文本。 @returns 无返回值。 */
@@ -80,17 +84,58 @@ function createDefaultSourceName(fileName: string): string {
 }
 
 /**
+ * 保存一次选取或拖入的全部文件，并为每项生成可编辑的默认资料名称。
+ * @param files 浏览器文件列表。
+ * @returns 无返回值。
+ */
+function setSelectedFiles(files: Iterable<File>): void {
+  selectedFiles.value = Array.from(files).map(file => ({
+    file,
+    name: createDefaultSourceName(file.name),
+  }))
+  localFileError.value = null
+}
+
+/**
  * 保存用户通过原生文件输入一次选择的全部文件。
  * @param event 文件输入 change 事件。
  * @returns 无返回值。
  */
 function selectFiles(event: Event): void {
   const input = event.target as HTMLInputElement
-  selectedFiles.value = Array.from(input.files ?? []).map(file => ({
-    file,
-    name: createDefaultSourceName(file.name),
-  }))
-  localFileError.value = null
+  setSelectedFiles(input.files ?? [])
+}
+
+/**
+ * 拖入区域获得文件时显示可投放状态。
+ * @param event 原生拖拽事件。
+ * @returns 无返回值。
+ */
+function beginFileDrag(event: DragEvent): void {
+  event.preventDefault()
+  if (!props.loading) draggingFiles.value = true
+}
+
+/**
+ * 拖拽离开上传区域时清理视觉状态。
+ * @param event 原生拖拽事件。
+ * @returns 无返回值。
+ */
+function endFileDrag(event: DragEvent): void {
+  event.preventDefault()
+  draggingFiles.value = false
+}
+
+/**
+ * 接收拖入的全部文件；常规文件输入仍是键盘和触屏的等价入口。
+ * @param event 原生拖放事件。
+ * @returns 无返回值。
+ */
+function dropFiles(event: DragEvent): void {
+  event.preventDefault()
+  draggingFiles.value = false
+  if (props.loading) return
+  setSelectedFiles(event.dataTransfer?.files ?? [])
 }
 
 /**
@@ -139,36 +184,49 @@ function submitFile(event: FormSubmitEvent<typeof fileState>): void {
       <ContentSourceTargetPicker v-model="sharedTargets" :personas="props.personas" :worlds="props.worlds" :disabled="loading" />
     </UCard>
 
-    <div class="grid gap-6 lg:grid-cols-2">
-      <UCard>
-      <template #header><div><h2 class="font-semibold text-highlighted">粘贴文本</h2><p class="mt-1 text-sm text-muted">适合短资料或人工整理后的事实。</p></div></template>
-      <UForm :schema="createSourceSchema" :state="pasteState" class="space-y-4" @submit="submitPaste">
-        <UFormField name="name" label="资料名称" description="文件名或自定义名称，用于在列表中显示。" required><UInput v-model="pasteState.name" class="w-full" :disabled="loading" /></UFormField>
-        <UFormField name="role" label="AI 使用方式" description="确定事实参与事实判断；背景参考补充上下文；风格参考只影响表达。" required>
-          <USelect v-model="pasteState.role" class="w-full" :items="[{ label: '原作中的确定事实', value: 'canon_fact' }, { label: '背景参考', value: 'reference' }, { label: '写作风格参考', value: 'style_sample' }]" :disabled="loading" />
-        </UFormField>
-        <UFormField name="content" label="正文" required><UTextarea v-model="pasteState.content" class="w-full" :rows="9" autoresize :disabled="loading" /></UFormField>
-        <UButton type="submit" :loading="loading">导入文本</UButton>
-      </UForm>
+    <div class="grid gap-6" :class="{ 'lg:grid-cols-2': !props.fileOnly }">
+      <UCard v-if="!props.fileOnly">
+        <template #header><div><h2 class="font-semibold text-highlighted">粘贴文本</h2><p class="mt-1 text-sm text-muted">适合短资料或人工整理后的事实。</p></div></template>
+        <UForm :schema="createSourceSchema" :state="pasteState" class="space-y-4" @submit="submitPaste">
+          <UFormField name="name" label="资料名称" description="文件名或自定义名称，用于在列表中显示。" required><UInput v-model="pasteState.name" class="w-full" :disabled="loading" /></UFormField>
+          <UFormField name="role" label="AI 使用方式" description="确定事实参与事实判断；背景参考补充上下文；风格参考只影响表达。" required>
+            <USelect v-model="pasteState.role" class="w-full" :items="[{ label: '原作中的确定事实', value: 'canon_fact' }, { label: '背景参考', value: 'reference' }, { label: '写作风格参考', value: 'style_sample' }]" :disabled="loading" />
+          </UFormField>
+          <UFormField name="content" label="正文" required><UTextarea v-model="pasteState.content" class="w-full" :rows="9" autoresize :disabled="loading" /></UFormField>
+          <UButton type="submit" :loading="loading">导入文本</UButton>
+        </UForm>
       </UCard>
 
       <UCard>
-      <template #header><div><h2 class="font-semibold text-highlighted">上传文件</h2><p class="mt-1 text-sm text-muted">可多选 UTF-8 TXT、MD；每个文件最大 2 MB，不解析 HTML。</p></div></template>
-      <UForm :schema="fileFormSchema" :state="fileState" class="space-y-4" @submit="submitFile">
-        <UFormField name="role" label="AI 使用方式" description="确定事实参与事实判断；背景参考补充上下文；风格参考只影响表达。" required>
-          <USelect v-model="fileState.role" class="w-full" :items="[{ label: '原作中的确定事实', value: 'canon_fact' }, { label: '背景参考', value: 'reference' }, { label: '写作风格参考', value: 'style_sample' }]" :disabled="loading" />
-        </UFormField>
-        <UFormField label="文件" required>
-          <input ref="fileInput" type="file" accept=".txt,.md,.markdown,text/plain,text/markdown" class="native-control" multiple :disabled="loading" @change="selectFiles">
-        </UFormField>
-        <div v-if="selectedFiles.length" class="space-y-3" aria-label="待导入文件">
-          <UFormField v-for="(item, index) in selectedFiles" :key="`${item.file.name}:${item.file.lastModified}:${index}`" :label="item.file.name" description="资料名称可单独修改" required>
-            <UInput :model-value="item.name" class="w-full" :disabled="loading" @update:model-value="updateFileName(index, String($event))" />
+        <template #header><div><h2 class="font-semibold text-highlighted">上传文件</h2><p class="mt-1 text-sm text-muted">可多选或拖入 UTF-8 TXT、MD；每个文件最大 2 MB，不解析 HTML。</p></div></template>
+        <UForm :schema="fileFormSchema" :state="fileState" class="space-y-4" @submit="submitFile">
+          <UFormField name="role" label="AI 使用方式" description="确定事实参与事实判断；背景参考补充上下文；风格参考只影响表达。" required>
+            <USelect v-model="fileState.role" class="w-full" :items="[{ label: '原作中的确定事实', value: 'canon_fact' }, { label: '背景参考', value: 'reference' }, { label: '写作风格参考', value: 'style_sample' }]" :disabled="loading" />
           </UFormField>
-        </div>
-        <p v-if="localFileError" class="text-sm text-error" role="alert">{{ localFileError }}</p>
-        <UButton type="submit" :loading="loading">{{ selectedFiles.length ? `导入 ${selectedFiles.length} 个文件` : '导入文件' }}</UButton>
-      </UForm>
+          <UFormField label="文件" required>
+            <div
+              data-source-file-drop-zone
+              class="source-file-drop-zone"
+              :class="{ 'source-file-drop-zone--dragging': draggingFiles }"
+              @dragenter="beginFileDrag"
+              @dragover="beginFileDrag"
+              @dragleave="endFileDrag"
+              @drop="dropFiles"
+            >
+              <span class="source-file-drop-zone-title">将文件拖到这里，或从下方选择</span>
+              <span class="source-file-drop-zone-hint">仅支持 .txt、.md；可一次选择多个文件。</span>
+              <input ref="fileInput" type="file" accept=".txt,.md,.markdown,text/plain,text/markdown" class="native-control" multiple :disabled="loading" @change="selectFiles">
+            </div>
+          </UFormField>
+          <p class="sr-only" aria-live="polite">{{ selectedFiles.length ? `已选择 ${selectedFiles.length} 个文件` : '尚未选择文件' }}</p>
+          <div v-if="selectedFiles.length" class="space-y-3" aria-label="待导入文件">
+            <UFormField v-for="(item, index) in selectedFiles" :key="`${item.file.name}:${item.file.lastModified}:${index}`" :label="item.file.name" description="资料名称可单独修改" required>
+              <UInput :model-value="item.name" class="w-full" :disabled="loading" @update:model-value="updateFileName(index, String($event))" />
+            </UFormField>
+          </div>
+          <p v-if="localFileError" class="text-sm text-error" role="alert">{{ localFileError }}</p>
+          <UButton type="submit" :loading="loading">{{ selectedFiles.length ? `导入 ${selectedFiles.length} 个文件` : '导入文件' }}</UButton>
+        </UForm>
       </UCard>
     </div>
     <p v-if="errorMessage" class="text-sm text-error" role="alert">{{ errorMessage }}</p>

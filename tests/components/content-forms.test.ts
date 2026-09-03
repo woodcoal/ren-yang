@@ -479,6 +479,33 @@ describe('阶段二内容表单', () => {
     ]])
   })
 
+  it('拖入多个 TXT 或 Markdown 文件后保留逐项名称并可提交', async () => {
+    const wrapper = await mountSuspended(SourceImportForm, {
+      props: { loading: false, errorMessage: null },
+    })
+    const files = [
+      new File(['第一份'], '决策记录.md', { type: 'text/markdown', lastModified: 1 }),
+      new File(['第二份'], '访谈.txt', { type: 'text/plain', lastModified: 2 }),
+    ]
+
+    await wrapper.get('[data-source-file-drop-zone]').trigger('drop', { dataTransfer: { files } })
+    await flushPromises()
+
+    const fileNameInputs = wrapper.get('[aria-label="待导入文件"]').findAll('input[type="text"]')
+    expect(fileNameInputs.map(input => (input.element as HTMLInputElement).value)).toEqual(['决策记录', '访谈'])
+    await wrapper.findAll('form')[1]!.trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.emitted('file')).toEqual([[
+      expect.objectContaining({
+        files: [
+          { file: files[0], name: '决策记录' },
+          { file: files[1], name: '访谈' },
+        ],
+      }),
+    ]])
+  })
+
   it('粘贴文本不选择对象时仍可只保存到资料库', async () => {
     const wrapper = await mountSuspended(SourceImportForm, {
       props: { loading: false, errorMessage: null, showTargetPicker: true, personas: [], worlds: [] },
