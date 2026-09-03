@@ -65,10 +65,17 @@ describe('全站 AI 提示词目录', () => {
       expect(prompt?.activeVersion?.userPromptTemplate).not.toContain('{{personaPromptJson}}')
       expect(prompt?.versions.map(version => version.versionNo)).toEqual([2, 1])
     }
+    const distillationAnalysis = prompts.find(prompt => prompt.code === 'distillation.analyze_persona')
+    const distillationSoul = prompts.find(prompt => prompt.code === 'distillation.compose_soul')
+    expect(distillationAnalysis?.activeVersion).toMatchObject({ versionNo: 2, changeSummary: '强化人格声音、关系姿态与跨载体表达分析' })
+    expect(distillationAnalysis?.activeVersion?.systemPromptTemplate).toContain('语言声音')
+    expect(distillationSoul?.activeVersion).toMatchObject({ versionNo: 2, changeSummary: '强化灵魂的个性声音与跨载体稳定性' })
+    expect(distillationSoul?.activeVersion?.systemPromptTemplate).toContain('反向边界')
     expect(prompts
       .filter(prompt => ![
         'analysis.persona_memory_extract', 'generation.interest_assessment', 'generation.article',
         'generation.document_plan', 'generation.text_block', 'generation.image_block',
+        'distillation.analyze_persona', 'distillation.compose_soul',
       ].includes(prompt.code))
       .every(prompt => prompt.activeVersion?.versionNo === 1 && prompt.versions.length === 1)).toBe(true)
     for (const prompt of prompts) {
