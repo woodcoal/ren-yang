@@ -217,7 +217,10 @@ export class AnalysisApplicationService implements TaskHandler {
     }
     catch (error: unknown) {
       const normalized = normalizeAnalysisError(error)
-      await this.dependencies.analysis.failBatch(batchId, normalized.code, normalized.message, this.dependencies.clock.now())
+      // 瞬态模型输出问题由同一任务重试；首次失败不能抹去批次的运行阶段。
+      if (!normalized.retryable || job.attemptCount >= job.maxAttempts) {
+        await this.dependencies.analysis.failBatch(batchId, normalized.code, normalized.message, this.dependencies.clock.now())
+      }
       throw new TaskExecutionError(normalized.message, normalized.retryable)
     }
   }
@@ -248,7 +251,10 @@ export class AnalysisApplicationService implements TaskHandler {
       'json_object',
       {
         limits: { ...ANALYSIS_PARAMETERS, ...snapshot.steps.find(step => step.stepKey === 'extract')?.parameters },
-        validateStructuredOutput: value => { modelGrowthExtractionResultSchema.parse(value) },
+        validateStructuredOutput: value => {
+          const extracted = modelGrowthExtractionResultSchema.parse(value)
+          validateAndMergeGrowthFacts(extracted.facts, inputs)
+        },
       },
     )
     const extracted = modelGrowthExtractionResultSchema.parse(extractResponse.structuredOutput)
@@ -562,10 +568,15 @@ function readBatchId(payloadJson: string): string {
   throw new TaskExecutionError('学习分析任务载荷无效', false)
 }
 
-/** @param error 未知模型或校验错误。 @returns 可持久化的稳定错误和重试语义。 */
 function normalizeAnalysisError(error: unknown): { code: string, message: string, retryable: boolean } {
   if (error instanceof TextModelError) return { code: error.code, message: error.message, retryable: error.retryable }
-  if (error instanceof ApplicationError) return { code: error.code, message: error.message, retryable: false }
+  if (error instanceof ApplicationError) {
+    return {
+      code: error.code,
+      message: error.message,
+      retryable: error.code === 'MODEL_OUTPUT_INVALID',
+    }
+  }
   return { code: 'MODEL_OUTPUT_INVALID', message: '模型返回的完整提示词不符合业务约束', retryable: false }
 }
 

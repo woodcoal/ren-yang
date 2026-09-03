@@ -77,6 +77,8 @@ class TwoStageGrowthAlgorithms {
   /** 综合步骤实际调用次数。 */
   public synthesizeCallCount = 0
 
+  /** 是否首次返回批次外的成长资料标识。 */
+  public invalidEvidenceOnce = false
   /** @param emptyExtraction 是否让提取步骤返回明确的空事实集合。 */
   constructor(private readonly emptyExtraction = false) {}
 
@@ -105,18 +107,23 @@ class TwoStageGrowthAlgorithms {
       ],
     }
   }
-
   /**
-   * 提取步骤返回重复结论，综合步骤记录程序去重结果并返回完整草稿。
+   * 提取步骤返回原子结论，综合步骤记录程序去重结果并返回完整草稿。
    * @param _snapshot 已固定算法快照。
    * @param stepKey 当前固定步骤。
-   * @param variables 当前提示词变量。
+   * @param variables 当前步骤变量。
+   * @param _responseSchemaName 当前响应结构名称。
+   * @param _responseFormat 当前响应格式。
+   * @param options 结构校验回调，用于模拟模型修正输出。
    * @returns 固定模型响应。
    */
   async executeStep(
     _snapshot: AiAlgorithmSnapshot,
     stepKey: string,
     variables: Record<string, string>,
+    _responseSchemaName?: string,
+    _responseFormat?: 'json_object' | 'text',
+    options?: { validateStructuredOutput?: (value: unknown) => void },
   ): Promise<TextModelResponse> {
     if (stepKey === 'extract') {
       if (this.emptyExtraction) {
@@ -125,19 +132,31 @@ class TwoStageGrowthAlgorithms {
           usage: { inputTokens: 10, outputTokens: 2, totalTokens: 12 },
         }
       }
-      const input = (JSON.parse(variables.inputsJson!) as Array<{ id: string, inputId?: string }>)[0]!
-      // 模拟模型优先复制与输出字段同名的 inputId；输入中不应暴露容易误引的原资料 UUID。
+      const input = (JSON.parse(variables.inputsJson) as Array<{ id: string, inputId?: string }>)[0]
+      if (!input) throw new Error('成长提取测试缺少输入')
       const evidenceInputId = input.inputId ?? input.id
+      let structuredOutput: unknown = { facts: [
+        {
+          statement: '优先保障稳定水运。',
+          evidenceInputIds: [this.invalidEvidenceOnce ? '00000000-0000-4000-8000-000000000999' : evidenceInputId],
+          confidence: 0.9,
+        },
+      ] }
+      try {
+        options?.validateStructuredOutput?.(structuredOutput)
+      }
+      catch {
+        this.invalidEvidenceOnce = false
+        structuredOutput = { facts: [{ statement: '优先保障稳定水运。', evidenceInputIds: [evidenceInputId], confidence: 0.9 }] }
+        options?.validateStructuredOutput?.(structuredOutput)
+      }
       return {
-        structuredOutput: { facts: [
-          { statement: '优先保障稳定水运。', evidenceInputIds: [evidenceInputId], confidence: 0.8 },
-          { statement: '  优先保障稳定水运。 ', evidenceInputIds: [evidenceInputId], confidence: 0.9 },
-        ] },
+        structuredOutput,
         usage: { inputTokens: 10, outputTokens: 10, totalTokens: 20 },
       }
     }
     this.synthesizeCallCount += 1
-    this.synthesizedFacts = JSON.parse(variables.factsJson!) as unknown[]
+    this.synthesizedFacts = JSON.parse(variables.factsJson) as unknown[]
     return {
       structuredOutput: '进行城邦规划时，优先保障稳定水运。',
       usage: { inputTokens: 10, outputTokens: 10, totalTokens: 20 },
@@ -372,6 +391,33 @@ describe('AI 综合提炼学习提示词', () => {
       extraction_result_json: expect.stringContaining('优先保障稳定水运。'),
       validated_facts_json: expect.stringContaining('"evidenceCount":1'),
     })
+  })
+
+  it('成长结论首次引用批次外资料时由结构修正返回当前批次输入', async () => {
+    const algorithms = new TwoStageGrowthAlgorithms()
+    algorithms.invalidEvidenceOnce = true
+    analysis = new AnalysisApplicationService({
+      content: contentRepository,
+      souls: contentRepository,
+      learning: learningRepository,
+      analysis: analysisRepository,
+      model,
+      prompts,
+      identifiers,
+      clock,
+      algorithms,
+    })
+    worker = new WorkerApplicationService({
+      taskJobRepository: new SqliteTaskJobRepository(database.getClient()),
+      taskHandler: analysis,
+      clock,
+      leaseDurationMs: 60_000,
+    })
+    const queued = await analysis.createBatch('world_growth', worldId, { mode: 'incremental' })
+
+    await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: true })
+    expect((await analysis.getBatch(queued.id)).status).toBe('completed')
+    expect(algorithms.synthesizedFacts).toEqual([expect.objectContaining({ evidenceCount: 1 })])
   })
 
   it('提取结果没有新事实时直接完成批次且不调用综合或创建草稿', async () => {
