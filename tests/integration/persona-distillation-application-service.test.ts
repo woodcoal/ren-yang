@@ -51,6 +51,8 @@ class FixedPersonaDistillationAlgorithms {
   omitSourceAssessmentOnce = false
   /** 是否首次返回可重试的模型 JSON 输出错误。 */
   failSourceAssessmentOnce = false
+  /** 是否首次返回无法在固定输入中定位的资料引文。 */
+  paraphraseSourceEvidenceOnce = false
 
   /** @returns 固定的四步非敏感算法快照。 */
   async prepare(): Promise<AiAlgorithmSnapshot> {
@@ -123,12 +125,14 @@ class FixedPersonaDistillationAlgorithms {
             statement: '先明确判断依据。',
             applicability: '事实判断',
             limitations: '只有用户明确要求支持，不能冒充真实经历。',
-            basis: 'explicit',
+            basis: sourceInputs.length > 0 ? 'inferred' : 'explicit',
             confidence: 0.9,
             evidence: [{
-              inputId: requirement?.id,
+              inputId: sourceInputs[0]?.id ?? requirement?.id,
               relation: 'supporting',
-              quote: this.paraphraseUserStatementEvidence ? '这是模型改写后无法定位的引文。' : '提炼判断方式',
+              quote: this.paraphraseSourceEvidenceOnce
+                ? '这是模型改写后无法定位的资料引文。'
+                : sourceInputs[0]?.content ?? '提炼判断方式',
             }],
             conflicts: [],
           }] }
@@ -152,14 +156,30 @@ class FixedPersonaDistillationAlgorithms {
       options?.validateStructuredOutput?.(structuredOutput)
     }
     catch {
-      if (stepKey !== 'classify_sources') throw new Error('测试算法只模拟资料分类修正')
-      this.executedSteps.push(stepKey)
-      structuredOutput = { sources: sourceInputs.map(input => ({
-        inputId: input.id,
-        sourceRelation: 'third_party',
-        coverageDimensions: ['conversations'],
-        independentSourceKey: `model:${input.id}`,
-      })) }
+      if (stepKey === 'classify_sources') {
+        this.executedSteps.push(stepKey)
+        structuredOutput = { sources: sourceInputs.map(input => ({
+          inputId: input.id,
+          sourceRelation: 'third_party',
+          coverageDimensions: ['conversations'],
+          independentSourceKey: `model:${input.id}`,
+        })) }
+      }
+      else if (stepKey === 'extract_claims') {
+        this.executedSteps.push(stepKey)
+        this.paraphraseSourceEvidenceOnce = false
+        structuredOutput = { claims: [{
+          category: 'mental_model',
+          statement: '先明确判断依据。',
+          applicability: '事实判断',
+          limitations: '资料不足时不推断。',
+          basis: 'inferred',
+          confidence: 0.9,
+          evidence: [{ inputId: sourceInputs[0]?.id, relation: 'supporting', quote: sourceInputs[0]?.content }],
+          conflicts: [],
+        }] }
+      }
+      else throw new Error('测试算法只模拟资料分类或引文修正')
       options?.validateStructuredOutput?.(structuredOutput)
     }
     return {
@@ -321,6 +341,33 @@ describe('人物蒸馏应用闭环', () => {
     await expect(service.getRun(created.id)).resolves.toMatchObject({ status: 'assessing_sources' })
     await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: true })
     await expect(service.getRun(created.id)).resolves.toMatchObject({ status: 'awaiting_source_review' })
+  })
+
+  it('资料引文首次无法定位时由结构修正生成可定位原文', async () => {
+    const sourceId = '70000000-0000-4000-8000-000000000023'
+    database.getClient().prepare(`
+      INSERT INTO source_materials (
+        id, name, role, input_type, content_hash, content_text, original_file_path, created_at, updated_at
+      ) VALUES (?, '引文恢复资料', 'reference', 'paste', ?, '完整访谈正文。', NULL, 1000, 1000)
+    `).run(sourceId, 'b'.repeat(64))
+    const created = await service.createRun({
+      requestedName: '顾岚',
+      objective: '提炼判断方式。',
+      worldId: null,
+      sourceIds: [sourceId],
+    })
+    await worker.executeNext()
+    const assessed = await service.getRun(created.id)
+    await service.reviewSources(created.id, {
+      expectedUpdatedAt: assessed.updatedAt,
+      acceptedInputIds: assessed.inputs.filter(input => input.sourceId === sourceId).map(input => input.id),
+      corrections: [],
+    })
+    algorithms.paraphraseSourceEvidenceOnce = true
+
+    await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: true })
+    await expect(service.getRun(created.id)).resolves.toMatchObject({ status: 'awaiting_candidate_review' })
+    expect(algorithms.executedSteps.filter(step => step === 'extract_claims')).toHaveLength(2)
   })
 
   it('创建时拒绝超过固定模型输入预算的要求与资料组合，避免无效重试', async () => {

@@ -696,7 +696,13 @@ function readDistillationRunId(payloadJson: string): string {
 /** @param error 未知执行错误。 @returns 可安全持久化的错误码、说明和重试语义。 */
 function normalizeDistillationError(error: unknown): { code: string, message: string, retryable: boolean } {
   if (error instanceof TextModelError) return { code: error.code, message: error.message, retryable: error.retryable }
-  if (error instanceof PersonaDistillationRuleError) return { code: error.code, message: error.message, retryable: false }
+  if (error instanceof PersonaDistillationRuleError) {
+    return {
+      code: error.code,
+      message: error.message,
+      retryable: error.code === 'DISTILLATION_EVIDENCE_INVALID',
+    }
+  }
   if (error instanceof ApplicationError) return { code: error.code, message: error.message, retryable: error.statusCode >= 500 }
   return { code: 'MODEL_OUTPUT_INVALID', message: '人物蒸馏模型输出或执行结果无效', retryable: false }
 }

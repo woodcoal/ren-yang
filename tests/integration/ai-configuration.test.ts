@@ -381,6 +381,26 @@ describe('AI 接口、模型部署与算法配置', () => {
     expect(response.usage).toEqual({ inputTokens: 2, outputTokens: 2, totalTokens: 4 })
   })
 
+  it('结构修正响应仍不合规时拒绝返回未验证结果', async () => {
+    const { service, algorithms, modelFactory } = createServices()
+    await configureSoulAlgorithm(service)
+    const snapshot = await algorithms.prepare('persona_soul')
+
+    await expect(algorithms.executeStep(
+      snapshot,
+      'organize',
+      { promptTextJson: '"需要整理的资料"' },
+      'soul_prompt_analysis',
+      'json_object',
+      {
+        limits: { ...DEFAULT_TEXT_PARAMETERS },
+        priorUsage: null,
+        validateStructuredOutput: () => { throw new Error('提示词输出仍缺少必需字段') },
+      },
+    )).rejects.toThrow('提示词输出仍缺少必需字段')
+    expect(modelFactory.requests).toHaveLength(2)
+  })
+
   it('配置算法在供应商调用前拒绝超过运行快照的最终提示', async () => {
     const { service, algorithms, modelFactory } = createServices()
     await configureSoulAlgorithm(service)

@@ -233,6 +233,7 @@ export class AiAlgorithmApplicationService {
         aggregateTextModelUsage(options.priorUsage ? [options.priorUsage, first.usage] : [first.usage]),
       )
       const repaired = await execute(repairPrompt)
+      options.validateStructuredOutput(repaired.structuredOutput)
       return { ...repaired, usage: aggregateTextModelUsage([first.usage, repaired.usage]) }
     }
   }
