@@ -48,6 +48,8 @@ import type { TokenCounter } from '../../ports/TokenCounter'
 
 /** 单次人物蒸馏允许固定到运行中的资料正文总字符数。 */
 const MAX_DISTILLATION_SOURCE_CHARACTERS = 120_000
+/** 为模板、JSON 转义和创建要求预留空间后，资料正文允许占用的最大估算 Token。 */
+const MAX_DISTILLATION_SOURCE_TOKENS = 48_000
 
 /** 人物蒸馏应用服务依赖。 */
 export interface PersonaDistillationApplicationServiceDependencies {
@@ -155,6 +157,10 @@ export class PersonaDistillationApplicationService implements TaskHandler {
     const sourceCharacters = sources.reduce((total, source) => total + source.contentText.length, 0)
     if (sourceCharacters > MAX_DISTILLATION_SOURCE_CHARACTERS) {
       throw new ApplicationError('TASK_LIMIT_EXCEEDED', '人物蒸馏资料正文超过 120000 字，请减少资料或先精简正文', 422)
+    }
+    const sourceTokenCount = this.dependencies.tokenCounter.count(null, sources.map(source => source.contentText).join('\n')).tokens
+    if (sourceTokenCount > MAX_DISTILLATION_SOURCE_TOKENS) {
+      throw new ApplicationError('TASK_LIMIT_EXCEEDED', '人物蒸馏资料预计超过模型可用输入预算，请减少资料或先精简正文', 422)
     }
     const algorithmSnapshot = await this.dependencies.algorithms.prepare('persona_distillation')
     const runId = this.dependencies.identifiers.create()
@@ -392,7 +398,10 @@ export class PersonaDistillationApplicationService implements TaskHandler {
     }
     catch (error: unknown) {
       const normalized = normalizeDistillationError(error)
-      await this.dependencies.distillations.failRun(runId, normalized.code, normalized.message, this.dependencies.clock.now())
+      // 瞬态模型错误由同一持久任务按既有尝试次数重试；过早写入 failed 会使后续领取无法继续当前阶段。
+      if (!normalized.retryable || job.attemptCount >= job.maxAttempts) {
+        await this.dependencies.distillations.failRun(runId, normalized.code, normalized.message, this.dependencies.clock.now())
+      }
       throw new TaskExecutionError(normalized.message, normalized.retryable)
     }
   }
@@ -419,7 +428,12 @@ export class PersonaDistillationApplicationService implements TaskHandler {
       },
       'persona_distillation_source_assessment',
       'json_object',
-      { validateStructuredOutput: value => { modelPersonaDistillationSourceAssessmentSchema.parse(value) } },
+      {
+        validateStructuredOutput: (value) => {
+          const assessment = modelPersonaDistillationSourceAssessmentSchema.parse(value)
+          validatePersonaDistillationSourceAssessment(assessment, sources.map(source => source.id))
+        },
+      },
     )
     if (await this.stopIfCancellationRequested(run.id)) return
     const assessment = modelPersonaDistillationSourceAssessmentSchema.parse(response.structuredOutput)

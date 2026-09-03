@@ -13,6 +13,7 @@ import { ConservativeTokenCounter } from '../../server/infrastructure/model/Cons
 import type { Clock } from '../../server/ports/Clock'
 import type { IdentifierGenerator } from '../../server/ports/IdentifierGenerator'
 import type { TextModelResponse } from '../../server/ports/TextModelPort'
+import { TextModelError } from '../../server/ports/TextModelPort'
 
 /** 为人物蒸馏测试生成稳定且不重复的 UUID。 */
 class SequentialIdentifierGenerator implements IdentifierGenerator {
@@ -46,6 +47,10 @@ class FixedPersonaDistillationAlgorithms {
   hallucinateEmptySourceAssessment = false
   /** 是否模拟模型把用户明确设定改写为无法逐字定位的引文。 */
   paraphraseUserStatementEvidence = false
+  /** 是否首次返回遗漏一项资料分类的结构化输出。 */
+  omitSourceAssessmentOnce = false
+  /** 是否首次返回可重试的模型 JSON 输出错误。 */
+  failSourceAssessmentOnce = false
 
   /** @returns 固定的四步非敏感算法快照。 */
   async prepare(): Promise<AiAlgorithmSnapshot> {
@@ -80,14 +85,23 @@ class FixedPersonaDistillationAlgorithms {
     _snapshot: AiAlgorithmSnapshot,
     stepKey: string,
     variables: Record<string, string>,
+    _responseSchemaName?: string,
+    _responseFormat?: 'json_object' | 'text',
+    options?: { validateStructuredOutput?: (value: unknown) => void },
   ): Promise<TextModelResponse> {
     this.executedSteps.push(stepKey)
+    if (stepKey === 'classify_sources' && this.failSourceAssessmentOnce) {
+      this.failSourceAssessmentOnce = false
+      throw new TextModelError('MODEL_OUTPUT_INVALID', '文本模型返回的内容不是有效 JSON', true)
+    }
     const inputs = 'inputsJson' in variables
       ? JSON.parse(variables.inputsJson) as Array<{ id: string, inputType: string, content?: string }>
       : []
     const requirement = inputs.find(input => input.inputType === 'user_statement')
     const sourceInputs = inputs.filter(input => input.inputType === 'source_material')
-    const structuredOutput = stepKey === 'classify_sources'
+    const omitSourceAssessment = this.omitSourceAssessmentOnce
+    if (stepKey === 'classify_sources') this.omitSourceAssessmentOnce = false
+    let structuredOutput: unknown = stepKey === 'classify_sources'
       ? { sources: sourceInputs.length === 0 && this.hallucinateEmptySourceAssessment
           ? [{
               inputId: '90000000-0000-4000-8000-000000000099',
@@ -95,12 +109,14 @@ class FixedPersonaDistillationAlgorithms {
               coverageDimensions: ['external_views'],
               independentSourceKey: 'hallucinated-source',
             }]
-          : sourceInputs.map(input => ({
-          inputId: input.id,
-          sourceRelation: 'third_party',
-          coverageDimensions: ['conversations'],
-          independentSourceKey: `model:${input.id}`,
-        })) }
+          : sourceInputs
+              .slice(omitSourceAssessment ? 1 : 0)
+              .map(input => ({
+                inputId: input.id,
+                sourceRelation: 'third_party',
+                coverageDimensions: ['conversations'],
+                independentSourceKey: `model:${input.id}`,
+              })) }
       : stepKey === 'extract_claims'
         ? { claims: [{
             category: 'mental_model',
@@ -132,14 +148,28 @@ class FixedPersonaDistillationAlgorithms {
               summary: `${evaluationType} 通过`,
               failureReasons: [],
             })) }
+    try {
+      options?.validateStructuredOutput?.(structuredOutput)
+    }
+    catch {
+      if (stepKey !== 'classify_sources') throw new Error('测试算法只模拟资料分类修正')
+      this.executedSteps.push(stepKey)
+      structuredOutput = { sources: sourceInputs.map(input => ({
+        inputId: input.id,
+        sourceRelation: 'third_party',
+        coverageDimensions: ['conversations'],
+        independentSourceKey: `model:${input.id}`,
+      })) }
+      options?.validateStructuredOutput?.(structuredOutput)
+    }
     return {
       structuredOutput,
       rawOutput: JSON.stringify(structuredOutput),
       usage: { inputTokens: 10, outputTokens: 10, totalTokens: 20 },
     }
   }
-}
 
+}
 let directory: string
 let database: SqliteDatabase
 let service: PersonaDistillationApplicationService
@@ -247,6 +277,66 @@ describe('人物蒸馏应用闭环', () => {
       authorName: '受访者',
       publishedAt: 1_700_000_000_000,
     })
+  })
+
+  it('资料分类首次漏项时执行一次结构修正并保存与输入一一对应的结果', async () => {
+    const sourceId = '70000000-0000-4000-8000-000000000020'
+    database.getClient().prepare(`
+      INSERT INTO source_materials (
+        id, name, role, input_type, content_hash, content_text, original_file_path, created_at, updated_at
+      ) VALUES (?, '人物访谈', 'reference', 'paste', ?, '完整访谈正文。', NULL, 1000, 1000)
+    `).run(sourceId, 'e'.repeat(64))
+    algorithms.omitSourceAssessmentOnce = true
+    const created = await service.createRun({
+      requestedName: '顾岚',
+      objective: '提炼判断方式。',
+      worldId: null,
+      sourceIds: [sourceId],
+    })
+
+    await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: true })
+    await expect(service.getRun(created.id)).resolves.toMatchObject({
+      status: 'awaiting_source_review',
+      inputs: expect.arrayContaining([expect.objectContaining({ sourceId, sourceRelation: 'third_party' })]),
+    })
+    expect(algorithms.executedSteps.filter(step => step === 'classify_sources')).toHaveLength(2)
+  })
+
+  it('资料分类首次模型输出无效时保留运行阶段并由任务自动重试', async () => {
+    const sourceId = '70000000-0000-4000-8000-000000000022'
+    database.getClient().prepare(`
+      INSERT INTO source_materials (
+        id, name, role, input_type, content_hash, content_text, original_file_path, created_at, updated_at
+      ) VALUES (?, '可重试人物资料', 'reference', 'paste', ?, '完整访谈正文。', NULL, 1000, 1000)
+    `).run(sourceId, 'a'.repeat(64))
+    algorithms.failSourceAssessmentOnce = true
+    const created = await service.createRun({
+      requestedName: '顾岚',
+      objective: '提炼判断方式。',
+      worldId: null,
+      sourceIds: [sourceId],
+    })
+
+    await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: false })
+    await expect(service.getRun(created.id)).resolves.toMatchObject({ status: 'assessing_sources' })
+    await expect(worker.executeNext()).resolves.toMatchObject({ handled: true, succeeded: true })
+    await expect(service.getRun(created.id)).resolves.toMatchObject({ status: 'awaiting_source_review' })
+  })
+
+  it('创建时拒绝超过固定模型输入预算的要求与资料组合，避免无效重试', async () => {
+    const sourceId = '70000000-0000-4000-8000-000000000021'
+    database.getClient().prepare(`
+      INSERT INTO source_materials (
+        id, name, role, input_type, content_hash, content_text, original_file_path, created_at, updated_at
+      ) VALUES (?, '超长人物资料', 'reference', 'paste', ?, ?, NULL, 1000, 1000)
+    `).run(sourceId, 'f'.repeat(64), '证据'.repeat(24_001))
+
+    await expect(service.createRun({
+      requestedName: '顾岚',
+      objective: '提炼判断方式。',
+      worldId: null,
+      sourceIds: [sourceId],
+    })).rejects.toMatchObject({ code: 'TASK_LIMIT_EXCEEDED', statusCode: 422 })
   })
 
   it('无资料人物经过程序零覆盖、两个检查点和哈希门禁后创建当前灵魂版本', async () => {
