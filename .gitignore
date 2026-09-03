@@ -93,6 +93,7 @@ out
 .output
 dist
 
+out.zip
 # Application runtime data
 data/
 .playwright-data/
