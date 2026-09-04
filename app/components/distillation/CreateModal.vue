@@ -40,6 +40,11 @@ const uploadedSources = shallowRef<SourceSummary[]>([])
 const uploadingSources = shallowRef(false)
 /** 文件逐项导入后的可展示错误。 */
 const sourceUploadError = shallowRef<string | null>(null)
+
+/** 人物名称规范化后可用于资料标题的前缀。 */
+const sourceTitlePrefix = computed(() => state.requestedName.trim())
+/** 上传文件前必须先确定人物名称。 */
+const sourceUploadBlockedMessage = computed(() => sourceTitlePrefix.value ? '' : '请先填写人物名称，再上传资料')
 const { notifySuccess, notifyWarning } = useOperationNotifications()
 
 /** 只有启用且已有当前灵魂的世界才能进入新人物上下文。 */
@@ -80,7 +85,8 @@ function resetState(): void {
  * @returns 全部文件处理完成时结束。
  */
 async function uploadSourceFiles(input: SourceFileSubmission): Promise<void> {
-  if (uploadingSources.value || props.loading) return
+  const requestedName = sourceTitlePrefix.value
+  if (!requestedName || uploadingSources.value || props.loading) return
   uploadingSources.value = true
   sourceUploadError.value = null
   let succeeded = 0
@@ -185,6 +191,9 @@ watch(open, (isOpen, wasOpen) => {
           file-only
           class="w-full"
           :loading="loading || uploadingSources"
+          :file-disabled="Boolean(sourceUploadBlockedMessage)"
+          :file-disabled-message="sourceUploadBlockedMessage"
+          :file-name-prefix="sourceTitlePrefix"
           :error-message="sourceUploadError"
           @file="uploadSourceFiles"
         />

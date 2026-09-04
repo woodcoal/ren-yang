@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { FormSubmitEvent } from '@nuxt/ui'
-import { reactive, ref, shallowRef, useTemplateRef } from 'vue'
+import { computed, reactive, ref, shallowRef, useTemplateRef, watch } from 'vue'
 import { z } from 'zod'
 import {
   createSourceSchema,
@@ -38,6 +38,12 @@ interface Props {
   errorMessage: string | null
   /** 是否只显示文件上传区域。 */
   fileOnly?: boolean
+  /** 是否禁止选择与提交文件。 */
+  fileDisabled?: boolean
+  /** 禁止文件操作时显示的原因。 */
+  fileDisabledMessage?: string
+  /** 自动加在原始文件名前的资料标题前缀。 */
+  fileNamePrefix?: string
   /** 是否显示人物和世界关联选择。 */
   showTargetPicker?: boolean
   /** 可选择的人物。 */
@@ -48,6 +54,9 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   fileOnly: false,
+  fileDisabled: false,
+  fileDisabledMessage: '',
+  fileNamePrefix: '',
   showTargetPicker: false,
   personas: () => [],
   worlds: () => [],
@@ -69,6 +78,18 @@ const localFileError = shallowRef<string | null>(null)
 const draggingFiles = shallowRef(false)
 const fileInput = useTemplateRef<HTMLInputElement>('fileInput')
 
+/** 文件上传区域是否因请求或上游前置条件而不可操作。 */
+const fileInteractionDisabled = computed(() => props.loading || props.fileDisabled)
+
+/**
+ * 人物名称变化时同步重建待导入资料标题，确保提交标题始终匹配当前人物名称。
+ * @param prefix 当前资料标题前缀。
+ * @returns 无返回值。
+ */
+watch(() => props.fileNamePrefix, () => {
+  selectedFiles.value = selectedFiles.value.map(item => ({ ...item, name: createFileTitle(item.file) }))
+})
+
 /** @param event 已通过 Schema 校验的粘贴文本。 @returns 无返回值。 */
 function submitPaste(event: FormSubmitEvent<CreateSourceInput>): void {
   emit('paste', { ...event.data, targets: [...sharedTargets.value] })
@@ -84,6 +105,16 @@ function createDefaultSourceName(fileName: string): string {
 }
 
 /**
+ * 生成待导入文件的资料标题；指定前缀时保留完整原始文件名以便后续识别。
+ * @param file 浏览器提供的原始文件。
+ * @returns 可提交的资料标题。
+ */
+function createFileTitle(file: File): string {
+  const prefix = props.fileNamePrefix.trim()
+  return prefix ? `${prefix}_${file.name}` : createDefaultSourceName(file.name)
+}
+
+/**
  * 保存一次选取或拖入的全部文件，并为每项生成可编辑的默认资料名称。
  * @param files 浏览器文件列表。
  * @returns 无返回值。
@@ -91,9 +122,8 @@ function createDefaultSourceName(fileName: string): string {
 function setSelectedFiles(files: Iterable<File>): void {
   selectedFiles.value = Array.from(files).map(file => ({
     file,
-    name: createDefaultSourceName(file.name),
+    name: createFileTitle(file),
   }))
-  localFileError.value = null
 }
 
 /**
@@ -113,9 +143,8 @@ function selectFiles(event: Event): void {
  */
 function beginFileDrag(event: DragEvent): void {
   event.preventDefault()
-  if (!props.loading) draggingFiles.value = true
+  if (!fileInteractionDisabled.value) draggingFiles.value = true
 }
-
 /**
  * 拖拽离开上传区域时清理视觉状态。
  * @param event 原生拖拽事件。
@@ -134,7 +163,7 @@ function endFileDrag(event: DragEvent): void {
 function dropFiles(event: DragEvent): void {
   event.preventDefault()
   draggingFiles.value = false
-  if (props.loading) return
+  if (fileInteractionDisabled.value) return
   setSelectedFiles(event.dataTransfer?.files ?? [])
 }
 
@@ -156,6 +185,10 @@ function updateFileName(index: number, name: string): void {
  * @returns 无返回值。
  */
 function submitFile(event: FormSubmitEvent<typeof fileState>): void {
+  if (props.fileDisabled) {
+    localFileError.value = props.fileDisabledMessage || '请先满足文件上传条件'
+    return
+  }
   if (selectedFiles.value.length === 0) {
     localFileError.value = '必须至少选择一个 TXT 或 Markdown 文件'
     return
@@ -201,8 +234,9 @@ function submitFile(event: FormSubmitEvent<typeof fileState>): void {
         <template #header><div><h2 class="font-semibold text-highlighted">上传文件</h2><p class="mt-1 text-sm text-muted">可多选或拖入 UTF-8 TXT、MD；每个文件最大 2 MB，不解析 HTML。</p></div></template>
         <UForm :schema="fileFormSchema" :state="fileState" class="space-y-4" @submit="submitFile">
           <UFormField name="role" label="AI 使用方式" description="确定事实参与事实判断；背景参考补充上下文；风格参考只影响表达。" required>
-            <USelect v-model="fileState.role" class="w-full" :items="[{ label: '原作中的确定事实', value: 'canon_fact' }, { label: '背景参考', value: 'reference' }, { label: '写作风格参考', value: 'style_sample' }]" :disabled="loading" />
+            <USelect v-model="fileState.role" class="w-full" :items="[{ label: '原作中的确定事实', value: 'canon_fact' }, { label: '背景参考', value: 'reference' }, { label: '写作风格参考', value: 'style_sample' }]" :disabled="fileInteractionDisabled" />
           </UFormField>
+          <UAlert v-if="props.fileDisabledMessage" color="neutral" variant="subtle" :title="props.fileDisabledMessage" />
           <UFormField label="文件" required>
             <div
               data-source-file-drop-zone
@@ -215,17 +249,17 @@ function submitFile(event: FormSubmitEvent<typeof fileState>): void {
             >
               <span class="source-file-drop-zone-title">将文件拖到这里，或从下方选择</span>
               <span class="source-file-drop-zone-hint">仅支持 .txt、.md；可一次选择多个文件。</span>
-              <input ref="fileInput" type="file" accept=".txt,.md,.markdown,text/plain,text/markdown" class="native-control" multiple :disabled="loading" @change="selectFiles">
+              <input ref="fileInput" type="file" accept=".txt,.md,.markdown,text/plain,text/markdown" class="native-control" multiple :disabled="fileInteractionDisabled" @change="selectFiles">
             </div>
           </UFormField>
           <p class="sr-only" aria-live="polite">{{ selectedFiles.length ? `已选择 ${selectedFiles.length} 个文件` : '尚未选择文件' }}</p>
           <div v-if="selectedFiles.length" class="space-y-3" aria-label="待导入文件">
-            <UFormField v-for="(item, index) in selectedFiles" :key="`${item.file.name}:${item.file.lastModified}:${index}`" :label="item.file.name" description="资料名称可单独修改" required>
-              <UInput :model-value="item.name" class="w-full" :disabled="loading" @update:model-value="updateFileName(index, String($event))" />
+            <UFormField v-for="(item, index) in selectedFiles" :key="`${item.file.name}:${item.file.lastModified}:${index}`" :label="item.file.name" :description="props.fileNamePrefix ? '资料标题已按人物名称和原始文件名生成。' : '资料名称可单独修改'" required>
+              <UInput :model-value="item.name" class="w-full" :disabled="fileInteractionDisabled || Boolean(props.fileNamePrefix)" @update:model-value="updateFileName(index, String($event))" />
             </UFormField>
           </div>
           <p v-if="localFileError" class="text-sm text-error" role="alert">{{ localFileError }}</p>
-          <UButton type="submit" :loading="loading">{{ selectedFiles.length ? `导入 ${selectedFiles.length} 个文件` : '导入文件' }}</UButton>
+          <UButton type="submit" :loading="loading" :disabled="fileInteractionDisabled">{{ selectedFiles.length ? `导入 ${selectedFiles.length} 个文件` : '导入文件' }}</UButton>
         </UForm>
       </UCard>
     </div>

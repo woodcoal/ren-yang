@@ -224,17 +224,18 @@ async function submitPersonaDistillation(
 }
 
 /**
- * 在人物蒸馏创建窗口上传资料并等待它进入本次素材选择。
- * @param file 待上传的 Markdown 或 TXT 文件。
+ * 在人物蒸馏创建窗口批量上传资料并等待它们进入本次素材选择。
+ * @param files 待上传的 Markdown 或 TXT 文件。
  * @returns 无返回值。
  */
-async function uploadPersonaDistillationSource(file: File): Promise<void> {
+async function uploadPersonaDistillationSource(files: File | File[]): Promise<void> {
+  const selectedFiles = Array.isArray(files) ? files : [files]
   const input = document.querySelector<HTMLInputElement>('[role="dialog"] input[type="file"]')
   if (!input) throw new Error('人物蒸馏创建表单缺少资料文件输入')
-  Object.defineProperty(input, 'files', { configurable: true, value: [file] })
+  Object.defineProperty(input, 'files', { configurable: true, value: selectedFiles })
   await new DOMWrapper(input).trigger('change')
   const uploadButton = [...document.querySelectorAll<HTMLButtonElement>('button')]
-    .find(button => button.textContent?.includes('导入 1 个文件'))
+    .find(button => button.textContent?.includes(`导入 ${selectedFiles.length} 个文件`))
   if (!uploadButton) throw new Error('人物蒸馏创建表单缺少资料上传按钮')
   await new DOMWrapper(uploadButton).trigger('click')
   await flushPromises()
@@ -370,6 +371,35 @@ describe('世界与人物列表快速初始化', () => {
       worldId: null,
       sourceIds: [importedSources[0]!.id],
     }])
+  })
+
+  it('人物蒸馏要求先填写名称，并将批量资料按人物名和原文件名保存', async () => {
+    const wrapper = await mountSuspended(PersonasPage, { route: '/personas' })
+    await wrapper.findAll('button').find(button => button.text() === 'AI 蒸馏创建')!.trigger('click')
+    await flushPromises()
+
+    const fileInput = document.querySelector<HTMLInputElement>('[role="dialog"] input[type="file"]')
+    expect(fileInput).toBeDefined()
+    expect(fileInput?.disabled).toBe(true)
+    expect(document.body.textContent).toContain('请先填写人物名称，再上传资料')
+
+    const nameInput = document.querySelector<HTMLInputElement>('[data-persona-distillation-create] input[type="text"]')
+    if (!nameInput) throw new Error('人物蒸馏创建表单缺少名称输入')
+    await new DOMWrapper(nameInput).setValue('批量人物')
+    await vi.waitFor(() => expect(fileInput?.disabled).toBe(false))
+    const files = [
+      new File(['第一份'], '判断记录.md', { type: 'text/markdown' }),
+      new File(['第二份'], '访谈.txt', { type: 'text/plain' }),
+    ]
+    Object.defineProperty(fileInput!, 'files', { configurable: true, value: files })
+    await new DOMWrapper(fileInput!).trigger('change')
+    await flushPromises()
+    const titleInputs = [...document.querySelectorAll<HTMLInputElement>('[aria-label="待导入文件"] input[type="text"]')]
+    expect(titleInputs.map(input => input.value)).toEqual(['批量人物_判断记录.md', '批量人物_访谈.txt'])
+    const uploadButton = [...document.querySelectorAll<HTMLButtonElement>('button')]
+      .find(button => button.textContent?.includes('导入 2 个文件'))
+    if (!uploadButton) throw new Error('人物蒸馏创建表单缺少批量资料上传按钮')
+    expect(titleInputs.map(input => input.value)).toEqual(['批量人物_判断记录.md', '批量人物_访谈.txt'])
   })
 
   it('人物蒸馏运行创建失败时不创建人物并保留输入', async () => {
